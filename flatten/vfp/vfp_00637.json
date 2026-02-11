@@ -1,33 +1,77 @@
 {
     "vfp_id": "vfp_00637",
-    "project_name": "ChainSecurity_K3Capital_SBOLD_Audit.pdf",
+    "project_name": "cantina_tadle_oct2025.pdf",
     "findings": [
         {
-            "id": 15,
+            "id": 2,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-684"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-440"
+                    "CWE-1287"
                 ]
             },
-            "title": "Incorrect Transient Storage Slot",
-            "description": "The TransientStorage.loadCollValue() function uses COLLATERAL_IN_BOLD_STORAGE instead of COLLATERAL_VALUE_STORAGE for the transient storage slot. The root cause is a constant misuse. Although the return value is not used internally, this affects the public calcFragments() view function, potentially returning incorrect data. The impact is low, limited to incorrect view data, but could mislead off-chain systems relying on accurate collateral valuation.\n",
-            "severity": "Low",
+            "title": "Proxy upgrade functions do not verify implementation code",
+            "description": "The UpgradeableProxy contract allows upgrading to a new implementation without verifying that the target address contains actual contract code. The functions upgradeTo and initializeImplementation only check for non-zero addresses but do not ensure the new implementation is a valid contract. If an EOA or a self-destructed contract is set as the implementation, delegatecalls will revert, bricking the proxy. The root cause is the absence of a code presence check such as Address.isContract. An attacker could exploit this during initialization if initializeImplementation remains unguarded, allowing them to set a non-contract address and render the proxy inoperable. The impact is loss of functionality and potential permanent denial of service for the proxy contract.\n",
+            "severity": "High",
             "location": [
-                "TransientStorage.sol::loadCollValue",
-                "sBold.sol::calcFragments"
+                "UpgradeableProxy.sol::initializeImplementation#71-75",
+                "UpgradeableProxy.sol::upgradeTo#100-113",
+                "UpgradeableProxy.sol#123-145"
             ],
             "files": [
-                "sBOLD/contracts/libraries/helpers/TransientStorage.sol"
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Admin can call user logic through proxy",
+            "description": "The UpgradeableProxy allows the owner to call user-facing functions through the fallback, as there is no transparent proxy pattern to block such calls. This increases the risk of accidental execution of user logic by the admin. The root cause is the lack of a transparent proxy guard. While not directly exploitable, it complicates monitoring and increases operational risk. The impact is potential user errors and confusion in transaction monitoring.\n",
+            "severity": "Low",
+            "location": [
+                "UpgradeableProxy.sol#162-191"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "UpgradeableProxy allows unprotected first-time init",
+            "description": "The initializeImplementation function in UpgradeableProxy is external and only checks that the current implementation is not set, without access control. If a proxy is deployed with a zero logic address, any caller can set the initial implementation and execute arbitrary initialization code via delegatecall. This allows an attacker to hijack the proxy before the legitimate owner initializes it. The root cause is missing ownership restriction on a critical initialization function. Exploitation involves front-running the owner to install malicious logic, leading to full control over the proxy's state and funds. The impact is complete compromise of the proxy, including theft of funds and loss of control.\n",
+            "severity": "Medium",
+            "location": [
+                "UpgradeableProxy.sol::initializeImplementation#123-145"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
             ]
         }
     ],
     "affected_files": {
-        "TransientStorage.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.24;\n\nimport {TransientSlot} from \"@openzeppelin/contracts/utils/TransientSlot.sol\";\n\n/// @title Transient storage\n/// @notice Library for loading and storing data in transient storage.\nlibrary TransientStorage {\n    using TransientSlot for *;\n\n    // keccak256(abi.encode(uint256(keccak256(\"sBold.collateralInBold\")) - 1)) & ~bytes32(uint256(0xff))\n    bytes32 internal constant COLLATERAL_IN_BOLD_STORAGE =\n        0x93de9a8576a62ce59fcb637d8053d0e5fadcf7d26694489a7981d83007528a00;\n    // keccak256(abi.encode(uint256(keccak256(\"sBold.collateralValue\")) - 1)) & ~bytes32(uint256(0xff))\n    bytes32 internal constant COLLATERAL_VALUE_STORAGE =\n        0xb9119c9d507ab94e0f4429b4c7bbf0463ef7a3523c74e225b6641cfb04e67a00;\n    // keccak256(abi.encode(uint256(keccak256(\"sBold.collateralInBoldFlag\")) - 1)) & ~bytes32(uint256(0xff))\n    bytes32 internal constant COLLATERALS_FLAG_STORAGE =\n        0x7f4a0d96299dae48c93382764b8799886298548aad0eae1e31f8351df5706900;\n\n    /// @dev Stores the collateral values in transient storage.\n    /// @param collValue The collateral in USD value to be stored.\n    /// @param collInBold The collateral in $BOLD value to be stored.\n    function storeCollValues(uint256 collValue, uint256 collInBold) internal {\n        // Transient store for collateral in $BOLD flag\n        COLLATERALS_FLAG_STORAGE.asBoolean().tstore(true);\n        // Transient store for collateral in USD\n        COLLATERAL_VALUE_STORAGE.asUint256().tstore(collValue);\n        // Transient store for collateral in $BOLD\n        COLLATERAL_IN_BOLD_STORAGE.asUint256().tstore(collInBold);\n    }\n\n    /// @dev Clears the collateral in $BOLD value from transient storage.\n    function switchOffCollInBoldFlag() internal {\n        COLLATERALS_FLAG_STORAGE.asBoolean().tstore(false);\n    }\n\n    /// @dev Loads the collaterals flag from transient storage.\n    /// @return The boolean flag.\n    function loadCollsFlag() internal view returns (bool) {\n        return COLLATERALS_FLAG_STORAGE.asBoolean().tload();\n    }\n\n    /// @dev Loads the collateral in $BOLD value from transient storage.\n    /// @return The value.\n    function loadCollInBold() internal view returns (uint256) {\n        return COLLATERAL_IN_BOLD_STORAGE.asUint256().tload();\n    }\n\n    /// @dev Loads the collateral in USD value from transient storage.\n    /// @return The value.\n    function loadCollValue() internal view returns (uint256) {\n        return COLLATERAL_VALUE_STORAGE.asUint256().tload();\n    }\n}\n"
+        "UpgradeableProxy.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.20;\n\n/**\n * @title UpgradeableProxy\n * @author Tadle Team\n * @notice Custom implementation of upgradeable proxy that allows initialization with empty logic\n * @dev This contract implements a proxy pattern that supports delayed initialization\n *      of the implementation contract. Compatible with OpenZeppelin contracts v5.1.0\n * @custom:security Implements EIP-1967 standard for proxy storage slots\n * @custom:upgrade-safety Supports safe upgrades with proper validation\n */\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\nimport {Address} from \"@openzeppelin/contracts/utils/Address.sol\";\n\n/**\n * @title UpgradeableProxy\n * @notice Custom implementation of upgradeable proxy that allows initialization with empty logic\n * @dev This contract implements a proxy pattern that supports delayed initialization\n *      of the implementation contract\n * @custom:security Uses EIP-1967 compliant storage slots to prevent storage collisions\n * @custom:access-control Only owner can upgrade implementation contracts\n */\ncontract UpgradeableProxy is Ownable2Step {\n    // ============ Events ============\n\n    /**\n     * @dev Emitted when the proxy is initialized with an admin\n     * @param admin Address of the proxy administrator\n     */\n    event ProxyInitialized(address indexed admin);\n\n    /**\n     * @dev Emitted when the implementation contract is upgraded\n     * @param oldImplementation Address of the previous implementation\n     * @param newImplementation Address of the new implementation\n     */\n    event ImplementationUpgraded(\n        address indexed oldImplementation,\n        address indexed newImplementation\n    );\n\n    // ============ Storage ============\n\n    /// @dev Storage slot for implementation address (EIP-1967 compliant)\n    /// @notice This is the keccak-256 hash of \"eip1967.proxy.implementation\" subtracted by 1\n    /// @custom:storage-location eip1967:eip1967.proxy.implementation\n    bytes32 private constant _IMPLEMENTATION_SLOT =\n        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;\n\n    /**\n     * @dev Constructor initializes the proxy with admin\n     * @param _admin Address of the proxy admin with upgrade rights\n     * @notice The admin has exclusive rights to upgrade the implementation\n     * @custom:access-control Admin address cannot be zero address\n     */\n    constructor(address _admin) Ownable(_admin) {\n        require(\n            _admin != address(0),\n            \"UpgradeableProxy: admin address cannot be zero\"\n        );\n        emit ProxyInitialized(_admin);\n    }\n\n    /**\n     * @dev Sets the implementation address in the EIP-1967 storage slot\n     * @param newImplementation Address of the new implementation contract\n     * @notice Uses assembly for gas-efficient storage access\n     * @custom:storage-access Directly writes to EIP-1967 implementation slot\n     */\n    function _setImplementation(address newImplementation) private {\n        assembly {\n            sstore(_IMPLEMENTATION_SLOT, newImplementation)\n        }\n    }\n\n    /**\n     * @dev Returns the current implementation address from storage\n     * @return __implementation The current implementation address\n     * @notice Uses assembly for gas-efficient storage access\n     * @custom:storage-access Directly reads from EIP-1967 implementation slot\n     */\n    function _getImplementation()\n        private\n        view\n        returns (address __implementation)\n    {\n        assembly {\n            __implementation := sload(_IMPLEMENTATION_SLOT)\n        }\n    }\n\n    /**\n     * @dev Upgrades the implementation to a new address\n     * @param newImplementation Address of the new implementation contract\n     * @notice Only the owner can upgrade the implementation\n     * @custom:access-control Restricted to contract owner only\n     * @custom:validation Ensures new implementation is valid and different\n     */\n    function upgradeTo(address newImplementation) external onlyOwner {\n        address oldImplementation = _getImplementation();\n        require(\n            newImplementation != address(0),\n            \"UpgradeableProxy: new implementation cannot be zero address\"\n        );\n        require(\n            newImplementation != oldImplementation,\n            \"UpgradeableProxy: new implementation must be different from current\"\n        );\n\n        _setImplementation(newImplementation);\n        emit ImplementationUpgraded(oldImplementation, newImplementation);\n    }\n\n    /**\n     * @dev Initializes the implementation and optionally calls a function on it\n     * @param newImplementation Address of the new implementation contract\n     * @param data Function call data for initialization (optional)\n     * @notice Can only be called once when no implementation is set\n     * @custom:initialization One-time initialization function\n     * @custom:payable Supports payable initialization calls\n     */\n    function initializeImplementation(\n        address newImplementation,\n        bytes memory data\n    ) external payable {\n        address oldImplementation = _getImplementation();\n        require(\n            oldImplementation == address(0),\n            \"UpgradeableProxy: implementation already initialized\"\n        );\n        require(\n            newImplementation != address(0),\n            \"UpgradeableProxy: new implementation cannot be zero address\"\n        );\n\n        _setImplementation(newImplementation);\n\n        // Execute initialization function if data is provided\n        if (data.length > 0) {\n            Address.functionDelegateCall(newImplementation, data);\n        }\n\n        emit ImplementationUpgraded(oldImplementation, newImplementation);\n    }\n\n    /**\n     * @dev Returns the current implementation address\n     * @return The address of the current implementation contract\n     * @notice Public view function to check current implementation\n     */\n    function implementation() external view returns (address) {\n        return _getImplementation();\n    }\n\n    /**\n     * @dev Delegates the current call to implementation\n     * @notice All function calls to this contract are forwarded to the implementation\n     * @custom:payable Supports ETH transfers along with function calls\n     * @custom:security Uses delegatecall to preserve caller context\n     */\n    fallback() external payable {\n        address _impl = _getImplementation();\n        require(\n            _impl != address(0),\n            \"UpgradeableProxy: implementation not initialized\"\n        );\n\n        assembly {\n            // Copy msg.data. We take full control of memory in this inline assembly\n            // block because it will not return to Solidity code. We overwrite the\n            // Solidity scratch pad at memory position 0.\n            calldatacopy(0, 0, calldatasize())\n\n            // Call the implementation.\n            // out and outsize are 0 because we don't know the size yet.\n            let result := delegatecall(gas(), _impl, 0, calldatasize(), 0, 0)\n\n            // Copy the returned data.\n            returndatacopy(0, 0, returndatasize())\n\n            switch result\n            // delegatecall returns 0 on error.\n            case 0 {\n                revert(0, returndatasize())\n            }\n            default {\n                return(0, returndatasize())\n            }\n        }\n    }\n\n    /**\n     * @dev Allows the proxy to receive ETH transfers\n     * @notice Enables the proxy contract to accept plain ETH transfers\n     * @custom:payable Accepts ETH without function call data\n     */\n    receive() external payable {}\n}\n"
     }
 }

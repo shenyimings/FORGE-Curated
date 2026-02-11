@@ -1,28 +1,25 @@
 {
     "vfp_id": "vfp_00649",
-    "project_name": "cantina_teaxyz_nov2025.pdf",
+    "project_name": "OneSig Phase 2 Audit.md",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-755"
-                ],
-                "3": [
-                    "CWE-460"
+                    "CWE-1076"
                 ]
             },
-            "title": "Incorrect recovered address when signer's fallback function is triggered",
-            "description": "1. **Description:** When a signer has a fallback function and the `isValidSignature` function is not present, the contract attempts ECDSA recovery, which may return arbitrary data instead of the expected magic value. Although the function correctly returns `false`, the `recovered` address variable retains an incorrect value from the ECDSA recovery process.\n2. **Cause:** The vulnerability arises because the code does not explicitly reset the `recovered` address to `address(0)` when the `isValidSignature` call fails or reverts. This leaves the recovered address in an undefined and potentially misleading state.\n3. **Exploitation:** An attacker could craft a malicious contract with a fallback function that returns arbitrary data, leading to incorrect state assumptions in the calling contract if the `recovered` address is used post-validation.\n4. **Impact:** While the function ultimately returns `false`, the incorrect `recovered` address could lead to logic errors or misattribution in higher-level systems relying on this value, though direct fund loss or critical control is unlikely.\n",
-            "severity": "Low",
+            "title": "State Variable Visibility Not Explicitly Declared",
+            "description": "The `SIGNATURE_LENGTH` state variable in `MultiSig.sol` does not have an explicitly declared visibility modifier. In Solidity, state variables default to internal visibility, but omitting the modifier reduces code clarity and may lead to confusion about intended access controls. This is a code quality issue rather than a direct security vulnerability. However, explicit visibility declarations improve maintainability and reduce the risk of misinterpretation during future development or audits. The impact is limited to reduced code readability and potential long-term maintenance risks.\n",
+            "severity": "Informational",
             "location": [
-                "ERC20PermitWithERC1271.sol#L154-L157"
+                "MultiSig.sol::SIGNATURE_LENGTH"
             ],
             "files": [
-                "tea-token/src/TeaToken/ERC20PermitWithERC1271.sol"
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
             ]
         },
         {
@@ -32,48 +29,685 @@
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-477"
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
                 ]
             },
-            "title": "Increase & decrease allowance can be removed",
-            "description": "1. **Description:** The contract includes `increaseAllowance` and `decreaseAllowance` functions that were previously part of OpenZeppelin's ERC20 implementation but have since been removed due to security concerns and best practice updates.\n2. **Cause:** These functions are no longer considered secure or necessary in modern ERC20 implementations, as they can lead to race conditions or confusion in allowance management if not handled carefully by frontends.\n3. **Exploitation:** While not directly exploitable in this context, their presence increases attack surface and may encourage unsafe usage patterns by integrators or users.\n4. **Impact:** The primary impact is a deviation from current security standards, increasing maintenance burden and potential for misuse, though no direct exploit path is identified.\n",
-            "severity": "Low",
+            "title": "Incomplete Docstring",
+            "description": "The `SeedSet` event in `OneSig.sol` lacks complete documentation, specifically omitting documentation for the `seed` parameter. Properly documented events using NatSpec standards are essential for external developers, indexers, and auditors to understand the meaning and context of emitted events. Incomplete documentation can lead to misinterpretation of event data and integration errors in off-chain systems. While this does not introduce a direct security flaw, it degrades developer experience and increases the likelihood of incorrect assumptions. The impact is limited to reduced transparency and integration clarity.\n",
+            "severity": "Informational",
             "location": [
-                "Tea.sol#L127-L135"
+                "OneSig.sol::SeedSet"
             ],
             "files": [
-                "tea-token/src/TeaToken/Tea.sol"
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
             ]
         },
         {
             "id": 2,
             "category": {
                 "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Possible Duplicate Event Emissions",
+            "description": "Several setter functions, including `_setThreshold` and `_setSeed`, emit events without first checking whether the new value differs from the current one. This can result in redundant event emissions when the same value is set multiple times. Although these functions are permissioned and not vulnerable to spam, duplicate events can confuse off-chain indexers and monitoring tools that rely on event logs to detect meaningful state changes. This inefficiency increases the cost and complexity of event processing. The root cause is the absence of a value comparison check before state updates. The impact is degraded indexer performance and potential misinterpretation of system state.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::_setThreshold",
+                "OneSig.sol::_setSeed"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Documentation",
+            "description": "The internal documentation for the `verifyNSignatures` function in `MultiSig.sol` incorrectly states that the number of signatures must exactly match the threshold, while the actual implementation only requires that the number of signatures is greater than or equal to the threshold. This discrepancy between documentation and code can mislead developers and auditors into believing stricter validation is in place than actually exists. While the behavior is functionally sound, the misleading comment may result in incorrect assumptions during integration or future audits. The root cause is outdated or inaccurate inline comments. The impact is potential confusion and incorrect threat modeling based on false assumptions.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::verifyNSignatures"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Ambiguous Error Handling",
+            "description": "The `verifyNSignatures` function uses the same custom error `SignatureError` for two distinct failure conditions: when the signature data length is not a multiple of 65 bytes, and when the number of signatures is below the threshold. This lack of distinction makes it difficult for off-chain systems and developers to diagnose the exact cause of a transaction revert without parsing the input data or simulating the call. Clear, specific errors improve debugging and monitoring capabilities. The root cause is the use of a generic error type for multiple logical failures. The impact is reduced observability and increased difficulty in troubleshooting failed signature verifications.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::verifyNSignatures"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Seed Invalidation (Guardian L-01)",
+            "description": "A malicious actor can front-run a `setSeed` transaction to execute a previously authorized transaction batch before the seed is updated. Since changing the seed is intended to invalidate existing signatures, delaying this update allows an attacker to exploit the window between signer consensus and on-chain seed update. The root cause is the lack of atomicity between seed invalidation and transaction execution. An attacker can monitor the mempool for `setSeed` calls and submit a competing `executeTransaction` with valid signatures and proof. The impact includes unintended execution of transactions that signers believed were invalidated, potentially leading to fund loss or state manipulation, and unexpected nonce increments that block legitimate transactions.\n",
+            "severity": "Low",
+            "location": [
+                "OneSig.sol::executeTransaction",
+                "OneSig.sol::setSeed"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lacking Gas Validations Allows Censoring (Guardian L-03)",
+            "description": "The `executeTransaction` function does not validate the amount of gas provided for individual external calls. This allows any address to invoke the function with insufficient gas, potentially causing some calls in a batch to succeed while others fail due to out-of-gas errors, especially within try/catch blocks. The root cause is the absence of a minimum gas check before making external calls. An attacker can manipulate execution outcomes by strategically underfunding the transaction, leading to partial execution and inconsistent state across chains. The impact includes potential censorship of specific operations, disruption of expected workflow, and increased risk of silent failures in cross-chain contexts.\n",
+            "severity": "Low",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Network Fork Replay Attacks (Guardian L-04)",
+            "description": "In the event of a blockchain fork, valid signatures for a Merkle root could be replayed on both the original and forked chain, leading to unintended transaction execution on one or both chains. The system does not include chain-specific context in the signed message, making signatures valid across forks of the same network. The root cause is the reliance on a static EIP-712 domain that does not incorporate chain ID or other fork-unique identifiers. While the probability is low, the impact could include duplicate executions, fund loss, or inconsistent state across forked networks, especially if one fork is abandoned.\n",
+            "severity": "Low",
+            "location": [
+                "MultiSig.sol::verifyNSignatures"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Stale Transaction Execution on L2 (Guardian L-05)",
+            "description": "On Layer 2 networks with sequencers (e.g., Arbitrum), a sequencer outage lasting more than 24 hours could allow stale transactions to be executed using outdated `block.timestamp` values. The expiration check relies on `block.timestamp`, which may not advance during extended outages. Once the sequencer resumes, old transactions with expired timestamps might still be accepted if the system clock has not caught up. The root cause is the dependence on `block.timestamp` for time-based validation without additional safeguards. The impact is limited to rare edge cases but could allow execution of outdated instructions under extreme conditions.\n",
+            "severity": "Low",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-1293"
+                ]
+            },
+            "title": "Multiple Signed Merkle Roots (Guardian L-06)",
+            "description": "If multiple signed Merkle roots exist with overlapping nonces for the same OneSig instance, an arbitrary user can mix and match transactions from different roots using the `executeTransaction` function. This breaks the intended atomicity of a batch and allows for unintended combinations of operations. The root cause is the lack of binding between a transaction and its originating Merkle root beyond the nonce. An attacker can craft proofs from different valid roots to execute a custom sequence of actions. The impact includes unexpected execution outcomes, potential fund loss, and violation of the intended authorization model.\n",
+            "severity": "Low",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "executeTransaction treats EOAs and Contracts the same when calling (SpearBit L-01)",
+            "description": "The `executeTransaction` function uses low-level `.call` without differentiating between EOAs and contracts, which can mask silent failures. For example, sending ETH to an EOA always returns success, even if the recipient cannot receive it (e.g., due to missing `receive` function). In multichain setups, missing contracts on certain chains may lead to successful-looking calls that do nothing. Future changes like EIP-7702 could further alter behavior. The root cause is the uniform handling of all targets via `.call`. The impact includes false success reporting, reduced reliability, and potential loss of funds or incorrect state assumptions across chains.\n",
+            "severity": "Low",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Unexpected Balance (Guardian I-01)",
+            "description": "A signature that authorizes a transaction with a non-zero `value` field can be executed without including corresponding `msg.value`, effectively allowing an attacker to drain the contract's native token balance. The function does not enforce that `msg.value` matches the requested `value` when making external calls. The root cause is the lack of validation between the signed transaction value and the actual ETH sent. An attacker can exploit this by calling `executeTransaction` with a high `value` but zero `msg.value`, causing the contract to forward its own balance. The impact is potential loss of funds held in the contract.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
                     "CWE-710"
                 ],
                 "2": [
                     "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
                 ]
             },
-            "title": "Unused structs, variables & imports",
-            "description": "1. **Description:** Several structs, variables, and imports are declared but never used in the codebase, including in EIP3009.sol, ERC20PermitWithERC1271.sol, and Tea.sol.\n2. **Cause:** These unused elements were likely left over from earlier development stages or copied from templates without subsequent cleanup.\n3. **Exploitation:** These cannot be directly exploited but contribute to code bloat and reduce readability and auditability.\n4. **Impact:** The impact is purely on code maintainability and clarity, with no direct security risk. However, they may distract auditors or developers and increase the cost of future reviews.\n",
+            "title": "Unnecessary Return Data (Guardian I-04)",
+            "description": "The `executeTransaction` function uses `.call` and loads return data into memory even when it is not used or validated. This wastes gas due to unnecessary memory allocation and copying. The root cause is inefficient use of low-level call patterns. While the impact is not a security vulnerability, it increases execution cost and reduces efficiency, especially for transactions that do not require return data inspection. This is a gas optimization issue that affects scalability and user cost.\n",
             "severity": "Informational",
             "location": [
-                "EIP3009.sol#L30-L77",
-                "ERC20PermitWithERC1271.sol#L13-L43",
-                "Tea.sol#L19",
-                "Tea.sol#L36-L38"
+                "OneSig.sol::executeTransaction"
             ],
             "files": [
-                "tea-token/src/TeaToken/EIP3009.sol",
-                "tea-token/src/TeaToken/ERC20PermitWithERC1271.sol",
-                "tea-token/src/TeaToken/Tea.sol"
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Smart Contract Signer Exclusion (Guardian I-05)",
+            "description": "The `ECDSA.recover` function used for signature verification only supports signatures from EOA wallets, excluding contract-based signers such as DAO multisigs or smart wallet accounts. The root cause is the reliance on standard ECDSA recovery, which cannot verify signatures produced by contract wallets that do not support EIP-1271. This limits the flexibility and adoption of the protocol in ecosystems where smart contract wallets are prevalent. The impact is reduced composability and exclusion of modern wallet infrastructure.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::verifyNSignatures"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing Event in Receive Function (Guardian I-06)",
+            "description": "The `receive` function allows the contract to accept native token deposits but does not emit an event. This makes it impossible for off-chain services to track or index incoming ETH transfers, reducing transparency and auditability. The root cause is the omission of an event emission in the `receive` fallback. The impact is limited visibility into the contract's balance changes, which can hinder accounting, monitoring, and user notifications.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::receive"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Time Drift Across Networks May Be Unexpected (Guardian I-07)",
+            "description": "The expiration time for a Merkle root is applied globally, but `block.timestamp` can vary across different chains due to network latency or clock drift. This means a transaction that is expired on one chain might still be valid on another, leading to inconsistent execution outcomes. The root cause is the lack of chain-specific time validation or synchronization mechanisms. The impact includes potential execution of expired transactions on some chains, undermining the intended time-based security guarantees in a cross-chain context.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Low-Level Calls Do Not Validate Contract Code (Guardian I-08)",
+            "description": "The `executeTransaction` function performs low-level calls to arbitrary addresses without verifying that the target is a valid contract (i.e., has code). This allows calls to EOAs or empty addresses to succeed silently, which may be misinterpreted as successful execution. The root cause is the absence of a `extcodesize` check before making external calls. The impact includes misleading success indicators, potential loss of funds sent to non-contracts, and reduced reliability of cross-chain operations.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Stuck Nonce (Guardian I-09)",
+            "description": "If a transaction fails during execution, the nonce does not increment, preventing all subsequent transactions from being executed until the failed transaction is either successfully executed or invalidated via `setSeed`. The root cause is the nonce increment being conditional on successful execution. This creates a denial-of-service vector where a single failing transaction can block the entire queue. The impact is operational disruption and potential freezing of critical updates until manual intervention.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Unexpected Reinstatement Of Transactions (Guardian I-10)",
+            "description": "Resetting the `seed` to a previously used value can inadvertently reinstate old, previously invalidated signatures if the nonce is still valid. This allows execution of transactions that were meant to be permanently invalidated. The root cause is the stateless nature of seed validation—there is no history or revocation list. The impact includes potential replay of old instructions and unexpected state changes, especially if signers accidentally reuse a seed value.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::setSeed",
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-544"
+                ]
+            },
+            "title": "Useful Error Data (ID-06, Guardian)",
+            "description": "When a transaction execution fails, the error message returned is generic (\"execution error\") and does not include any contextual data such as the failing target, function, or reason. This makes debugging failed transactions extremely difficult for developers and users. The root cause is the lack of error propagation or structured error reporting. The impact is poor developer experience, increased time to diagnose issues, and reduced transparency in failure scenarios.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Version Compatibility (Guardian I-13)",
+            "description": "All cross-chain instances of OneSig must maintain the same `VERSION` constant. If versions are mismatched across chains, it can lead to integration issues, incorrect assumptions, or failed verifications. The root cause is the lack of version negotiation or compatibility checks between instances. The impact is increased deployment complexity and risk of operational errors during upgrades or multi-chain coordination.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::VERSION"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Token Transfer May Silently Fail (Guardian I-14)",
+            "description": "External calls, such as token transfers (e.g., USDT), may return `false` on failure, but the `executeTransaction` function does not check the return value or revert in such cases. Instead, it reports success even when the transfer did not occur. The root cause is the lack of return value validation for external calls. The impact includes silent failures of critical operations, false success reporting, and potential loss of funds or incorrect state assumptions.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Missing EIP-5267 (Guardian I-15)",
+            "description": "The contract does not implement the `eip712Domain` function as standardized by EIP-5267, which would allow external systems to query the EIP-712 domain separator used for signing. The root cause is the omission of a standardized interface for domain inspection. The impact is reduced interoperability with wallet and signing tools that expect this function to be present, increasing integration complexity.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::eip712Domain"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Unwieldy Seed Behavior (Guardian I-18)",
+            "description": "While seeds are intended to prevent signature replay, they must remain identical across all cross-chain instances of OneSig. This makes it impractical to invalidate a Merkle root on a single chain without coordinating a global seed update across all chains. The root cause is the global nature of seed synchronization. The impact is operational complexity and reduced flexibility in managing security incidents on a per-chain basis.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::setSeed"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Arbitrary Transaction Ordering (Guardian I-19)",
+            "description": "Since `executeTransaction` can be called by any address, malicious actors can influence the order in which transactions are executed, potentially front-running or reordering sensitive operations like swaps. The root cause is the permissionless execution model. While this does not break the authorization model, it allows external manipulation of execution sequence. The impact includes potential financial loss due to front-running and disruption of intended protocol logic.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Threshold and Signer Consistency (Guardian I-21)",
+            "description": "Deployments across chains may have inconsistent threshold or signer configurations, leading to confusion, increased risk of errors, and degraded user experience. The root cause is the lack of enforcement or verification of cross-chain configuration consistency. The impact is operational risk and potential for misconfigured instances to behave unexpectedly compared to others.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::threshold",
+                "MultiSig.sol::signers"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Math optimization in `verifyNSignatures` (Spearbit I-02)",
+            "description": "The `verifyNSignatures` function performs two multiplication operations for each signature during length validation, which is computationally redundant. The root cause is suboptimal arithmetic logic in the loop. While this does not introduce a security vulnerability, it increases gas consumption unnecessarily. The impact is higher execution costs and reduced efficiency, especially for large numbers of signatures.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::verifyNSignatures"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing Docstrings (OpenZeppelin N-02)",
+            "description": "The `LEAF_ENCODING_VERSION` constant lacks a NatSpec docstring, reducing code clarity and making it harder for developers to understand its purpose. The root cause is incomplete documentation. The impact is reduced readability and maintainability, especially for external contributors or auditors.\n",
+            "severity": "Informational",
+            "location": [
+                "OneSig.sol::LEAF_ENCODING_VERSION"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive (OpenZeppelin N-04)",
+            "description": "Several functions, including `getSigners`, `setSeed`, and `executeTransaction`, are marked `public` when they are only intended to be called externally. Marking them `external` would reduce gas costs and better reflect their intended usage. The root cause is the use of a more permissive visibility modifier than necessary. The impact is slightly higher gas consumption and reduced code clarity regarding function access patterns.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::getSigners",
+                "OneSig.sol::setSeed",
+                "OneSig.sol::executeTransaction"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol",
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma (OpenZeppelin N-05, Guardian I-16)",
+            "description": "The Solidity pragma `^0.8.22` allows compilation with any minor version above 0.8.22, which may introduce unintended compiler behavior or optimizations. The root cause is the use of a floating pragma instead of a fixed version. The impact includes potential compilation inconsistencies across environments and risk of unexpected behavior due to compiler updates.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol",
+                "OneSig.sol"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol",
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Lack of Indexed Event Parameters (OpenZeppelin N-06)",
+            "description": "Events such as `SignerSet`, `ThresholdSet`, `SeedSet`, and `TransactionExecuted` do not use indexed parameters, making it difficult for off-chain services to efficiently filter logs based on key fields. The root cause is the omission of the `indexed` keyword for important event parameters. The impact is reduced query efficiency and increased cost for event-based indexing and monitoring.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol::SignerSet",
+                "MultiSig.sol::ThresholdSet",
+                "OneSig.sol::SeedSet",
+                "OneSig.sol::TransactionExecuted"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol",
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "EVM Version Compatibility (OpenZeppelin N-08)",
+            "description": "The contract does not specify an `evmVersion` in the compiler settings, defaulting to `cancun`. This risks deployment failures on chains that do not support newer opcodes like `PUSH0` or `MCOPY`. The root cause is the lack of explicit EVM version pinning. The impact is potential incompatibility with older or non-upgraded EVM chains, limiting deployment flexibility.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSig.sol",
+                "OneSig.sol"
+            ],
+            "files": [
+                "onesig/packages/onesig-evm/contracts/MultiSig.sol",
+                "onesig/packages/onesig-evm/contracts/OneSig.sol"
             ]
         }
     ],
     "affected_files": {
-        "EIP3009.sol": "/**\n * SPDX-License-Identifier: MIT\n *\n * Copyright (c) 2020 CENTRE SECZ\n *\n * Permission is hereby granted, free of charge, to any person obtaining a copy\n * of this software and associated documentation files (the \"Software\"), to deal\n * in the Software without restriction, including without limitation the rights\n * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n * copies of the Software, and to permit persons to whom the Software is\n * furnished to do so, subject to the following conditions:\n *\n * The above copyright notice and this permission notice shall be included in\n * copies or substantial portions of the Software.\n *\n * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n * SOFTWARE.\n */\n\npragma solidity 0.8.26;\n\nimport { ERC20Permit } from \"./ERC20PermitWithERC1271.sol\";\nimport { IERC1271 } from \"@openzeppelin/interfaces/IERC1271.sol\";\n\n/**\n * `TransferWithAuthorization` is the struct identifier name.\n * - `address` is the atomic type of named `the sender`.\n * - `address` is the atomic type of named `the receiver`.\n * - `uint256` is the atomic type of named `value`.\n * - `uint256` is the atomic type of named `validAfter`\n * - `uint256` is the atomic type of named `validBefore`\n * - `uint256` is the atomic type of the randomly \n *    generated value during the signing process named `nonce`.\n */\nstruct TransferWithAuthorization {\n    address from;\n    address to;\n    uint256 value;\n    uint256 validAfter;\n    uint256 validBefore;\n    uint256 nonce;\n}\n\n/**\n * `ReceiveWithAuthorization` is the struct identifier name.\n * - `address` is the atomic type of named `the sender`.\n * - `address` is the atomic type of named `the receiver`.\n * - `uint256` is the atomic type of named `value`.\n * - `uint256` is the atomic type of named `validAfter`\n * - `uint256` is the atomic type of named `validBefore`\n * - `uint256` is the atomic type of the randomly \n *    generated value during the signing process named `nonce`.\n */\nstruct ReceiveWithAuthorization {\n    address from;\n    address to;\n    uint256 value;\n    uint256 validAfter;\n    uint256 validBefore;\n    uint256 nonce;\n}\n\n/**\n * `CancelWithAuthorization` is the struct identifier name.\n * - `address` is the atomic type of named `the authorizaer`.\n * - `uint256` is the atomic type of the randomly \n *    generated value during the signing process named `nonce`.\n */\nstruct CancelAuthorization {\n    address authorizer;\n    uint256 nonce;\n}\n\n\nabstract contract EIP3009 is ERC20Permit {\n    // keccak256(\"TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)\")\n    bytes32\n        public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = 0x7c7c6cdb67a18743f49ec6fa9b35f50d52ed05cbed4cc592e13b44501c1a2267;\n\n    // keccak256(\"ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)\")\n    bytes32\n        public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = 0xd099cc98ef71107a616c4f0f941f04c322d8e254fe26b3c6668db87aae413de8;\n\n    // keccak256(\"CancelAuthorization(address authorizer,bytes32 nonce)\")\n    bytes32\n        public constant CANCEL_AUTHORIZATION_TYPEHASH = 0x158b0a9edf7a828aad02f63cd515c68ef2f50ba807396f6d12842833a1597429;\n\n    /**\n     * @dev authorizer address => nonce => state (true = used / false = unused)\n     */\n    mapping(address => mapping(bytes32 => bool)) internal _authorizationStates;\n\n    /**\n     * @dev Invalid signature for authorization.\n     */\n    error EIP3009InvalidSignature();\n\n    /**\n     * @dev Authorization has already been used.\n     */\n    error EIP3009AuthorizationAlreadyUsed(address authorizer, bytes32 nonce);\n\n    /**\n     * @dev Authorization is not yet valid.\n     */\n    error EIP3009AuthorizationNotYetValid(uint256 validAfter, uint256 currentTime);\n\n    /**\n     * @dev Authorization has expired.\n     */\n    error EIP3009AuthorizationExpired(uint256 validBefore, uint256 currentTime);\n\n    /**\n     * @dev Caller is not the payee.\n     */\n    error EIP3009CallerMustBePayee(address caller, address payee);\n\n    event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce);\n    event AuthorizationCanceled(\n        address indexed authorizer,\n        bytes32 indexed nonce\n    );\n\n    /**\n     * @notice Returns the state of an authorization\n     * @dev Nonces are randomly generated 32-byte data unique to the authorizer's\n     * address\n     * @param authorizer    Authorizer's address\n     * @param nonce         Nonce of the authorization\n     * @return True if the nonce is used\n     */\n    function authorizationState(address authorizer, bytes32 nonce)\n        external\n        virtual\n        view\n        returns (bool)\n    {\n        return _authorizationStates[authorizer][nonce];\n    }\n\n    /**\n     * @notice Execute a transfer with a signed authorization\n     * @param from          Payer's address (Authorizer)\n     * @param to            Payee's address\n     * @param value         Amount to be transferred\n     * @param validAfter    The time after which this is valid (unix time)\n     * @param validBefore   The time before which this is valid (unix time)\n     * @param nonce         Unique nonce\n     * @param v             v of the signature\n     * @param r             r of the signature\n     * @param s             s of the signature\n     */\n    function transferWithAuthorization(\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        transferWithAuthorization(from, to, value, validAfter, validBefore, nonce, signature);\n    }\n\n    /**\n     * @notice Execute a transfer with a signed authorization (bytes signature for 7702/passkey)\n     * @param from          Payer's address (Authorizer)\n     * @param to            Payee's address\n     * @param value         Amount to be transferred\n     * @param validAfter    The time after which this is valid (unix time)\n     * @param validBefore   The time before which this is valid (unix time)\n     * @param nonce         Unique nonce\n     * @param signature     Signature bytes\n     */\n    function transferWithAuthorization(\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        bytes memory signature\n    ) public virtual {\n        _transferWithAuthorizationBytes(\n            TRANSFER_WITH_AUTHORIZATION_TYPEHASH,\n            from,\n            to,\n            value,\n            validAfter,\n            validBefore,\n            nonce,\n            signature\n        );\n    }\n\n    /**\n     * @notice Receive a transfer with a signed authorization from the payer\n     * @dev This has an additional check to ensure that the payee's address matches\n     * the caller of this function to prevent front-running attacks. (See security\n     * considerations)\n     * @param from          Payer's address (Authorizer)\n     * @param to            Payee's address\n     * @param value         Amount to be transferred\n     * @param validAfter    The time after which this is valid (unix time)\n     * @param validBefore   The time before which this is valid (unix time)\n     * @param nonce         Unique nonce\n     * @param v             v of the signature\n     * @param r             r of the signature\n     * @param s             s of the signature\n     */\n    function receiveWithAuthorization(\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        receiveWithAuthorization(from, to, value, validAfter, validBefore, nonce, signature);\n    }\n\n    /**\n     * @notice Receive a transfer with a signed authorization (bytes signature for 7702/passkey)\n     * @param from          Payer's address (Authorizer)\n     * @param to            Payee's address\n     * @param value         Amount to be transferred\n     * @param validAfter    The time after which this is valid (unix time)\n     * @param validBefore   The time before which this is valid (unix time)\n     * @param nonce         Unique nonce\n     * @param signature     Signature bytes\n     */\n    function receiveWithAuthorization(\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        bytes memory signature\n    ) public virtual {\n        if (to != msg.sender) {\n            revert EIP3009CallerMustBePayee(msg.sender, to);\n        }\n\n        _transferWithAuthorizationBytes(\n            RECEIVE_WITH_AUTHORIZATION_TYPEHASH,\n            from,\n            to,\n            value,\n            validAfter,\n            validBefore,\n            nonce,\n            signature\n        );\n    }\n\n    /**\n     * @notice Attempt to cancel an authorization\n     * @param authorizer    Authorizer's address\n     * @param nonce         Nonce of the authorization\n     * @param v             v of the signature\n     * @param r             r of the signature\n     * @param s             s of the signature\n     */\n    function cancelAuthorization(\n        address authorizer,\n        bytes32 nonce,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        cancelAuthorization(authorizer, nonce, signature);\n    }\n\n    /**\n     * @notice Cancel an authorization (bytes signature for 7702/passkey)\n     * @param authorizer    Authorizer's address\n     * @param nonce         Nonce of the authorization\n     * @param signature     Signature bytes\n     */\n    function cancelAuthorization(\n        address authorizer,\n        bytes32 nonce,\n        bytes memory signature\n    ) public virtual {\n        if (_authorizationStates[authorizer][nonce]) {\n            revert EIP3009AuthorizationAlreadyUsed(authorizer, nonce);\n        }\n\n        bytes32 structHash = keccak256(abi.encode(\n            CANCEL_AUTHORIZATION_TYPEHASH,\n            authorizer,\n            nonce\n        ));\n        bytes32 digest = keccak256(\n            abi.encodePacked(\n                \"\\x19\\x01\",\n                _domainSeparatorV4(),\n                structHash\n            )\n        );\n        \n        if (!_verifySig(authorizer, digest, signature)) {\n            revert EIP3009InvalidSignature();\n        }\n\n        _authorizationStates[authorizer][nonce] = true;\n        emit AuthorizationCanceled(authorizer, nonce);\n    }\n\n    function _transferWithAuthorization(\n        bytes32 typeHash,\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) internal virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        _transferWithAuthorizationBytes(typeHash, from, to, value, validAfter, validBefore, nonce, signature);\n    }\n\n    function _transferWithAuthorizationBytes(\n        bytes32 typeHash,\n        address from,\n        address to,\n        uint256 value,\n        uint256 validAfter,\n        uint256 validBefore,\n        bytes32 nonce,\n        bytes memory signature\n    ) internal virtual {\n        if (block.timestamp <= validAfter) {\n            revert EIP3009AuthorizationNotYetValid(validAfter, block.timestamp);\n        }\n        if (block.timestamp >= validBefore) {\n            revert EIP3009AuthorizationExpired(validBefore, block.timestamp);\n        }\n        if (_authorizationStates[from][nonce]) {\n            revert EIP3009AuthorizationAlreadyUsed(from, nonce);\n        }\n\n        bytes32 structHash = keccak256(abi.encode(\n            typeHash,\n            from,\n            to,\n            value,\n            validAfter,\n            validBefore,\n            nonce\n        ));\n        bytes32 digest = keccak256(\n            abi.encodePacked(\n                \"\\x19\\x01\",\n                _domainSeparatorV4(),\n                structHash\n            )\n        );\n        \n        if (!_verifySig(from, digest, signature)) {\n            revert EIP3009InvalidSignature();\n        }\n\n        _authorizationStates[from][nonce] = true;\n        emit AuthorizationUsed(from, nonce);\n\n        _transfer(from, to, value);\n    }\n}",
-        "ERC20PermitWithERC1271.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Contracts (last updated v5.0.0) (token/ERC20/extensions/ERC20Permit.sol)\n\npragma solidity ^0.8.20;\n\nimport {IERC20Permit} from \"@openzeppelin/token/ERC20/extensions/IERC20Permit.sol\";\nimport {ERC20} from \"@openzeppelin/token/ERC20/ERC20.sol\";\nimport {ECDSA} from \"@openzeppelin/utils/cryptography/ECDSA.sol\";\nimport {EIP712} from \"@openzeppelin/utils/cryptography/EIP712.sol\";\nimport {Nonces} from \"@openzeppelin/utils/Nonces.sol\";\nimport {IERC1271} from \"@openzeppelin/interfaces/IERC1271.sol\";\n\n/**\n * `Permit` is the struct identifier name.\n * - `address` is the atomic type of named `owner`.\n * - `address` is the atomic type of named `spender`.\n * - `uint256` is the atomic type of named `value`.\n * - `uint256` is the atomic type of the randomly \n *    generated value during the signing process named `nonce`.\n * - `uint256` is the atomic type of named `deadline`\n */\nstruct Permit {\n    address owner;\n    address spender;\n    uint256 value;\n    uint256 nonce;\n    uint256 deadline;\n}\n\n/**\n * `Permit` is the struct identifier name.\n * - `address` is the atomic type of named `owner`.\n * - `uint256` is the atomic type of named `amount`.\n * - `uint256` is the atomic type of the randomly \n *    generated value during the signing process named `nonce`.\n * - `uint256` is the atomic type of named `deadline`\n */\nstruct PermitBurn {\n    address owner;\n    uint256 amount;\n    uint256 nonce;\n    uint256 deadline;\n}\n\n/**\n * @dev Implementation of the ERC-20 Permit extension allowing approvals to be made via signatures, as defined in\n * https://eips.ethereum.org/EIPS/eip-2612[ERC-2612].\n *\n * Adds the {permit} method, which can be used to change an account's ERC-20 allowance (see {IERC20-allowance}) by\n * presenting a message signed by the account. By not relying on `{IERC20-approve}`, the token holder account doesn't\n * need to send a transaction, and thus is not required to hold Ether at all.\n */\nabstract contract ERC20Permit is ERC20, IERC20Permit, EIP712, Nonces {\n    bytes32 public constant PERMIT_TYPEHASH =\n        keccak256(\"Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)\");\n\n    // PermitBurn typehash: owner authorizes burning `amount` with a nonce and deadline\n    bytes32 public constant PERMIT_BURN_TYPEHASH =\n        keccak256(\"PermitBurn(address owner,uint256 amount,uint256 nonce,uint256 deadline)\");\n\n    /**\n     * @dev Permit deadline has expired.\n     */\n    error ERC2612ExpiredSignature(uint256 deadline);\n\n    /**\n     * @dev Mismatched signature.\n     */\n    error ERC2612InvalidSigner(address signer, address owner);\n\n    /**\n     * @dev Initializes the {EIP712} domain separator using the `name` parameter, and setting `version` to `\"1\"`.\n     *\n     * It's a good idea to use the same `name` that is defined as the ERC-20 token name.\n     */\n    constructor(string memory name) EIP712(name, \"1\") {}\n\n    /**\n     * @inheritdoc IERC20Permit\n     */\n    function permit(\n        address owner,\n        address spender,\n        uint256 value,\n        uint256 deadline,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        permit(owner, spender, value, deadline, signature);\n    }\n\n    /**\n     * @notice Permit with bytes signature (for 7702/passkey/ERC-1271 compatibility)\n     * @param owner         Token owner's address\n     * @param spender       Spender's address\n     * @param value         Amount to approve\n     * @param deadline      Signature expiry timestamp\n     * @param signature     Signature bytes (can be 65-byte ECDSA or arbitrary ERC-1271)\n     */\n    function permit(\n        address owner,\n        address spender,\n        uint256 value,\n        uint256 deadline,\n        bytes memory signature\n    ) public virtual {\n        if (block.timestamp > deadline) {\n            revert ERC2612ExpiredSignature(deadline);\n        }\n\n        // SECURITY: Read nonce WITHOUT consuming it yet (prevent griefing attack)\n        // If we consume nonce before verification, attacker can grief by submitting invalid signatures\n        uint256 currentNonce = nonces(owner);\n        \n        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, currentNonce, deadline));\n        bytes32 digest = _hashTypedDataV4(structHash);\n        \n        // Verify signature BEFORE consuming nonce\n        (bool valid, address recovered) = _verifySignature(owner, digest, signature);\n        if (!valid) {\n            revert ERC2612InvalidSigner(recovered, owner);\n        }\n\n        // ONLY consume nonce after successful verification\n        _useNonce(owner);\n\n        _approve(owner, spender, value);\n    }\n\n    /**\n     * @notice Internal signature verification with ERC-1271 support\n     * @param signer        Expected signer address\n     * @param digest        EIP-712 digest to verify\n     * @param signature     Signature bytes\n     * @return valid        True if signature is valid\n     * @return recovered    Recovered address (if ECDSA) or zero address (if ERC-1271)\n     */\n    function _verifySignature(\n        address signer,\n        bytes32 digest,\n        bytes memory signature\n    ) internal view returns (bool valid, address recovered) {\n        // Try ECDSA recovery for EOAs\n        ECDSA.RecoverError err;\n        (recovered, err,) = ECDSA.tryRecover(digest, signature);\n        if (err == ECDSA.RecoverError.NoError && recovered == signer) {\n            return (true, recovered);\n        }\n        \n        // Try ERC-1271 for smart contract wallets\n        if (signer.code.length > 0) {\n            try IERC1271(signer).isValidSignature(digest, signature) returns (bytes4 magicValue) {\n                if (magicValue == IERC1271.isValidSignature.selector) {\n                    return (true, address(0));\n                }\n            } catch {\n                return (false, recovered);\n            }\n        }\n        \n        return (false, recovered);\n    }\n\n    /**\n     * @notice Internal signature verification (bool-only return for internal use)\n     */\n    function _verifySig(\n        address signer,\n        bytes32 digest,\n        bytes memory signature\n    ) internal view returns (bool) {\n        (bool valid,) = _verifySignature(signer, digest, signature);\n        return valid;\n    }\n\n    /**\n     * @notice Internal helper to convert r,s,v to 65-byte signature\n     */\n    function rsvToSig(bytes32 _a, bytes32 _b, uint8 _c) internal pure returns (bytes memory) {\n        bytes memory bytesArray = new bytes(65);\n        for (uint256 i; i < 32; i++) {\n            bytesArray[i] = _a[i];\n        }\n        for (uint256 i = 32; i < 64; i++) {\n            bytesArray[i] = _b[i-32];\n        }\n        bytesArray[64] = bytes1(_c);\n        return bytesArray;\n    }\n\n    /**\n     * @notice Permit-based burn using v,r,s\n     * @dev Mirrors the permit flow but burns `amount` from `owner` after signature verification\n     */\n    function permitBurn(\n        address owner,\n        uint256 amount,\n        uint256 deadline,\n        uint8 v,\n        bytes32 r,\n        bytes32 s\n    ) external virtual {\n        bytes memory signature = rsvToSig(r, s, v);\n        permitBurn(owner, amount, deadline, signature);\n    }\n\n    /**\n     * @notice Permit-based burn using bytes signature (supports ERC-1271 and passkey formats)\n     */\n    function permitBurn(\n        address owner,\n        uint256 amount,\n        uint256 deadline,\n        bytes memory signature\n    ) public virtual {\n        if (block.timestamp > deadline) {\n            revert ERC2612ExpiredSignature(deadline);\n        }\n\n        uint256 currentNonce = nonces(owner);\n\n        bytes32 structHash = keccak256(abi.encode(PERMIT_BURN_TYPEHASH, owner, amount, currentNonce, deadline));\n        bytes32 digest = _hashTypedDataV4(structHash);\n\n        (bool valid, address recovered) = _verifySignature(owner, digest, signature);\n        if (!valid) {\n            revert ERC2612InvalidSigner(recovered, owner);\n        }\n\n        // Consume nonce only after successful verification\n        _useNonce(owner);\n\n        // Perform the burn\n        _burn(owner, amount);\n    }\n\n    /**\n     * @inheritdoc IERC20Permit\n     */\n    function nonces(address owner) public view virtual override(IERC20Permit, Nonces) returns (uint256) {\n        return super.nonces(owner);\n    }\n\n    /**\n     * @inheritdoc IERC20Permit\n     */\n    // solhint-disable-next-line func-name-mixedcase\n    function DOMAIN_SEPARATOR() external view virtual returns (bytes32) {\n        return _domainSeparatorV4();\n    }\n}\n",
-        "Tea.sol": "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.26;\n\n/*                                      _@@                                       \n _@                @_              _@@@@@                                       \n @@   @@@@@    _@@ #@\\           @@@@@@@@@@      @@@--@@@         @@@@--@@@_    \n/@% @@@   @@@@@@@   @@   @@       @@@@@@@     @@@@#    @@@@     @@@@@    @@@@@  \n@@                  @@   @@       @@@@@@@    @@@@@     @@@@@    @@@@~    @@@@@@ \n@@                  @@            @@@@@@@   @@@@@@@@@@@@@@@@@           @@@@@@@ \nt@@                 @@   @@       @@@@@@@   @@@@@@                  @@@@#@@@@@@ \n @@                @@@  @@@       @@@@@@@   @@@@@@@             @@@@@+   @@@@@@ \n t@@              j@@   @@        @@@@@@@   #@@@@@@@          _@@@@@     @@@@@@ \n  \\@@            @@@    @         @@@@@@@    @@@@@@@@_        @@@@@@@   _@@@@@@ \n    @%  @@@@@@@  @                 @@@@@@@@    @@@@@@@@@@@@   +@@@@@@@@@#@@@@@@ \n         t@@@/                      t@@@@+       t@@@@@@        @@@@@@+    t@@@@\n*/\n\n/* solhint-disable no-unused-import */\nimport { EIP712 } from \"@openzeppelin/utils/cryptography/EIP712.sol\";\nimport { ERC20 } from \"@openzeppelin/token/ERC20/ERC20.sol\";\nimport { IERC20 } from \"@openzeppelin/interfaces/IERC20.sol\";\nimport { IERC721 } from \"@openzeppelin/interfaces/IERC721.sol\";\nimport { Ownable } from \"@openzeppelin/access/Ownable.sol\";\nimport { ReentrancyGuard } from \"@openzeppelin/utils/ReentrancyGuard.sol\";\nimport {SafeERC20} from \"@openzeppelin/token/ERC20/utils/SafeERC20.sol\";\n/* solhint-enable no-unused-import */\nimport { Ownable2Step } from \"@openzeppelin/access/Ownable2Step.sol\";\nimport { ERC20Permit } from \"./ERC20PermitWithERC1271.sol\";\nimport { EIP3009 } from \"./EIP3009.sol\";\nimport { ERC20Burnable } from \"@openzeppelin/token/ERC20/extensions/ERC20Burnable.sol\";\n\ncontract Tea is Ownable2Step, EIP3009, ERC20Burnable, ReentrancyGuard {\n    // Add using directive (at contract level)\n    using SafeERC20 for IERC20;\n\n    bytes4 public constant ERC1271_MAGIC_VALUE = 0x1626ba7e;\n\n    bytes4 constant ERC1271_INVALID_SIGNATURE = 0xffffffff;\n\n    address public timelock;\n    address public constant TREASURY_SAFE = 0xcDb68686290310dD8623371E1db53157dB6b8cA1;\n\n    /* -------------------------------- Constants ------------------------------- */\n\n    uint256 public constant INITIAL_SUPPLY = 100_000_000_000 ether;\n\n    /**\n     * @dev Invalid signature for authorization.\n     */\n    error CannotRecoverOwnTokens();\n\n    /**\n     * @dev Invalid owner for timelock transactions\n     */\n    error CallerIsNotTimelock();\n\n    /**\n     * @dev Recover native failed\n     */\n    error RecoverNativeFailed(address to, uint256 amount);\n\n    event RecoveredToken(address indexed token, address indexed to, uint256 amount);\n    event RecoveredNFT(address indexed token, address indexed to, uint256 tokenId);\n    event RecoveredNative(address indexed to, uint256 amount);\n\n    /* --------------------------------- Globals -------------------------------- */\n\n    /// @notice Total number of tokens minted, including burned tokens\n    uint256 public totalMinted;\n\n    /* ------------------------------- Constructor ------------------------------ */\n\n    constructor(address initialGovernor_, address timelock_)\n        ERC20(\"TEA\", \"TEA\")\n        ERC20Permit(\"TEA\")\n        Ownable(initialGovernor_)\n    {\n        timelock = timelock_;\n        totalMinted = INITIAL_SUPPLY;\n\n        _mint(initialGovernor_, INITIAL_SUPPLY);\n    }\n\n    /* ------------------------------- Mint / Burn ------------------------------ */\n\n    /// @notice Mints new tokens to `account` (only callable by the owner).\n    /// @dev Increments `totalMinted`.\n    /// @param account The address to receive minted tokens.\n    /// @param value   The amount of tokens to be minted.\n    function mintTo(address account, uint256 value) external onlyOwner {\n        totalMinted = totalMinted + value;\n\n        _mint(account, value);\n    }\n\n    /**\n     * @dev Atomically increases the allowance granted to `spender` by the caller.\n     *\n     * This is an alternative to {approve} that can be used as a mitigation for\n     * problems described in {IERC20-approve}.\n     *\n     * Emits an {Approval} event indicating the updated allowance.\n     *\n     * Requirements:\n     *\n     * - `spender` cannot be the zero address.\n     */\n    function increaseAllowance(address spender, uint256 addedValue) external virtual returns (bool) {\n        _approve(_msgSender(), spender, allowance(_msgSender(), spender) + addedValue);\n        return true;\n    }\n\n    /**\n     * @dev Atomically decreases the allowance granted to `spender` by the caller.\n     *\n     * This is an alternative to {approve} that can be used as a mitigation for\n     * problems described in {IERC20-approve}.\n     *\n     * Emits an {Approval} event indicating the updated allowance.\n     *\n     * Requirements:\n     *\n     * - `spender` cannot be the zero address.\n     * - `spender` must have allowance for the caller of at least\n     * `subtractedValue`.\n     */\n    function decreaseAllowance(address spender, uint256 subtractedValue) external virtual returns (bool) {\n        uint256 currentAllowance = allowance(_msgSender(), spender);\n        require(currentAllowance >= subtractedValue, \"ERC20: decreased allowance below zero\");\n        unchecked {\n            _approve(_msgSender(), spender, currentAllowance - subtractedValue);\n        }\n\n        return true;\n    }\n\n    modifier onlyTimelock() {\n        require(msg.sender == timelock, CallerIsNotTimelock());\n        _;\n    }\n\n    /**\n     * @dev transfers timelocked functions to a different timelock\n     * @param newTimelock The address of the new timelock\n     */\n    function transferTimelock(address newTimelock) onlyTimelock external virtual {\n        timelock = newTimelock;\n    }\n\n    /**\n     * @dev Allows the contract owner to recover any ERC-20 tokens\n     * that were accidentally sent to this contract.\n     * @param tokenAddress The address of the ERC-20 token to recover.\n     * @param amount The amount of the ERC-20 token to recover\n     */\n    function recoverToken(address tokenAddress, uint256 amount) external virtual onlyTimelock nonReentrant {\n        // Require that the token address is not the contract's own token.\n        require(tokenAddress != address(this), CannotRecoverOwnTokens());\n\n        IERC20 token = IERC20(tokenAddress);\n\n        // Transfer the tokens from this contract to the specified address.\n        token.safeTransfer(TREASURY_SAFE, amount);\n        \n        emit RecoveredToken(tokenAddress, TREASURY_SAFE, amount);\n    }\n    \n    /**\n     * @dev Allows the contract owner to recover any ERC-20 tokens\n     * that were accidentally sent to this contract.\n     * @param tokenAddress The address of the ERC-20 token to recover.\n     * @param tokenId The address to which the recoverd tokens will be sent.\n     */\n    function recoverNFT(\n        address tokenAddress,\n        uint256 tokenId\n    ) external virtual onlyTimelock nonReentrant {\n        // Use the IERC721 interface to safely transfer the NFT from this contract\n        IERC721 nft = IERC721(tokenAddress);\n        \n        // This line attempts the safe transfer of the NFT\n        nft.safeTransferFrom(address(this), TREASURY_SAFE, tokenId);\n\n        emit RecoveredNFT(tokenAddress, TREASURY_SAFE, tokenId);\n    }\n\n    /**\n     * @dev Allow the contract owner to recover Tea tokens\n     * @param amount amount of token to sweep\n     */\n    function sweepSelf(uint256 amount) external virtual onlyTimelock nonReentrant {\n        _transfer(address(this), TREASURY_SAFE, amount);\n    }\n\n    /**\n     * @dev Allows the contract owner to recover any ETH\n     * that was accidentally sent to this contract via self destruct.\n     */\n    function recoverNative(uint256 amount) external virtual onlyTimelock nonReentrant {\n        (bool ok, ) = TREASURY_SAFE.call{value: amount}(\"\");\n        if (!ok) revert RecoverNativeFailed(TREASURY_SAFE, amount);\n\n        emit RecoveredNative(TREASURY_SAFE, amount);\n    }\n\n    error NativeNotAccepted();\n    receive() external payable { revert NativeNotAccepted(); }\n    fallback() external payable { revert NativeNotAccepted(); }\n}\n"
+        "OneSig.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.22;\n\nimport { MerkleProof } from \"@openzeppelin/contracts/utils/cryptography/MerkleProof.sol\";\nimport { ReentrancyGuard } from \"@openzeppelin/contracts/utils/ReentrancyGuard.sol\";\nimport { MultiSig } from \"./MultiSig.sol\";\nimport { ExecutorStore } from \"./ExecutorStore.sol\";\n\n/**\n * @title OneSig\n * @author @TRileySchwarz, @Clearwood, @HansonYip, @mok-lz\n * @notice A multi-chain enabled contract that uses a Merkle tree of transaction leaves.\n *         It allows transactions to be signed once (off-chain) and then executed on multiple chains,\n *         provided the Merkle proof is valid and the threshold of signers is met.\n * @dev Inherits from MultiSig for signature threshold logic.\n */\ncontract OneSig is MultiSig, ReentrancyGuard, ExecutorStore {\n    /// @notice The version string of the OneSig contract.\n    string public constant VERSION = \"0.0.1\";\n\n    uint8 public constant LEAF_ENCODING_VERSION = 1;\n\n    /**\n     * @dev EIP-191 defines the format of the signature prefix.\n     *      See https://eips.ethereum.org/EIPS/eip-191\n     */\n    string private constant EIP191_PREFIX_FOR_EIP712 = \"\\x19\\x01\";\n\n    /**\n     * @dev EIP-712 domain separator type-hash.\n     *      See https://eips.ethereum.org/EIPS/eip-712\n     */\n    bytes32 private constant EIP712DOMAIN_TYPE_HASH =\n        keccak256(\"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)\");\n\n    /**\n     * @dev This domain separator is used to generate a signature hash for the merkle root,\n     *      specifically using chainId = 1 (Ethereum Mainnet) and verifyingContract = 0xdEaD.\n     *      This ensures that the same merkle root signatures can be used across different chains\n     *      because they are all signed with this consistent \"fake\" domain.\n     *\n     *      In other words, to verify the merkle root with the same signatures on different chains,\n     *      we use the same chainId (1) and verifyingContract (0xdEaD) in the EIP-712 domain.\n     */\n    bytes32 private constant DOMAIN_SEPARATOR =\n        keccak256(\n            abi.encode(\n                EIP712DOMAIN_TYPE_HASH,\n                keccak256(bytes(\"OneSig\")), // this contract name\n                keccak256(bytes(VERSION)), // version\n                1, // Ethereum mainnet chainId\n                address(0xdEaD) // verifyingContract\n            )\n        );\n\n    /**\n     * @dev The type-hash of the data being signed to authorize a merkle root.\n     */\n    bytes32 private constant SIGN_MERKLE_ROOT_TYPE_HASH =\n        keccak256(\"SignMerkleRoot(bytes32 seed,bytes32 merkleRoot,uint256 expiry)\");\n\n    /**\n     * @notice The OneSig ID of the contract.\n     * @dev Because the oneSigId is part of the leaf, the same signatures can be used on different chains,\n     *      while leaving each transaction to be targeted towards one\n     */\n    uint64 public immutable ONE_SIG_ID;\n\n    /**\n     * @notice A random seed encoded into the signatures/root.\n     * @dev Allows for a previously signed, but unexecuted, transaction(s) to be 'revoked' by changing the seed.\n     */\n    bytes32 public seed;\n\n    /**\n     * @notice A sequential nonce to prevent replay attacks and enforce transaction ordering.\n     */\n    uint64 public nonce;\n\n    /// @notice Emitted when the seed is updated.\n    event SeedSet(bytes32 seed);\n\n    /// @notice Emitted when a transaction is executed.\n    /// @param merkleRoot The merkle root used to authorize the transaction.\n    /// @param nonce The nonce of the transaction.\n    event TransactionExecuted(bytes32 merkleRoot, uint256 nonce);\n\n    /// @notice Error thrown when a merkle proof is invalid or the nonce does not match the expected value.\n    error InvalidProofOrNonce();\n\n    /// @notice Error thrown when a merkle root has expired (past the _expiry timestamp).\n    error MerkleRootExpired();\n\n    /// @notice Error thrown when a call in the transaction array fails.\n    /// @param index The index of the failing call within the transaction.\n    error ExecutionFailed(uint256 index);\n\n    /// @notice Error thrown when a function is not called from an executor or signer.\n    error OnlyExecutorOrSigner();\n\n    /**\n     * @notice Call to be executed as part of a Transaction.calls.\n     *  - OneSig -> [Arbitrary contract].\n     *  - e.g., setPeer(dstEid, remoteAddress).\n     * @param to Address of the contract for this data to be 'called' on.\n     * @param value Amount of ether to send with this call.\n     * @param data Encoded data to be sent to the contract (calldata).\n     */\n    struct Call {\n        address to;\n        uint256 value;\n        bytes data;\n    }\n\n    /**\n     * @notice Single call to the OneSig contract (address(this)).\n     *  - EOA -> OneSig\n     *  - This struct is 1:1 with a 'leaf' in the merkle tree.\n     *  - Execution of the underlying calls are atomic.\n     *  - Cannot be processed until the previous leaf (nonce-ordered) has been executed successfully.\n     * @param calls List of calls to be made.\n     * @param proof Merkle proof to verify the transaction.\n     */\n    struct Transaction {\n        Call[] calls;\n        bytes32[] proof;\n    }\n\n    /**\n     * @dev Restricts access to functions so they can only be called via an executor, OR a multisig signer.\n     */\n    modifier onlyExecutorOrSigner() {\n        if (!canExecuteTransaction(msg.sender)) revert OnlyExecutorOrSigner();\n        _;\n    }\n\n    /**\n     * @notice Constructor to initialize the OneSig contract.\n     * @dev Inherits MultiSig(_signers, _threshold).\n     * @param _oneSigId A unique identifier per deployment, (typically block.chainid).\n     * @param _signers The list of signers authorized to sign transactions.\n     * @param _threshold The initial threshold of signers required to execute a transaction.\n     * @param _executors The list of executors authorized to execute transactions.\n     * @param _executorRequired If executors are required to execute transactions.\n     * @param _seed The random seed to encode into the signatures/root.\n     */\n    constructor(\n        uint64 _oneSigId,\n        address[] memory _signers,\n        uint256 _threshold,\n        address[] memory _executors,\n        bool _executorRequired,\n        bytes32 _seed\n    ) MultiSig(_signers, _threshold) ExecutorStore(_executors, _executorRequired) {\n        ONE_SIG_ID = _oneSigId;\n        _setSeed(_seed);\n    }\n\n    /**\n     * @notice Internal method to set the contract's seed.\n     * @param _seed The new seed value.\n     */\n    function _setSeed(bytes32 _seed) internal virtual {\n        seed = _seed;\n        emit SeedSet(_seed);\n    }\n\n    /**\n     * @notice Sets the contract's seed.\n     * @dev Only callable via MultiSig functionality (i.e., requires threshold signatures from signers).\n     * @param _seed The new seed value.\n     */\n    function setSeed(bytes32 _seed) public virtual onlySelfCall {\n        _setSeed(_seed);\n    }\n\n    /**\n     * @notice Executes a single transaction (which corresponds to a leaf in the merkle tree) if valid signatures are provided.\n     * @dev '_transaction' corresponds 1:1 with a leaf. This function can be called by anyone (permissionless),\n     *      provided the merkle root is verified with sufficient signatures.\n     * @param _transaction The transaction data struct, including calls and proof.\n     * @param _merkleRoot The merkle root that authorizes this transaction.\n     * @param _expiry The timestamp after which the merkle root expires.\n     * @param _signatures Signatures from signers that meet the threshold.\n     */\n    function executeTransaction(\n        Transaction calldata _transaction,\n        bytes32 _merkleRoot,\n        uint256 _expiry,\n        bytes calldata _signatures\n    ) public payable virtual nonReentrant onlyExecutorOrSigner {\n        // Verify the merkle root and signatures\n        verifyMerkleRoot(_merkleRoot, _expiry, _signatures);\n\n        // Verify that this transaction matches the merkle root (using its proof)\n        verifyTransactionProof(_merkleRoot, _transaction);\n\n        // Increment nonce before execution to prevent replay\n        uint256 n = nonce++;\n\n        // Execute all calls atomically\n        for (uint256 i = 0; i < _transaction.calls.length; i++) {\n            (bool success, ) = _transaction.calls[i].to.call{ value: _transaction.calls[i].value }(\n                _transaction.calls[i].data\n            );\n\n            // Revert if the call fails\n            if (!success) revert ExecutionFailed(i);\n        }\n\n        emit TransactionExecuted(_merkleRoot, n);\n    }\n\n    /**\n     * @notice Validates the signatures on a given merkle root.\n     * @dev Reverts if the merkle root is expired or signatures do not meet the threshold.\n     * @param _merkleRoot The merkle root to verify.\n     * @param _expiry The timestamp after which the merkle root becomes invalid.\n     * @param _signatures The provided signatures.\n     */\n    function verifyMerkleRoot(bytes32 _merkleRoot, uint256 _expiry, bytes calldata _signatures) public view {\n        // Check expiry\n        if (block.timestamp > _expiry) revert MerkleRootExpired();\n\n        // Compute the EIP-712 hash\n        bytes32 digest = keccak256(\n            abi.encodePacked(\n                EIP191_PREFIX_FOR_EIP712,\n                DOMAIN_SEPARATOR,\n                keccak256(abi.encode(SIGN_MERKLE_ROOT_TYPE_HASH, seed, _merkleRoot, _expiry))\n            )\n        );\n\n        // Verify the threshold signatures\n        verifySignatures(digest, _signatures);\n    }\n\n    /**\n     * @notice Verifies that the provided merkle proof matches the current transaction leaf under the merkle root.\n     * @dev Reverts if the proof is invalid or the nonce doesn't match the expected value.\n     * @param _merkleRoot The merkle root being used.\n     * @param _transaction The transaction data containing proof and calls.\n     */\n    function verifyTransactionProof(bytes32 _merkleRoot, Transaction calldata _transaction) public view {\n        bytes32 leaf = encodeLeaf(nonce, _transaction.calls);\n        bool valid = MerkleProof.verifyCalldata(_transaction.proof, _merkleRoot, leaf);\n        if (!valid) revert InvalidProofOrNonce();\n    }\n\n    /**\n     * @notice Double encodes the transaction leaf for inclusion in the merkle tree.\n     * @param _nonce The nonce of the transaction.\n     * @param _calls The calls to be made in this transaction.\n     * @return The keccak256 hash of the encoded leaf.\n     */\n    function encodeLeaf(uint64 _nonce, Call[] calldata _calls) public view returns (bytes32) {\n        return\n            keccak256(\n                abi.encodePacked(\n                    keccak256(\n                        abi.encodePacked(\n                            LEAF_ENCODING_VERSION,\n                            ONE_SIG_ID,\n                            bytes32(uint256(uint160(address(this)))), // convert address(this) into bytes32\n                            _nonce,\n                            abi.encode(_calls)\n                        )\n                    )\n                )\n            );\n    }\n\n    /**\n     * @notice Checks if the a given address can execute a transaction.\n     * @param _sender The address of the message sender.\n     * @return True if executeTransaction can be called by the executor, otherwise false.\n     */\n    function canExecuteTransaction(address _sender) public view returns (bool) {\n        // If the flag is set to false, then ANYONE can execute permissionlessly, otherwise the msg.sender must be a executor, or a signer\n        return (!executorRequired || isExecutor(_sender) || isSigner(_sender));\n    }\n\n    /**\n     * @notice Fallback function to receive ether.\n     * @dev Allows the contract to accept ETH.\n     */\n    receive() external payable {}\n}\n",
+        "MultiSig.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.22;\n\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport { EnumerableSet } from \"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\";\nimport { SelfCallable } from \"./lib/SelfCallable.sol\";\n\n/**\n * @title MultiSig\n * @notice Abstract contract that manages a set of signers and a signature threshold.\n *         Designed to be inherited by contracts requiring multi-signature verification.\n * @dev Uses EnumerableSet to store signer addresses and ECDSA for signature recovery.\n */\nabstract contract MultiSig is SelfCallable {\n    using EnumerableSet for EnumerableSet.AddressSet;\n\n    /**\n     * @dev Set of available signers for the MultiSig.\n     */\n    EnumerableSet.AddressSet internal signerSet;\n\n    /**\n     * @notice The number of signatures required to execute a transaction.\n     */\n    uint256 public threshold;\n\n    /// @notice Error thrown when a signer address is invalid.\n    error InvalidSigner();\n\n    /// @notice Error thrown when the threshold is set to zero.\n    error ZeroThreshold();\n\n    /// @notice Error thrown when the total number of signers is less than the threshold.\n    /// @param totalSigners The current number of signers.\n    /// @param threshold The required threshold.\n    error TotalSignersLessThanThreshold(uint256 totalSigners, uint256 threshold);\n\n    /// @notice Error thrown when attempting to add a signer who is already active.\n    /// @param signer The address of the signer.\n    error SignerAlreadyAdded(address signer);\n\n    /// @notice Error thrown when attempting to remove a signer who is not found.\n    /// @param signer The address of the signer.\n    error SignerNotFound(address signer);\n\n    /// @notice Error thrown when there is a signature format error or mismatch in length.\n    error SignatureError();\n\n    /// @notice Error thrown when signers are not sorted in ascending order (prevents duplicates).\n    error UnsortedSigners();\n\n    /**\n     * @notice Emitted when a signer's active status is updated.\n     * @param signer The address of the signer.\n     * @param active True if added, false if removed.\n     */\n    event SignerSet(address indexed signer, bool active);\n\n    /**\n     * @notice Emitted when the threshold for signatures is set.\n     * @param threshold The new threshold.\n     */\n    event ThresholdSet(uint256 threshold);\n\n    /**\n     * @dev The length of a single signature in bytes (r=32, s=32, v=1).\n     */\n    uint8 constant SIGNATURE_LENGTH = 65;\n\n    /**\n     * @dev Initializes the MultiSig with a list of signers and sets the signature threshold.\n     * @param _signers Array of signer addresses.\n     * @param _threshold The initial threshold for signatures.\n     */\n    constructor(address[] memory _signers, uint256 _threshold) {\n        for (uint256 i = 0; i < _signers.length; i++) {\n            _addSigner(_signers[i]);\n        }\n        _setThreshold(_threshold);\n    }\n\n    /**\n     * @notice Allows the MultiSig contract to update the signature threshold.\n     * @dev This function can only be called by the MultiSig contract itself.\n     * @param _threshold The new threshold value.\n     */\n    function setThreshold(uint256 _threshold) external onlySelfCall {\n        _setThreshold(_threshold);\n    }\n\n    /**\n     * @dev Internal function to set the threshold for this MultiSig.\n     *      - The threshold must be greater than zero.\n     *      - The threshold must be less than or equal to the number of signers.\n     * @param _threshold The new threshold value.\n     */\n    function _setThreshold(uint256 _threshold) internal {\n        if (_threshold == 0) revert ZeroThreshold();\n        if (totalSigners() < _threshold) revert TotalSignersLessThanThreshold(totalSigners(), _threshold);\n\n        threshold = _threshold;\n        emit ThresholdSet(_threshold);\n    }\n\n    /**\n     * @notice Adds or removes a signer from this MultiSig.\n     * @dev Only callable via the MultiSig contract itself.\n     * @param _signer The address of the signer to add/remove.\n     * @param _active True to add signer, false to remove signer.\n     */\n    function setSigner(address _signer, bool _active) external onlySelfCall {\n        if (_active) {\n            _addSigner(_signer);\n        } else {\n            _removeSigner(_signer);\n        }\n    }\n\n    /**\n     * @dev Internal function to add a signer.\n     *      - `address(0)` is not a valid signer.\n     *      - A signer cannot be added twice.\n     * @param _signer The address of the signer to add.\n     */\n    function _addSigner(address _signer) internal {\n        if (_signer == address(0)) revert InvalidSigner();\n        if (!signerSet.add(_signer)) revert SignerAlreadyAdded(_signer);\n\n        emit SignerSet(_signer, true);\n    }\n\n    /**\n     * @dev Internal function to remove a signer.\n     *      - Signer must be part of the existing set of signers.\n     *      - The threshold must be less than or equal to the number of remaining signers.\n     * @param _signer The address of the signer to remove.\n     */\n    function _removeSigner(address _signer) internal {\n        if (!signerSet.remove(_signer)) revert SignerNotFound(_signer);\n        if (totalSigners() < threshold) revert TotalSignersLessThanThreshold(totalSigners(), threshold);\n\n        emit SignerSet(_signer, false);\n    }\n\n    /**\n     * @notice Verifies signatures on a given digest against the threshold.\n     * @dev Verifies that exactly `threshold` signatures are present, sorted by ascending signer addresses.\n     * @param _digest The message digest (hash) being signed.\n     * @param _signatures The concatenated signatures.\n     */\n    function verifySignatures(bytes32 _digest, bytes calldata _signatures) public view {\n        verifyNSignatures(_digest, _signatures, threshold);\n    }\n\n    /**\n     * @notice Verifies N signatures on a given digest.\n     * @dev Reverts if:\n     *       - The threshold passed is zero.\n     *       - The number of signatures doesn't match N (each signature is 65 bytes).\n     *       - The signers are not strictly increasing (to prevent duplicates).\n     *       - Any signer is not in the set of authorized signers.\n     * @param _digest The message digest (hash) being signed.\n     * @param _signatures The concatenated signatures.\n     * @param _threshold The required number of valid signatures.\n     */\n    function verifyNSignatures(bytes32 _digest, bytes calldata _signatures, uint256 _threshold) public view {\n        if (_threshold == 0) revert ZeroThreshold();\n        // Each signature is SIGNATURE_LENGTH (65) bytes (r=32, s=32, v=1).\n        if ((_signatures.length % SIGNATURE_LENGTH) != 0) revert SignatureError();\n        uint256 signaturesCount = _signatures.length / SIGNATURE_LENGTH;\n        if (signaturesCount < _threshold) revert SignatureError();\n\n        // There cannot be a signer with address 0, so we start with address(0) to ensure ascending order.\n        address lastSigner = address(0);\n\n        for (uint256 i = 0; i < signaturesCount; i++) {\n            // Extract a single signature (SIGNATURE_LENGTH (65) bytes) at a time.\n            bytes calldata signature = _signatures[i * SIGNATURE_LENGTH:(i + 1) * SIGNATURE_LENGTH];\n            address currentSigner = ECDSA.recover(_digest, signature);\n\n            // Check ordering to avoid duplicates and ensure strictly increasing addresses.\n            if (currentSigner <= lastSigner) revert UnsortedSigners();\n            // Check if the signer is in our set.\n            if (!isSigner(currentSigner)) revert SignerNotFound(currentSigner);\n            lastSigner = currentSigner;\n        }\n    }\n\n    /**\n     * @notice Returns the list of all active signers.\n     * @return An array of addresses representing the current set of signers.\n     */\n    function getSigners() public view returns (address[] memory) {\n        return signerSet.values();\n    }\n\n    /**\n     * @notice Checks if a given address is in the set of signers.\n     * @param _signer The address to check.\n     * @return True if the address is a signer, otherwise false.\n     */\n    function isSigner(address _signer) public view returns (bool) {\n        return signerSet.contains(_signer);\n    }\n\n    /**\n     * @notice Returns the total number of active signers.\n     * @return The number of signers currently active.\n     */\n    function totalSigners() public view returns (uint256) {\n        return signerSet.length();\n    }\n}\n"
     }
 }

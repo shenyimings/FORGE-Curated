@@ -1,49 +1,86 @@
 {
     "vfp_id": "vfp_00633",
-    "project_name": "cantina_tadle_oct2025.pdf",
+    "project_name": "Oxorio SAMM Module Audit.md",
     "findings": [
         {
-            "id": 18,
+            "id": 29,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
                     "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
                 ]
             },
-            "title": "TadleSandBoxFactory mimics an upgradeable pattern in a non-proxied deployment",
-            "description": "TadleSandBoxFactory has an external initialize function despite being a non-proxied contract with a constructor. This creates confusion and ambiguity, as the pattern suggests upgradeability where none exists. The root cause is inconsistent design pattern usage. The initialize function can be called multiple times by the owner, lacking a reentrancy guard. The impact is reduced code clarity and potential misconfiguration risks.\n",
+            "title": "Misleading variable and event naming",
+            "description": "Several naming issues were identified: `_signer` should be `_owner`, `TxAllowanceChanged` should be `TxAllowedChanged`, `last_angle_bracket` is misleading, and `allowance` should be `maximumTxValue`.\nThe root cause is imprecise naming that misrepresents functionality.\nThis can lead to misunderstandings about the code's behavior.\nThe impact is increased risk of logic errors during development or integration.\nRenaming these elements would improve code clarity and correctness.\n",
             "severity": "Informational",
             "location": [
-                "Factory.sol::initialize#81"
+                "DKIMRegistry.sol#16",
+                "ISAMMEvents.sol#35",
+                "IModuleGuardEvents.sol#6-7",
+                "utils.nr#27",
+                "utils.nr#78",
+                "SAMM.sol#70"
             ],
             "files": [
-                "v3-sandbox-audit_1/src/core/Factory.sol"
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
             ]
         },
         {
-            "id": 13,
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Inefficient use of onlyOwner modifier in setDKIMPublicKeyHashes",
+            "description": "The `setDKIMPublicKeyHashes` function iteratively calls `setDKIMPublicKeyHash` inside a loop, causing the `onlyOwner` modifier to be evaluated multiple times. \nThis design leads to unnecessary gas costs due to repeated modifier checks.\nThe root cause is the lack of internal function abstraction to bypass access control for internal calls.\nAn attacker cannot directly exploit this, but it increases transaction costs for legitimate users.\nThe impact is elevated gas consumption and reduced efficiency of contract interactions.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol::setDKIMPublicKeyHashes#53"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        },
+        {
+            "id": 17,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-758"
+                    "CWE-1041"
                 ]
             },
-            "title": "assembly blocks not marked memory-safe",
-            "description": "Inline assembly blocks, such as in TadleSandBoxFactory.createClone, are not annotated with \"memory-safe\", which prevents compiler optimizations and risks memory pointer corruption. The root cause is missing annotation in assembly blocks. Adding assembly (\"memory-safe\") { ... } informs the compiler that the free memory pointer is preserved, enabling optimizations. The impact is missed gas savings and potential subtle bugs in memory management.\n",
+            "title": "Inefficient _stringEq function implementation",
+            "description": "The `_stringEq` function uses `abi.encodePacked` on both string arguments, which causes redundant memory expansion and increases gas usage.\nThe root cause is a non-optimal string comparison method that does not leverage existing efficient libraries.\nThis inefficiency affects any call to this function, though it appears to be unused.\nThe impact is wasted computation and higher gas costs if ever used.\nConsider using OpenZeppelin's `Strings.equal` or removing the function entirely.\n",
             "severity": "Informational",
             "location": [
-                "Factory.sol::createClone#39"
+                "DKIMRegistry.sol::_stringEq#27"
             ],
             "files": [
-                "v3-sandbox-audit_1/src/core/Factory.sol"
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
             ]
         }
     ],
     "affected_files": {
-        "Factory.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {UpgradeableProxy} from \"../proxy/UpgradeableProxy.sol\";\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\n\n/**\n * @title IAuth\n * @dev Interface for the Auth contract\n */\ninterface IAuth {\n    function createSandboxAdmin(address sandboxAccount, address admin) external;\n}\n\n/**\n * @title IUpgradeableProxy\n * @dev Interface for the UpgradeableProxy contract's initialization function\n */\ninterface IUpgradeableProxy {\n    function initializeImplementation(address newImplementation, bytes memory data) external payable;\n}\n\n/**\n * @title CloneFactory\n * @dev Base contract implementing EIP-1167 minimal proxy pattern\n */\ncontract CloneFactory {\n    /**\n     * @dev Creates a clone of a deployed contract using minimal proxy pattern\n     * @param _accountProxy Address of the contract to clone\n     * @return result Address of the newly created clone\n     */\n    function createClone(address _accountProxy) internal returns (address result) {\n        require(_accountProxy != address(0), \"CloneFactory: invalid account proxy address\");\n\n        bytes20 targetBytes = bytes20(_accountProxy);\n        // Minimal proxy creation bytecode\n        // Reference: https://eips.ethereum.org/EIPS/eip-1167\n        assembly {\n            let clone := mload(0x40)\n            mstore(clone, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)\n            mstore(add(clone, 0x14), targetBytes)\n            mstore(add(clone, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)\n            result := create(0, clone, 0x37)\n        }\n\n        require(result != address(0), \"CloneFactory: failed to create clone\");\n    }\n}\n\n/**\n * @title TadleSandBoxFactory\n * @dev Factory contract for creating new sandbox accounts using minimal proxy pattern\n */\ncontract TadleSandBoxFactory is Ownable2Step, CloneFactory {\n    // Auth contract address for access control\n    address public auth;\n    // Implementation contract to be cloned\n    address public accountProxy;\n\n    // Mapping to track if an address is a sandbox account\n    mapping(address => bool) public isSandboxAccount;\n\n    // Mapping to track the relationship between name and account address\n    mapping(string => address) public contractAddrs;\n\n    // Event emitted when a new account is created\n    event LogAccountCreated(address sender, address indexed owner, address indexed account);\n\n    /**\n     * @dev Initialize factory with auth and implementation addresses\n     * @param _admin Address of the factory admin\n     */\n    constructor(address _admin) Ownable(_admin) {}\n\n    /**\n     * @dev Initialize factory with auth and implementation addresses\n     * @param _auth Address of the auth contract for access control\n     * @param _accountProxy Address of the implementation to be cloned\n     */\n    function initialize(address _auth, address _accountProxy) external onlyOwner {\n        require(_auth != address(0), \"TadleSandBoxFactory: invalid auth address\");\n        require(_accountProxy != address(0), \"TadleSandBoxFactory: invalid proxy address\");\n\n        auth = _auth;\n        accountProxy = _accountProxy;\n    }\n\n    /**\n     * @dev Creates a new sandbox account\n     * @param _owner Address of the account owner\n     * @return _account Address of the newly created account\n     */\n    /**\n     * @dev Creates a new sandbox account\n     * @param _owner Address of the account owner\n     * @return _account Address of the newly created account\n     */\n    function build(address _owner) public returns (address _account) {\n        require(auth != address(0), \"TadleSandBoxFactory: not initialized\");\n        require(accountProxy != address(0), \"TadleSandBoxFactory: not initialized\");\n        require(_owner != address(0), \"TadleSandBoxFactory: invalid owner address\");\n\n        _account = createClone(accountProxy);\n        IAuth(auth).createSandboxAdmin(_account, _owner);\n        isSandboxAccount[_account] = true;\n\n        emit LogAccountCreated(msg.sender, _owner, _account);\n    }\n\n    /**\n     * @dev Creates a new upgradeable proxy contract with deterministic address\n     * @param _name Name identifier for the proxy contract\n     * @param _logic Address of the logic implementation (can be zero address)\n     * @param _admin Address of the proxy admin\n     * @param _salt Salt value for deterministic address generation\n     * @param _data Initialization data for the implementation contract\n     * @return _account Address of the newly created proxy contract\n     */\n    /**\n     * @dev Creates a new upgradeable proxy contract with deterministic address\n     * @param _name Name identifier for the proxy contract\n     * @param _logic Address of the logic implementation (can be zero address)\n     * @param _admin Address of the proxy admin\n     * @param _salt Salt value for deterministic address generation\n     * @param _data Initialization data for the implementation contract\n     * @return _account Address of the newly created proxy contract\n     */\n    function createUpgradeableProxy(\n        string memory _name,\n        address _logic,\n        address _admin,\n        bytes32 _salt,\n        bytes memory _data\n    ) public onlyOwner returns (address _account) {\n        require(bytes(_name).length > 0, \"TadleSandBoxFactory: name cannot be empty\");\n        require(_admin != address(0), \"TadleSandBoxFactory: invalid admin address\");\n        require(contractAddrs[_name] == address(0), \"TadleSandBoxFactory: name already used\");\n\n        // Create new proxy with admin rights using CREATE2 for deterministic address\n        _account = address(new UpgradeableProxy{salt: _salt}(_admin));\n\n        // Initialize implementation if logic address is provided\n        if (_logic != address(0)) {\n            IUpgradeableProxy(_account).initializeImplementation(_logic, _data);\n        }\n\n        // Record the mapping between name and account address\n        contractAddrs[_name] = _account;\n\n        // Emit account creation event\n        emit LogAccountCreated(msg.sender, _admin, _account);\n\n        return _account;\n    }\n}\n"
+        "DKIMRegistry.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.23;\n\nimport \"openzeppelin-contracts/contracts/access/Ownable.sol\";\nimport \"../interfaces/IDKIMRegistry.sol\";\n\n/**\n * A Registry that store the hash(dkim_public_key) for each domain\n *   The hash is calculated by taking Poseidon of DKIM key split into 9 chunks of 242 bits each\n *\n *   https://zkrepl.dev/?gist=43ce7dce2466c63812f6efec5b13aa73 can be used to generate the public key hash.\n *   The same code is used in EmailVerifier.sol\n *   Input is DKIM pub key split into 17 chunks of 121 bits. You can use `helpers` package to fetch/split DKIM keys\n */\ncontract DKIMRegistry is IDKIMRegistry, Ownable {\n    constructor(address _signer) Ownable(_signer) {}\n\n    event DKIMPublicKeyHashRegistered(string domainName, bytes32 publicKeyHash);\n    event DKIMPublicKeyHashRevoked(bytes32 publicKeyHash);\n\n    // Mapping from domain name to DKIM public key hash\n    mapping(string => mapping(bytes32 => bool)) public dkimPublicKeyHashes;\n\n    // DKIM public that are revoked (eg: in case of private key compromise)\n    mapping(bytes32 => bool) public revokedDKIMPublicKeyHashes;\n\n    function _stringEq(string memory a, string memory b) internal pure returns (bool) {\n        return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));\n    }\n\n    function isDKIMPublicKeyHashValid(string memory domainName, bytes32 publicKeyHash) public view returns (bool) {\n        if (revokedDKIMPublicKeyHashes[publicKeyHash]) {\n            return false;\n        }\n\n        if (dkimPublicKeyHashes[domainName][publicKeyHash]) {\n            return true;\n        }\n\n        return false;\n    }\n\n    function setDKIMPublicKeyHash(string memory domainName, bytes32 publicKeyHash) public onlyOwner {\n        require(!revokedDKIMPublicKeyHashes[publicKeyHash], \"cannot set revoked pubkey\");\n\n        dkimPublicKeyHashes[domainName][publicKeyHash] = true;\n\n        emit DKIMPublicKeyHashRegistered(domainName, publicKeyHash);\n    }\n\n    function setDKIMPublicKeyHashes(string memory domainName, bytes32[] memory publicKeyHashes) public onlyOwner {\n        for (uint256 i = 0; i < publicKeyHashes.length; i++) {\n            setDKIMPublicKeyHash(domainName, publicKeyHashes[i]);\n        }\n    }\n\n    function revokeDKIMPublicKeyHash(bytes32 publicKeyHash) public onlyOwner {\n        revokedDKIMPublicKeyHashes[publicKeyHash] = true;\n\n        emit DKIMPublicKeyHashRevoked(publicKeyHash);\n    }\n}\n"
     }
 }

@@ -1,35 +1,52 @@
 {
     "vfp_id": "vfp_00554",
-    "project_name": "ZKsync Paymaster Audit.md",
+    "project_name": "Mitosis (May) - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 1,
+            "id": 7,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-1076"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1099"
+                    "CWE-1287"
                 ]
             },
-            "title": "Naming Suggestion",
-            "description": "The second parameter of the `NonceCanceled` event in `ISignatureBasedPaymaster.sol` is named `newNonce`, which is misleading because it actually refers to the nonce that is being canceled, not a new one. This incorrect naming can lead to confusion for developers and external tools interpreting event logs, increasing the risk of misinterpretation during debugging or monitoring. The root cause is poor naming convention, which fails to accurately reflect the parameter's purpose. While this does not lead to direct exploitation or functional bugs, it reduces code clarity and maintainability. The impact is limited to developer experience and potential errors in off-chain systems that consume this event.\n",
-            "severity": "Low",
+            "title": "Missing public-key validation",
+            "description": "The LibSecp256k1.sol library lacks proper public key validation before performing cryptographic operations. This could allow invalid or malformed public keys to be processed, potentially leading to unexpected behavior or edge-case vulnerabilities in signature verification. The absence of checks for curve membership, point validity, or canonical form increases the attack surface, especially in contexts where untrusted public keys are accepted. While no immediate exploit is evident, this represents a deviation from cryptographic best practices and could be leveraged in combination with other issues. Proper validation should be enforced to ensure only valid secp256k1 points are accepted.\n",
+            "severity": "Informational",
             "location": [
-                "ISignatureBasedPaymaster.sol::NonceCanceled#8"
+                "protocol/src/lib/LibSecp256k1.sol"
             ],
             "files": [
-                "zk-governance/contracts/interfaces/ISignatureBasedPaymaster.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Curve Validation in LibSecp256k1.uncompressPubkey",
+            "description": "The uncompressPubkey function in the LibSecp256k1 library fails to validate that the decompressed (x, y) coordinates lie on the Secp256k1 elliptic curve. This is a critical cryptographic requirement, as public keys must represent valid curve points to ensure cryptographic soundness. The root cause is the absence of a post-decompression check using the curve equation y² ≡ x³ + ax + b (mod p). An attacker could supply a compressed public key that decompresses to a point off the curve, potentially leading to incorrect cryptographic operations or side-channel vulnerabilities. Although the impact is currently mitigated because this code is not directly used in production, the vulnerability could be exploited if this function is later integrated into signature verification or key agreement logic, undermining the security assumptions of the protocol.\n",
+            "severity": "Informational",
+            "location": [
+                "LibSecp256k1.sol::uncompressPubkey"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
             ]
         }
     ],
     "affected_files": {
-        "ISignatureBasedPaymaster.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.24;\n\ninterface ISignatureBasedPaymaster {\n    event SignerChanged(address indexed oldSigner, address indexed newSigner);\n\n    event NonceCanceled(address indexed sender, uint256 newNonce);\n\n    event SenderApproved(address indexed sender, uint256 validUntil);\n\n    event Withdrawn(address indexed token, uint256 amount);\n}\n"
+        "LibSecp256k1.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { EllipticCurve } from '@elliptic-curve-solidity/contracts/EllipticCurve.sol';\n\nimport { StdError } from './StdError.sol';\n\nlibrary LibSecp256k1 {\n  uint256 constant AA = 0;\n  uint256 constant BB = 7;\n  uint256 constant PP = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F;\n\n  /**\n   * @notice Verifies that the given key is a compressed 33-byte secp256k1 public key on the curve.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   */\n  function verifyCmpPubkey(bytes memory cmpPubkey) internal pure {\n    uncompressPubkey(cmpPubkey);\n  }\n\n  /**\n   * @notice Verifies that the given key is a uncompressed 65-byte secp256k1 public key on the curve.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   */\n  function verifyUncmpPubkey(bytes memory uncmpPubkey) internal pure {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    bool isOnCurve = EllipticCurve.isOnCurve(x, y, AA, BB, PP);\n    require(isOnCurve, StdError.InvalidParameter('uncmpPubkey: not on curve'));\n  }\n\n  /**\n   * @notice Verifies that the given public key is a compressed 33-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the compressed public key\n   */\n  function verifyCmpPubkeyWithAddress(bytes memory cmpPubkey, address expectedAddress) internal pure {\n    bytes memory uncmpPubkey = uncompressPubkey(cmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Verifies that the given public key is a uncompressed 65-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the uncompressed public key\n   */\n  function verifyUncmpPubkeyWithAddress(bytes memory uncmpPubkey, address expectedAddress) internal pure {\n    verifyUncmpPubkey(uncmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Uncompresses a compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   * @return uncmpPubkey The uncompressed 65-byte public key\n   */\n  function uncompressPubkey(bytes memory cmpPubkey) internal pure returns (bytes memory uncmpPubkey) {\n    require(cmpPubkey.length == 33, StdError.InvalidParameter('cmpPubKey.length'));\n    require(cmpPubkey[0] == 0x02 || cmpPubkey[0] == 0x03, StdError.InvalidParameter('cmpPubKey[0]'));\n\n    uint8 prefix = uint8(cmpPubkey[0]);\n    uint256 x;\n    assembly {\n      x := mload(add(cmpPubkey, 0x21))\n    }\n    uint256 y = EllipticCurve.deriveY(prefix, x, AA, BB, PP);\n\n    uncmpPubkey = new bytes(65);\n    uncmpPubkey[0] = 0x04;\n    assembly {\n      mstore(add(uncmpPubkey, 0x21), x)\n      mstore(add(uncmpPubkey, 0x41), y)\n    }\n    return uncmpPubkey;\n  }\n\n  /**\n   * @notice Compresses an uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   * @return cmpPubkey The compressed 33-byte public key\n   */\n  function compressPubkey(bytes memory uncmpPubkey) internal pure returns (bytes memory cmpPubkey) {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    cmpPubkey = new bytes(33);\n    cmpPubkey[0] = bytes1(uint8(y % 2 == 0 ? 0x02 : 0x03));\n    assembly {\n      mstore(add(cmpPubkey, 0x21), x)\n    }\n    return cmpPubkey;\n  }\n\n  /**\n   * @notice Derives an EVM address from an uncompressed 65-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   */\n  function deriveAddressFromUncmpPubkey(bytes memory uncmpPubkey) internal pure returns (address) {\n    bytes memory noPrefix = new bytes(64);\n\n    // Copy uncmpPubkey[1:] to noPrefix\n    assembly {\n      mcopy(add(noPrefix, 0x20), add(uncmpPubkey, 0x21), 0x40)\n    }\n\n    return address(uint160(uint256(keccak256(noPrefix))));\n  }\n\n  /**\n   * @notice Derives an EVM address from a compressed 33-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   */\n  function deriveAddressFromCmpPubkey(bytes memory cmpPubkey) internal pure returns (address) {\n    return deriveAddressFromUncmpPubkey(uncompressPubkey(cmpPubkey));\n  }\n}\n"
     }
 }
