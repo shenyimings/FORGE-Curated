@@ -1,10 +1,14 @@
 # FORGE Curated: A Curated EVM Smart Contracts Vulnerability Dataset
 
-**FORGE Curated** is a high-quality subset of the [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts), specifically designed to support advanced research in smart contract security, AI-based auditing, and vulnerability analysis.
+[![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b)](http://arxiv.org/abs/2506.18795)
+![Visitors](https://visitor-badge.laobi.icu/badge?page_id=shenyimings.FORGE-Curated)
 
-Building upon feedback from users of the original FORGE Dataset and fulfilling our commitment to responsible updates outlined in our [ICSE'26 paper](https://arxiv.org/abs/2506.18795), we have compiled a new collection of audit reports. This dataset includes reports published between **December 2024 and February 2026** by **11 top-tier audit teams**.
 
-Using the [FORGE tool](https://github.com/shenyimings/FORGE-Artifacts/tree/main/src), we classified vulnerability data from these reports and organized them into the [dataset-curated](dataset-curated) directory. We are conducting **manual verification** process to ensure accurate mapping between vulnerability findings and specific code locations.
+**FORGE Curated** is a high-quality subset of the [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts), specifically designed to support advanced research in smart contract security, including AI-based auditing, vulnerability analysis, etc.
+
+Building upon feedback from users of the original [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts) and fulfilling our commitment to responsible maintenance outlined in our [ICSE'26 paper](https://arxiv.org/abs/2506.18795), we have compiled a new collection of audit reports. This dataset includes reports published between **December 2024 and February 2026** by **11 top-tier audit teams**.
+
+Using the [FORGE framework](https://github.com/shenyimings/FORGE-Artifacts/tree/main/src), we extracted and classified vulnerability data from these reports, and then organized them into the [dataset-curated](dataset-curated) directory. We are conducting **manual verification** process to ensure accurate mapping between vulnerability findings and specific code locations.
 
 We plan to continuously maintain and update this directory to support the community's research and development efforts.
 
@@ -128,7 +132,8 @@ FORGE-Curated/
 | **Total Vulnerability-File Pairs (VFPs)** | 660 |
 | **High-Impact VFPs (Medium/High/Critical)** | 322 |
 
-> Note: many to-many relationship between findings and files, so the number of VFPs is less than total findings
+> [!NOTE]
+> many to-many relationship between findings and files, so the number of VFPs is less than total findings
 
 
 ## Data Schema
@@ -225,10 +230,13 @@ class VulnerabilityFilePair(BaseModel):
 
 ## Important Notes
 
+
 * **Commit Checkout:** The submodules in this repository are not automatically checked out to the audited commit. To work with the specific version of the code that was audited, you must manually (or use the Git python module) `checkout` the `commit_id` provided in the project's metadata.
 * For some projects, the commit ID referenced in the audit report is no longer part of the main repository tree. While these commits are still accessible on GitHub, they have been manually downloaded for this dataset and therefore do not contain `.git` metadata.
 * In rare cases where the exact commit ID from the audit was deleted or unavailable, we have selected the nearest available commit preceding it.
-* **Disclaimer:** All data is collected from public sources. The inclusion of an audit team in this list is based on preliminary collection and does not constitute a ranking of audit quality. Furthermore, it does not guarantee that the projects are free of bugs. We plan to gradually include more audit teams and encourage community-driven contributions.
+
+> [!IMPORTANT]  
+> * **Disclaimer:** All data is collected from public sources. The inclusion of an audit team in this list is based on preliminary collection and does not constitute a ranking of audit quality. Furthermore, it does not guarantee that the projects are free of bugs. We plan to gradually include more audit teams and encourage community-driven contributions.
 
 ## FAQ
 
