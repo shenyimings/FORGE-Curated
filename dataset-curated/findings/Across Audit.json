@@ -1,0 +1,398 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Across Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts"
+        ],
+        "commit_id": [
+            "5a0c67c984d19a3bb843a4cec9bb081734583dd1",
+            "6e86b707b19832d2b5fc35ac51e888de017a1f0b",
+            "7641fbf38b661e02fc00f3b33d7e587c6dc5f06f",
+            "108be77c29a3861c64bdf66209ac6735a6a87090",
+            "51c45b2b9ca06314dac9ec4f12fe04d37da58d70",
+            "d4416cd6ba0ac7864147cdfac5d78546a0a624b6"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm/ethereum",
+        "compiler_version": "n/a",
+        "audit_date": "2024-10-07",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Across Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Missing Access Control for `setDestinationSettler`",
+            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
+            "severity": "Critical",
+            "location": [
+                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
+                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
+                "ERC7683OrderDepositor.sol::_resolveFor#161",
+                "ERC7683OrderDepositor.sol#L216"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ]
+            },
+            "title": "SpokePool's `fill` Function Performs Malformed Call",
+            "description": "The `fill` function in the `SpokePool` contract is intended to comply with the `IDestinationSettler` interface by calling the internal `fillV3Relay` function via `delegatecall`. However, the call is constructed using `abi.encodeWithSelector`, which is not type-safe and does not validate parameter counts or types. \nThe vulnerability arises because `fillV3Relay` expects two parameters (`originData` and `repaymentChainId`), but only one (`abi.encodePacked(originData, fillerData)`) is passed. This causes the function to revert during parameter decoding due to insufficient calldata. \nAn attacker could exploit this by submitting a valid fill request that triggers the malformed call, causing the entire transaction to revert. This breaks the order settlement flow and prevents legitimate relays from being processed. \nThe impact is high: denial of service for cross-chain order fills, leading to failed relays and potential loss of revenue for relayers.\n",
+            "severity": "High",
+            "location": [
+                "SpokePool.sol::fill#988",
+                "SpokePool.sol::fillV3Relay#864",
+                "SpokePool.sol#L998-L999"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Forwarder and Withdrawal Helper Contracts Do Not Handle ETH Transfers Correctly",
+            "description": "The `ForwarderBase` and `WithdrawalHelperBase` contracts, designed to operate on L2s and facilitate communication with L3s, lack a `receive` function, making them unable to accept direct ETH transfers. \nThe root cause is the omission of the `receive` function, which is required for a contract to receive ETH via `call` or `transfer`. This affects both WETH unwrapping logic and direct ETH bridging from L3 chains. \nAn attacker could exploit timing or routing dependencies where ETH must be unwrapped or bridged, causing transactions to fail. For example, WETH unwrapping during bridging (as in `Optimism_Adapter`) would fail, stranding funds. Similarly, ETH bridged from L3s cannot be received or forwarded to L1. \nThe impact is high: inability to process ETH transfers, leading to fund lockups and disruption of cross-chain operations involving native ETH.\n",
+            "severity": "High",
+            "location": [
+                "ForwarderBase.sol#18",
+                "WithdrawalHelperBase.sol#18",
+                "Optimism_Adapter.sol#L101-L105",
+                "Ovm_WithdrawalHelper.sol#L114-L124",
+                "WithdrawalHelperBase.sol#L87-L101"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "relayTokens Calls Made By Forwarders May Fail",
+            "description": "The `Router_Adapter` contract sends two separate messages to L2 forwarders: one to relay tokens and another to trigger their forwarding to L3. These messages may arrive out of order due to differing bridging mechanisms (e.g., CCTP for tokens, Arbitrum Inbox for messages). \nThe root cause is the lack of synchronization between token and message delivery channels, leading to race conditions where the `relayTokens` call on the forwarder attempts to send tokens before they arrive on L2. \nAn attacker could exploit this by triggering a sequence where message execution precedes token arrival, causing the relay to revert. This could be used to disrupt liquidity flow or force repeated transaction costs on users. \nThe impact is medium: temporary failure of token relays, requiring manual retries and increasing operational costs and user friction.\n",
+            "severity": "Medium",
+            "location": [
+                "Router_Adapter.sol::relayTokens#109-111",
+                "Router_Adapter.sol::relayMessage#115-119",
+                "ForwarderBase.sol::relayTokens#119",
+                "Arbitrum_Adapter.sol#L116-L119",
+                "Arbitrum_Adapter.sol#L87-L96"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Router_Adapter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "No Way to Invoke Some Privileged Functions of Forwarders",
+            "description": "The `ForwarderBase` contract includes privileged functions like `setCrossDomainAdmin` and `updateAdapter` that can only be called via cross-chain messages from the `crossDomainAdmin`. However, the `Router_Adapter` contract, which is the intended communication path from L1, only supports `relayMessage` and `relayTokens`, not arbitrary function calls. \nThe root cause is the lack of a generic function call forwarding mechanism in `Router_Adapter`, limiting administrative flexibility. \nAn attacker could exploit governance delays or lack of admin access by forcing upgrades or misconfigurations that cannot be corrected without deploying new adapters. While not directly exploitable for fund theft, it reduces protocol agility. \nThe impact is medium: reduced operational flexibility and potential inability to reconfigure forwarders in response to security incidents or upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "ForwarderBase.sol#18",
+                "ForwarderBase.sol::setCrossDomainAdmin#69",
+                "ForwarderBase.sol::updateAdapter#82",
+                "Router_Adapter.sol#26"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Types Incompatible With `ERC-7683`",
+            "description": "The `AcrossOrderData` struct in `ERC7683Across.sol` uses outdated types: `destinationChainId` is `uint32` and `recipient` is `address`, while the latest `ERC-7683` standard specifies `uint64` and `bytes32`, respectively. \nThe root cause is a failure to update the struct definition to match the new standard, leading to type mismatches during order processing and event emission. \nAn attacker could exploit this by crafting orders with chain IDs > 2^32 or non-standard recipient encodings, causing silent truncation or incorrect routing. This could lead to funds being sent to unintended destinations. \nThe impact is medium: potential misrouting of funds due to type truncation or encoding errors, violating the expected behavior of the cross-chain standard.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC7683Across.sol#L8-L18",
+                "ERC7683Across.sol::destinationChainId#13",
+                "ERC7683Across.sol::recipient#14"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683Across.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
+            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC7683OrderDepositorExternal.sol#L58",
+                "ERC7683OrderDepositorExternal.sol#L60-L73",
+                "ZkStack_Adapter.sol#L147",
+                "ZkStack_CustomGasToken_Adapter.sol#L189",
+                "ZkSync_Adapter.sol#L241"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Griefing Attacks Are Possible in ZK Adapters",
+            "description": "A malicious user can manipulate the `tx.gasprice` parameter during a transaction to inflate the estimated L2 transaction cost, causing the HubPool to transfer excessive ETH to the L2 network. The root cause is the direct use of `tx.gasprice` in the `_computeETHTxCost` function without any upper limit, making it susceptible to manipulation by validators who can profit from inflated fees. An attacker can invoke the `executeRootBundle` function, triggering the `relayMessage` call in the adapter, which uses the manipulated gas price to calculate costs. This leads to a loss of funds from the HubPool as ETH is transferred to L2 based on the inflated estimate, enabling griefing attacks.\n",
+            "severity": "High",
+            "location": [
+                "ZkStack_Adapter.sol::_computeETHTxCost#188",
+                "ZkStack_Adapter.sol::relayMessage#91",
+                "HubPool.sol::executeRootBundle#620",
+                "ZkStack_CustomGasToken_Adapter.sol::_pullCustomGas#36"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_Adapter.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-228"
+                ],
+                "3": [
+                    "CWE-241"
+                ]
+            },
+            "title": "Incorrect Parameters Passed to permitWitnessTransferFrom",
+            "description": "The `PERMIT2_ORDER_TYPE` variable incorrectly defines the witness data type as `CrossChainOrder`, while the actual data being hashed is of type `GaslessCrossChainOrder`. This discrepancy, along with the omission of key struct members like `orderDataType`, `exclusiveRelayer`, and `depositNonce` in the hash calculation, violates EIP-712 standards and undermines the integrity of the permit signature. The root cause is incorrect struct type specification and incomplete hashing logic. An attacker could potentially exploit this by crafting malformed orders that pass validation due to incorrect type hashing, leading to unauthorized transfers or failed executions. The impact includes potential fund loss or order manipulation due to flawed signature verification.\n",
+            "severity": "High",
+            "location": [
+                "ERC7683Across.sol::PERMIT2_ORDER_TYPE#67",
+                "ERC7683Across.sol::witness#80-91",
+                "ERC7683.sol::GaslessCrossChainOrder#6",
+                "ERC7683Across.sol::CROSS_CHAIN_ORDER_TYPE#55"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683Across.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Attempts to Bridge WETH Using ZkStack_CustomGasToken_Adapter Will Fail",
+            "description": "When attempting to bridge WETH using the `ZkStack_CustomGasToken_Adapter`, the `relayTokens` function sends a non-zero deposit amount to the `bridgeHubDeposit` function, which explicitly requires the amount to be zero when bridging ETH. This mismatch causes the transaction to revert, preventing WETH from being successfully bridged to L2. The root cause is a logic error in the adapter where the amount is not set to zero for ETH deposits, violating the requirement of the target bridge contract. This issue prevents users from transferring WETH to ZkStack chains, resulting in a denial of service for WETH bridging functionality.\n",
+            "severity": "Low",
+            "location": [
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#141",
+                "BridgeHub::bridgeHubDeposit#L291",
+                "L1SharedBridge.sol::bridgeHubDeposit#328"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Transfers of The Target Chain's Gas Token Will Fail",
+            "description": "The `relayTokens` function in both `ZkStack_Adapter` and `ZkStack_CustomGasToken_Adapter` contracts fails when transferring the target chain's gas token due to a mismatch between `msg.value` and `mintValue` in the `requestL2TransactionDirect` call. The `mintValue` is only set to `txBaseCost`, while `msg.value` includes both `txBaseCost` and `amount`, causing the transaction to revert. Additionally, `l2Value` is hardcoded to 0, so no value is delivered to the L2 contract. The root cause is incorrect parameter assignment in the bridging logic. This results in a complete failure of ETH or custom gas token transfers to ZkStack chains, leading to a denial of service for native token bridging.\n",
+            "severity": "Low",
+            "location": [
+                "ZkStack_Adapter.sol::relayTokens#109-122",
+                "ZkStack_Adapter.sol::requestL2TransactionDirect#132",
+                "BridgeHub::requestL2TransactionDirect#222",
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#176"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_Adapter.sol",
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Changing crossDomainAdmin Will Prohibit Pending Operations",
+            "description": "Changing the `crossDomainAdmin` via the `setCrossDomainAdmin` function in the `ForwarderBase` contract will block any pending cross-chain operations initiated by the old admin. This is because incoming messages on L2 are validated against the current `crossDomainAdmin`, which no longer matches the original sender. The root cause is the lack of consideration for in-flight messages during admin changes. An attacker or malicious admin could exploit this by changing the admin to prevent completion of legitimate cross-chain operations. The impact is a denial of service for any pending L1->L2 message processing, potentially freezing user funds or actions.\n",
+            "severity": "Low",
+            "location": [
+                "ForwarderBase.sol::setCrossDomainAdmin#69",
+                "ForwarderBase.sol::crossDomainAdmin#20"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Casts",
+            "description": "The `_resolve` and `_resolveFor` functions in `ERC7683OrderDepositor` cast `block.chainId` to `uint32` when initializing the `minReceived` field of `ResolvedCrossChainOrder`, but the `Output.chainId` field is of type `uint64`. This causes a revert on chains with `chainId` values exceeding `uint32` range, even though they are valid under `uint64`. The root cause is an incorrect type cast that unnecessarily restricts compatibility. This could lead to failed order resolutions on high-chainID networks, resulting in a denial of service for users on those chains.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7683OrderDepositor.sol::_resolve#244",
+                "ERC7683OrderDepositor.sol::_resolveFor#161",
+                "ERC7683OrderDepositor.sol::minReceived#210",
+                "ERC7683.sol::Output#77"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositor.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Potentially Mutable Variable Treated as Immutable",
+            "description": "The `ZkStack_Adapter` and `ZkStack_CustomGasToken_Adapter` contracts approve tokens to the `SHARED_BRIDGE` address, which is a hardcoded constant, but the actual bridge used is `BRIDGE_HUB.sharedBridge()`, a mutable variable. If the `sharedBridge` address changes, the allowance will be invalid, and token bridging will fail. The root cause is treating a potentially mutable address as immutable. This creates a single point of failure where a bridge upgrade would break all existing adapters. The impact is a denial of service for token bridging until adapters are redeployed with updated constants.\n",
+            "severity": "Low",
+            "location": [
+                "ZkStack_Adapter.sol::SHARED_BRIDGE",
+                "ZkStack_Adapter.sol::requestL2TransactionTwoBridges#148-160",
+                "Bridgehub::requestL2TransactionTwoBridges#290",
+                "L1SharedBridge.sol::bridgehubDeposit#295"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_Adapter.sol",
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-636"
+                ]
+            },
+            "title": "Deposits Not Possible After Fill Deadline",
+            "description": "1. **Description:** The predictability of relay hashes allows fillers to pre-fill deposits on target chains before the actual deposit is created on the origin chain. However, if the origin deposit is not created before the fill deadline, it becomes impossible to create the deposit, resulting in a permanent loss of assets for the pre-filler.\n2. **Cause:** The deposit creation on the origin chain enforces that the current block timestamp must be before the fill deadline. If network congestion or outages delay the deposit past this deadline, the validation fails.\n3. **Exploitation:** An attacker cannot directly exploit this, but honest fillers who act in good faith to fulfill deposits are at risk of losing funds if the origin deposit is delayed past the deadline due to external factors.\n4. **Impact:** Loss of assets for fillers who pre-fill deposits that are never created on the origin chain due to timing issues, undermining trust in the protocol's reliability.\n",
+            "severity": "High",
+            "location": [
+                "SpokePool.sol#1188"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ]
+            },
+            "title": "Cross-chain Calls May Fail Due to Insufficient Assets",
+            "description": "1. **Description:** When relaying messages or tokens from L2 to L3 via forwarder contracts, there is no check to ensure the forwarder holds sufficient gas tokens to cover execution costs on the target chain.\n2. **Cause:** The `ForwarderBase` contract's `relayMessage` function lacks a balance check for the required gas token, and there is no automated mechanism to replenish the forwarder's balance.\n3. **Exploitation:** An attacker could force a series of L2-to-L3 calls that deplete the forwarder's balance, causing subsequent legitimate calls to fail due to insufficient gas.\n4. **Impact:** Failed cross-chain transactions, leading to user fund lockups, degraded protocol functionality, and potential denial of service on L3 integrations.\n",
+            "severity": "Medium",
+            "location": [
+                "ForwarderBase.sol::relayMessage#95-134"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        }
+    ]
+}

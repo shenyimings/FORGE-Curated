@@ -1,0 +1,156 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.03.10 - Final - Symmio, Staking and Vesting Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/SYMM-IO/token",
+            "https://github.com/sherlock-audit/2025-03-symm-io-stacking"
+        ],
+        "commit_id": [
+            "1d014156b1d9f0ab3259026127b9220eb2da3292",
+            "1d014156b1d9f0ab3259026127b9220eb2da3292"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-07",
+        "project_path": {
+            "2025.03.10 - Final - Symmio, Staking and Vesting Audit Report.pdf-source": "dataset-curated/contracts/2025.03.10 - Final - Symmio, Staking and Vesting Audit Report.pdf-source/1d014156b1d9f0ab3259026127b9220eb2da3292"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "USDC rewards will not be distributed if _updateRewardsStates is triggered too often",
+            "description": "The vulnerability arises in the SymmStaking contract where frequent calls to _updateRewardsStates (via deposit, withdraw, claim, or notifyRewardAmount) can prevent proper distribution of rewards for tokens with low decimals like USDC. The root cause is the lack of upscaling in reward calculations, which leads to integer division rounding down to zero when the reward rate per block is small relative to the total staked supply. An attacker or griefer can exploit this by calling deposit or other triggering functions every few blocks, causing perTokenStored to remain unchanged due to rounding, while lastUpdated still advances. As a result, stakers receive no rewards despite rewards being available in the contract, leading to a high-impact scenario where user incentives are undermined and rewards become stuck.\n",
+            "severity": "High",
+            "location": [
+                "SymmStaking.sol::updateRewardsStates#402-423",
+                "SymmStaking.sol#374",
+                "SymmStaking.sol#194-202",
+                "SymmStaking.sol#412",
+                "SymmStaking.sol#413"
+            ],
+            "files": [
+                "token/contracts/staking/SymmStaking.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Incorrect initializer modifier in Vesting contract prevents proper initialization",
+            "description": "The Vesting contract uses the `initializer` modifier in its `__vesting_init` function, which is incorrect when used in a parent contract within an inheritance chain. According to OpenZeppelin's best practices, parent contracts should use `onlyInitializing` instead to allow proper initialization when inherited. The current use of `initializer` sets a flag that prevents any other initializer-modified function (including those in child contracts like SymmVesting) from executing, thereby blocking full initialization. This could lead to deployment failures or improperly initialized contracts, severely impacting protocol functionality. The exploitation does not require active attack but occurs naturally during contract deployment, resulting in a broken system state.\n",
+            "severity": "Medium",
+            "location": [
+                "Vesting.sol::__vesting_init#76"
+            ],
+            "files": [
+                "token/contracts/vesting/Vesting.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ]
+            },
+            "title": "Readding the reward token causes user-RewardPerTokenPaid to be incorrect for some users, resulting in them receiving too many rewards",
+            "description": "When a reward token is removed and later re-added in the SymmStaking contract, the stored `perTokenStored` value persists, but new users who deposit during the removal period do not have their `userRewardPerTokenPaid` updated for that token. Upon re-addition and new reward notifications, these users receive rewards accumulated from before their deposit, effectively stealing rewards from existing stakers. The root cause is the failure to reset or reinitialize reward state when a token is re-added, combined with the lack of checks to update historical reward data for new users. This leads to unfair distribution, potential reward pool exhaustion, and possible reversion of the `claimRewards` function for legitimate users due to insufficient balance, severely disrupting staking operations.\n",
+            "severity": "Medium",
+            "location": [
+                "SymmStaking.sol#319-328",
+                "SymmStaking.sol#406-418"
+            ],
+            "files": [
+                "token/contracts/staking/SymmStaking.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Bad check in Vesting.sol::_resetVestingPlans will prevent users from adding additional liquidity in SymmVesting.sol",
+            "description": "The `_resetVestingPlans` function in Vesting.sol contains a flawed validation check that reverts if the new amount being set is less than the already unlocked amount, using `if (amount < vestingPlan.unlockedAmount()) revert AlreadyClaimedMoreThanThis();`. This prevents users from increasing their locked liquidity if the new amount does not exceed the currently unlocked portion, even if they are adding more tokens. The root cause is a logical error in the condition, which incorrectly assumes that any new amount not exceeding unlocked tokens is invalid. This is not an exploit by attackers but a functional bug that blocks legitimate user actions. As a result, users who have partially unlocked their tokens are unable to add more liquidity, limiting protocol usability and user flexibility.\n",
+            "severity": "Medium",
+            "location": [
+                "Vesting.sol::_resetVestingPlans#231"
+            ],
+            "files": [
+                "token/contracts/vesting/Vesting.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Malicious User can dilute staking Rewards to a longer timeframe",
+            "description": "The SymmStaking contract allows any user to call the notifyRewardAmount function, which recalculates the reward rate for stakers. The root cause is the lack of access control on this function, enabling malicious actors to repeatedly deposit negligible reward amounts (e.g., 1 wei). When the previous reward period is still active, the new amount is added to the leftover rewards and divided by the fixed duration, thereby reducing the per-block reward rate. An attacker can exploit this by spamming tiny reward deposits, which progressively dilute the reward distribution rate. This results in stakers receiving their entitled rewards over a significantly extended timeframe, effectively creating a denial-of-service condition on reward distribution.\n",
+            "severity": "Medium",
+            "location": [
+                "SymmStaking.sol::notifyRewardAmount"
+            ],
+            "files": [
+                "token/contracts/staking/SymmStaking.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Double spending attack in the Vesting contract",
+            "description": "The resetVestingPlans function in the Vesting contract allows an administrator to reset vesting plans for specified users, setting their claimedAmount to zero after validating that the new amount is at least the previously claimed amount. The vulnerability arises because the function does not account for the possibility that a user may have claimed their tokens via penalty withdrawal in a transaction that is mined just before the reset. Since the reset does not verify the current state of claims at the time of execution, a user could claim their tokens before the reset and then claim them again afterward, leading to double spending. This race condition enables a user to withdraw more tokens than allocated, resulting in a direct loss of funds from the protocol and potentially affecting the availability of rewards for other legitimate users.\n",
+            "severity": "Medium",
+            "location": [
+                "Vesting.sol::resetVestingPlans#222-237",
+                "LibVestingPlan::resetAmount"
+            ],
+            "files": [
+                "token/contracts/vesting/Vesting.sol"
+            ]
+        }
+    ]
+}

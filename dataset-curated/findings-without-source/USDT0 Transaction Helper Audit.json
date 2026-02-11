@@ -1,0 +1,102 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/USDT0 Transaction Helper Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Everdawn-Labs/usdt0-oft-contracts"
+        ],
+        "commit_id": [
+            "2ddcf8191f2771df519ccc3a4da8dbb40a746e5b"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-03",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "maxGas Limit Is Easily Bypassable",
+            "description": "The `maxGas` variable in `TransactionValueHelper.sol` is intended to cap the amount of ETH that can be sent to the OFT contract during a `send` call. However, the check is performed against `msg.value` instead of the actual gas amount sent to the OFT contract. This allows users to bypass the limit by manipulating the value sent, as the contract does not validate the actual ETH usage. An attacker could exploit this by sending a large `msg.value` while still triggering a high gas transfer, undermining the intended safety mechanism. This could lead to unexpected depletion of the contract's native token balance, which is meant to cover bridging fees for users.\n",
+            "severity": "Medium",
+            "location": [
+                "TransactionValueHelper.sol::send#85-107",
+                "TransactionValueHelper.sol#L42"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "msg.value Not Used in Price Value Accounting",
+            "description": "In the `send` function of `TransactionValueHelper`, the contract calculates the ETH used by comparing the balance before and after the call. However, the balance before includes `msg.value`, which is not accounted for in the final fee calculation. This leads to incorrect accounting: users may be overcharged when `msg.value` equals or exceeds the required ETH, or charged the full amount even when they contributed part of it. The flaw stems from not isolating the contract's own balance change from user-provided `msg.value`. This could result in users paying excessive fees in tokens, leading to loss of funds and reduced trust in the fee mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "TransactionValueHelper.sol::send#85-107"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Possible Duplicate Event Emissions",
+            "description": "Several setter functions in the codebase emit events without first checking if the new value differs from the current one. This includes `transferOwnership`, `_initializeOwner`, `setMaxGas`, `setPriceFactor`, and `setOperator`. As a result, calling these functions with unchanged values will still emit events, leading to event spam. This can confuse off-chain monitoring systems and indexing services, making it harder to track actual state changes. The root cause is the lack of a simple equality check before state updates. While not directly exploitable for financial gain, it degrades the reliability of event-based systems.\n",
+            "severity": "Low",
+            "location": [
+                "OwnableOperators.sol::transferOwnership#38-41",
+                "OwnableOperators.sol::_initializeOwner#47-50",
+                "TransactionValueHelper.sol::setMaxGas#72-75",
+                "TransactionValueHelper.sol::setPriceFactor#151-156",
+                "OwnableOperators.sol::setOperator#33-36"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Giving Approval to the OFT Contract Is Not Always Required",
+            "description": "The `TransactionValueHelper` contract unconditionally grants approval to the OFT contract for token transfers, even though some OFT implementations can directly burn tokens without needing approval. This results in unnecessary and potentially persistent allowances being set, which could be considered a minor security anti-pattern. The issue arises because the contract does not query the OFT's `approvalRequired` function before granting approval. While this does not lead to direct fund loss, it results in unused and potentially stale approvals, increasing the attack surface unnecessarily.\n",
+            "severity": "Low",
+            "location": [
+                "TransactionValueHelper.sol::send#93"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Potential Loss of Tokens Due to Rounding",
+            "description": "When a user sends tokens via the `TransactionValueHelper`, the full `amountLD` is transferred to the contract. However, the OFT contract may only use a rounded-down amount (`amountSentLD`) due to decimal differences between chains. The discrepancy (`amountLD - amountSentLD`) is not refunded to the user, resulting in a permanent loss of the excess tokens. This is caused by the `TransactionValueHelper` not verifying the actual amount used by the OFT and failing to return the remainder. Users are effectively overcharged for each transfer, leading to a loss of funds over time.\n",
+            "severity": "Low",
+            "location": [
+                "TransactionValueHelper.sol::send#94"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing Zero-Address Checks",
+            "description": "Several functions and state variable assignments lack validation for the zero address, including setting `_priceFeed`, `_to`, and `newOwner` in `transferOwnership`. Assigning the zero address can lead to irreversible loss of functionality or ownership if done accidentally. The absence of explicit checks increases the risk of human error during privileged operations. This is a common security best practice violation. An attacker could potentially exploit this if a function allows setting critical addresses without validation, though in this case, the risk is mitigated by access control, but the vulnerability remains in the form of operational risk.\n",
+            "severity": "Low",
+            "location": [
+                "TransactionValueHelper.sol#L59",
+                "TransactionValueHelper.sol::send#116",
+                "OwnableOperators.sol::transferOwnership#38-41"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Missing Validation of _fee.lzTokenFee",
+            "description": "In the `send` function, the `_fee.lzTokenFee` parameter is not validated. Since the `TransactionValueHelper` contract does not hold LayerZero tokens and is not expected to transfer them, any non-zero value for `_fee.lzTokenFee` will cause the transaction to revert. This wastes gas and provides a poor user experience. The lack of an early check means the transaction proceeds unnecessarily until the OFT contract attempts to transfer the non-existent tokens. Adding a validation to require `_fee.lzTokenFee == 0` would prevent this and improve efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "TransactionValueHelper.sol::send#85-107"
+            ],
+            "files": []
+        }
+    ]
+}

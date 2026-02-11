@@ -1,0 +1,205 @@
+{
+    "path": "dataset-curated/reports/TrailofBits/2025-04-reserve-folio-solidity-securityreview.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/reserve-protocol/reserve-index-dtf"
+        ],
+        "commit_id": [
+            "c88e958bb70211bbb73c601382ef9e9b1611f00c"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-03",
+        "project_path": {
+            "reserve-index-dtf": "dataset-curated/contracts/2025-04-reserve-folio-solidity-securityreview.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "GovernanceDeployer does not enforce minimum values for timelock contract",
+            "description": "The GovernanceDeployer contract does not enforce minimum values for the governance executor timelock contract, which is a critical component for preventing malicious governance proposals. The lack of enforced minimums allows potentially unsafe configurations where the timelock delay could be set too low, reducing the window for guardians to detect and cancel malicious proposals. An attacker could exploit this by creating a Folio with a very short timelock, accelerating the execution of a malicious governance action. This could lead to insufficient response time for guardians, increasing the risk of fund loss or protocol manipulation. This issue arises because the GovernanceDeployer contract does not enforce minimum values for parameters such as minimum delay or grace period, undermining the security purpose of the timelock mechanism. An attacker with governance control could potentially expedite malicious proposals by reducing the timelock duration. The impact includes reduced resilience against malicious governance actions and increased risk of rapid, unchallenged execution of harmful changes.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/deployer/GovernanceDeployer.sol",
+                "GovernanceDeployer"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/deployer/GovernanceDeployer.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "StakingVault is vulnerable to ERC-4626 griefing attack",
+            "description": "The StakingVault contract inherits from ERC-4626 but does not generate yield, making price-per-share tracking unnecessary. However, it remains vulnerable to an inflation attack where an attacker can manipulate share issuance by donating assets. The root cause lies in the use of totalAssets() in share calculations without overriding it to reflect a fixed rate. An attacker can front-run a large deposit by donating a small amount, causing subsequent depositors to receive disproportionately few shares. Upon redemption, both the attacker and victim receive a large amount of assets relative to their share count, resulting in a loss for the protocol and unfair distribution. This leads to economic loss for legitimate users and undermines trust in the vault's fairness. Additionally, the contract is susceptible to a griefing attack where a malicious user can deposit a very small amount of assets that results in negligible or zero shares being minted, wasting gas for other users during pro-rata calculations or reward distribution. The root cause is the lack of a minimum deposit threshold or proper handling of near-zero share calculations. An attacker could exploit this by repeatedly making tiny deposits, increasing the computational cost of future operations. The impact includes degraded performance and increased gas costs for legitimate users.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/staking/StakingVault.sol",
+                "StakingVault"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/staking/StakingVault.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-654"
+                ]
+            },
+            "title": "Fully on-chain governance creates existential governance attack risks",
+            "description": "Folios created via deployGovernedFolio are owned by a timelock-governed contract, giving complete control over the Folio, including the ability to upgrade and potentially steal funds. This creates an existential risk where an attacker could accumulate governance tokens, pass a malicious proposal, and upgrade the contract if not canceled by the guardian. The only defense is the guardian role, which lacks documented automation or availability guarantees. If guardians are offline or the project is abandoned, users have no protection. This undermines the security model and exposes users to total loss of funds in the event of a successful governance attack. The system relies entirely on on-chain governance, which exposes it to potential attacks such as vote manipulation, sybil attacks, or governance takeovers via token accumulation. Without off-chain checks or timelock safeguards, critical system parameters can be changed rapidly if an attacker gains token majority. The cause is the design choice to centralize all governance decisions on-chain without additional risk mitigation layers. This could allow an attacker to reconfigure core protocol functions, leading to potential loss of funds or protocol shutdown.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "reserve-index-dtf/contracts/deployer/GovernanceDeployer.sol",
+                "reserve-index-dtf/contracts/folio/Folio.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Users do not receive shares for low mint requests",
+            "description": "The Folio.mint() function rounds down the number of shares minted, causing deposits of very low amounts (e.g., 1 wei) to result in zero shares. While the collateral is transferred to the contract, no shares are minted in return, effectively causing the user to lose their funds. This is due to integer division truncation in the share calculation logic. An attacker could exploit this by encouraging users to make small deposits, leading to irreversible loss. The impact is limited to small amounts per transaction but could affect many users and erode trust in the protocol's fairness. The root cause is the absence of a check to revert or enforce a minimum share amount when minting. An attacker could exploit this by probing the system with small deposits to understand rounding behavior, though the direct impact is primarily user experience and fairness. This issue has been resolved by reverting mint calls that would result in zero shares.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/Folio.sol#314-321",
+                "Folio contract::mint"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing slippage protection on the Folio contract\u2019s mint function",
+            "description": "The mint function lacks slippage protection, meaning users cannot specify a minimum number of shares they expect to receive. The amount of shares minted depends on dynamic fees (totalFeeShares), which can change between transaction submission and execution. If fees increase just before minting, users receive fewer shares than expected. This creates a front-running risk where an attacker can manipulate fees or exploit timing to cause user losses. The impact includes financial loss for users and reduced confidence in the predictability of minting operations. The cause is the absence of a minSharesOut parameter or similar safeguard. An attacker could exploit this by sandwiching transactions to extract value. This issue has been resolved by adding a minSharesOut parameter.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/Folio.sol#326",
+                "Folio contract::mint"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Denial of service vulnerability via configurable initial supply",
+            "description": "The Folio contract is vulnerable to a denial-of-service attack due to an overflow in the _getPendingFeeShares calculation. If the initial supply is set too high (close to 2^256), arithmetic operations will overflow, causing all contract functions to revert. A malicious actor can exploit this by minting a large number of shares, freezing the Folio and preventing users from redeeming or interacting with their funds. This could be combined with a governance attack to maximize damage. The impact is a complete loss of functionality for the affected Folio, leading to user fund lockup. The root cause is the lack of validation on the initial supply parameter during contract initialization. An attacker could exploit this during deployment to disrupt token operations or cause miscalculations in share pricing. This has been resolved by using a factory contract to enforce valid supply ranges.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/Folio.sol"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "ERC-777 compatibility issue",
+            "description": "The Folio contract does not support ERC-777 tokens because it is not registered in the ERC-1820 registry as an ERC777TokensRecipient, causing transfers from ERC-777 tokens to revert. Additionally, the contract does not handle token granularity, meaning transfers of amounts not divisible by the token's granularity will fail. This creates a denial-of-service risk when interacting with ERC-777 tokens. Users or the protocol may be unable to deposit or manage such tokens, limiting interoperability and potentially disrupting operations. The lack of support contradicts documentation claiming ERC-777 compatibility. The root cause is the integration of a token standard that allows arbitrary code execution during transfers. An attacker could exploit this by crafting a malicious ERC-777 token that calls back into the protocol during a transfer, manipulating state or extracting funds. The impact includes potential reentrancy and logic flaws. This has been resolved by disallowing ERC-777 tokens as collateral.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/Folio.sol"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Folio.bid() is vulnerable to denial of service through 1 wei donation attack",
+            "description": "The bid() function reverts if the contract's buy token balance exceeds maxBuyBal. An attacker can front-run a bid that would exactly match maxBuyBal by donating 1 wei, causing the user's transaction to revert. The user must then rebid with a lower amount, potentially losing the auction or being outbid. This denial-of-service attack exploits a race condition in balance validation. The impact includes disrupted auction participation, financial loss from missed opportunities, and potential manipulation of auction outcomes by malicious actors. The root cause is the reliance on the contract's balance being zero or within a known range for correct operation. An attacker could exploit this by sending a minimal amount of ETH to block legitimate bids. The risk has been accepted by the team, citing low MEV incentive.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/Folio.sol#650",
+                "Folio.bid()"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Wei loss occurs when transferring stETH rebasing tokens",
+            "description": "Due to stETH's rebasing behavior and a known 1\u20132 wei rounding issue, transfers involving stETH result in a slight loss of wei because balance calculations round down. This behavior is similar to fee-on-transfer tokens. While the impact per transfer is minimal, repeated transfers accumulate small losses. The root cause is the use of integer math without accounting for rounding discrepancies. Users experience a minor but irreversible loss of funds during transfers. This affects user trust and highlights integration risks with rebasing tokens, especially when precision is critical. When transferring stETH (a rebasing token), precision loss can occur due to rounding errors in share calculations, resulting in a small amount of wei being lost or not accounted for. The root cause is the mismatch between the rebasing mechanics of stETH and the fixed-point arithmetic used in the protocol. An attacker could potentially amplify this over many transactions, though the per-transaction loss is minimal. The impact is minor financial loss due to rounding errors during transfers of rebasing tokens. The risk has been accepted.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/Folio.sol",
+                "stETH transfer handling"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/Folio.sol"
+            ]
+        }
+    ]
+}

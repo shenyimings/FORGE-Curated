@@ -1,0 +1,121 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/CapyFi Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/LaChain/capyfi-sc"
+        ],
+        "commit_id": [
+            "cf47234ecffe0747f894dc73c4df15b78469b0bf"
+        ],
+        "address": null,
+        "chain": "evm/ethereum/lachain",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-25",
+        "project_path": {
+            "capyfi-sc": "dataset-curated/contracts/CapyFi Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Unlimited DEFAULT_ADMIN_ROLE Power Over ADMIN_ROLE and WHITELISTED_ROLE",
+            "description": "The Whitelist contract implements a role-based access control system using OpenZeppelin's AccessControlUpgradeable, defining ADMIN_ROLE and WHITELISTED_ROLE. The intended design restricts role management to users with ADMIN_ROLE via custom functions (addAdmin, removeAdmin, addWhitelisted, removeWhitelisted). However, because the default admin role (DEFAULT_ADMIN_ROLE) is set as the admin for both roles, any account with DEFAULT_ADMIN_ROLE can bypass these custom functions and directly call the public grantRole and revokeRole functions to manage both roles without requiring ADMIN_ROLE.\n\nThis occurs due to the inheritance model and default behavior of AccessControlUpgradeable, where DEFAULT_ADMIN_ROLE holds overarching authority unless explicitly restricted. As a result, the access control hierarchy is weakened, allowing unintended privilege escalation paths.\n\nAn attacker or malicious actor with DEFAULT_ADMIN_ROLE could arbitrarily add or remove admins and whitelisted users, effectively taking control over who can mint cTokens and manage the whitelist system. This undermines the intended security model and could lead to unauthorized access or denial of service for legitimate users.\n\nThe impact is considered low severity because the DEFAULT_ADMIN_ROLE is typically tightly controlled and not intended for regular use. However, if compromised or misconfigured, it could lead to full control over the whitelist mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "Whitelist.sol::addAdmin#109-111",
+                "Whitelist.sol::removeAdmin#117-119",
+                "Whitelist.sol::addWhitelisted#125-127",
+                "Whitelist.sol::removeWhitelisted#133-135",
+                "AccessControlUpgradeable.sol::grantRole#136-138",
+                "AccessControlUpgradeable.sol::revokeRole#149-151"
+            ],
+            "files": [
+                "capyfi-sc/src/contracts/Access/Whitelist.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Unsafe Casting in getAnswer Function",
+            "description": "The getAnswer function in the CapyfiAggregatorV3 contract accepts a uint256 parameter for roundId and attempts to cast it to uint80 when used in internal lookups. When the provided roundId exceeds the maximum value of uint80 (approximately 1.2e24), the function will revert due to type casting constraints.\n\nThe root cause is the unsafe downcast of roundId to uint80 within the error message construction, even though the function will already revert due to the type mismatch. This leads to incorrect or misleading error reporting, as the cast itself may not reflect the actual input value.\n\nAn attacker could exploit this by providing extremely large roundId values to trigger reverts with potentially confusing error messages, complicating debugging and integration efforts.\n\nThe impact is low, as this does not lead to loss of funds or direct manipulation of state, but it affects the reliability and clarity of error handling, which could hinder integrators and monitoring systems.\n",
+            "severity": "Low",
+            "location": [
+                "CapyfiAggregatorV3.sol::getAnswer#148"
+            ],
+            "files": [
+                "capyfi-sc/src/contracts/PriceOracle/CapyfiAggregatorV3.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Differences Between CapyFi And Chainlink Oracles",
+            "description": "The CapyFiAggregatorV3 contract, while implementing the Chainlink AggregatorV3Interface, exhibits several behavioral differences from Chainlink's oracle implementation. These include: (1) roundId starts at 1 instead of a packed phaseId/originalId structure; (2) requests for non-existent rounds revert instead of returning zero values; (3) no minimum or maximum price bounds; and (4) startedAt and updatedAt timestamps are identical upon update, unlike Chainlink's delayed aggregation model.\n\nThese differences stem from CapyFi's centralized, permissioned oracle design versus Chainlink's decentralized model. The cause is a lack of strict adherence to Chainlink's expected behavior despite interface compatibility.\n\nExternal integrators relying on Chainlink-like behavior may experience unexpected reverts or incorrect assumptions about price staleness and historical data availability. For example, attempting to fetch round 1 from a Chainlink-style client would fail on CapyFi's oracle.\n\nThe impact is low, as it does not introduce direct financial risk, but it poses integration risks and could lead to service disruptions if not properly documented and understood by developers.\n",
+            "severity": "Low",
+            "location": [
+                "CapyfiAggregatorV3.sol#61",
+                "CapyfiAggregatorV3.sol#116",
+                "CapyfiAggregatorV3.sol::getAnswer",
+                "CapyfiAggregatorV3.sol::getRoundData"
+            ],
+            "files": [
+                "capyfi-sc/src/contracts/PriceOracle/CapyfiAggregatorV3.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing State Change Validation",
+            "description": "Several functions in the codebase fail to validate whether a new value differs from the current state before performing a state update. This affects the activate and deactivate functions in Whitelist.sol, and the addAuthorizedAddress and removeAuthorizedAddress functions in CapyfiAggregatorV3.sol.\n\nThe root cause is the absence of require() guards checking that the new value is different from the existing one. This leads to unnecessary state writes even when no effective change occurs.\n\nAn attacker could exploit this by repeatedly calling these functions with the same value, leading to wasteful gas consumption and bloating the blockchain with redundant transactions. While not directly harmful, it increases operational costs and reduces efficiency.\n\nThe impact is low, as it does not compromise security or lead to fund loss, but it affects gas efficiency and contract maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "Whitelist.sol::activate#89",
+                "Whitelist.sol::deactivate#98",
+                "CapyfiAggregatorV3.sol::addAuthorizedAddress#70",
+                "CapyfiAggregatorV3.sol::removeAuthorizedAddress#80"
+            ],
+            "files": [
+                "capyfi-sc/src/contracts/Access/Whitelist.sol",
+                "capyfi-sc/src/contracts/PriceOracle/CapyfiAggregatorV3.sol"
+            ]
+        }
+    ]
+}

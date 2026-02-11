@@ -1,0 +1,542 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/SSO Account Abstraction Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/matter-labs/zksync-sso-clave-contracts"
+        ],
+        "commit_id": [
+            "fc0af3442594ad2dc343dbb2b918e478251bc293"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "zksync",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-13",
+        "project_path": {
+            "zksync-sso-clave-contracts": "dataset-curated/contracts/SSO Account Abstraction Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Lack of Output Validation Can Lock the SsoAccount",
+            "description": "The SsoAccount contract and its managers use OpenZeppelin's EnumerableSet library to manage sets of hooks, owners, and validators. However, the code does not check the boolean return values of the `add` and `remove` functions, incorrectly assuming that these operations will revert on failure. This leads to silent failures where operations appear to succeed but do not modify the set.\n\nThe root cause is the lack of validation of return values from `add` and `remove` calls in the `HookManager`, `OwnerManager`, and `ValidatorManager` contracts. As a result, when a user attempts to remove a hook with an incorrect `isValidation` flag, the removal fails silently, but the `onUninstall` function is still called. This can lead to inconsistent state in the hook, potentially causing future transaction validations to fail.\n\nAn attacker or user error could exploit this by calling `removeHook` or `unlinkHook` with the wrong flag, leading to a situation where the hook believes it is uninstalled but remains in the list, or vice versa. Similarly, attempting to add a duplicate owner or validator does not change the set but still emits events, misleading off-chain indexers.\n\nThe impact includes potential permanent lockup of the account if a critical hook enters an inconsistent state, or incorrect state tracking by external services relying on emitted events. This could prevent the account from executing any further transactions, resulting in a denial of service.\n",
+            "severity": "High",
+            "location": [
+                "HookManager.sol::removeHook#35-44",
+                "OwnerManager.sol::addOwner#40-50",
+                "ValidatorManager.sol::addValidator#28-43",
+                "HookManager.sol::unlinkHook#35-44",
+                "OwnerManager.sol::removeOwner#40-50",
+                "ValidatorManager.sol::removeValidator#28-43"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol",
+                "zksync-sso-clave-contracts/src/managers/OwnerManager.sol",
+                "zksync-sso-clave-contracts/src/managers/ValidatorManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-924"
+                ]
+            },
+            "title": "Transaction Can Be Executed in Unintended Period",
+            "description": "The SessionKeyValidator allows granular spending controls through time-based periods. However, the `periodIds` used to determine which spending period to charge are passed within the `transaction.signature` field, which is not included in the transaction hash. This means that the `periodIds` are not cryptographically bound to the transaction.\n\nThe root cause is that the ZKsync transaction encoding process does not include the auxiliary data in the signature field when computing the transaction hash. As a result, anyone can modify the `periodIds` without invalidating the signature, allowing replay of the same transaction under different time periods.\n\nAn attacker can observe a transaction in the mempool that fails validation due to insufficient allowance in the intended period. They can then resubmit the same transaction with different `periodIds`, potentially draining allowances from other periods. This is especially dangerous if the session has high allowances in other periods.\n\nThe impact is unauthorized spending from unintended time periods, undermining the security model of time-limited sessions. Users may lose funds or have their spending controls bypassed, leading to financial loss or unexpected behavior.\n",
+            "severity": "Medium",
+            "location": [
+                "SessionKeyValidator.sol::validateTransaction#149",
+                "SessionLib.sol::checkPeriodAllowance#69",
+                "SsoAccount.sol::validateTransaction#199"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Adding or Removing Execution Hooks Causes Unexpected Behaviour",
+            "description": "The HookManager uses a modifier `runExecutionHooks` that iterates over a list of execution hooks before and after transaction execution. However, if the transaction itself adds or removes an execution hook, the loop that runs the `postExecutionHook` functions can go out of bounds or execute hooks in an incorrect order.\n\nThe cause lies in the use of a cached `totalHooks` variable at the start of the loop, while the underlying set is modified during execution. Since the OpenZeppelin EnumerableSet does not guarantee ordering, removing a hook during execution can cause the loop to access an index that no longer exists, causing a revert. Similarly, adding a hook may result in it being executed in the post-hook phase while others are skipped.\n\nAn attacker or user attempting to remove an execution hook would find the transaction reverting due to the out-of-bounds access. This effectively prevents the removal of execution hooks, creating a denial of service. Additionally, inconsistent hook execution order can lead to state corruption in hooks that depend on execution sequence.\n\nThe impact is an inability to manage execution hooks safely, potentially locking the account into unwanted hook behavior. This undermines the flexibility of the account abstraction model and could prevent necessary upgrades or security fixes.\n",
+            "severity": "Medium",
+            "location": [
+                "HookManager.sol::runExecutionHooks#77",
+                "HookManager.sol::postExecutionHook#87-89"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "error Keyword Used For Variable Naming",
+            "description": "The `ERC1271Handler.sol` and `SsoAccount.sol` contracts use the name `error` for a local variable that stores the result of an `ECDSA.tryRecover` call. This is problematic because `error` is a reserved keyword in Solidity for defining custom errors, introduced in version 0.8.4.\n\nThe root cause is poor variable naming choice, which can lead to confusion during code review and maintenance. While it does not currently cause compilation issues (as `error` is not a full keyword like `function`), it increases the risk of future syntax conflicts or misinterpretation by developers.\n\nA developer reading or modifying the code might mistakenly believe that `error` refers to a custom error type or built-in exception, leading to incorrect assumptions about control flow. This could result in bugs during refactoring or integration with other components.\n\nThe impact is reduced code clarity and maintainability, increasing the likelihood of human error during development. While not directly exploitable, it contributes to technical debt and potential security risks in future changes.\n",
+            "severity": "Low",
+            "location": [
+                "ERC1271Handler.sol::isValidSignature#35-37",
+                "SsoAccount.sol::validateTransaction#191-193"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/handlers/ERC1271Handler.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Storage Slot Collision with Clave Protocol",
+            "description": "The `SsoStorage` library uses a storage slot that is identical to one used by the Clave protocol, which could lead to storage collisions if both protocols are deployed in the same environment or if future upgrades are not carefully managed. This occurs because the storage slot was derived from a hash that coincides with Clave's implementation, likely due to insufficient uniqueness in the hashing input. An attacker or conflicting protocol could overwrite critical state variables in the SsoAccount contract by writing to the same storage slot, potentially leading to corruption of account state or unauthorized behavior. The impact includes loss of state integrity and potential compromise of account functionality.\n",
+            "severity": "High",
+            "location": [
+                "SsoStorage.sol#7",
+                "https://github.com/getclave/clave-contracts/blob/0719581143537dde145291a6ea45ac308c2d0f6c/contracts/libraries/ClaveStorage.sol#L7"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/libraries/SsoStorage.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Unsafe ABI Encoding with abi.encodeWithSelector",
+            "description": "The codebase uses `abi.encodeWithSelector` in multiple locations (HookManager, SessionLib, ValidatorManager), which is not type-safe and can lead to silent failures if the function signature does not match the actual function being called. This is caused by bypassing Solidity's type checking, allowing incorrect argument types or counts to be encoded without compiler errors. An attacker could exploit this if a function call is made to a malformed selector, potentially leading to incorrect state changes or reverted transactions that disrupt protocol flow. The impact includes reduced reliability, potential for silent bugs, and increased risk of integration errors.\n",
+            "severity": "Low",
+            "location": [
+                "HookManager.sol#43",
+                "SessionLib.sol#289",
+                "ValidatorManager.sol#42"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol",
+                "zksync-sso-clave-contracts/src/libraries/SessionLib.sol",
+                "zksync-sso-clave-contracts/src/managers/ValidatorManager.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "SsoAccount Can Call updateAccountVersion and updateNonceOrdering",
+            "description": "The `SsoAccount` contract does not validate function selectors when making system calls via `batchCall`, allowing it to invoke sensitive system functions like `updateAccountVersion` and `updateNonceOrdering` on the `DEPLOYER_SYSTEM_CONTRACT`. This lack of validation stems from missing checks that exist in similar implementations like `DefaultAccount`. An attacker could craft a transaction batch that modifies the account version or nonce ordering, leading to unexpected behavior in transaction processing or nonce management. The impact includes potential disruption of account security invariants and possible denial-of-service or nonce manipulation attacks.\n",
+            "severity": "Medium",
+            "location": [
+                "BatchCaller.sol#38-46",
+                "SsoAccount.sol#119-122"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/batch/BatchCaller.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "SsoAccount Contract Deployment Can Be Frontrun",
+            "description": "The `AAFactory` allows any user to deploy an `SsoAccount` using a salt and unique account ID, but does not prevent other users from observing and frontrunning this transaction. This occurs because the deployment relies on predictable inputs (`_salt` and `_uniqueAccountId`) without incorporating `msg.sender` or a sequential nonce. An attacker can monitor the mempool, compute the CREATE2 address, and deploy the contract first, potentially receiving funds sent to that address by the original user. The impact includes loss of funds and denial-of-service, where users lose control over their intended account address.\n",
+            "severity": "High",
+            "location": [
+                "AAFactory.sol#45"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-392"
+                ]
+            },
+            "title": "Reverted Output From Batch Execution Is Dismissed",
+            "description": "When a batch call fails and `allowFailure` is true, the reverted call's data is discarded and no event is emitted to log the failure. This is caused by the `BatchCaller` contract not capturing or emitting the index and return data of failed subcalls. While execution continues as intended, this lack of visibility makes debugging and monitoring extremely difficult. An attacker could exploit this by triggering silent failures in batched operations, hiding malicious behavior or errors from off-chain services. The impact includes reduced observability, hindered debugging, and potential for undetected malicious activity.\n",
+            "severity": "Low",
+            "location": [
+                "BatchCaller.sol#50-52"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/batch/BatchCaller.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Association of Access Control",
+            "description": "The `Auth` contract aggregates multiple authentication modifiers (`BootloaderAuth`, `SelfAuth`, `HookAuth`), but most inheriting contracts only use one of them. For example, `ValidatorManager` only uses `onlySelf`, while `SsoAccount` only uses `onlyBootloader`. This leads to unnecessary code bloat and increased deployment cost due to inclusion of unused logic. The root cause is poor modularization of access control components. While not directly exploitable, this increases maintenance burden and attack surface. The impact is reduced code clarity, higher gas costs, and increased risk of future vulnerabilities due to complex inheritance.\n",
+            "severity": "Low",
+            "location": [
+                "Auth.sol",
+                "HookManager.sol",
+                "ValidatorManager.sol",
+                "OwnerManager.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/auth/Auth.sol",
+                "zksync-sso-clave-contracts/src/managers/ValidatorManager.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Gas Optimization Opportunities",
+            "description": "Multiple gas inefficiencies were identified: (1) `signature` parameters in `isValidSignature` and `validateSignature` use `memory` instead of cheaper `calldata`; (2) redundant `__gap` variables in `SsoStorage` could be consolidated; (3) session state is not deleted upon closure, wasting storage; (4) unnecessary zero checks on `rs[0]` and `rs[1]` in `webAuthVerify`. These stem from suboptimal coding practices and missed optimization opportunities. While individually minor, collectively they increase transaction costs. An attacker could exploit high gas usage to amplify denial-of-service effects. The impact includes higher operational costs and reduced scalability.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC1271Handler.sol#33",
+                "WebAuthValidator.sol#76",
+                "SsoStorage.sol#13-26",
+                "SessionKeyValidator.sol#117",
+                "SessionLib.sol#33",
+                "WebAuthValidator.sol#101",
+                "WebAuthValidator.sol#106"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/handlers/ERC1271Handler.sol",
+                "zksync-sso-clave-contracts/src/libraries/SsoStorage.sol",
+                "zksync-sso-clave-contracts/src/libraries/SessionLib.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Solidity 0.8.18 introduced support for named parameters in mappings to improve code clarity. The audited codebase uses mappings without named parameters in several locations, such as `accountMappings` in `AAFactory.sol` and `sessionCounter`, `sessions` in `SessionKeyValidator.sol`. The absence of named parameters reduces code readability and makes it harder to understand the purpose of each key and value in the mapping. This is a maintainability issue caused by not adopting modern Solidity syntax. While it does not directly enable exploitation, it increases the risk of developer error during future modifications. The impact is reduced code clarity and potential for misinterpretation during audits or upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "AAFactory.sol::accountMappings#24",
+                "SessionKeyValidator.sol::sessionCounter#27",
+                "SessionKeyValidator.sol::sessions#29"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/AAFactory.sol",
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Documentation",
+            "description": "Multiple instances of documentation inaccuracies were found in the codebase. The docstrings for `k1AddOwner` and `k1RemoveOwner` in `IOwnerManager.sol` incorrectly state that whitelisted modules can call these functions, which is not true. The documentation for `HookManager` and `OwnerManager` claims addresses are stored in linked lists, but they are actually stored in enumerable sets. Additionally, a comment in `AAFactory.sol` mentions initializing `hooks`, but only `moduleValidators` and `k1Owners` are set. These discrepancies stem from outdated or incorrect comments and create confusion for developers and auditors. Misleading documentation can lead to incorrect assumptions about access control or data structures, potentially resulting in integration errors or security flaws. The impact is reduced trust in documentation and increased risk of incorrect usage.\n",
+            "severity": "Low",
+            "location": [
+                "IOwnerManager.sol::k1AddOwner#23",
+                "IOwnerManager.sol::k1RemoveOwner#31",
+                "HookManager.sol#19",
+                "OwnerManager.sol#14",
+                "AAFactory.sol#65"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IOwnerManager.sol",
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol",
+                "zksync-sso-clave-contracts/src/managers/OwnerManager.sol",
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent Use of Custom Errors",
+            "description": "The codebase inconsistently uses `require` statements with string messages instead of custom errors, despite using Solidity >=0.8.4 where custom errors are available and more gas-efficient. Files such as `AAFactory.sol`, `SessionKeyValidator.sol`, `SessionLib.sol`, `TimestampAsserterLocator.sol`, and `WebAuthValidator.sol` rely on `require` messages. This inconsistency increases gas costs on revert and reduces clarity in error signaling. The root cause is a lack of standardized error handling practices across the codebase. While not directly exploitable, this leads to higher transaction costs and less informative error messages for users and frontends. The impact is suboptimal gas usage and reduced user experience during error conditions.\n",
+            "severity": "Low",
+            "location": [
+                "AAFactory.sol",
+                "SessionKeyValidator.sol",
+                "SessionLib.sol",
+                "TimestampAsserterLocator.sol",
+                "WebAuthValidator.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/AAFactory.sol",
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol",
+                "zksync-sso-clave-contracts/src/libraries/SessionLib.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "TODO Comments in Production Code",
+            "description": "The codebase contains unresolved TODO comments, such as in `SessionLib.sol` line 247 and `SsoAccount.sol` line 75, as well as open questions in the `CallSpec` struct. These indicate incomplete or uncertain implementation decisions that were not resolved before audit. The presence of such comments in production code risks important security or design considerations being overlooked. The root cause is inadequate tracking of development tasks. If critical issues are only noted in code comments and not managed in a formal backlog, they may be forgotten. The impact is potential technical debt and unaddressed security risks if TODOs reference unresolved vulnerabilities or design flaws.\n",
+            "severity": "Low",
+            "location": [
+                "SessionLib.sol#247",
+                "SsoAccount.sol#75",
+                "SessionLib.sol::CallSpec"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/libraries/SessionLib.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Modified Contracts Still Point to Clave as the Author",
+            "description": "The `HookManager` contract and `IValidationHook`, `IExecutionHook` interfaces have been modified from the original Clave codebase but still attribute Clave as the author. This is misleading because it does not reflect the extent of changes made by Matter Labs. The root cause is failure to update authorship metadata after significant modifications. This can create confusion about code ownership, responsibility, and trust assumptions. The impact is reduced transparency and potential misattribution of security guarantees, especially if users assume Clave's security model still fully applies.\n",
+            "severity": "Low",
+            "location": [
+                "HookManager.sol#22",
+                "IHook.sol#12",
+                "IHook.sol#23"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol",
+                "zksync-sso-clave-contracts/src/interfaces/IHook.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Implicit Casting",
+            "description": "In `WebAuthValidator.sol`, an implicit cast is used when comparing `bytes32` values `r` and `s` to `uint256(0)`. This reduces code clarity and can lead to confusion about type handling. The root cause is not following best practices for explicit type conversion. While Solidity allows this, explicit casting improves readability and reduces the risk of type-related bugs. The impact is reduced code maintainability and potential for subtle bugs if similar patterns are used in security-critical contexts.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol#106"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Using the `rawVerify` Function Could Be Facilitated",
+            "description": "The `rawVerify` function in `WebAuthValidator` expects a precomputed message, while `validateTransaction` expects individual signature components. This inconsistency complicates off-chain message creation, as users must replicate the internal `_createMessage` logic. The root cause is poor API design and lack of function symmetry. This increases the likelihood of user error when constructing signatures off-chain. The impact is reduced usability and potential for failed transactions due to incorrect message formatting, although it does not directly enable exploitation.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::rawVerify#180"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "`SessionKeyValidator`'s `validateTransaction` Function Disregards Signature Parameter",
+            "description": "The `validateTransaction` function in `SessionKeyValidator` decodes the signature from `transaction.signature` instead of using the provided `signature` parameter, unlike the consistent behavior in `WebAuthValidator`. While this does not introduce a security vulnerability, it creates inconsistency in the codebase. The root cause is divergent implementation patterns across validators. This can confuse developers integrating or auditing the code. The impact is reduced code uniformity and potential for bugs if developers expect consistent parameter usage across validators.\n",
+            "severity": "Low",
+            "location": [
+                "SessionKeyValidator.sol::validateTransaction#142"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inconsistent Order Within Contracts",
+            "description": "Several contracts (`SessionKeyValidator`, `SsoAccount`, `WebAuthValidator`) mix functions of different visibilities, while `SessionLib` interlaces `enums` and `structs`, and `WebAuthValidator` mixes storage variables with events. This violates the Solidity Style Guide's recommended layout order. The root cause is lack of code formatting standards. This reduces code readability and maintainability, making it harder to navigate and audit. The impact is increased cognitive load for developers and auditors, potentially leading to missed issues during review.\n",
+            "severity": "Low",
+            "location": [
+                "SessionKeyValidator.sol",
+                "SsoAccount.sol",
+                "WebAuthValidator.sol",
+                "SessionLib.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inconsistency Between Specifications and Implementation",
+            "description": "The `IModule` interface specifies that `onInstall` must revert if the module is already enabled, but `WebAuthValidator` and `SessionKeyValidator` allow multiple calls with different `data` inputs even after being enabled. This creates a discrepancy between documented behavior and actual implementation. The root cause is incomplete enforcement of interface requirements. This can mislead developers integrating modules, who may rely on the specified revert behavior for safety checks. The impact is potential logic errors in client applications or higher-level protocols that assume the specification is strictly followed.\n",
+            "severity": "Low",
+            "location": [
+                "IModule.sol::onInstall#10",
+                "WebAuthValidator.sol#35-39",
+                "SessionKeyValidator.sol#52-56"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IModule.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Validation Not Failing Early",
+            "description": "In `SessionKeyValidator`, during session creation, if `expiresAt` is less than 60 seconds, the transaction reverts inside `assertTimestampInRange`. However, this revert occurs late in the process. The recommendation is to revert earlier by explicitly checking `sessionSpec.expiresAt < 60`. The root cause is suboptimal error handling flow. While the final outcome is correct (revert), the lack of early validation wastes gas and provides less clear error context. The impact is inefficient gas usage and less informative error traces for users.\n",
+            "severity": "Low",
+            "location": [
+                "SessionKeyValidator.sol#88-89"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/SessionKeyValidator.sol"
+            ]
+        }
+    ]
+}

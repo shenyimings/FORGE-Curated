@@ -1,0 +1,471 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_Makina_MakinaCoreSmartContracts_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Makina-Core"
+        ],
+        "commit_id": [
+            "618b8f39"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2026-01-26",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Base Token Removal Can Be Blocked",
+            "description": "The removeBaseToken() function in the Caliber contract checks that the contract balance is zero before allowing removal of a base token. This creates a vulnerability where any external user can block the removal process by sending a minimal amount (e.g., 1 wei) of the token to the contract. The function is protected by the onlyRiskManagerTimeLock modifier, meaning it is intended to be called via a timelocked proposal. However, during the pending execution window, an attacker can deposit tokens to block the operation. If the oracle for the token becomes unavailable, this could permanently block accounting and swapping operations involving the token, disrupting system functionality.\n",
+            "severity": "Low",
+            "location": [
+                "Caliber::removeBaseToken"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "End-of-state Sentinel Comparison Can Incorrectly Decode",
+            "description": "The _decodeAccountingOutputState function uses a fixed 32-byte sentinel value (bytes32(type(uint256).max)) to detect the end of the output state array. This comparison is vulnerable to two types of errors: (1) Truncation of dynamic bytes inputs longer than 32 bytes — if the first 32 bytes match the sentinel value (0xff...ff), the loop will terminate prematurely; (2) Collision with valid outputs encoding -1, since the sentinel value is equivalent to the two’s complement representation of -1. In both cases, legitimate data may be misinterpreted as the end marker, causing valid elements to be skipped and leading to incorrect state decoding. Although the team acknowledged this issue, they deemed it non-problematic under the assumption that only unsigned integers up to 32 bytes are used in authorized accounting outputs.\n",
+            "severity": "Low",
+            "location": [
+                "Caliber::_decodeAccountingOutputState"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Bridge Transfer Can Be Counted as Profit",
+            "description": "In CaliberMailbox, the manageTransfer function transfers tokens from BridgeAdapter to Caliber. A malicious operator can exploit reentrancy between CaliberMailbox and Caliber to manipulate the slippage check in Caliber.swap(). By initiating a swap with high slippage and reentering via manageTransfer to inject tokens into Caliber, the injected tokens are counted as profit, falsely satisfying the slippage check. This allows the operator to extract up to 50% of the AUM as profit without detection. The vulnerability arises because although both contracts use reentrancy guards, they are in separate contracts, allowing cross-contract reentrancy. The fix involved introducing a notifyIncomingTransfer function to safely handle incoming transfers.\n",
+            "severity": "High",
+            "location": [
+                "CaliberMailbox::manageTransfer",
+                "Caliber::swap"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Reentrancy Can Cause Incorrect Share Price",
+            "description": "The Machine contract calculates share price based on AUM, which is queried via getDetailedAUM() from Caliber contracts. Since this call can be triggered during a reentrant call (e.g., via a malicious token's transfer function), an attacker can manipulate the perceived AUM. For example, during a swap where tokens are temporarily moved out of Caliber, a reentrant call to updateTotalAUM() would see a lower balance, resulting in an artificially low share price. Conversely, flashloans could inflate the AUM. This read-only reentrancy is possible because getDetailedAUM() is a view function but influences state in Machine. The issue was fixed by adding a read-only reentrancy guard to prevent such manipulations.\n",
+            "severity": "High",
+            "location": [
+                "Machine::updateTotalAUM",
+                "Caliber::getDetailedAUM"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Invalidation of All Ungrouped Positions When Managing an Ungrouped Position",
+            "description": "In Version 2 of the Caliber implementation, ungrouped positions are added to _positionIdGroups[0], the zero group. When managing any ungrouped position, the _invalidateGroupedPositions function invalidates all positions in the same group — including all other ungrouped positions — by clearing their lastAccountingTime. This leads to unnecessary invalidation and potential miscalculation of AUM. The root cause is the lack of special handling for groupId == 0. The fix ensures that ungrouped positions are not added to any group and that the zero group is excluded from invalidation.\n",
+            "severity": "Medium",
+            "location": [
+                "Caliber::_accountForPosition",
+                "Caliber::_managePosition",
+                "Caliber::_invalidateGroupedPositions"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Hash Collision in _getStateHash",
+            "description": "The _getStateHash function concatenates raw bytes of state elements without delimiters or length prefixes before hashing, making it vulnerable to hash collisions. Different sequences of inputs (e.g., [\"a\", \"bc\"] vs [\"ab\", \"c\"]) can produce identical concatenated byte strings (\"abc\"), leading to the same hash. This allows an operator to substitute one state for another with the same hash, bypassing validation. The vulnerability was resolved by hashing each element individually before concatenation, ensuring unique contributions to the final hash.\n",
+            "severity": "Medium",
+            "location": [
+                "Caliber::_getStateHash"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Linked Positions Can Be Updated Separately",
+            "description": "In Version 1, accounting instructions update positions independently, even when positions are logically linked (e.g., collateral and debt in a leveraged position). If one position is updated (e.g., debt reduced after liquidation) but its linked counterpart (collateral) is not, the AUM will be temporarily incorrect — either inflated or deflated. This inconsistency can be exploited to manipulate share price or fee calculations. The fix introduced a groupId field in the Instruction struct and enforced batch updates for grouped positions via accountForPositionBatch, while preventing individual updates via accountForPosition.\n",
+            "severity": "Medium",
+            "location": [
+                "Caliber::accountForPosition",
+                "Caliber::accountForPositionBatch"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Reentrancy Can Circumvent Slippage Check",
+            "description": "The slippage check in Caliber relies on comparing position values before and after a management instruction. However, accountForPosition() lacks a reentrancy guard, allowing reentrant calls during external interactions (e.g., token transfers in swaps). An attacker can reenter to re-record the position value mid-execution, causing the final difference to appear zero even if significant changes occurred. This bypasses the slippage check, enabling unchecked losses or debt accumulation. The vulnerability was fixed by adding a reentrancy guard to both accountForPosition and accountForPositionBatch.\n",
+            "severity": "Medium",
+            "location": [
+                "Caliber::accountForPosition",
+                "Caliber::managePosition"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "onFlashLoan Reverts Due to Missing Approval",
+            "description": "In the FlashLoanAggregator contract, the onFlashLoan function incorrectly transfers repayment funds directly instead of approving them to the DSS Flash contract. This causes the flash loan to revert because the receiving contract cannot pull the funds. As a result, the DSS Flash integration becomes non-functional. The issue stems from a misunderstanding of the expected repayment mechanism in the flash loan protocol. The fix updated the function to approve the required amount to the sender rather than transferring it directly.\n",
+            "severity": "Medium",
+            "location": [
+                "FlashLoanAggregator::onFlashLoan"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Bridge Fees Can Be Hidden From AUM Calculation",
+            "description": "The system calculates Total AUM by summing Spoke assets and \"In-Flight\" assets (sent minus received). A malicious operator can manipulate this by recording received inputAmount as less than sent amount (e.g., 99 instead of 100), making the difference appear as \"In-Flight\" rather than realized loss. This hides bridge fees and inflates AUM. The attack is enabled because LayerZeroV2BridgeAdapter.lzCompose does not validate the _from address, allowing fake OFT contracts to send messages. The fix added validation to ensure messages come only from authorized OFT contracts.\n",
+            "severity": "Low",
+            "location": [
+                "LayerZeroV2BridgeAdapter::lzCompose",
+                "LayerZeroV2BridgeAdapter::authorizeInBridgeTransfer"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Double Counting of Position Tokens Transferred to Hub Machine",
+            "description": "When position tokens are transferred to the Hub Machine via transferToHubMachine, they remain accounted in the source Caliber until the next accounting update, while simultaneously being included in the Machine's AUM upon receipt. This results in double counting during the interim period, inflating the total AUM. The vulnerability arises because pos.value is not updated upon transfer. The fix prevents the transfer of position tokens altogether through this function to eliminate the race condition.\n",
+            "severity": "Low",
+            "location": [
+                "Caliber::transferToHubMachine"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Caliber Data Can Be Overwritten With Older Value",
+            "description": "In MachineUtils, the _handlePerChainQueryResponse function accepts wormhole CCQ responses with timestamps equal to the current stored data. On chains like Arbitrum with sub-second block times, two blocks can have the same timestamp, allowing older data to overwrite newer data if processed later. This breaks the expected monotonicity of state updates. The fix changed the validation to require strictly newer timestamps, preventing overwrites with equal or older data.\n",
+            "severity": "Low",
+            "location": [
+                "MachineUtils::_handlePerChainQueryResponse"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Inconsistent Staleness Check",
+            "description": "The staleness check for position accounting is implemented inconsistently across functions. In getDetailedAUM(), the function reverts if lastAccountingTime <= _positionStaleThreshold, while in isAccountingFresh(), it returns false only if lastAccountingTime < _positionStaleThreshold. This discrepancy means that when the time is exactly equal, one function treats it as stale and the other does not. This inconsistency could lead to incorrect AUM calculations or unexpected reverts. The fix aligned both checks to use >=, making the behavior consistent.\n",
+            "severity": "Low",
+            "location": [
+                "Caliber::getDetailedAUM",
+                "Caliber::isAccountingFresh"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Incorrect Natspec",
+            "description": "The Natspec documentation for setMaxFeeAccrualRate() in IMachine incorrectly states that the parameter is in basis points, when in reality it represents shares per second in wei. This misleads developers and auditors about the unit of measurement, potentially leading to incorrect usage or configuration. While not a direct security vulnerability, it represents a correctness issue that could result in operational errors. The specification was updated to accurately reflect the parameter as \"wei per second\".\n",
+            "severity": "Low",
+            "location": [
+                "IMachine::setMaxFeeAccrualRate"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Incorrect Storage Location",
+            "description": "In OracleRegistry, the constant OracleRegistryStorageLocation contains a hardcoded bytes32 value that does not match the one derived from the comment's formula. The value was mistakenly copied from the ChainRegistry contract's storage location. While the comment correctly describes the intended location, the actual value is incorrect. This could lead to storage collisions in an upgradeable proxy context if not corrected. The fix updated the hex value to match the intended storage slot.\n",
+            "severity": "Low",
+            "location": [
+                "OracleRegistry::OracleRegistryStorageLocation"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "outBridgeTransferCancelDefault Is Underspecified",
+            "description": "The Natspec for outBridgeTransferCancelDefault() does not fully describe the return value behavior in cases of pending refunds. Specifically, if a bridge transfer has been sent but not yet filled or refunded, the function returns the full amount, implying a 100% fee. This can be misleading, as the actual fee may later be zero when the refund is processed. The original specification did not clarify this edge case, potentially leading to incorrect interpretation by integrators. The Natspec was updated to explicitly state that the full amount is returned in cases including pending refunds.\n",
+            "severity": "Low",
+            "location": [
+                "AcrossV3BridgeAdapter::outBridgeTransferCancelDefault"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "PreDepositVault Does Not Initialize ReentrancyGuard",
+            "description": "The PreDepositVault contract inherits from ReentrancyGuard but fails to call __ReentrancyGuard_init() in its initialize function. Although the _status variable defaults to 0, which is functionally equivalent to _NOT_ENTERED (1) under the nonReentrant modifier's logic, this violates best practices for upgradeable contracts. Failing to explicitly initialize inherited state increases the risk of undefined behavior in complex inheritance trees. The fix ensures proper initialization by calling the parent initializer.\n",
+            "severity": "Informational",
+            "location": [
+                "PreDepositVault::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "ExpectedDataHash Could Be Cleared Earlier",
+            "description": "In FlashloanAggregator, the ExpectedDataHash is cleared after the flashloan callback completes, but it could be cleared immediately after verification. Delaying the clearance increases the window for potential reentrancy, even though the risk is low due to data validation. Clearing the hash earlier minimizes the attack surface and follows secure coding best practices. The fix now clears ExpectedDataHash right after _isValidExpectedDataHash confirms its validity.\n",
+            "severity": "Informational",
+            "location": [
+                "FlashLoanAggregator::_isValidExpectedDataHash"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Incompatible Modifier Usage",
+            "description": "In CaliberMailbox, the authorizeInBridgeTransfer function uses the onlyOperator modifier, but when recovery mode is inactive, the operator is always the mechanic. This makes the modifier semantically incorrect and confusing. The function should use onlyMechanic for clarity and correctness. The fix added an onlyMechanic modifier to MakinaGovernable and applied it to relevant functions, improving code readability and access control precision.\n",
+            "severity": "Informational",
+            "location": [
+                "CaliberMailbox::authorizeInBridgeTransfer"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Redundant Loop Counter",
+            "description": "In the _decodeAccountingOutputState function of the Caliber contract, two loop counters (i and count) are used, but they are always incremented together, making one redundant. This is a code quality issue that reduces readability and maintainability. While it has no direct security impact, it increases the risk of logic errors during future modifications. The fix removed the redundant counter and used only i for iteration.\n",
+            "severity": "Informational",
+            "location": [
+                "Caliber::_decodeAccountingOutputState"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Registry Cannot Be Correctly Updated",
+            "description": "1. **Description:** The `setChainIds()` function in ChainRegistry and `setToken()` in TokenRegistry do not allow zero values to be set, which prevents proper cleanup of outdated references. This leads to incorrect pointer states when bidirectional mappings are updated.\n2. **Cause:** The functions enforce non-zero values during updates, making it impossible to reset one side of a bidirectional mapping after the other has been changed.\n3. **Exploitation:** An attacker or misconfigured update could leave stale pointers in the registry, leading to inconsistent state where outdated entries point to invalid or obsolete chain or token IDs.\n4. **Impact:** This could result in incorrect routing of cross-chain messages or token operations, potentially leading to failed transactions or misdirected assets, though no direct fund loss is implied.\n",
+            "severity": "Informational",
+            "location": [
+                "ChainRegistry::setChainIds",
+                "TokenRegistry::setToken"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Unchecked Loops",
+            "description": "1. **Description:** The code uses manual `unchecked { i++ }` patterns in for loops, which is redundant and potentially misleading given newer Solidity compiler optimizations.\n2. **Cause:** Developers manually applied unchecked increments for gas optimization, unaware that Solidity 0.8.22+ automatically applies this optimization for loop counters.\n3. **Exploitation:** While not directly exploitable, this pattern may lead to confusion or incorrect assumptions about overflow safety in loops, especially if the code is ported or modified without understanding the compiler behavior.\n4. **Impact:** The main impact is reduced code clarity and maintainability, with negligible gas savings due to redundant optimization. No security risk is present post-correction.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "_positionTokens Can Get Stale",
+            "description": "1. **Description:** The `_positionTokens` set, which tracks tokens in active positions, is only updated during position creation or closure and does not reflect changes in allowed instructions.\n2. **Cause:** The set is not synchronized when instruction rules change (via `allowedInstrRoot`), leading to desynchronization between the actual allowed tokens and the tracked set.\n3. **Exploitation:** Tokens removed from instructions remain in the set (stale entries), blocking their reuse, while new tokens added to instructions are not added (missing entries), allowing them to bypass safety checks.\n4. **Impact:** This can lead to permanent blocking of valid tokens or security bypasses where unauthorized tokens are used in swaps or as base tokens, undermining access control and safety mechanisms.\n",
+            "severity": "Informational",
+            "location": [
+                "_positionTokens",
+                "allowedInstrRoot"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Bad Debt Can Underestimate AUM",
+            "description": "1. **Description:** When a position pair has \"bad debt\" (collateral value less than debt), the negative net value is included in AUM calculation, but the system enforces AUM >= 0, leading to underestimation of total AUM.\n2. **Cause:** The AUM calculation sums all position values without capping negative contributions at zero before aggregation.\n3. **Exploitation:** While not directly exploitable, this behavior distorts the true economic state of the system, especially when mixed with profitable positions.\n4. **Impact:** The underestimation of AUM can mislead stakeholders about the system's health and affect share price accuracy, potentially impacting depositors and redeemers.\n",
+            "severity": "Informational",
+            "location": [
+                "Caliber"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Operator Can Cause Invalid Bridge State",
+            "description": "1. **Description:** The operator can cancel a minimal (1 wei) bridge transfer after donating tokens, causing `MachineOut < CaliberIn`, which blocks share price updates.\n2. **Cause:** The `cancelOutBridgeTransfer` function allows cancellation if excess tokens exist, and the operator can artificially create such a condition.\n3. **Exploitation:** By initiating and canceling a trivial transfer, the operator can induce an accounting mismatch that halts share price updates.\n4. **Impact:** This leads to a stale share price, disrupting deposit and withdrawal fairness. While governance can fix it via `resetBridgingState`, it introduces operational risk.\n",
+            "severity": "Informational",
+            "location": [
+                "cancelOutBridgeTransfer",
+                "authorizeInBridgeTransfer",
+                "BridgeAdapter"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Overflow in previewRedeem()",
+            "description": "1. **Description:** The `previewRedeem()` function in PreDepositVault performs a complex multiplication that could overflow for very large `_shareLimit` values.\n2. **Cause:** The calculation involves multiple high-magnitude values (token balances, prices, supply) without sufficient overflow protection for non-max inputs.\n3. **Exploitation:** An attacker could pass a large (but not maximal) `_shareLimit` to trigger an overflow, potentially causing incorrect asset limit calculations.\n4. **Impact:** This could result in incorrect deposit limits or miscalculated redemptions, affecting economic fairness and system integrity.\n",
+            "severity": "Informational",
+            "location": [
+                "PreDepositVault::previewRedeem",
+                "maxDeposit"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "Users May Exit Before Fees Are Minted",
+            "description": "1. **Description:** Fees are accrued over time but only applied discretely via `manageFees` after a cooldown, allowing users to avoid paying pending fees by redeeming early.\n2. **Cause:** The fee application is not continuous but batched, creating a window where fee liability is not yet enforced.\n3. **Exploitation:** Users can strategically redeem before fee minting to avoid dilution, while new depositors may be unfairly charged for past accruals.\n4. **Impact:** This creates an incentive misalignment and potential for fee avoidance, undermining the fee model and leading to unfair distribution of costs.\n",
+            "severity": "Informational",
+            "location": [
+                "manageFees",
+                "_feeMintCooldown"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Behavior In Case Of Vulnerable Accounting Scripts",
+            "description": "1. **Description:** The Caliber's AUM depends on Weiroll scripts that execute arbitrary accounting logic, which could be manipulated if they rely on vulnerable on-chain data.\n2. **Cause:** Scripts may use manipulable sources like spot prices, liquidity pool functions, or rebasing token balances that can be temporarily skewed.\n3. **Exploitation:** An attacker could manipulate pool states or oracle inputs to inflate or deflate reported position values, affecting AUM and share price.\n4. **Impact:** This could lead to incorrect share pricing, unfair dilution, or loss of funds if actions are taken based on false valuations.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Chainlink Oracle Considerations",
+            "description": "1. **Description:** The OracleRegistry uses Chainlink oracles, and improper configuration (e.g., chained feeds, stale thresholds) can lead to inaccurate pricing and AUM.\n2. **Cause:** Combined deviation from multiple feeds or mismatched stale thresholds can result in outdated or inaccurate prices being used.\n3. **Exploitation:** An attacker could exploit stale or deviated prices to manipulate slippage checks or AUM calculations.\n4. **Impact:** This affects the accuracy of economic calculations, potentially leading to incorrect decisions in deposits, withdrawals, or position management.\n",
+            "severity": "Informational",
+            "location": [
+                "OracleRegistry"
+            ],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "Collusion of Trusted Roles Can Escalate Privileges",
+            "description": "1. **Description:** Collusion between risk manager, security council, and instruction guardians could allow the addition and execution of malicious accounting instructions.\n2. **Cause:** While no single role has full control, together they can introduce and execute dangerous instructions (e.g., fund draining).\n3. **Exploitation:** A coordinated attack could introduce a malicious `ACCOUNTING` instruction and execute it permissionlessly.\n4. **Impact:** This could lead to unauthorized fund transfers or system manipulation, undermining the security model.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "Cross-Chain Staleness Thresholds Add Up",
+            "description": "1. **Description:** The system applies separate staleness checks on spoke chains and the hub, leading to cumulative staleness in AUM data.\n2. **Cause:** The effective staleness is the sum of `_positionStaleThreshold` and `_caliberStaleThreshold`.\n3. **Exploitation:** An attacker could exploit the extended staleness window to perform actions based on outdated valuations.\n4. **Impact:** This increases the risk of acting on stale data, potentially leading to incorrect economic decisions or arbitrage opportunities.\n",
+            "severity": "Informational",
+            "location": [
+                "Caliber::getDetailedAum",
+                "Machine"
+            ],
+            "files": []
+        },
+        {
+            "id": 31,
+            "category": {},
+            "title": "Deposits Are Not Paused Automatically",
+            "description": "1. **Description:** The Machine does not automatically pause deposits or withdrawals if accounting fails or becomes stale.\n2. **Cause:** Only the Security Council can trigger recovery mode to pause operations.\n3. **Exploitation:** Users can deposit or withdraw at stale prices, potentially gaining an unfair advantage.\n4. **Impact:** This exposes the system to economic exploitation during accounting failures, requiring active monitoring and intervention.\n",
+            "severity": "Informational",
+            "location": [
+                "Machine",
+                "recovery mode"
+            ],
+            "files": []
+        },
+        {
+            "id": 32,
+            "category": {},
+            "title": "Notes for Risk Managers",
+            "description": "1. **Description:** A collection of operational and security considerations for risk managers, including instruction design, cooldowns, reentrancy, and oracle risks.\n2. **Cause:** Complex interactions between instructions, approvals, and external protocols introduce subtle risks.\n3. **Exploitation:** Poorly designed instructions or configurations could lead to fund loss, manipulation, or system instability.\n4. **Impact:** Mismanagement could result in financial loss, stale share prices, or privilege escalation, especially if instructions are not carefully vetted.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 33,
+            "category": {},
+            "title": "Operator Can Lose Money by Bridging Repeatedly",
+            "description": "1. **Description:** The operator can repeatedly trigger bridging with maximum allowed loss (`maxBridgeLossBps`) due to lack of cooldown, potentially causing large losses.\n2. **Cause:** No rate limiting on bridge calls allows repeated execution within short timeframes.\n3. **Exploitation:** A malicious operator can loop bridge transactions to extract losses, or act as a filler to profit from the spread.\n4. **Impact:** This could rapidly deplete system funds unless closely monitored and capped by tight loss parameters and rapid governance response.\n",
+            "severity": "Informational",
+            "location": [
+                "maxBridgeLossBps",
+                "Across bridge integration"
+            ],
+            "files": []
+        },
+        {
+            "id": 34,
+            "category": {},
+            "title": "Positions Can Become Unlinked",
+            "description": "1. **Description:** Positions in the same group may become unlinked if one reaches zero value and is removed from the group, failing to rejoin automatically.\n2. **Cause:** The system removes positions from group tracking when value hits zero, but does not re-add them when value returns via external means.\n3. **Exploitation:** Unlinked positions are ignored in batch updates, leading to inconsistent state and potential stale invalidation.\n4. **Impact:** This breaks expected group behavior, potentially leading to incorrect accounting or missed updates.\n",
+            "severity": "Informational",
+            "location": [
+                "lastAccountingTime",
+                "_positionIdGroups"
+            ],
+            "files": []
+        },
+        {
+            "id": 35,
+            "category": {},
+            "title": "Redemptions May Be Temporarily Unavailable",
+            "description": "1. **Description:** Redemptions can revert if the Machine lacks sufficient assets, requiring operator-initiated withdrawals from positions.\n2. **Cause:** Assets are deployed in external protocols, and liquidity may be limited or delayed.\n3. **Exploitation:** Users may be unable to exit, especially if the operator is unresponsive or malicious.\n4. **Impact:** This affects user experience and trust, potentially leading to loss of funds if redemptions are indefinitely blocked.\n",
+            "severity": "Informational",
+            "location": [
+                "Redeemer",
+                "Machine"
+            ],
+            "files": []
+        },
+        {
+            "id": 36,
+            "category": {},
+            "title": "Sequencer Downtime",
+            "description": "1. **Description:** If a Caliber chain's sequencer is down, AUM updates cannot be processed, causing the Machine's share price to stale.\n2. **Cause:** The system relies on timely updates from all chains.\n3. **Exploitation:** Downtime on any chain affects the entire system, requiring recovery mode.\n4. **Impact:** This halts accurate pricing and may require governance intervention, disrupting operations.\n",
+            "severity": "Informational",
+            "location": [
+                "sequencer",
+                "Machine"
+            ],
+            "files": []
+        },
+        {
+            "id": 37,
+            "category": {},
+            "title": "Share Price Arbitrage",
+            "description": "1. **Description:** The periodic and oracle-dependent nature of share price updates makes it predictable, enabling arbitrage.\n2. **Cause:** Delays in accounting and price updates create windows where future prices can be estimated.\n3. **Exploitation:** Attackers can mint before an expected price rise and redeem after, profiting from the lag.\n4. **Impact:** This distorts fair pricing and can lead to wealth transfer from long-term holders to arbitrageurs.\n",
+            "severity": "Informational",
+            "location": [
+                "Depositor",
+                "Redeemer"
+            ],
+            "files": []
+        },
+        {
+            "id": 38,
+            "category": {},
+            "title": "Swap Module Only Supports exactIn Swaps",
+            "description": "1. **Description:** The `swap()` function in SwapModule only supports exactIn swaps; using exactOut can leave excess input tokens stuck.\n2. **Cause:** The function does not handle excess tokens from exactOut swaps.\n3. **Exploitation:** An operator attempting an exactOut swap could lose tokens that remain in the contract.\n4. **Impact:** This leads to fund loss or inefficiency in swap operations, requiring careful operator use.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapModule::swap"
+            ],
+            "files": []
+        },
+        {
+            "id": 39,
+            "category": {},
+            "title": "Wormhole Queries Have No Finality",
+            "description": "1. **Description:** Wormhole CCQ queries can be made on non-finalized blocks, risking inclusion of data that may be forked out.\n2. **Cause:** Permissionless queries on the latest block without finality guarantees.\n3. **Exploitation:** An attacker (e.g., sequencer) could donate funds in a block that is later reverted, temporarily inflating AUM.\n4. **Impact:** This could lead to incorrect share price calculations based on invalid data, though the risk is mitigated by finality mechanisms and detection.\n",
+            "severity": "Informational",
+            "location": [
+                "Wormhole CCQ"
+            ],
+            "files": []
+        }
+    ]
+}

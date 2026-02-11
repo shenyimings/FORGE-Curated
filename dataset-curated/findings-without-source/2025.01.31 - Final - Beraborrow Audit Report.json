@@ -1,0 +1,206 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.01.31 - Final - Beraborrow Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Beraborrowofficial/blockend",
+            "https://github.com/sherlock-audit/2025-01-boyco"
+        ],
+        "commit_id": [
+            "3f331ebb0c371d6afdb8afdf9cb08d47bbfe20d3",
+            "35a1e39283400947bb18eb2513962b7b7711aee0"
+        ],
+        "address": [],
+        "chain": "berachain",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-13",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Setting peripheryFlashLoanFee does not affect the effective fee value due to incorrect getPeripheryFlashLoanFee() implementation",
+            "description": "The DebtToken contract uses the _flashFee() function to determine the flash loan fee, which calls getPeripheryFlashLoanFee() on the BeraborrowCore contract. However, because the check in getPeripheryFlashLoanFee() relies on msg.sender being equal to the NECT token, and the call originates from DebtToken via BeraborrowCore instead of MetaBeraborrowCore, the condition fails. As a result, the function always returns the DEFAULT_FLASH_LOAN_FEE instead of the custom fee set for a periphery contract.\nThe root cause is a mismatch in contract delegation and incorrect msg.sender validation in MetaBeraborrowCore, where the logic assumes direct calls rather than indirect ones through BeraborrowCore.\nAn attacker cannot directly exploit this, but any periphery contract attempting to use a custom flash loan fee will fail to do so, rendering the feature non-functional.\nThe impact is that the protocol cannot implement dynamic flash loan fee adjustments for periphery contracts, reducing flexibility and potential revenue optimization.\n",
+            "severity": "High",
+            "location": [
+                "DebtToken.sol::_flashFee#",
+                "MetaBeraborrowCore.sol::getPeripheryFlashLoanFee#178-182"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "During Recovery Mode Liquidation, the TCR is being computed incorrectly",
+            "description": "During liquidation in recovery mode, the Total Collateral Ratio (TCR) is incorrectly calculated because the variable entireSystemColl fails to subtract the collateral gas compensation paid out to liquidators, the sNECT gauge, and the validator pool. This omission leads to an inflated TCR value.\nThe root cause lies in the liquidateDens and batchLiquidateDens functions, where the accounting for system collateral omits the deduction of collateral gas compensation, despite it being removed from the system.\nAn attacker could exploit market conditions during recovery mode by manipulating liquidation eligibility, potentially avoiding liquidation when they should be subject to it due to the inflated TCR.\nThe impact is incorrect liquidation behavior: under-collateralized positions may not be liquidated because the TCR appears higher than it actually is, threatening system solvency and fairness.\n",
+            "severity": "Medium",
+            "location": [
+                "LiquidationManager.sol::liquidateDens",
+                "LiquidationManager.sol::batchLiquidateDens"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Redemption fees can be manipulated during Recovery mode",
+            "description": "During recovery mode, borrowing fees are waived, allowing a malicious borrower to open a large-den with significant debt without cost. This inflates the total system debt, which directly affects the redemption fee calculation, lowering the fee for redemptions.\nThe root cause is the absence of borrowing fees during recovery mode, which creates an incentive for manipulation rather than discouraging it. The redemption rate depends on the ratio of total debt to redeemed collateral, so inflating total debt reduces the fee.\nAn attacker can open a large-den during recovery mode, trigger a redemption at a lower fee, and then close the large-den, effectively gaming the system.\nThe impact is financial loss for the protocol due to reduced redemption fees, undermining the economic model and potentially encouraging repeated abuse.\n",
+            "severity": "Medium",
+            "location": [
+                "DenManager.sol::redeemCollateral"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Anyone can avoid receiving bad debt distribution by closing his Den right before liquidation",
+            "description": "When a den is liquidated, its bad debt is redistributed among the remaining dens in the same Den Manager. However, users can avoid receiving this redistributed debt by closing their dens just before the liquidation occurs.\nThe root cause is the lack of a mechanism to lock dens or delay closures during imminent liquidations, allowing users to exit strategically and shift the burden of bad debt onto fewer remaining dens.\nAn attacker can monitor liquidation triggers and close their den preemptively, avoiding any share of bad debt redistribution.\nThe impact is unfair concentration of bad debt on the last remaining dens, potentially forcing them into liquidation or requiring unexpected repayments, leading to user losses and systemic instability.\n",
+            "severity": "Medium",
+            "location": [
+                "DenManager.sol::liquidateDen",
+                "BorrowerOperations.sol::closeDen"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Wrong slippage check in LSPRouter::withdraw()",
+            "description": "The LSPRouter::withdraw() function uses a slippage check that ensures the returned shares are greater than or equal to minSharesWithdrawn, which is incorrect. This check does not protect users from burning more shares than expected when withdrawing assets.\nThe root cause is a reversed slippage logic: since the share-to-asset ratio in the LSP can decrease under certain conditions (e.g., when more debt is offset than collateral added), users may receive fewer assets per share, but the current check does not account for maximum shares burned.\nUsers are exposed to unexpected losses when withdrawing due to unfavorable ratio changes or price fluctuations before transaction execution.\nThe impact is potential loss of funds for users who withdraw from the LSPRouter without proper protection against adverse slippage.\n",
+            "severity": "Medium",
+            "location": [
+                "LSPRouter.sol::withdraw#249"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Incorrect debt calculation for BrimeDen in DenManager leads to incorrect ICR calculation",
+            "description": "The DenManager calculates the Individual Collateralization Ratio (ICR) using getEntireDebtAndColl, which applies accrued den interest to all dens, including BrimeDen. However, BrimeDen does not pay interest, so applying interest inflation artificially increases its debt and lowers its ICR.\nThe root cause is the lack of a condition in getEntireDebtAndColl to exclude BrimeDen from interest accrual, leading to miscalculated debt values.\nThis error causes BrimeDen to appear under-collateralized when it is not, making it susceptible to premature or incorrect liquidation.\nThe impact is unintended liquidation of BrimeDen positions, resulting in user losses and reduced trust in the system's fairness and accuracy.\n",
+            "severity": "Medium",
+            "location": [
+                "DenManager.sol::getCurrentICR",
+                "DenManager.sol::getEntireDebtAndColl"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "InfraredCollateralVault is incompatible with assets which has less than 18 decimals",
+            "description": "InfraredCollateralVault scales totalAssets() to 18 decimals to account for reward values, but this creates inconsistency in share minting for assets with fewer than 18 decimals. The first depositor receives correctly scaled shares, but subsequent depositors receive far fewer shares due to the inflated totalAssets() value.\nThe root cause is the override of totalAssets() to return 18-decimal-normalized values without adjusting the share conversion logic accordingly, breaking the ERC4626 invariant.\nFor example, a 6-decimal asset results in a 1e12 discrepancy between expected and actual shares for later depositors.\nThe impact is a broken vault where all depositors except the first lose access to their proportional assets, effectively bricking the vault and causing permanent fund loss.\n",
+            "severity": "Medium",
+            "location": [
+                "InfraredCollateralVault.sol::totalAssets",
+                "InfraredCollateralVault.sol::_decimalsOffset"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "CollVaultRouter::redeemToOne will lead to permanent loss of funds for users",
+            "description": "The CollVaultRouter::redeemToOne function redeems shares and swaps rewards to a target token, but if the collateral vault accrues iBGT rewards (which are staked into iBGTVault), those iBGTVault shares are not properly handled. When redeemed via CollVaultRouter, the iBGTVault rewards become stuck in the router contract.\nThe root cause is the lack of logic to unstake and claim rewards from iBGTVault when redeeming through the router, unlike direct redemption from the vault.\nUsers who redeem via CollVaultRouter will not receive iBGT-based rewards, and those tokens remain trapped in the contract with no withdrawal mechanism.\nThe impact is permanent loss of reward tokens for users, reducing yield and eroding trust in the protocol's reward distribution integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "CollVaultRouter.sol::redeemToOne"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Funds can be permanently lost in redeemToOne due to mismatched reward token handling",
+            "description": "The vulnerability arises in the CollVaultRouter::redeemToOne function when handling reward tokens from both the collateral vault and the iBGTVault. The root cause is that the tokens array used for swapping is constructed only from the initial collateral vault's rewarded tokens, excluding additional reward tokens (e.g., token C) that may be generated by iBGTVault during redemption. As a result, when a user redeems shares, tokens from iBGTVault redemption (like token C) are sent to the router but are not included in the swap path. This leads to those tokens being stuck in the router contract. An attacker can exploit this by using the stuck funds as input in depositFromAny() by inflating the specified inputAmount, effectively front-running the rescue mechanism. The impact is permanent loss of user funds, as certain reward tokens are not forwarded to the user and remain stranded in the router unless manually rescued by an admin.\n",
+            "severity": "Medium",
+            "location": [
+                "InfraredCollateralVault.sol::_harvestRewards#82-129",
+                "KodiakIslandVault.sol::_autoCompoundHook#27-38",
+                "CollVaultRouter.sol::redeemToOne#352-393"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Users can redeem more CollateralToken by splitting debtAmount",
+            "description": "This vulnerability allows users to manipulate the redemption mechanism to receive more collateral than intended by splitting a single large debtAmount into multiple smaller ones. The root cause lies in the _updateBaseRateFromRedemption function, which increases the baseRate proportionally to the collateral drawn in each redemption. Because the fee calculation depends on this dynamic baseRate, performing multiple small redemptions results in a lower cumulative fee compared to a single large redemption. This discrepancy enables an attacker to extract more collateral tokens for the same debt, effectively gaming the system. The exploitation involves calling redeemCollateral multiple times with smaller debt amounts instead of once with a large amount. The impact is financial loss to the protocol due to reduced fees and over-distribution of collateral tokens.\n",
+            "severity": "Medium",
+            "location": [
+                "DenManager.sol::_updateBaseRateFromRedemption#498-513",
+                "DenManager.sol#687-692"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "InternalizeDonations will never work for asset token",
+            "description": "The internalizeDonations function fails when applied to the main asset token due to a logic error in calculating donated amounts. The root cause is that the function computes donatedAmount as the difference between the actual ERC20 balance and the virtual balance (getBalanceOfWithFutureEmissions). However, for the main asset, all deposited funds are immediately staked, leaving the contract's actual token balance near zero while the virtual balance is high. This causes the calculation to underflow or result in a negative value, triggering a revert on the require(donatedAmount >= amount) check. Consequently, any donated assets remain stuck in the contract and cannot be internalized. The same issue affects receiveDonations. The impact is loss of donated funds and broken functionality for donation handling, reducing the usability and robustness of the vault.\n",
+            "severity": "Medium",
+            "location": [
+                "InfraredCollateralVault.sol#237"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "InfraredCollateralVault::rebalance() can DoS the protocol",
+            "description": "The rebalance function in InfraredCollateralVault does not cap the amount of currency to be rebalanced against the current unlocked balance, making it vulnerable to a denial-of-service attack. The root cause is the lack of validation on the sent currency amount during rebalance, allowing it to exceed available liquidity. An attacker can exploit this by frontrunning an admin's rebalance call with a withdrawal, reducing the available balance. This causes the rebalance operation to withdraw more than available, leading to an underflow in totalAssets() when calculating unlocked balance. The underflow results in a revert, rendering all protocol functions inoperable. The impact is a complete halt of protocol operations, effectively DoSing the system until the issue is manually resolved.\n",
+            "severity": "Medium",
+            "location": [
+                "InfraredCollateralVault.sol#180",
+                "InfraredCollateralVault.sol#455"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Non EIP712 compliance in LiquidationManager::batchLiquidateDensWithPermit",
+            "description": "The batchLiquidateDensWithPermit function is not compliant with EIP-712 standards because it fails to hash the _denArray parameter before including it in the structHash. According to EIP-712, dynamic arrays like bytes and string (and by extension, address arrays in this context) must be hashed using keccak256 of their contents. The root cause is the direct inclusion of _denArray in the structHash without hashing, which deviates from the standard and may lead to signature malleability or incorrect hash generation. An attacker could potentially craft malicious signatures or exploit inconsistencies in signature validation. The impact is non-compliance with a widely adopted Ethereum standard, which undermines trust in the protocol's security and interoperability with wallets and other systems relying on correct EIP-712 implementation.\n",
+            "severity": "Medium",
+            "location": [
+                "LiquidationManager.sol#599"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Missing slippage control for certain router actions",
+            "description": "Certain router functions, such as CollVaultRouter::redeemCollateralVault, lack adequate slippage protection when the collateral is not unwrapped. The root cause is that slippage checks are only enforced during asset unwrapping, but not when redeeming collateral whose value depends on volatile prices. This allows the actual amount of collateral redeemed to vary significantly between the time of call and execution, especially during price drops. An attacker or malicious actor can exploit market volatility to cause users to lose value, as there is no minimum output enforced. The impact is potential loss of funds for users who do not receive sufficient collateral due to adverse price movements, undermining user trust and financial safety.\n",
+            "severity": "Medium",
+            "location": [
+                "CollVaultRouter.sol::redeemCollateralVault#227-229"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "BoycoVault::totalAssets() allows donation attacks",
+            "description": "The totalAssets function in BoycoVault relies on the underlying ERC-4626 implementation, which returns the actual ERC20 balance of the asset instead of using virtual accounting. The root cause is the absence of virtual balance tracking, making the vault susceptible to donation attacks. An attacker can donate tokens to inflate the vault's asset balance before a legitimate user deposits, thereby increasing the share price disproportionately. When the user mints shares, the amount received is rounded down due to the inflated price, resulting in a loss of value. The comment in the code suggests using virtual accounting to prevent this, but it is not implemented. The impact is financial loss for depositors due to manipulation of the share price via donations.\n",
+            "severity": "Medium",
+            "location": [
+                "BoycoVault.sol#186"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Double Performance Fee on Donations When Oracle is Added",
+            "description": "The protocol applies performance fees twice when a donated token later gets an oracle mapping. The root cause is duplicate fee logic: fees are applied both at the time of donation (if an oracle exists) and again when internalizing the donation, even if the oracle was added after the donation. If a token is donated without an oracle, no fee is taken initially. But when an oracle is later mapped, internalizing the donation triggers a performance fee, effectively treating it as a new yield event. This results in an unfair double deduction from the escrowed funds. The attack path involves donating a token without an oracle, waiting for an oracle to be added, and then triggering internalization. The impact is reduced funds for users due to unjustified fee deductions, undermining fairness and economic integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "InfraredCollateralVault.sol#109",
+                "InfraredCollateralVault.sol#244"
+            ],
+            "files": []
+        }
+    ]
+}

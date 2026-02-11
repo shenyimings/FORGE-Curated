@@ -1,0 +1,279 @@
+{
+    "path": "dataset-curated/reports/Zenith/Forte - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Forte-Service-Company-Ltd/liquidity-base",
+            "https://github.com/Forte-Service-Company-Ltd/liquidity-altbc"
+        ],
+        "commit_id": [
+            "03117b74639e71145e0640ddf33644177f390087",
+            "0852e9c2c10a707b897dd4691f0bc57a132238c2"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-31",
+        "project_path": {
+            "Forte - Zenith Audit Report.pdf-source": "dataset-curated/contracts/Forte - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "A slippage check should be implemented during liquidity deposits and withdrawals",
+            "description": "Slippage checks are essential in DeFi operations to protect users from unexpected price movements during transactions. The swap function includes a slippage check via _checkSlippage(amountOut, _minOut), but similar protections are missing in the depositLiquidity and _withdrawLiquidity functions. This omission allows an attacker to manipulate pool balances right before a deposit or withdrawal, leading to unfavorable or unexpected amounts being deposited or withdrawn by users. The lack of slippage protection increases the risk of economic loss for liquidity providers due to front-running or manipulation of token prices during high volatility periods. As a result, users may receive less value than anticipated when adding or removing liquidity.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L147",
+                "ALTBCPool.sol#L247",
+                "PoolBase.sol#L138"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "LP fees should be allocated to active liquidity",
+            "description": "LP fees are intended to be allocated only to active liquidity, as documented and mostly implemented correctly. However, in the swap function of PoolBase.sol, LP fees are incorrectly applied to the total liquidity (including inactive liquidity) when updating _collectedLPFees. This occurs because the division is performed using _w (total liquidity) instead of (_w - _wInactive()), which represents active liquidity. An attacker could exploit this by manipulating the distribution of fees to include inactive positions, potentially distorting fee accrual and leading to incorrect revenue calculations for active LPs. The impact is a deviation from the intended economic model, which could undermine trust in the system's fairness and lead to disputes over fee distribution.\n",
+            "severity": "High",
+            "location": [
+                "PoolBase.sol#L144"
+            ],
+            "files": [
+                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/amm/base/PoolBase.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Z should be updated when depositing liquidity",
+            "description": "The Z parameter, which tracks accumulated revenue adjustments, must be updated during liquidity deposits to maintain the core revenue invariant of the system. The current implementation skips this update in the depositLiquidity flow, violating the mathematical model that ensures revenue accrual increases monotonically. This omission breaks the consistency of the internal accounting mechanism, potentially allowing discrepancies in revenue tracking across LP positions. If Z is not updated correctly, the relationship between liquidity and revenue becomes inaccurate, leading to incorrect revenue claims by LPs. This could result in either underpayment or overpayment of accrued fees, undermining the economic integrity of the pool.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L91"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The Y token's decimal handling is incorrect during liquidity withdrawals",
+            "description": "During liquidity withdrawals, the Ay and revenueAccrued values are correctly scaled to the Y token's decimals (e.g., 1e6 for a 6-decimal token) in the simulateWithdrawLiquidity function. However, in the _withdrawLiquidity function, these already-scaled values are passed through _normalizeTokenDecimals, which applies an additional division by 10^yDecimalDiff (e.g., 1e12), resulting in values that are too small. This double normalization leads to users receiving significantly less Y tokens than they are entitled to. The root cause is the incorrect reapplication of decimal normalization on values that are already in the correct denomination. This bug results in a direct loss of funds for withdrawing LPs, especially when dealing with tokens that have fewer than 18 decimals.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L210",
+                "ALTBCPool.sol#L293",
+                "PoolBase.sol#L334"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Unsafe cast to Int256 allows an attacker to drain the pool",
+            "description": "The withdrawPartialLiquidity function unsafely casts the uint256 uj parameter to int256 before converting it to packedFloat. This allows an attacker to pass type(uint256).max, which overflows to -1 when cast to int256. This negative value bypasses the wj.lt(_uj) check because fixed-point arithmetic with negative numbers behaves unexpectedly, and subsequently leads to a large positive value when converted back to uint256 in revenueAccrued calculations. The attacker can exploit this to withdraw nearly all Y tokens from the pool, effectively draining it. The root cause is the lack of bounds checking during the uint256-to-int256 cast. The impact is catastrophic, as it enables complete loss of funds from the pool, qualifying it as a critical logic flaw despite the low likelihood of occurrence.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L227"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The collectedLPFees function is incorrect",
+            "description": "The collectedLPFees function returns the product of _collectedLPFees and total liquidity _w, but LP fees are only meant to be distributed to active liquidity (_w - _wInactive()). By using total liquidity instead of active liquidity, the function overstates the amount of collectable LP fees. This misrepresentation could lead to incorrect accounting, misleading UIs, or flawed off-chain analytics. The root cause is the failure to exclude inactive liquidity from the calculation. While the impact is limited to incorrect reporting rather than direct fund loss, it undermines the accuracy of financial metrics and could erode trust in the system's transparency.\n",
+            "severity": "Low",
+            "location": [
+                "PoolBase.sol#L306"
+            ],
+            "files": [
+                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/amm/base/PoolBase.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing deadline check could lead to bad trades",
+            "description": "The swap function lacks a deadline parameter, allowing transactions to be executed indefinitely in the future. Without a time constraint, users are exposed to MEV (Miner Extractable Value) attacks, such as sandwich attacks, where bots exploit stale price data to extract value. For example, a user may initiate a swap expecting a certain output, but if the transaction is delayed, price movements could result in unfavorable execution. The absence of a deadline increases the window for exploitation and reduces user control over transaction timeliness. The impact includes potential financial loss due to slippage and reduced user confidence in the platform's safety.\n",
+            "severity": "Low",
+            "location": [
+                "PoolBase.sol#L126"
+            ],
+            "files": [
+                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/amm/base/PoolBase.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ]
+            },
+            "title": "Risk of losing admin rights for Factory contract",
+            "description": "The FactoryBase contract uses OpenZeppelin's Ownable2Step for secure ownership management but does not override the renounceOwnership function to prevent its use. This allows the owner to accidentally call renounceOwnership(), resulting in irreversible loss of administrative control. Since there is no recovery mechanism, this could permanently disable critical functions like updating fee collectors or allowlists. The root cause is the lack of a safeguard against accidental renouncement. The impact is a potential freeze of governance functionality, rendering the contract partially or fully uncontrollable.\n",
+            "severity": "Low",
+            "location": [
+                "FactoryBase.sol"
+            ],
+            "files": [
+                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/factory/FactoryBase.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "The LiquidityWithdrawn event is used wrongly",
+            "description": "The LiquidityWithdrawn event defined in IALTBCEvents.sol has five parameters but is emitted in _emitLiquidityWithdrawn with six arguments, including a recipient address that does not exist in the event definition. This causes the recipient to be incorrectly mapped to the _revenue field, leading to event parsing errors in frontends and indexing services. The root cause is a mismatch between the event signature and its usage. The impact is incorrect data interpretation by off-chain systems, which could mislead users or break integrations relying on accurate event logs.\n",
+            "severity": "Informational",
+            "location": [
+                "IALTBCEvents.sol#L21",
+                "ALTBCPool.sol#L308"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/common/IALTBCEvents.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The depositLiquidity function lacks the computation for the Q value",
+            "description": "The depositLiquidity function declares a return value Q but does not assign it from the simulateLiquidityDeposit call, causing it to always return 0. The Q value, representing a key metric such as liquidity share or fee proportion, should be calculated and returned. The omission stems from an incomplete unpacking of the function's return values. While this does not break functionality, it provides incorrect or incomplete data to callers, potentially affecting downstream logic or analytics. The impact is limited to data accuracy and usability.\n",
+            "severity": "Informational",
+            "location": [
+                "ALTBCPool.sol#L147"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "There is no way to buy correct amounts",
+            "description": "The protocol documentation states support for buying exact amounts of X or Y tokens, but the swap function only supports selling exact amounts. While simSwapReversed allows simulation of buy-side swaps, there is no corresponding function to execute them. Users must manually calculate and invoke swap, which is error-prone and not atomic. The root cause is incomplete feature implementation. This limitation reduces usability and increases the risk of user error, though it does not introduce direct security risks. The team has acknowledged the issue but chose not to fix it.\n",
+            "severity": "Informational",
+            "location": [
+                "PoolBase.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The totalRevenue function is incorrect",
+            "description": "The totalRevenue function calculates revenue as retrieveH().mul(_w), but _w includes inactive liquidity, while revenue should only accrue to active liquidity (_w - _wInactive()). This leads to an overstatement of total revenue by including inactive positions. The root cause is the failure to subtract inactive liquidity from the total before multiplication. The impact is inaccurate financial reporting, which could mislead users, auditors, or analytics platforms about the true performance of the pool.\n",
+            "severity": "Informational",
+            "location": [
+                "ALTBCPool.sol#L477"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "ALTBCPool :: initializePool() function is missing a _pause() operation",
+            "description": "According to documentation, pools should be paused upon initialization to prevent immediate interaction before proper setup. However, the initializePool function in ALTBCPool.sol does not call _pause(), leaving the pool active from deployment. This creates a window where users can interact with an uninitialized or improperly configured contract. The root cause is a discrepancy between documentation and implementation. The team resolved this by updating the documentation rather than the code, indicating the behavior is intentional but inconsistent with prior expectations.\n",
+            "severity": "Informational",
+            "location": [
+                "ALTBCPool.sol#L59-L80"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        }
+    ]
+}

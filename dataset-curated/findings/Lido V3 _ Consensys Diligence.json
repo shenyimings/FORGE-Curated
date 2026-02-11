@@ -1,0 +1,937 @@
+{
+    "path": "dataset-curated/reports/Consensys_Diligence/Lido V3 _ Consensys Diligence.md",
+    "project_info": {
+        "url": [
+            "https://github.com/lidofinance/core"
+        ],
+        "commit_id": [
+            "22cab0f0372015f2d2fce8bede64e98beae28571"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-16",
+        "project_path": {
+            "core": "dataset-curated/contracts/Lido V3 _ Consensys Diligence.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ]
+            },
+            "title": "PinnedBeaconProxy Can Hide Malicious Implementation via Constructor",
+            "description": "The vulnerability allows an attacker to deploy a malicious staking vault implementation by manipulating the constructor of the PinnedBeaconProxy, which is otherwise expected to point to a legitimate implementation. The root cause lies in the fact that the VaultHub validates only the proxy's codehash and the isOssified() status from the implementation, but does not verify the actual pinned implementation address in storage. Since the constructor of the proxy is not part of the runtime bytecode, an attacker can craft a malicious constructor that pre-initializes the PINNED_BEACON_STORAGE_SLOT with a malicious implementation address. This implementation can return false for isOssified(), bypassing the VaultHub\u2019s checks. Once connected, the attacker can mint stETH against non-existent collateral and then drain all funds from the vault, leading to a loss of funds for the Lido protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "PinnedBeaconProxy.sol::constructor#L25-L39",
+                "PinnedBeaconUtils.sol::getPinnedImplementation#L16-L30",
+                "StakingVault.sol::isOssified#L180-L182",
+                "PinnedBeaconUtils.sol::ossified#L36-L38"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/PinnedBeaconProxy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Bypassing Quarantine and Reusing the Same Report Allows Minting Uncollateralized stETH",
+            "description": "This vulnerability enables an attacker to mint uncollateralized stETH by exploiting flaws in the quarantine mechanism and report reuse logic during vault disconnect/reconnect cycles. The root cause stems from multiple issues: the quarantine state is not cleared upon vault disconnection, outdated reports can be reused after reconnection, and there is no validation preventing the reuse of the same oracle report across multiple update cycles. An attacker can deposit a large amount of ETH directly to the vault (bypassing inOutDelta tracking), trigger a report that places the excess value into quarantine, disconnect and reconnect the vault multiple times while reusing stale reports, and eventually apply the same report after withdrawal of funds to falsely inflate the vault's total value. This allows the attacker to mint stETH against phantom collateral that no longer exists, resulting in severe protocol insolvency and loss of funds for stETH holders.\n",
+            "severity": "Critical",
+            "location": [
+                "LazyOracle::updateVaultData",
+                "VaultHub::voluntaryDisconnect",
+                "VaultHub::_deleteVault"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol",
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Incorrect Maximum Liability Shares Validation in LazyOracle",
+            "description": "The `_handleSanityChecks` function in the `LazyOracle` contract incorrectly reverts when the on-chain `maxLiabilityShares` is greater than the oracle-reported `_maxLiabilityShares`. This validation assumes that the oracle-reported value must always be greater than or equal to the current on-chain value, which fails to account for legitimate share mints that can occur between the time the oracle observes the state and when the report is submitted. As a result, valid oracle reports may be rejected if shares were minted during this window. This can disrupt normal vault operations, prevent state updates, and block critical recovery mechanisms such as force rebalancing and validator exits, effectively freezing the vault until a new report is submitted.\n",
+            "severity": "Critical",
+            "location": [
+                "LazyOracle.sol::L445-L448"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-459"
+                ]
+            },
+            "title": "Quarantine State Not Cleared on Vault Disconnection",
+            "description": "When a vault is voluntarily disconnected via `VaultHub.voluntaryDisconnect`, the `_deleteVault` function deletes various on-chain records but fails to clear the corresponding `vaultQuarantine` state in the `LazyOracle` contract. This leaves behind stale quarantine data for the disconnected vault. If the same vault is later reconnected, this residual quarantine state can be exploited to bypass intended safeguards. Specifically, an expired quarantine can be instantly reported and applied, allowing the vault to recognize an inflated total value without undergoing the required quarantine period. This behavior was leveraged in another finding to enable the minting of uncollateralized stETH, leading to potential loss of funds.\n",
+            "severity": "Critical",
+            "location": [
+                "VaultHub.sol::L665-L671",
+                "VaultHub.sol::L1223-L1235",
+                "LazyOracle.sol::L82-L85"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol",
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Quarantine Bypass Allows Using Reported Value Instantly",
+            "description": "The quarantine mechanism is designed to delay the recognition of large increases in a vault\u2019s reported value by quarantining excess amounts for a cooldown period. However, due to flawed logic in the `_processTotalValue` function, an expired quarantine entry is not properly cleared. If a slashing event occurs after a value increase is quarantined, subsequent reports within the allowed threshold do not trigger the quarantine branch, leaving the quarantine active but expired. Later, when a new large increase is reported, the system checks against the old `pendingTotalValueIncrease` and may incorrectly allow the full value to be applied immediately\u2014bypassing the quarantine entirely. This allows an attacker to manipulate the vault\u2019s total value without waiting for the cooldown, potentially leading to the minting of unbacked stETH and resulting in significant financial loss.\n",
+            "severity": "Critical",
+            "location": [
+                "LazyOracle.sol::L316-L361"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "A Vault Can Submit an Outdated Report After Reconnection",
+            "description": "A vault can disconnect and reconnect to the `VaultHub` in quick succession, during which it can apply the same outdated oracle report twice\u2014once to finalize disconnection and again after reconnection. Since the latest oracle report remains valid (timestamp-wise) after reconnection, it can be reused even though the vault\u2019s actual balance has changed significantly (e.g., after withdrawing 99 ETH). Although the difference should be quarantined, the previously identified issue (quarantine state not cleared) allows bypassing this safeguard. As a result, the vault can falsely report a much higher total value than its actual on-chain balance, leading to incorrect accounting and potential exploitation of the system for uncollateralized minting.\n",
+            "severity": "Critical",
+            "location": [],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-460"
+                ]
+            },
+            "title": "Broken Disconnection Flow Enables CONNECT_DEPOSIT Bypass and Tier Accounting Drift",
+            "description": "During the disconnection process in `VaultHub`, the `CONNECT_DEPOSIT` is unlocked early by setting `_record.locked = 0`, allowing it to be used for fee settlement. However, if a slashing event occurs before disconnection finalization, the process is aborted, but the deposit is not restored. This allows the vault to operate without the required collateral. Additionally, the vault is immediately demoted to the default Tier in `OperatorGrid` upon initiating disconnection, but if disconnection fails, it continues operating under its original Tier rules in `VaultHub`, creating a desynchronization. This mismatch enables the vault to retain favorable parameters from a higher Tier while being subject to looser limits in `OperatorGrid`, potentially allowing it to bypass share and group limits and disrupt system-wide accounting integrity.\n",
+            "severity": "Critical",
+            "location": [
+                "VaultHub.sol::L1018-L1019",
+                "VaultHub.sol::L524-L525",
+                "VaultHub.sol::L1021-L1023"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Rebalance Doesn\u2019t Take Into Account locked Amount and Obligations",
+            "description": "The `_rebalance` function in `VaultHub` allows a vault to withdraw funds via rebalancing without verifying that sufficient funds remain to cover the `locked` amount (such as the connection deposit) and unsettled obligations (like slashing reserve or fees). While other withdrawal paths enforce these checks, rebalancing only ensures that the rebalanced amount does not exceed the total value. This gap allows a vault owner to drain funds below required reserve levels, undermining the system\u2019s safety mechanisms. After rebalancing the full amount, additional shares can be minted, increasing liability beyond what is properly backed, which could lead to insolvency or bad debt in the event of slashing or withdrawal demands.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::L1469-L1480",
+                "VaultHub.sol::L1050-L1061"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "unguaranteedDepositToBeaconChain Lets Vault Owner Bypass Fees",
+            "description": "The `unguaranteedDepositToBeaconChain` function in the `Dashboard` contract increases the `rewardsAdjustment.amount` by the full deposit amount, even though these deposits are not reflected in the oracle\u2019s total value reporting. Since the fee calculation subtracts this adjustment from the vault\u2019s growth, the vault owner can artificially inflate the adjustment to offset or eliminate fee payments entirely. This creates a privilege escalation where the vault owner can avoid paying node operator fees by making arbitrary deposits to the Beacon Chain using validators outside the oracle\u2019s tracking scope, leading to unfair economic advantages and reduced protocol revenue.\n",
+            "severity": "Medium",
+            "location": [
+                "Dashboard.sol::L427-L432",
+                "NodeOperatorFee.sol::L157-L166"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/dashboard/Dashboard.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Vault Fees Can Be Indefinitely Deferred",
+            "description": "A vault owner can avoid paying Lido fees indefinitely by maintaining a zero balance in the vault while keeping all funds staked on the Consensus Layer. The `_planLidoTransfer` function uses `_vault.balance` to determine how much can be transferred for fees; if the balance is zero, no transfer occurs, and fees accumulate in `unsettledLidoFees`. Although beacon chain deposits are paused when unsettled fees exceed 1 ETH, this restriction can be circumvented using validator consolidations, which do not require new deposits. This allows vault owners to delay fee payments strategically based on market conditions, reducing their overall cost and increasing systemic risk due to accumulating unpaid obligations.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::L859-L865",
+                "VaultHub.sol::L559"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Fresh Report Requirements Enable Operations on Stale Vault Data",
+            "description": "Several critical functions in the `VaultHub` contract, such as `disconnect`, `voluntaryDisconnect`, `forceValidatorExit`, and others, do not require a recent oracle report before execution. This allows operations to proceed based on outdated vault state, potentially leading to incorrect decisions based on stale data. For example, a forced validator exit could be triggered without up-to-date knowledge of the vault\u2019s actual health or obligations. This increases the risk of erroneous actions that could harm the vault or the broader system. While some functions were later updated to include freshness checks, the absence of such validations in key flows originally created a window for manipulation and inconsistent state handling.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol",
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Multiple functions in `VaultHub` and `OperatorGrid` lack fresh Oracle report validation",
+            "description": "Several functions in the `VaultHub` and `OperatorGrid` contracts do not validate that an Oracle report is fresh before proceeding, allowing operations based on outdated vault state. This leads to multiple vulnerabilities.\n\nThe root cause is the absence of a `_requireFreshReport` check in critical functions, which allows stale data to be used for decision-making. For example, `disconnect` and `voluntaryDisconnect` can be initiated using stale `VaultRecord` data, leading to a soft-lock if fee settlement fails due to insufficient EL balance when a fresh report is finally applied. Similarly, `changeTier` allows manipulation of fee obligations by changing tiers before reporting, and `triggerValidatorWithdrawals` and `forceValidatorExit` can be called on unhealthy vaults due to stale health checks.\n\nAn attacker could exploit this by delaying Oracle report submissions while accruing fees, then initiating disconnection to trigger a revert during fee settlement, leaving the vault in a soft-locked state. They could also manipulate fee tiers before reporting to reduce their fee obligations retroactively, or execute validator exits on unhealthy vaults.\n\nThe impact includes vault soft-locking, potential loss of staking rewards, incorrect fee calculations, and unintended validator exits, all of which compromise the system's reliability and economic security.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::disconnect#L524-L529",
+                "VaultHub.sol::voluntaryDisconnect",
+                "OperatorGrid.sol::changeTier",
+                "VaultHub.sol::triggerValidatorWithdrawals",
+                "VaultHub.sol::forceValidatorExit",
+                "VaultHub.sol::pauseBeaconChainDeposits",
+                "VaultHub.sol::resumeBeaconChainDeposits",
+                "VaultHub.sol::requestValidatorExit"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol",
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Fees Should Be Paid Before Abandoning the Dashboard or Transferring Ownership",
+            "description": "The `abandonDashboard` and `_transferVaultOwnership` functions do not enforce the settlement of accrued node operator (NO) fees before transferring ownership or control of a vault. This creates a risk where the new owner inherits unresolved fee obligations, leading to inconsistencies in fee distribution.\n\nThe root cause is the lack of a call to `disburseNodeOperatorFee()` in these functions, unlike `voluntaryDisconnect`, which explicitly settles fees. This creates an asymmetry in how fees are handled across different ownership transfer paths.\n\nAn attacker could exploit this by transferring ownership of a vault with accrued but unpaid NO fees, leaving the new owner responsible for settling them or facing disputes over fee entitlement.\n\nThe impact is potential financial loss or disputes between old and new owners regarding unpaid NO fees, undermining trust in the ownership transfer mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "Dashboard.sol::abandonDashboard#L260-L272",
+                "Permissions::_transferVaultOwnership"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/dashboard/Dashboard.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Force Disconnect Does Not Enforce Fee Distribution",
+            "description": "When a vault is disconnected forcefully via `VaultHub.disconnect`, the node operator fees are not disbursed, unlike in `voluntaryDisconnect`, which explicitly calls `disburseNodeOperatorFee()`.\n\nThe root cause is the absence of a fee disbursement step in the `disconnect` function, creating an inconsistency between voluntary and forced disconnection flows.\n\nA malicious vault owner could initiate a forced disconnect to avoid paying accrued NO fees, especially if the vault is under governance control and the disconnect is triggered without prior fee settlement.\n\nThe impact is financial loss for node operators who are denied their rightful fees, potentially discouraging participation and reducing protocol security.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::disconnect#L494-L498",
+                "VaultHub.sol::voluntaryDisconnect#L665-L671",
+                "Dashboard.sol::voluntaryDisconnect#L254-L258"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ]
+            },
+            "title": "`feePeriodStartReport` Is Not Initialized and Remains Outdated After Reconnection",
+            "description": "The `feePeriodStartReport` variable is not reinitialized after a vault reconnects to the `VaultHub`, causing it to retain outdated values from before disconnection. This leads to incorrect fee calculations, potentially resulting in negative growth and avoidance of fee payments.\n\nThe root cause is the lack of reinitialization logic for `feePeriodStartReport` upon reconnection. The variable remains at its previous value, while the new `periodEnd` reflects current values, leading to an artificial negative growth if `inOutDelta` is inflated.\n\nA malicious vault owner could disconnect and reconnect at a strategic time to manipulate `inOutDelta` and create a negative growth scenario, thereby avoiding fee obligations on future rewards.\n\nThe impact is financial loss for the protocol due to under-collected fees, undermining the economic model and fairness of the fee distribution system.\n",
+            "severity": "Medium",
+            "location": [
+                "NodeOperatorFee.sol::calculateNodeOperatorFee#L159-L166"
+            ],
+            "files": [
+                "core/contracts/common/NodeOperatorFee.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent share limit applied during debt socialization",
+            "description": "In the `socializeVaultDebt` function, the receiving vault's `_shareLimit` is set based on its current locked amount in shares rather than using the configured `shareLimit` from its Tier parameters. Additionally, `_maxMintableRatioBP` is set to 100%, contradicting the reserve ratio safety buffer.\n\nThe root cause is the incorrect assignment of `_shareLimit` and `_maxMintableRatioBP` parameters during debt transfer, which reduces the destination vault's capacity to absorb bad debt and risks over-leveraging.\n\nAn attacker could exploit this by manipulating the timing of debt socialization to force unhealthy absorption of bad debt, potentially destabilizing the receiving vault.\n\nThe impact is increased risk of insolvency for the receiving vault and potential systemic instability due to improper risk distribution.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::socializeVaultDebt#L596-L597"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Disconnect Can Happen Instantly",
+            "description": "The `disconnect` and `voluntaryDisconnect` functions allow disconnection to complete immediately upon the next Oracle report, potentially in the same or next block, without a cooldown period.\n\nThe root cause is the lack of a timestamp check requiring the Oracle report to be newer than the disconnection initiation time, allowing instant completion.\n\nAn attacker could exploit this by triggering disconnection and immediately submitting a fresh report to finalize it, bypassing any observation window for delayed slashing updates or debt socialization.\n\nThe impact is reduced operational safety, as there is no time to detect and respond to post-disconnect risks, potentially leading to premature release of ownership and state clearance.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::disconnect",
+                "VaultHub.sol::voluntaryDisconnect",
+                "VaultHub.sol::applyVaultReport"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "`slashingReserve` Is Not Accounted for When Applying a Report",
+            "description": "The `applyVaultReport` function does not include the `slashingReserve` when calculating the `lockedEther` value, only considering `connect_deposit` and `mint_collateral`.\n\nThe root cause is the omission of `slashingReserve` in the `Math256.max` calculation, undermining the intended safety mechanism for validator slashing protection.\n\nAn attacker could exploit this by operating a vault near the edge of collateralization, relying on the missing reserve to appear healthy while being under-secured against slashing events.\n\nThe impact is increased protocol risk exposure to slashing events, potentially leading to under-collateralized positions and losses for stETH holders.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::applyVaultReport#L1037-L1040"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing `requestFeeLimit` Validation for EIP-7002 and EIP-7251",
+            "description": "The `triggerValidatorWithdrawals` and `addConsolidationRequest` functions do not enforce a maximum `requestFeeLimit` as defined in EIP-7002 and EIP-7251, allowing excessive fees to be submitted.\n\nThe root cause is the absence of a fee cap check, enabling users to submit arbitrarily high fees that are partially refunded, creating a griefing vector.\n\nAn attacker could exploit this by submitting thousands of withdrawal requests with high fees, causing exponential fee growth in the queue and blocking legitimate exits, especially during a depeg event.\n\nThe impact is denial of service for validator exits, potential loss of user funds due to excessive fee burns, and systemic instability during critical periods.\n",
+            "severity": "Medium",
+            "location": [
+                "StakingVault.sol::triggerValidatorWithdrawals#L370-L379",
+                "ValidatorConsolidationRequests.sol::addConsolidationRequest#L122-L132"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/StakingVault.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "New Redemptions Don\u2019t Take Into Account the Current Status",
+            "description": "The `setVaultRedemptions` function overwrites the `redemptions` value without checking its current state, creating a race condition that can lead to over-redemption.\n\nThe root cause is the lack of reconciliation between new and existing redemption values before assignment.\n\nAn attacker could exploit this by timing a redemption update just after the current redemptions are processed, causing the new value to be treated as entirely new, leading to double redemption.\n\nThe impact is over-rebalancing of the vault, potentially leading to incorrect stETH minting or burning and financial loss.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultHub.sol::setVaultRedemptions#L892-L907"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Report Reuse Validation",
+            "description": "The `updateVaultData` function in `LazyOracle` does not prevent replay of the same Oracle report, allowing an attacker to reapply a report after disconnection.\n\nThe root cause is the lack of a nonce or timestamp validation to ensure reports are used only once.\n\nAn attacker could exploit this by disconnecting, withdrawing funds, reconnecting, and replaying an old report to mint stETH against a higher total value.\n\nThe impact is potential minting of uncollateralized stETH, leading to direct financial loss for the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "LazyOracle.sol::updateVaultData#L248-L289"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "No Override of `renounceRole`",
+            "description": "The `AccessControlConfirmable` contract does not override `renounceRole`, allowing administrators to permanently renounce critical roles like `DEFAULT_ADMIN_ROLE`.\n\nThe root cause is the missing override that would prevent or control role renunciation.\n\nAn attacker with admin access could renounce their role, permanently locking out governance and preventing future updates.\n\nThe impact is potential loss of governance control and inability to upgrade or fix the system.\n",
+            "severity": "Low",
+            "location": [
+                "AccessControlConfirmable.sol"
+            ],
+            "files": [
+                "core/contracts/0.8.25/utils/AccessControlConfirmable.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Vault Ownership Transfer Bypasses Node Operator Approvals When Not Using Dashboard",
+            "description": "The `transferVaultOwnership` function allows direct ownership transfer without Node Operator confirmation if the vault is not using `Dashboard`.\n\nThe root cause is the lack of mandatory confirmation checks at the `VaultHub` level for ownership transfers.\n\nAn attacker could exploit this by transferring ownership of a privileged vault to a malicious actor, bypassing NO approval and inheriting favorable terms.\n\nThe impact is potential abuse of trust-based configurations and loss of control for node operators.\n",
+            "severity": "Low",
+            "location": [
+                "VaultHub.sol::transferVaultOwnership#L641-L660"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Vaults Can Exceed Their Own Share Limit After a Tier Change",
+            "description": "The `changeTier` function does not ensure that the vault's current `liabilityShares` are below the new tier's `shareLimit`, allowing over-limit positions.\n\nThe root cause is the missing check for existing liability shares during tier change.\n\nAn attacker could exploit this by changing to a lower-tier with a smaller share limit while holding more shares, violating system invariants.\n\nThe impact is accounting inconsistencies and increased risk exposure due to over-leveraged vaults.\n",
+            "severity": "Low",
+            "location": [
+                "OperatorGrid.sol::changeTier#L420"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "No Way to Update Vault\u2019s Parameters Without Reconnection",
+            "description": "Vault parameters like share limit and fee basis points can only be updated via reconnection, requiring unnecessary operational overhead.\n\nThe root cause is the absence of a dedicated parameter update function.\n\nThis is not directly exploitable but creates operational friction and potential downtime.\n\nThe impact is reduced usability and increased risk of service interruption during parameter updates.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Slashing Cost Is Fully Put on the Node Operators",
+            "description": "The full cost of slashing is assigned to node operators, creating a disincentive to continue validating after a slashing event.\n\nThe root cause is the economic design that places all slashing risk on NOs without shared mechanisms.\n\nAn attacker could exploit this by targeting NOs to force them to abandon their roles, reducing protocol security.\n\nThe impact is reduced validator retention and potential centralization as NOs exit after slashing.\n",
+            "severity": "Low",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "No Incentive for Node Operator to Increase Rewards Adjustments",
+            "description": "Node operators have no incentive to increase `rewardsAdjustment`, which reduces their fee entitlement, leading to potential overpayment by vaults.\n\nThe root cause is the lack of reward or obligation for NOs to adjust fees in favor of vaults.\n\nThis is not directly exploitable but leads to suboptimal economic outcomes.\n\nThe impact is reduced net rewards for vaults and potential distrust in NO behavior.\n",
+            "severity": "Low",
+            "location": [
+                "NodeOperatorFee.sol::increaseRewardsAdjustment#L265-L272"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/dashboard/NodeOperatorFee.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-459"
+                ]
+            },
+            "title": "Confirmation Expiry Not Cleared When Vault Disconnects or Tier Is Reset",
+            "description": "Pending confirmations are not cleared when a vault disconnects or resets its tier, allowing old confirmations to persist across ownership changes.\n\nThe root cause is the lack of cleanup logic in disconnection and reset functions.\n\nAn attacker could exploit this by reusing old confirmations after reconnection to perform unauthorized actions.\n\nThe impact is potential unauthorized execution of actions based on stale confirmations.\n",
+            "severity": "Low",
+            "location": [
+                "OperatorGrid.sol::changeTier#L431-L460"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Missing Rebalancing and Force Validator Exit Incentives",
+            "description": "There are no incentives for actors to trigger force rebalancing or validator exits, which are critical for protocol health.\n\nThe root cause is the absence of a reward mechanism for proactive maintenance.\n\nThis is not directly exploitable but leads to under-maintenance.\n\nThe impact is potential imbalance in vaults and delayed response to health issues.\n",
+            "severity": "Low",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-1188"
+                ],
+                "5": [
+                    "CWE-453"
+                ]
+            },
+            "title": "Incorrect Default Node Operator Fee Recipient May Lock Certain Functions When Creating a Vault Without Connecting It to VaultHub",
+            "description": "The `createVaultWithDashboardWithoutConnectingToVaultHub` function in the `VaultFactory` contract sets the factory itself as the `nodeOperatorFeeRecipient` during initialization, which can cause key operations like `setOperatorFeeRate` or `voluntaryDisconnect` to revert if fees are pending and not manually updated. This occurs because the factory address, which is not intended to be a long-term fee recipient, cannot disburse fees, leading to functional lockups. The root cause is the use of `address(this)` instead of the provided `_nodeOperatorManager` parameter when initializing the Dashboard. An attacker could exploit this by creating a vault without connecting to VaultHub and triggering operations that require fee disbursement, resulting in failed transactions and operational disruption. The impact is limited to denial of service for certain management functions, not loss of funds.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/0.8.25/vaults/VaultFactory.sol:L118"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultFactory.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Missing Check for Existing Deposit Pause State in _connectVault",
+            "description": "The `_connectVault` function in the `VaultHub` contract initializes `isBeaconDepositsManuallyPaused` to `false` without checking the actual pause state of the connected `StakingVault`. This can lead to a state inconsistency where the `VaultHub` assumes deposits are active while the vault itself has deposits paused. The root cause is the hardcoded assignment instead of reading the current state from the vault contract. An attacker or misconfigured system could exploit this by reconnecting a paused vault and attempting deposits through the hub, bypassing intended safeguards. The impact includes unintended deposit processing and potential violation of operational controls set by the vault operator.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/VaultHub.sol:L992-L1002"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1084"
+                ]
+            },
+            "title": "Staking Vault Info Can Be Optimized",
+            "description": "The `connectVault` function in `VaultHub` performs multiple individual calls to query `pendingOwner()`, `isOssified()`, and `depositor()` from the `StakingVault`, rather than using a single view function to retrieve all values. This design increases gas consumption unnecessarily during vault validation. The root cause is inefficient access pattern and lack of batched state retrieval. While not directly exploitable for financial gain, an attacker could target this inefficiency in a denial-of-service scenario by forcing repeated high-gas validations. The impact is increased transaction costs and reduced efficiency, particularly during vault onboarding.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/VaultHub.sol:L351-L354"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Import in LazyOracle",
+            "description": "The `LazyOracle.sol` contract imports `IHashConsensus` but does not use it anywhere in the code. This reduces code readability and increases compilation time slightly. The root cause is leftover code from prior development iterations. There is no direct security impact or exploit vector, as the import does not affect runtime behavior. However, it may confuse auditors or developers maintaining the codebase. The impact is limited to code quality and maintainability.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/LazyOracle.sol:L15"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "reconnectToVaultHub Cannot Accept ETH Prohibiting Funding During Reconnect",
+            "description": "The `reconnectToVaultHub` function is non-payable, but it calls `connectToVaultHub`, which is payable and forwards `msg.value` to `_stakingVault().fund(...)`. This inconsistency prevents users from sending ETH during reconnection, unlike the initial connection flow. The root cause is a missing `payable` modifier on `reconnectToVaultHub`. An attacker cannot directly exploit this, but legitimate users are blocked from funding during reconnect, leading to inconsistent behavior. The impact is reduced functionality and potential user confusion or failed transactions when attempting to fund during reconnect.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/dashboard/Dashboard.sol:L275-L290"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/dashboard/Dashboard.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use a modifier Instead of a require/if Statement",
+            "description": "The `PredepositGuarantee` contract uses inline `if` statements with `msg.sender` comparisons for access control instead of reusable modifiers. This leads to duplicated logic, inconsistent revert messages, and reduced auditability. The root cause is inconsistent coding patterns despite the existence of a `onlyGuarantorOf` modifier. While not directly exploitable, this increases the risk of future access control bugs due to copy-paste errors. The impact is reduced code clarity and maintainability, increasing the likelihood of introducing vulnerabilities during future development.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/predeposit_guarantee/PredepositGuarantee.sol:L361",
+                "contracts/0.8.25/vaults/predeposit_guarantee/PredepositGuarantee.sol:L442-L443",
+                "contracts/0.8.25/vaults/predeposit_guarantee/PredepositGuarantee.sol:L502",
+                "contracts/0.8.25/vaults/predeposit_guarantee/PredepositGuarantee.sol:L568"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/predeposit_guarantee/PredepositGuarantee.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Group Operator Is Redundant",
+            "description": "The `Group` struct in `OperatorGrid` includes an `operator` field that duplicates the mapping key (`address nodeOperator`), serving only for existence checks. This wastes storage and prevents efficient packing of `shareLimit` and `liabilityShares` into a single slot. The root cause is redundant data modeling. While not directly exploitable, this increases gas costs for storage operations and reduces efficiency. An attacker could exploit this inefficiency in a resource exhaustion attack. The impact is higher operational costs and suboptimal storage layout.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/OperatorGrid.sol:L99-L104"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Quarantined Value Ignored During Vault Health Checks and Debt Internalization",
+            "description": "The quarantine mechanism holds back certain deposits, but this quarantined value is not considered during vault health checks like `internalizeBadDebt` or `socializeBadDebt`. This can lead to premature debt internalization or validator exits even when the vault has legitimate quarantined funds. The root cause is incomplete accounting logic that excludes quarantined value from critical calculations. An attacker could exploit this by triggering health checks during quarantine periods to force unnecessary debt actions. The impact includes incorrect risk assessment and potentially harmful protocol responses based on incomplete data.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inconsistent or Outdated Code Comments",
+            "description": "Several code comments are inconsistent with the actual implementation: `OperatorGrid` states a 1-hour expiry but uses 1 day; `VaultHub.applyVaultReport` lacks NatSpec for `_reportSlashingReserve`; `CLProofVerifier.verifySlot` claims to return a value but does not; `VaultHub.forceValidatorExit` claims permissionless access but requires `VALIDATOR_EXIT_ROLE`; and `OperatorGrid.changeTier` has outdated flow comments. The root cause is lack of comment maintenance during code changes. While not directly exploitable, this can mislead developers and auditors, increasing the risk of incorrect assumptions and future bugs. The impact is reduced code clarity and potential for human error during maintenance.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/OperatorGrid.sol:L59",
+                "contracts/0.8.25/utils/Confirmations.sol:L52-L54",
+                "contracts/0.8.25/vaults/VaultHub.sol:L500-L515",
+                "contracts/0.8.25/vaults/predeposit_guarantee/CLProofVerifier.sol:L178",
+                "contracts/0.8.25/vaults/VaultHub.sol:L844",
+                "contracts/0.8.25/vaults/OperatorGrid.sol:L447-L453"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Zero-Address Validation for _nodeOperatorManager in Vault Creation Without Hub Connection",
+            "description": "The `createVaultWithDashboardWithoutConnectingToVaultHub` function does not validate that `_nodeOperatorManager` is non-zero, allowing it to be set to `address(0)`. This could lock management functions that require a valid manager. The root cause is missing input validation compared to the connected variant of the function. An attacker could exploit this by creating a vault with a zero address manager, rendering the dashboard's management functions unusable. The impact is denial of service for critical administrative operations.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/VaultFactory.sol:L87-L127"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultFactory.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Redundant Casting to uint96",
+            "description": "The `registerGroup` and `updateGroupShareLimit` functions accept `uint256 _shareLimit` and cast it to `uint96` without range checks, risking silent truncation if the value exceeds `uint96` limits. Although restricted to `REGISTRY_ROLE`, this could lead to incorrect `shareLimit` values. The root cause is unnecessary use of `uint256` and unsafe casting. An attacker with `REGISTRY_ROLE` could exploit this to set unintended limits via high-value inputs. The impact is potential misconfiguration of group limits and unexpected behavior in share calculations.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/OperatorGrid.sol:L177-L210"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 40,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing Validation of Default Tier Parameters in initialize",
+            "description": "The `initialize` function in `OperatorGrid` uses `_defaultTierParams` without validating input values, allowing potentially invalid parameters like excessive `shareLimit` or out-of-bounds fee basis points. The root cause is lack of input validation on critical configuration data. An attacker with initialization rights could exploit this to misconfigure the protocol with unsafe parameters. The impact includes protocol instability, incorrect fee calculations, and potential denial of service due to invalid state.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/OperatorGrid.sol:L150-L175"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/OperatorGrid.sol"
+            ]
+        },
+        {
+            "id": 41,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inaccurate Variable Name for Total Value Without Quarantine",
+            "description": "The variable `totalValueWithoutQuarantine` is misleading because it is assigned the result of `_processTotalValue`, which may still include quarantined amounts. The root cause is a mismatch between variable name and actual behavior. While not directly exploitable, this can lead to developer confusion and incorrect assumptions about data purity. An attacker could exploit this confusion to manipulate logic that depends on this variable. The impact is reduced code clarity and potential logic errors in downstream calculations.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/LazyOracle.sol:L307-L308"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/LazyOracle.sol"
+            ]
+        },
+        {
+            "id": 42,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Typo in Confirmable2Addresses",
+            "description": "The NatSpec comment in `Confirmable2Addresses.sol` contains a typo: \"exectuing\" instead of \"executing\". This reduces code readability and professionalism. The root cause is a simple spelling error in documentation. There is no security impact or exploit vector. The impact is limited to code quality and maintainability.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/utils/Confirmable2Addresses.sol:L12"
+            ],
+            "files": [
+                "core/contracts/0.8.25/utils/Confirmable2Addresses.sol"
+            ]
+        },
+        {
+            "id": 43,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Unclear Revert on Partial Withdrawal When Vault Is Insolvent",
+            "description": "In `triggerValidatorWithdrawals`, if a vault is insolvent (`liabilityShares >= sharesByTotalValue`), `_rebalanceShortfall` returns `type(uint256).max`, which when added to `_totalUnsettledObligations` causes an arithmetic overflow and a panic revert. While the behavior aligns with protocol intent (only full rebalancing allowed), the revert reason is opaque. The root cause is lack of explicit validation before arithmetic. Users or operators receive no clear error message, making debugging difficult. The impact is poor user experience and lack of transparency during critical failure scenarios.\n",
+            "severity": null,
+            "location": [
+                "contracts/0.8.25/vaults/VaultHub.sol:L834",
+                "contracts/0.8.25/vaults/VaultHub.sol:L1151-L1155"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/VaultHub.sol"
+            ]
+        }
+    ]
+}

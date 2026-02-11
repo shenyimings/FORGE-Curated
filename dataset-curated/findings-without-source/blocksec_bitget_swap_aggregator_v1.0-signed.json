@@ -1,0 +1,87 @@
+{
+    "path": "dataset-curated/reports/BlockSec/blocksec_bitget_swap_aggregator_v1.0-signed.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/bitgetwallet/bgw-swap-aggregator-evm"
+        ],
+        "commit_id": [
+            "0569e566d23e7d00ad17455de593fdeb279ccf75"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-30",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Incorrect pool verification in V3Handlers\u2019 swap callbacks",
+            "description": "1. **Description:** The pool validation logic in the pancakeV3SwapCallback() and uniswapV3SwapCallback() functions within BWAggPanacakeV3Handler and BWAggUniV3Handler contracts is flawed. The condition incorrectly allows any address that is not a factory-created pool to pass verification.\n2. **Cause:** The root cause is a logical error in the require statement, which uses an incorrect condition: `msg.sender == _pool || FACTORY.getPool(...) != msg.sender`. This allows any caller that is not the legitimate pool to bypass the check.\n3. **Exploitation:** An attacker can directly invoke the callback function with crafted calldata, impersonating a non-pool address that is not the real factory-created pool, thereby bypassing the verification.\n4. **Impact:** This vulnerability could allow malicious actors to drain assets from the contract by tricking it into sending tokens during a fake swap callback.\n",
+            "severity": "High",
+            "location": [
+                "contracts/bwAggregator/handler/v3Like/BWAggUniV3Handler.sol::uniswapV3SwapCallback#67",
+                "contracts/bwAggregator/handler/v3Like/BWAggPancakeV3Handler.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Potential DoS risk in the function managePoolManager()",
+            "description": "1. **Description:** The function managePoolManager() in the BWAggManager contract contains a flawed check that prevents deactivation of active pool managers.\n2. **Cause:** The logic incorrectly restricts state changes only to pool managers whose current status is false, meaning once a manager is activated, it cannot be deactivated due to the condition failing.\n3. **Exploitation:** An attacker or malicious actor with control over a pool manager could prevent its deactivation, leading to a denial-of-service condition where governance or admin cannot disable a compromised or outdated manager.\n4. **Impact:** This flaw may permanently lock an active pool manager in the enabled state, undermining system manageability and security response capabilities.\n",
+            "severity": "High",
+            "location": [
+                "contracts/bwAggregator/BWAggManager.sol::managePoolManager#48"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Lack of access control in the function handleFeeWithSign()",
+            "description": "1. **Description:** The function handleFeeWithSign() in the BWSwapFee contract lacks access control, allowing arbitrary callers to invoke it.\n2. **Cause:** The function validates signatures and consumes nonces but does not restrict msg.sender to trusted addresses or roles.\n3. **Exploitation:** An attacker can front-run legitimate users by calling the function first with the same nonce, causing the legitimate transaction to fail when it attempts to reuse the now-consumed nonce.\n4. **Impact:** Malicious actors can disrupt swap functionality by causing legitimate transactions to revert, especially affecting free-type transactions that rely on signature verification.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/bwCommon/bwSwapFee/BWSwapFee.sol::handleFeeWithSign#152"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Potential DoS due to precision loss on feeAmount",
+            "description": "1. **Description:** The collectFee() function in BWAggCollectLib calculates fees using integer division that truncates remainders, potentially resulting in a zero fee amount even for valid small transactions.\n2. **Cause:** The calculation `feeAmount = (amountForFee * feeRate) / feeRateBase` rounds down, and when the product is less than feeRateBase, the result becomes zero.\n3. **Exploitation:** Small-value transactions, especially involving tokens with low decimals or high values, may compute a zero fee, triggering the `require(feeAmount > 0)` check to fail.\n4. **Impact:** This leads to transaction reverts for small swaps, creating a denial-of-service vector for low-value transactions.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/bwAggregator/libs/BWAggCollectLib.sol::collectFee#39"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Ineffective gas optimization mechanism",
+            "description": "1. **Description:** The gas-saving mechanism in several handler contracts (BWAggUniV3Handler, BWAggPancakeV3Handler, BWAggUniV4Handler) is ineffective due to a flawed condition.\n2. **Cause:** The check `unspentAmount == amountIn` compares token balances at different addresses (_swapTo vs current contract), which are unlikely to be equal, making the 1-wei saving condition almost never trigger.\n3. **Exploitation:** While not directly exploitable, the mechanism fails its intended purpose, leading to missed gas optimizations.\n4. **Impact:** The gas optimization is rarely triggered, reducing efficiency and failing to save gas as intended.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/bwAggregator/handler/v4Like/BWAggUniV4Handler.sol::#57-62",
+                "contracts/bwAggregator/handler/v3Like/BWAggUniV3Handler.sol::#46-50",
+                "contracts/bwAggregator/handler/v3Like/BWAggPancakeV3Handler.sol::#46-50"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Duplicate deduction logic in contract BWAggPancakeV3Handler",
+            "description": "1. **Description:** The BWAggPancakeV3Handler contract implements duplicate 1-wei deductions when preparing to call the PancakeSwap pool's swap function.\n2. **Cause:** Two separate logic blocks both reduce amountIn by 1 wei, leading to an unintended double deduction.\n3. **Exploitation:** In edge cases where amountIn is small, this could reduce the value to zero or cause underflow, leading to fund loss or transaction revert.\n4. **Impact:** Results in consistent 1-wei fund loss per transaction and potential DoS in edge cases, while also creating inconsistency with the Uniswap V3 handler implementation.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/bwAggregator/handler/v3Like/BWAggPancakeV3Handler.sol::#49,55"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,164 @@
+{
+    "path": "dataset-curated/reports/Zellic/Avon - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/avon-xyz/avon-core",
+            "https://github.com/avon-xyz/avon-periphery"
+        ],
+        "commit_id": [
+            "028f3a969efa63438a0d2523e91326df12c1e52b",
+            "97b7a0e71e41c7094b2f9a4d8fdad87a506bfb51"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-11",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Incorrect heapify index in OrderbookLib._matchOrder causing heap corruption",
+            "description": "The _matchOrder function in OrderbookLib contains a heap corruption bug when handling partial order fills. After reducing an entry's amount in a partial fill, the code incorrectly increments the index i before calling _heapifyDown, causing the heap maintenance operation to be performed on the wrong index. This occurs because the heapify operation should be applied to the modified index (i), but instead it is applied to i+1 due to premature incrementing.\n\nThe root cause is a logic error in loop control flow where index incrementation precedes the heapify call, violating the heap maintenance invariant. This leads to incorrect positioning of nodes within the heap structure.\n\nAn attacker could exploit this by submitting and partially filling orders in a way that maximizes heap corruption, thereby influencing the order-matching priority. Over time, this could allow manipulation of the matching sequence to favor less competitive rates.\n\nThe impact includes progressive corruption of the min-heap structure used for order matching, resulting in suboptimal order execution, lenders with better rates being skipped, borrowers receiving worse rates than available, and a violation of the protocol's promise of efficient and fair order matching. While no direct fund loss occurs, the economic efficiency and fairness of the system are compromised.\n",
+            "severity": "Medium",
+            "location": [
+                "OrderbookLib.sol::_matchOrder"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Incorrect borrowed assets calculation in the function _isPositionSafe",
+            "description": "The function _isPositionSafe miscalculates the borrowed assets by using an incorrect order of multiplication in the toAssetsUp function. Specifically, it computes position.borrowShares * s.totalBorrowAssets.toAssetUp(PoolConstants.WAD, s.totalBorrowShares) instead of PoolConstants.WAD * position.borrowShares.toAssetUp(s.totalBorrowAssets, s.totalBorrowShares), leading to precision inconsistencies.\n\nThe cause is a deviation from the expected fixed-point arithmetic convention where WAD scaling should be applied uniformly. Due to the internal use of VIRTUAL_ASSETS and VIRTUAL_SHARES in toAssetsUp, swapping the operands results in slightly different outcomes, introducing inaccuracies in health checks.\n\nWhile not directly exploitable for instant gain, a malicious borrower could structure positions such that the discrepancy accumulates over time or across multiple operations, potentially delaying liquidation by presenting a healthier position than it actually is.\n\nThe impact is inaccurate assessment of a borrower's position health, which may lead to under-collateralized positions not being flagged or liquidated in a timely manner. This undermines the safety mechanism of the protocol and increases systemic risk.\n",
+            "severity": "Medium",
+            "location": [
+                "PositionGuard::_isPositionSafe"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "No interest accrual before flash loan",
+            "description": "The flashLoan function in AvonPool does not call _accrueInterest before executing the flash loan, meaning interest is not updated prior to the transaction. As a result, the totalSupplyAssets is only increased post-loan via the fee, without accounting for accrued interest during the period.\n\nThe root cause is the omission of an accrueInterest call before processing the flash loan, which breaks the expected state synchronization between supply and borrow sides of the pool.\n\nAn attacker could exploit this by triggering a flash loan just before a borrower repays their debt. By increasing totalSupplyAssets via the flash loan fee, the utilization rate drops temporarily, reducing the effective borrow rate and allowing the borrower to repay less than they otherwise would have.\n\nThe impact is economic imbalance where borrowers can manipulate the perceived utilization to reduce their interest burden, leading to unfair distribution of yield and potential loss of revenue for lenders.\n",
+            "severity": "Medium",
+            "location": [
+                "AvonPool::flashLoan",
+                "AvonPool::_flashLoan"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Malicious users can reduce the manager fee charges by making frequent calls to the function accrueInterest",
+            "description": "The accrueInterest function in the Vault contract can be called by anyone and calculates manager fees based on gains since the last update. However, if called frequently, the per-call gain becomes very small, and due to integer division truncation, the calculated managerFeesAmount may be zero even when cumulative gains exist.\n\nThe cause is the lack of a minimum time interval or threshold check before fee calculation, allowing repeated small increments to be subject to rounding down.\n\nA malicious user or bot could exploit this by calling accrueInterest very frequently (e.g., every block), ensuring that each fee calculation rounds down to zero, thereby preventing any manager fees from being collected over time.\n\nThe impact is a reduction or complete loss of revenue for the fee recipient, undermining the incentive model and potentially affecting protocol sustainability.\n",
+            "severity": "Medium",
+            "location": [
+                "Vault::accrueInterest",
+                "Vault::_accrueInterest"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Configuration parameter checks can be bypassed",
+            "description": "In AvonPool and Vault, wrapper functions like updateFlashLoanFee perform sanity checks (e.g., bounds checking) before scheduling parameter updates via TimelockController. However, the internal execution functions (e.g., _executeUpdateFlashLoanFee) do not re-validate these parameters.\n\nThe root cause is a missing validation in the execution path, assuming that only the wrapper will trigger the update. However, since TimelockController allows direct scheduling, a proposer can bypass the wrapper and schedule the internal function directly, avoiding the checks.\n\nAn attacker with proposer privileges could exploit this by directly scheduling _executeUpdateFlashLoanFee with an invalid value (e.g., exceeding MAX_FLASH_LOAN_FEE), which would be accepted and applied without validation.\n\nThe impact is the ability to set invalid or malicious configuration values, potentially leading to governance abuse, economic imbalance, or system instability.\n",
+            "severity": "Low",
+            "location": [
+                "AvonPool::updateFlashLoanFee",
+                "AvonPool::_executeUpdateFlashLoanFee",
+                "Vault"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "The function previewBorrow fails when matched orders exceed MAX_MATCH_DETAILS",
+            "description": "The previewBorrow function relies on previewMatchedOrders.totalCount to iterate over matched order details. However, when the number of matched orders exceeds MAX_MATCH_DETAILS, only the first MAX_MATCH_DETAILS are recorded in the arrays (counterParty, amounts), while totalCount reflects the actual number.\n\nThe cause is the use of totalCount as the loop bound without clamping it to the actual length of the arrays, which remain capped at MAX_MATCH_DETAILS.\n\nAn attacker could construct a scenario where many small orders are matched (exceeding MAX_MATCH_DETAILS), causing previewBorrow to attempt to access array elements beyond their bounds, resulting in an out-of-bounds read and transaction revert.\n\nThe impact is denial of service for borrowers attempting to preview or execute borrows under high fragmentation conditions, disrupting user experience and potentially blocking legitimate transactions.\n",
+            "severity": "Low",
+            "location": [
+                "Orderbook::previewBorrow",
+                "Orderbook::_previewMatchBorrow",
+                "Orderbook::_previewMatchBorrowWithExactCollateral"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Matched orders removed from the tree without being recorded when their count exceeds MAX_MATCH_DETAILS",
+            "description": "The _matchOrder function removes matched orders from the RedBlackTree even when the number of matches exceeds MAX_MATCH_DETAILS, but stops recording new entries in the MatchedOrder arrays once the limit is reached.\n\nThe root cause is the separation between order removal (which always occurs) and detail recording (which is bounded), leading to a mismatch between execution and reporting.\n\nAn attacker could exploit this by creating a large number of small lender orders. When a market borrow order matches more than MAX_MATCH_DETAILS of them, some lenders' orders are removed from the tree but not included in the return data. Consequently, the corresponding pools are not notified via borrow calls, leaving their internal state desynchronized.\n\nThe impact is state inconsistency between the orderbook and lending pools, where funds are effectively committed but not accounted for, potentially leading to incorrect accounting, missed fee accrual, or delayed order refresh by affected pools.\n",
+            "severity": "Medium",
+            "location": [
+                "OrderbookLib::_matchOrder"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Extra time elapsed in the function _previewAccrueInterest may cause inaccurate calculations in other functions",
+            "description": "The _previewAccrueInterest function adds PoolConstants.QUOTE_VALID_PERIOD to block.timestamp when calculating accrued interest, simulating a future state for frontend quote stability. However, this future-state simulation is incorrectly used in functions like previewWithdraw, which should reflect current state.\n\nThe cause is the reuse of _previewAccrueInterest in contexts where real-time accuracy is required, rather than just off-chain quoting.\n\nThis leads to discrepancies between previewed and actual execution values. For example, previewWithdraw uses the inflated time delta, overestimating accrued interest and thus underestimating the number of shares needed for withdrawal, which can mislead users about redemption amounts.\n\nThe impact is inaccurate previews that do not reflect actual execution outcomes, potentially causing user confusion, failed transactions due to slippage, or economic inefficiencies in withdrawal planning.\n",
+            "severity": "Low",
+            "location": [
+                "PoolGetter::_previewAccrueInterest",
+                "AvonPool::previewWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Unbounded withdrawal loop in Vault could theoretically block withdrawals",
+            "description": "The _performWithdraw function in Vault iterates over the entire withdrawal queue without a gas limit or iteration cap. If early pools in the queue are illiquid or revert, the loop may consume excessive gas or fail before reaching liquid pools later in the queue.\n\nThe root cause is the absence of a bounded loop mechanism, relying solely on the length of the queue without safeguards against partial failure or gas exhaustion.\n\nWhile not easily exploitable for direct gain, an attacker with control over pool logic could deploy a malicious pool that always reverts, place it early in the queue, and prevent withdrawals for all users, even when sufficient liquidity exists downstream.\n\nThe impact is a theoretical denial-of-service risk where users cannot withdraw funds despite available liquidity, especially under adversarial queue configuration. However, the risk is mitigated by operational practices like ordering liquid pools first.\n",
+            "severity": "Low",
+            "location": [
+                "Vault::_performWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Function _previewAccrueInterest and function _accrueInterest calculate the fee shares in different ways",
+            "description": "The _previewAccrueInterest and _accrueInterest functions differ in how they calculate fee shares, leading to inconsistencies between predicted and actual state changes. Specifically, _previewAccrueInterest may not fully replicate the rounding behavior or share minting logic of the actual accrual function.\n\nThe root cause is divergent implementations between the preview and execution paths, likely due to separate development concerns (off-chain accuracy vs on-chain correctness).\n\nThis discrepancy can cause frontends to display inaccurate fee distributions or share balances, leading users to make decisions based on incorrect data. For example, a user might expect a certain fee accrual but receive less upon execution.\n\nThe impact is reduced reliability of off-chain simulations, potentially affecting user trust, governance decisions, or automated strategies relying on accurate previews. However, since no funds are directly at risk, the severity is informational.\n",
+            "severity": "Informational",
+            "location": [
+                "PoolGetter::_previewAccrueInterest",
+                "AccrueInterest::_accrueInterest"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Handling of the flatMatchingFee in the function previewBorrow",
+            "description": "The function previewBorrow adds the flatMatchingFee to the returned collateralRequired when isCollateral is true, but this behavior is inconsistent with user expectations. When isCollateral is false, the function returns the collateral required to borrow a given amount of loan tokens, including the flatMatchingFee in that calculation. However, when isCollateral is true, it simulates borrowing with an exact amount of collateral, yet still adds the flatMatchingFee to the required collateral without deducting it from the input amount. This creates a mismatch where the user may believe they are providing the full amount as collateral, but part of it is consumed by the fee, potentially leading to insufficient collateral during actual execution. The root cause is the asymmetry in how the flatMatchingFee is applied across the two modes of the function. An attacker cannot directly exploit this for financial gain, but users may experience failed transactions if they do not account for the fee, leading to a degraded user experience and potential loss of funds due to failed operations.\n",
+            "severity": "Informational",
+            "location": [
+                "previewBorrow",
+                "lenderTree._previewMatchBorrowWithExactCollateral"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Inconsistency between the function getPosition and function _isPositionSafe in calculating borrowed assets",
+            "description": "The function getPosition uses toAssetsDown (rounding down) when calculating a user's borrowAssets from their borrowShares, while _isPositionSafe uses toAssetsUp (rounding up) for the same conversion during safety checks. This inconsistency means that a position may appear safe according to _isPositionSafe even when getPosition reports a lower debt value, potentially allowing riskier positions to pass safety checks. The cause is the use of different rounding directions in two critical functions that should maintain consistent accounting. During liquidation or health checks, this discrepancy could result in a borrower being considered undercollateralized when queried via getPosition, while the system still allows them to remain active because _isPositionSafe calculates a higher debt value. The impact is a potential deviation in risk assessment, which could lead to incorrect liquidation decisions or user confusion about their true loan status.\n",
+            "severity": "Informational",
+            "location": [
+                "getPosition",
+                "_isPositionSafe"
+            ],
+            "files": []
+        }
+    ]
+}

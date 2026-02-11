@@ -1,0 +1,706 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Oxorio SAMM Module Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/oxor-io/samm-circuits",
+            "https://github.com/oxor-io/samm-contracts"
+        ],
+        "commit_id": [
+            "240b94a36effc0eadc8620766ab056d05e128483",
+            "c2d255dfe6e0be8a1650c6018da37e73f29521ed"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-12-09",
+        "project_path": {
+            "Oxorio SAMM Module Audit.md-source": "dataset-curated/contracts/Oxorio SAMM Module Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ]
+            },
+            "title": "Unconstrained Domain in DKIM Signature",
+            "description": "The vulnerability arises because neither the Noir circuit nor the SAMM smart contract validates that the DKIM public key used in a proof corresponds to the email domain of the sender. While the system verifies that the DKIM signature matches a known public key and that the public key hash is registered, it does not bind the key to the domain it claims to represent. This allows a malicious actor with a valid DKIM key for one domain to forge approvals on behalf of users from another domain, provided they can obtain the required secret value (likely through collusion with the relayer). The exploitation would involve generating a valid ZK proof using a DKIM key from a different domain but claiming approval from a participant of the target domain. The impact is a reduction in the effective multisig threshold, potentially allowing unauthorized transactions to be executed if enough forged approvals are submitted, thereby compromising the security model of the multisig.\n",
+            "severity": "High",
+            "location": [
+                "samm-circuits/builds/samm_1024/src/main.nr#31",
+                "samm-contracts/src/SAMM.sol#467"
+            ],
+            "files": [
+                "240b94a36effc0eadc8620766ab056d05e128483/samm-circuits/builds/samm_1024/src/main.nr"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "Valid Emails May Be Unprovable",
+            "description": "The `check_from_field` and `check_to_field` functions in the Noir utility library incorrectly handle the offset when searching for the '<' character in email headers. Due to a double-counting of the offset\u2014intended to skip the field name and colon\u2014the search starts too far into the buffer, potentially skipping the '<' character entirely. This causes valid email addresses formatted with a display name (e.g., \"User <user@example.com>\") to fail parsing if the '<' is missed. As a result, even though the email is valid, the circuit cannot generate a valid proof for it. An attacker is not required to exploit this; the issue is a denial-of-service against legitimate users whose email formatting triggers the bug. The impact is that legitimate approvals may be rejected, preventing transaction execution and undermining the reliability of the system.\n",
+            "severity": "High",
+            "location": [
+                "samm-circuits/lib/src/utils.nr#27",
+                "samm-circuits/lib/src/utils.nr#31-L46",
+                "samm-circuits/lib/src/utils.nr#67",
+                "zkemail.nr/lib/src/headers/mod.nr#125",
+                "zkemail.nr/lib/src/headers/mod.nr#126",
+                "samm-circuits/lib/src/utils.nr#39-L44",
+                "samm-circuits/lib/src/utils.nr#48-L56"
+            ],
+            "files": [
+                "240b94a36effc0eadc8620766ab056d05e128483/samm-circuits/lib/src/utils.nr"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Front-Running Can Lead to Multisig Wallet DoS",
+            "description": "The `executeTransaction` and `executeTransactionReturnData` functions in the SAMM contract do not restrict the caller, allowing any external party to invoke them. An attacker can observe a relayer's transaction in the mempool and front-run it with a modified gas amount. By carefully choosing the gas limit, the attacker can cause the forwarded call to revert due to insufficient gas while still allowing the outer transaction to succeed (thanks to EIP-150's gas stipend rules). This results in the SAMM contract's nonce being incremented, which invalidates the original relayer's transaction. The exploitation does not require special privileges and relies only on mempool monitoring and faster transaction submission. The impact is a denial-of-service on the multisig functionality, discarding the off-chain coordination and proof generation effort, and blocking legitimate transaction execution until a new proof is generated.\n",
+            "severity": "High",
+            "location": [
+                "samm-contracts/src/SAMM.sol#167",
+                "samm-contracts/src/SAMM.sol#194",
+                "samm-contracts/src/SAMM.sol#443",
+                "samm-contracts/src/SAMM.sol#435"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-311"
+                ],
+                "3": [
+                    "CWE-312"
+                ]
+            },
+            "title": "Participants Are Partially De-Anonymized",
+            "description": "The SAMM contract requires the caller to publicly specify the email domain and public key hash of each participant when submitting a proof. While the identity within the domain is hidden, the domain itself is revealed on-chain, reducing the anonymity set to only those participants sharing the same domain. This partial de-anonymization allows external observers to correlate approvals by domain, weakening the privacy guarantees of the system. The root cause is the design decision to expose the domain as a public signal in the ZK proof verification process. An attacker can exploit this by analyzing transaction patterns and linking approvals from the same domain across different transactions. The impact is a degradation of user privacy, making it easier to profile or target specific organizations or groups using the system.\n",
+            "severity": "Medium",
+            "location": [
+                "samm-contracts/src/interfaces/ISAMM.sol#30-L31"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/interfaces/ISAMM.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Insufficient Setup Validation Can Render SAMM Unusable",
+            "description": "The `setup` function in the SAMM contract lacks validation for two critical parameters: the `relayer` email length and the `membersRoot` value. The `relayer` email is later written into a fixed-size array of 172 bytes starting at index 1, but if the email exceeds 124 characters, it causes an out-of-bounds write and contract panic. Similarly, the `membersRoot` is not validated against the BN254 field order, and if set to an invalid value, it prevents transaction execution. Although these can be corrected post-deployment via multisig governance, the lack of input validation during setup introduces an initial denial-of-service risk. The cause is missing require checks in the `setup` function. An attacker cannot directly exploit this, but a misconfiguration or malicious deployer could render the contract unusable. The impact is a potential permanent or temporary loss of functionality until governance intervention.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/SAMM.sol#98",
+                "samm-contracts/src/SAMM.sol#124",
+                "samm-contracts/src/SAMM.sol#272",
+                "samm-contracts/src/libraries/PubSignalsConstructor.sol#38",
+                "samm-contracts/src/SAMM.sol#263",
+                "samm-contracts/src/SAMM.sol#227"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Incomplete Transaction Validation",
+            "description": "The `ModuleGuard` and `SAMM` contracts validate the function selector by reading the first 4 bytes of the `data` field, but they do not ensure that the `data` buffer is at least 4 bytes long. If a transaction has less than 4 bytes of data, the selector check reads uninitialized or zero-padded data, leading to a mismatch between validation and execution. This allows the contract to execute `fallback` or `receive` functions on destination contracts without proper authorization. Additionally, a partial selector (e.g., 2 bytes) could be interpreted differently than intended if the destination contract has non-standard function dispatching. The root cause is the absence of a length check before selector extraction. The impact is unauthorized execution of unintended functions, potentially leading to loss of funds or unintended state changes in target contracts.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/ModuleGuard.sol#168",
+                "samm-contracts/src/ModuleGuard.sol#133",
+                "samm-contracts/src/SAMM.sol#446-L458",
+                "samm-contracts/src/SAMM.sol#443"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/ModuleGuard.sol",
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Inconsistent Field Sizes",
+            "description": "In the `lib.nr` file, the constant `MAX_EMAIL_FIELD_LENGTH` is defined to be larger than `MAX_EMAIL_HEADER_LENGTH`, which is logically inconsistent since a field cannot be longer than the entire header. This could lead to confusion during development and potential bugs if future code relies on these constants for buffer allocation or validation. The root cause is a configuration error in the constants definition. While no direct exploitation path is evident, it increases the risk of future vulnerabilities due to incorrect assumptions about buffer sizes. The impact is primarily on code correctness and maintainability, with a potential for future memory safety issues.\n",
+            "severity": "Low",
+            "location": [
+                "samm-circuits/lib/src/lib.nr#9-L11"
+            ],
+            "files": [
+                "240b94a36effc0eadc8620766ab056d05e128483/samm-circuits/lib/src/lib.nr"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Floating Compiler Version in Noir Codebase",
+            "description": "The Noir codebase specifies a floating compiler version (`>=0.35.0`), allowing compilation with any version meeting that constraint. Different compiler versions may introduce behavioral changes, optimizations, or bugs that affect the generated circuits and verifiers. This variability undermines reproducibility and trust in the audit, as the audited behavior may not match the deployed version. The root cause is the use of a version range instead of a fixed version. An attacker could potentially exploit differences in compiler behavior to generate a malicious proof that passes verification under one version but not another. The impact is a risk of inconsistent or insecure behavior across environments.\n",
+            "severity": "Low",
+            "location": [
+                "samm-circuits/builds/samm_2048/Nargo.toml#5"
+            ],
+            "files": [
+                "240b94a36effc0eadc8620766ab056d05e128483/samm-circuits/lib/Nargo.toml"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Allowance System Ignores Operation Type",
+            "description": "The `_checkTxAllowance` function in the SAMM contract validates the target and selector of a transaction but does not consider the operation type (e.g., `call`, `delegatecall`). This means that a transaction using `delegatecall` could be allowed even if only a regular `call` was intended, potentially leading to unauthorized state modifications in the context of the calling contract. The root cause is the lack of operation type validation in the allowance check. An attacker could exploit this by crafting a transaction with a different operation type than intended, potentially escalating privileges or manipulating contract state. The impact is a potential bypass of intended security restrictions.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/SAMM.sol#446"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Potential Use of Revoked Public Key Hashes With Updated DKIM Registry",
+            "description": "The `setDKIMRegistry` function allows the multisig to update the DKIM registry contract. However, when the registry is changed, there is no mechanism to ensure that public key hashes revoked in the previous registry are not reused in the new one. This could allow a previously revoked key to be accepted if the new registry does not maintain revocation status. The root cause is the lack of continuity in revocation state across registry updates. An attacker with access to a previously revoked but now re-registered key could forge approvals. The impact is a potential compromise of the approval process if registry updates are not carefully managed.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/SAMM.sol#245"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Use of Non-Audited `Base64` Library",
+            "description": "The codebase uses an external `Base64` library from `Brechtpd/base64` that has not undergone a security audit. Unaudited libraries may contain vulnerabilities such as buffer overflows, incorrect padding handling, or side-channel leaks. The root cause is the inclusion of a third-party dependency without security validation. An attacker could exploit a vulnerability in the library to corrupt data, cause denial-of-service, or potentially execute arbitrary code if the library is used in a sensitive context. The impact is an increased attack surface due to untrusted external code.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/libraries/PubSignalsConstructor.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "No Event Emitted for Allowed Transactions Added During Setup",
+            "description": "The `setup` function in the SAMM contract adds initial allowed transactions but does not emit the `TxAllowanceChanged` event, unlike the `setTxAllowed` function. This creates a discrepancy between the on-chain state and off-chain event indexing systems, which rely on events to track changes. The root cause is inconsistent use of event emission. An attacker cannot directly exploit this, but it hampers transparency and monitoring, making it harder to detect malicious configuration during deployment. The impact is reduced observability and potential for undetected misconfiguration.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/SAMM.sol#98",
+                "samm-contracts/src/SAMM.sol#133-L141",
+                "samm-contracts/src/SAMM.sol#304"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Duplicate Transaction IDs Can Overwrite Each Other During Setup",
+            "description": "The `setup` function allows duplicate `txId` entries in the `txAllowances` array, causing later entries to overwrite earlier ones. This can lead to an unintended protocol state where expected allowances are missing or altered. The root cause is the lack of uniqueness enforcement, despite using a `Set` structure elsewhere. An attacker could exploit this during deployment (if they control setup) to weaken the transaction whitelist. The impact is potential misconfiguration of the allowance system, leading to either over-permissioned or under-permissioned states.\n",
+            "severity": "Low",
+            "location": [
+                "samm-contracts/src/SAMM.sol#98",
+                "samm-contracts/src/SAMM.sol#140",
+                "samm-contracts/src/SAMM.sol#286"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading and Incomplete Documentation",
+            "description": "Multiple instances of incorrect or incomplete comments exist across the codebase. For example, the `txAllowances` documentation omits the `amount` field, function comments refer to non-existent concepts like \"hash approval amount\", deadline behavior is incorrectly described as exclusive, and DKIM key splitting details in comments do not match the actual circuit logic. Additionally, the `ModuleGuard` comments incorrectly imply support for multiple modules. The root cause is outdated or inaccurate documentation. While not directly exploitable, this increases the risk of developer error during maintenance or integration. The impact is reduced code clarity and increased likelihood of bugs due to misunderstanding.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol",
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/ModuleGuard.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "The Codebase Contains Magic Numbers",
+            "description": "The codebase uses several unexplained numeric constants (e.g., 124 for email length, 44 for msgHash64, arbitrary chunk counts for key and message splitting) without defining them as named constants or providing justification. This reduces code readability and maintainability, as the meaning and origin of these numbers are unclear. The root cause is the absence of proper constant definitions and documentation. While not directly exploitable, magic numbers increase the risk of errors during modifications and make audits more difficult. The impact is reduced code quality and higher maintenance burden.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol",
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/libraries/PubSignalsConstructor.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Inefficient use of onlyOwner modifier in setDKIMPublicKeyHashes",
+            "description": "The `setDKIMPublicKeyHashes` function iteratively calls `setDKIMPublicKeyHash` inside a loop, causing the `onlyOwner` modifier to be evaluated multiple times. \nThis design leads to unnecessary gas costs due to repeated modifier checks.\nThe root cause is the lack of internal function abstraction to bypass access control for internal calls.\nAn attacker cannot directly exploit this, but it increases transaction costs for legitimate users.\nThe impact is elevated gas consumption and reduced efficiency of contract interactions.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol::setDKIMPublicKeyHashes#53"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Inefficient uniqueness check in _checkNProofs",
+            "description": "The `_checkNProofs` function uses a loop to verify the uniqueness of each commitment without assuming any order.\nThis results in O(n\u00b2) complexity due to nested loops or repeated comparisons.\nThe root cause is the absence of an assumption that inputs can be pre-sorted.\nThis inefficiency increases gas usage during proof validation.\nThe impact is higher transaction costs and potential scalability issues under large input sets.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol::_checkNProofs#472-477"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Inefficient _stringEq function implementation",
+            "description": "The `_stringEq` function uses `abi.encodePacked` on both string arguments, which causes redundant memory expansion and increases gas usage.\nThe root cause is a non-optimal string comparison method that does not leverage existing efficient libraries.\nThis inefficiency affects any call to this function, though it appears to be unused.\nThe impact is wasted computation and higher gas costs if ever used.\nConsider using OpenZeppelin's `Strings.equal` or removing the function entirely.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol::_stringEq#27"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Inefficient storage layout in SAMM contract",
+            "description": "The `SAMM` contract's storage layout does not pack variables efficiently.\nSpecifically, `s_threshold` (uint64) is stored alongside `s_safe` (address, 20 bytes), leaving 32 bits unused in the same slot.\nAdditionally, `nonce` (uint256) is not packed with `s_dkimRegistry` (address), which could save a storage slot if `nonce` were reduced to uint96.\nThe root cause is suboptimal variable ordering and sizing.\nThe impact is increased gas costs for storage operations due to missed packing opportunities.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol#54"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ]
+            },
+            "title": "Inefficient on-chain proof verification design",
+            "description": "The current design verifies each proof individually on-chain after the threshold is met.\nThis leads to higher gas costs due to repeated verification logic.\nThe root cause is delegating aggregation to the off-chain relayer without requiring joint proofs.\nAn optimized design would have the relayer generate a single aggregated proof once the threshold is reached.\nThe impact is unnecessarily high transaction costs and reduced scalability.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol::checkNProofs#460",
+                "SAMM.sol#437-439"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Inefficient handling of s_relayer in getPubSignals",
+            "description": "The `getPubSignals` function splits the `s_relayer` address into a bytes32 array, incurring memory expansion and parsing overhead.\nThe root cause is using the full address as a public signal instead of its hash.\nThis increases memory usage and computation cost in the verifier contract.\nThe impact is higher gas consumption during verification.\nOptimizing by hashing `s_relayer` would reduce memory usage to a single 32-byte word.\n",
+            "severity": "Informational",
+            "location": [
+                "PubSignalsConstructor.sol::getPubSignals#55-59"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/libraries/PubSignalsConstructor.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Missing cache of s_dkimRegistry in checkNProofs",
+            "description": "The `checkNProofs` function reads `s_dkimRegistry` from storage in a loop, causing multiple SLOADs.\nThe root cause is the failure to cache the storage variable in memory before the loop.\nThis leads to unnecessary gas costs, as storage reads are expensive.\nThe impact is increased gas usage proportional to the number of iterations.\nCaching the value in memory before the loop would reduce costs.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol::checkNProofs#467"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused return value in checkModuleTransaction",
+            "description": "The `checkModuleTransaction` function computes and returns `moduleTxHash` using `keccak256`, but the return value is not used by callers.\nThe root cause is unnecessary computation for a value with no downstream use.\nThis wastes gas due to hashing potentially large inputs.\nThe impact is avoidable execution costs.\nReturning a constant or removing the computation would optimize this.\n",
+            "severity": "Informational",
+            "location": [
+                "ModuleGuard.sol::checkModuleTransaction#139"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/ModuleGuard.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Suboptimal subject field identification in Noir circuit",
+            "description": "The identification of the `subject` field in the email uses a header search, which consumes more constraints than necessary.\nThe root cause is not using a sequence object like for other fields (`from`, `to`).\nThis increases the proof generation cost and verification time.\nThe impact is higher computational overhead off-chain and higher gas cost on-chain.\nMigrating to a sequence object would reduce constraint count and improve efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "samm_1024/src/main.nr#17-21",
+                "lib/src/lib.nr#49"
+            ],
+            "files": [
+                "240b94a36effc0eadc8620766ab056d05e128483/samm-circuits/builds/samm_1024/src/main.nr"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant access control checks in SAMM contract",
+            "description": "Multiple functions in the `SAMM` contract repeat the same access control check to ensure the caller is the Safe account.\nThe root cause is the lack of a reusable modifier to encapsulate this logic.\nThis leads to code bloat and increased deployment cost.\nThe impact is reduced code maintainability and higher gas costs due to duplicated logic.\nImplementing a modifier would improve clarity and efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol#210-212",
+                "SAMM.sol#209-316"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant txId encoding logic",
+            "description": "The computation of `txId` as a packed encoding of address and function selector is repeated across the codebase.\nThe root cause is the absence of a dedicated private function to centralize this logic.\nThis increases the risk of encoding mismatches and bugs.\nThe impact is reduced code maintainability and potential vulnerabilities from inconsistent encoding.\nMoving this to a private function would improve consistency and safety.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused ModuleGuard contract",
+            "description": "The `ModuleGuard` contract is present in the codebase but appears to be unused, as its functionality is implemented in the `SAMM` contract.\nThe root cause is leftover code from prior design iterations.\nThis increases code complexity and maintenance burden.\nThe impact is confusion for auditors and developers, and potential security risks if the contract is accidentally deployed or referenced.\nThe contract should be removed or documented if retained.\n",
+            "severity": "Informational",
+            "location": [
+                "ModuleGuard.sol"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/ModuleGuard.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Non-indexed dkimRegistry parameter in Setup event",
+            "description": "The `dkimRegistry` parameter in the `Setup` event is not indexed, making it difficult to query logs for specific registry instances.\nThe root cause is missing `indexed` keyword in event definition.\nThis impacts off-chain monitoring and integration tools.\nThe impact is inefficient log filtering and increased operational overhead for clients.\nIndexing the parameter would enable efficient topic-based queries.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol#149",
+                "ISAMMEvents.sol::Setup"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1116"
+                ]
+            },
+            "title": "Typographical errors in code comments and variable names",
+            "description": "Multiple typographical errors exist, such as \"one of the proof\" instead of \"one of the proofs\" and \"uniq\" instead of \"unique\".\nThe root cause is lack of proofreading.\nWhile not directly security-relevant, these reduce code readability and professionalism.\nThe impact is potential confusion for developers and auditors.\nCorrecting these would improve code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "SAMM.sol#158",
+                "SAMM.sol#184",
+                "SAMM.sol#472"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/SAMM.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Misleading variable and event naming",
+            "description": "Several naming issues were identified: `_signer` should be `_owner`, `TxAllowanceChanged` should be `TxAllowedChanged`, `last_angle_bracket` is misleading, and `allowance` should be `maximumTxValue`.\nThe root cause is imprecise naming that misrepresents functionality.\nThis can lead to misunderstandings about the code's behavior.\nThe impact is increased risk of logic errors during development or integration.\nRenaming these elements would improve code clarity and correctness.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol#16",
+                "ISAMMEvents.sol#35",
+                "IModuleGuardEvents.sol#6-7",
+                "utils.nr#27",
+                "utils.nr#78",
+                "SAMM.sol#70"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        }
+    ]
+}

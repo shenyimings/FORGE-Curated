@@ -1,0 +1,315 @@
+{
+    "path": "dataset-curated/reports/Consensys_Diligence/Metamask Delegation Framework April 2025 _ Consensys Diligence.md",
+    "project_info": {
+        "url": [
+            "https://github.com/MetaMask/delegation-framework"
+        ],
+        "commit_id": [
+            "0f8e128adebc45f81c7c3d5e35124450767a454d"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-14",
+        "project_path": {
+            "delegation-framework": "dataset-curated/contracts/Metamask Delegation Framework April 2025 _ Consensys Diligence.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Missing Safe Transfer Validation in Execution Logic",
+            "description": "The `beforeHook` function in the `MultiTokenPeriodEnforcer` contract performs low-level calls to execute ERC-20 token transfers but does not validate that the transfer returned `true`, as required by the ERC-20 standard. This omission is due to the lack of a success check on the return value of the token transfer, relying solely on reverts for failure signaling. An attacker or malfunctioning token could exploit this by using a non-compliant ERC-20 token that returns `false` on failure without reverting, leading to a silent failure where the system assumes the transfer succeeded. This could result in incorrect state updates, loss of expected tokens, or incorrect accounting within the delegation framework, potentially leading to fund loss or incorrect access control decisions.\n",
+            "severity": "Critical",
+            "location": [
+                "src/enforcers/MultiTokenPeriodEnforcer.sol::beforeHook#131-144",
+                "src/DeleGatorCore.sol::execute#182-216",
+                "erc7579-implementation/src/core/ExecutionHelper.sol::_execute"
+            ],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol",
+                "delegation-framework/src/DeleGatorCore.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "getTermsInfo Reverts Because of Block Gas Limit",
+            "description": "The `getTermsInfo` function in the `MultiTokenPeriodEnforcer` contract iterates over the entire `_terms` byte array to find a matching token configuration, which results in unbounded gas usage proportional to the number of tokens. This is caused by a linear search without indexing or pagination, making the function vulnerable to gas limit exhaustion when the array is large. An attacker or legitimate user attempting to access a token near the end of a long list could cause the transaction to exceed the block gas limit, leading to a revert. This would prevent delegates from executing valid delegations for that token, resulting in a denial of service for specific token transfers and undermining the reliability of the delegation system.\n",
+            "severity": "Critical",
+            "location": [
+                "src/enforcers/MultiTokenPeriodEnforcer.sol::getTermsInfo#157-187"
+            ],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Missing Slippage Protection in Token Swap Execution",
+            "description": "The `swapTokens` function in the `DelegationMetaSwapAdapter` contract performs token swaps via the MetaSwap API but does not enforce a minimum output amount (slippage protection). This is due to the absence of a `_minAmountOut` parameter and corresponding validation after the swap. An attacker or market fluctuation could exploit this by executing swaps when prices are unfavorable, causing the user to receive significantly fewer tokens than expected. Additionally, in the case of deflationary tokens, the extra transfer step from MetaSwap to the adapter could consume more tokens than anticipated. The impact includes potential financial loss for users, reduced trust in the system, and increased vulnerability to front-running or manipulation, especially if the MetaSwap API data is delayed or manipulated.\n",
+            "severity": "Medium",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapTokens#280-317",
+                "src/helpers/DelegationMetaSwapAdapter.sol#481-499",
+                "metaSwap::swap"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Re-Entrancy Risk in swapTokens()",
+            "description": "The `swapTokens()` function in the `DelegationMetaSwapAdapter` contract is susceptible to re-entrancy attacks due to an external call made during the token transfer process. Specifically, when handling native tokens (e.g., ETH), the `_sendTokens()` function uses a low-level `.call()` to transfer funds to the recipient, which could allow a malicious contract to re-enter the `swapTokens()` function before the current execution is complete.\n\nThe root cause of this vulnerability lies in the absence of a re-entrancy guard during a critical state-changing operation that involves external calls. Although the function is restricted to `onlySelf`, the recipient address could still be a contract controlled by the root delegator, enabling a re-entrant call.\n\nAn attacker could exploit this by registering a malicious contract as the recipient, which would re-enter the `swapTokens()` function during the `.call()` execution. This could lead to unintended behavior such as multiple swaps being executed using the same initial balance, potentially manipulating state or draining funds if combined with other vulnerabilities.\n\nWhile the audit team acknowledges that the risk is limited\u2014since re-entrancy would originate from the root delegator and no major attack vector was identified\u2014the potential for unexpected re-entrant behavior remains. Without a re-entrancy guard, the contract deviates from secure coding best practices and introduces unnecessary risk.\n",
+            "severity": "Medium",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapTokens#280-297",
+                "src/helpers/DelegationMetaSwapAdapter.sol::_sendTokens#421-431"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Metamask Aggregator Signature for Swap API Data Can Be Re-Used",
+            "description": "The `_validateSignature` function in the `DelegationMetaSwapAdapter` contract verifies the authenticity and expiration of swap data signatures but does not prevent replay of the same signature. This is caused by the lack of a nonce or a used-signature mapping to track and block repeated use. An attacker could reuse a valid signature to replay a previously executed swap, potentially draining funds if the delegation allows multiple executions. Although the expiration check limits the window, reuse within the same block or across different contexts could still occur. The impact includes potential duplication of swaps, unexpected token movements, and increased risk of fund loss, especially in high-frequency or automated scenarios.\n",
+            "severity": "Medium",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapByDelegation#215-222",
+                "src/helpers/DelegationMetaSwapAdapter.sol::_validateSignature#522-534"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Avoid abi.encodePacked() With Dynamic Types for Hashing",
+            "description": "The `_validateSignature` function uses `abi.encodePacked()` to hash `_signatureData.apiData` and `_signatureData.expiration`, which is unsafe when dealing with dynamic types due to potential hash collisions. This is because `abi.encodePacked()` does not include length prefixes, allowing different inputs to produce the same encoded output. Although no immediate exploit is known, this could allow an attacker to craft malicious data that hashes to the same value as legitimate data, bypassing signature verification. The impact could be severe, including unauthorized swaps or execution of malicious calldata, if a collision is found. This undermines the integrity of the entire signature validation mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::_validateSignature#526-534"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Input Validation in constructor and Setter Function",
+            "description": "The constructor of `DelegationMetaSwapAdapter` and the `setSwapApiSigner` function do not validate that the provided addresses are non-zero. This is caused by the absence of require checks before assignment. An attacker or mistaken deployment could initialize the contract with a zero address for critical dependencies like `swapApiSigner` or `metaSwap`, rendering the contract inoperable or allowing privilege escalation if the signer is set to address(0). The impact includes potential denial of service, broken functionality, or complete loss of control over critical contract operations, especially if the owner accidentally sets a zero address.\n",
+            "severity": "Low",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::constructor#178-190",
+                "src/helpers/DelegationMetaSwapAdapter.sol::setSwapApiSigner#323-326"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Missing Deadline Enforcement in Periodic Allowance Logic",
+            "description": "The `PeriodicAllowance` struct in `MultiTokenPeriodEnforcer` lacks a `deadline` field to define an end time for the allowance. This is intentional per the client, but it means allowances persist indefinitely unless manually revoked. The absence of a deadline increases the risk of long-term exposure if a delegation is forgotten or not cleaned up. An attacker who gains access to an old but still valid delegation could exploit it at any time. The impact includes prolonged attack windows, reduced user control over delegation lifespan, and potential for abuse in time-sensitive or temporary access scenarios.\n",
+            "severity": "Low",
+            "location": [
+                "src/enforcers/MultiTokenPeriodEnforcer.sol::PeriodicAllowance#41-47"
+            ],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Replace Revert Strings With Custom Errors for Gas Optimization",
+            "description": "The `MultiTokenPeriodEnforcer` contract uses string-based revert messages, which are more expensive in terms of gas compared to custom errors. This is due to the higher cost of storing and emitting string data on-chain. While the client acknowledges this and prefers readability, the continued use of revert strings increases transaction costs unnecessarily. The impact is higher gas fees for users on every revert, which accumulates over time and reduces the economic efficiency of the contract. Custom errors, already used elsewhere in the codebase, would save approximately 50 gas per revert and reduce deployment cost.\n",
+            "severity": "Low",
+            "location": [
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#166",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#209",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#260-261",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#266",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#282-285",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#294",
+                "src/enforcers/MultiTokenPeriodEnforcer.sol#271"
+            ],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Replace abi.encodeWithSignature and abi.encodeWithSelector With abi.encodeCall for Type and Typo Safety",
+            "description": "The contract uses `abi.encodeWithSelector` to construct calldata for low-level calls, which lacks compile-time type and function name checking. This is error-prone and could lead to silent failures if there is a typo in the function name or a mismatch in parameter types. The recommended `abi.encodeCall` provides full type safety and ensures that the function exists and parameters match. The impact of not fixing this includes potential runtime failures, incorrect function calls, and security vulnerabilities due to undetected coding errors, especially during upgrades or refactors.\n",
+            "severity": "Low",
+            "location": [
+                "DelegationMetaSwapAdapter.sol"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "public Function Can Be Declared external",
+            "description": "The `getAllTermsInfo` function in `MultiTokenPeriodEnforcer` is declared `public` but is only intended to be called externally. Declaring it as `external` would save gas by avoiding the overhead of copying calldata to memory when called externally. This is a best practice optimization. The impact is minor but cumulative: each call to this function incurs slightly higher gas costs than necessary, which affects user experience and transaction fees, especially for frequent callers.\n",
+            "severity": "Low",
+            "location": [
+                "src/enforcers/MultiTokenPeriodEnforcer.sol::getAllTermsInfo#189-207"
+            ],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Typos in Codebase",
+            "description": "The custom errors `TokenFromMismath` and `AmountFromMismath` contain a spelling error; \"Mismath\" should be \"Mismatch\". This is purely a readability and maintainability issue. While it does not affect functionality, it can confuse developers and reduce code quality. The impact is low, but correcting the spelling improves clarity and professionalism in the codebase, reducing the chance of confusion during audits or development.\n",
+            "severity": "Low",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol#134-138"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Inconsistent Transfer Validation Across Call Types",
+            "description": "The `_validateAndConsumeTransfer` function includes specific checks for ERC-20 and native transfers, such as validating the function selector and value field. However, these validations are not consistently applied in other parts of the codebase that handle similar transfers. This inconsistency creates an uneven security posture, where some paths enforce strict validation while others may allow malformed or unexpected calls to succeed. The impact is an increased attack surface, where attackers could exploit less-validated code paths to perform unauthorized transfers or bypass intended restrictions, potentially leading to fund loss or logic errors.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "delegation-framework/src/enforcers/MultiTokenPeriodEnforcer.sol",
+                "delegation-framework/src/enforcers/NativeTokenPeriodTransferEnforcer.sol",
+                "delegation-framework/src/enforcers/ERC20PeriodTransferEnforcer.sol"
+            ]
+        }
+    ]
+}

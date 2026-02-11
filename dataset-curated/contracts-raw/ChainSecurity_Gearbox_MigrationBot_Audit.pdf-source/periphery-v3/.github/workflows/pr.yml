@@ -1,0 +1,55 @@
+name: Check PR
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+env:
+  HUSKY: 0
+  CI: true
+  FORK_RPC_URL: ${{ secrets.MAINNET_TESTS_FORK }}
+  FORK_ADDRESS_PROVIDER: "0x9ea7b04Da02a5373317D745c1571c84aaD03321D"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Use Latest Corepack
+        run: |
+          echo "Before: corepack version => $(corepack --version || echo 'not installed')"
+          npm install -g corepack@latest
+          echo "After : corepack version => $(corepack --version)"
+          corepack enable
+          pnpm --version
+
+      - name: Setup node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: "pnpm"
+          node-version-file: ".nvmrc"
+
+      - name: Configure access to private npm packages
+        run: echo "//registry.npmjs.org/:_authToken=${{secrets.NPM_TOKEN}}" > .npmrc
+
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Run forge tests
+        run: forge test
+        timeout-minutes: 10
+
+      - name: Perform checks
+        run: |
+          pnpm prettier:ci

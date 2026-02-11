@@ -1,0 +1,461 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Zaiffer Audit.md",
+    "project_info": {
+        "url": [
+            "https://gitlab.com/pyratzlabs/software/usdx/smart-contracts"
+        ],
+        "commit_id": [
+            "f5081087f9bc31564b0d401b4da697a6631cd7dc"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-29",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Replay of finalizeUnwrap Call Leads to Loss of Backing Assets",
+            "description": "The Wrapper contract's finalizeUnwrap function is vulnerable to replay attacks due to improper state cleanup before validation. The function retrieves recipient data from the _receivers mapping and deletes it after use. However, an attacker can replay the finalizeUnwrap call with the same parameters after the original execution, causing the function to read from an empty storage slot, resulting in a default ReceiverEntry with a zero address and zero txId. The function then proceeds to transfer the underlying assets to the zero address, leading to permanent loss of funds. This vulnerability allows an attacker to systematically drain the contract's backing assets, including ETH, WETH, and certain ERC-20 tokens that allow transfers to the zero address, thereby breaking the 1:1 asset backing and rendering the confidential tokens unbacked and valueless.\n",
+            "severity": "Critical",
+            "location": [
+                "Wrapper.sol::finalizeUnwrap#143"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Missing Input Validation in `FeeManager` Constructor",
+            "description": "The constructor of the `FeeManager` contract does not validate that the initial `wrapFeeBasisPoints` and `unwrapFeeBasisPoints` values are less than or equal to 10,000 (representing 100%). This omission allows the contract to be deployed with invalid fee values exceeding 100%, which could lead to transaction reverts or unexpected behavior when fees are applied.\n\nThe root cause is the absence of input validation in the constructor, despite the fact that the corresponding setter functions (`setWrapFeeBasisPoints` and `setUnwrapFeeBasisPoints`) do include this check. This inconsistency creates a security gap during contract initialization.\n\nAn attacker or misconfigured deployment could set fee values above 10,000 basis points, effectively setting fees greater than 100%. This would cause arithmetic operations involving these fees to behave incorrectly, potentially reverting legitimate transactions or distorting fee calculations.\n\nThe impact includes potential denial of service for users attempting to wrap or unwrap tokens, incorrect fee calculations, and loss of trust in the system due to improper configuration. Since the issue exists at deployment time, it could affect the entire lifecycle of the contract if not caught early.\n",
+            "severity": "High",
+            "location": [
+                "FeeManager.sol::constructor#(not specified)",
+                "FeeManager.sol::setWrapFeeBasisPoints",
+                "FeeManager.sol::setUnwrapFeeBasisPoints"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Missing Return Value Check on ERC-20 Transfers in Wrapper",
+            "description": "The Wrapper contract fails to validate the boolean return value of transferFrom and transfer calls when interacting with underlying ERC-20 tokens. This is a critical oversight because some ERC-20 tokens, especially older or non-compliant ones, do not revert on failure but instead return false. As a result, the wrap function could mint confidential tokens without actually receiving the underlying assets if the transferFrom call fails silently. Similarly, the finalizeUnwrap function could complete the unwrapping process without successfully transferring the underlying tokens to the user. This breaks the 1:1 asset peg, leading to undercollateralization and potential loss of user funds. The root cause is the use of low-level ERC-20 calls without proper safety checks.\n",
+            "severity": "High",
+            "location": [
+                "Wrapper.sol::wrap#137",
+                "Wrapper.sol::finalizeUnwrap#172"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Undercollateralized Confidential Tokens Due to Fee-on-Transfer Tokens",
+            "description": "The wrap function in the Wrapper contract calculates the amount of confidential tokens to mint based on the user-provided amount_ parameter, without verifying the actual amount of underlying tokens received. When the underlying token is a fee-on-transfer token (e.g., RFI), the actual amount transferred to the Wrapper contract is less than the requested amount due to the token's built-in fee mechanism. The current implementation does not account for this discrepancy and mints confidential tokens based on the pre-fee amount, resulting in the confidential token supply being greater than the actual underlying asset balance. This leads to undercollateralization, where the confidential tokens are not fully backed, creating a systemic risk to the solvency of the token pool. The root cause is the lack of balance differential checking before minting.\n",
+            "severity": "High",
+            "location": [
+                "Wrapper.sol::wrap#137"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Incorrect Refund Logic Causes Fee Loss in Failed ETH Unwraps",
+            "description": "In the finalizeUnwrap function, when an ETH transfer fails, the refund logic attempts to return the fee to the user by calling confidentialTransfer from the Wrapper contract's own address. However, the Wrapper does not hold the fee tokens, as they were already transferred to the fee recipient during the initial phase of the unwrap. The confidentialTransfer call fails silently due to insufficient balance, and because the token contract does not revert on insufficient balance, the fee is not refunded. Although the user's principal is correctly reminted, the fee is permanently lost. This results in a partial but irreversible loss of funds for the user in the event of a failed ETH unwrap. The root cause is the incorrect use of confidentialTransfer instead of confidentialTransferFrom to pull the fee from the fee recipient.\n",
+            "severity": "High",
+            "location": [
+                "Wrapper.sol::finalizeUnwrap#178"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Potential Re-entrancy in `finalizeUnwrap`",
+            "description": "The `finalizeUnwrap` function in `Wrapper.sol` does not follow the Checks-Effects-Interactions (CEI) pattern. It performs external calls, such as transferring the underlying asset (via `IERC20.transfer` or low-level `.call`) and invoking the `onUnwrapFinalizedReceived` callback, before completing all internal state changes like updating `nextTxId` and releasing associated locks.\n\nThe cause is a violation of secure coding practices where state modifications are not performed prior to external interactions. This ordering allows a malicious contract to re-enter the system while the state is still inconsistent.\n\nAn attacker could exploit this by crafting a receiver contract that re-enters the `Wrapper` or other dependent contracts during the external call phase. This could lead to unintended behavior such as double-processing of transactions, manipulation of state, or interference with other operations under the same transaction ID.\n\nThe impact includes potential disruption of transaction processing, incorrect event emissions, and possible manipulation of contract logic due to re-entrant calls. While direct fund theft may not be feasible, the integrity of the unwrap process is compromised.\n",
+            "severity": "High",
+            "location": [
+                "Wrapper.sol::finalizeUnwrap#143",
+                "Wrapper.sol#L170-186"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Lost Dust on ETH Wrapping Due to Rate Conversion",
+            "description": "When wrapping ETH, the wrap function calculates the number of confidential tokens to mint by dividing the input amount_ by the rate. This division truncates any remainder, meaning if amount_ is not a perfect multiple of rate, the remainder (amount_ % rate) is accepted as part of msg.value but not accounted for in the minting logic. This excess ETH, or \"dust\", becomes permanently locked in the Wrapper contract because there is no mechanism to refund it to the user. The issue arises from integer division truncation and the lack of a refund mechanism for the leftover value. While the amount per transaction may be small, repeated operations can accumulate significant funds, leading to permanent loss of user assets.\n",
+            "severity": "Medium",
+            "location": [
+                "Wrapper.sol::wrap#112"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Unsafe and Incompatible ERC-20 Approve Calls",
+            "description": "The SwapV0 contract performs direct approve calls to ERC-20 tokens without checking the return value, which is unsafe because some tokens return false on failure instead of reverting. Additionally, it sets new allowances without first resetting the existing allowance to zero, which is incompatible with tokens like USDT that require the allowance to be cleared before setting a new value. This can cause swap transactions to fail unexpectedly, disrupting user operations and potentially leading to loss of gas fees. The root cause is the use of low-level, unsafe approve patterns instead of standardized, safe alternatives. This undermines the reliability and compatibility of the swap functionality across the broader ERC-20 ecosystem.\n",
+            "severity": "Medium",
+            "location": [
+                "swap_v0.sol::approve#72",
+                "swap_v0.sol::approve#102",
+                "swap_v0.sol::approve#112-113"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "User Funds Can Be Permanently Lost During Unwrapping",
+            "description": "The unwrapping process is a two-step operation where the user's confidential tokens are burned in the first step (onConfidentialTransferReceived), before the final delivery of the underlying asset is confirmed. If the final transfer in finalizeUnwrap fails (e.g., due to a blocked transfer by the underlying token), the entire transaction reverts, but the burned tokens are not restored. The contract lacks a recovery mechanism to re-mint the tokens in case of a downstream failure, resulting in permanent loss of both principal and fee. This creates a critical race condition where user funds are destroyed before the success of the final step is guaranteed. The root cause is the lack of a compensating action or escrow mechanism to protect user assets during asynchronous operations.\n",
+            "severity": "Medium",
+            "location": [
+                "Wrapper.sol::onConfidentialTransferReceived#64",
+                "Wrapper.sol::finalizeUnwrap#172"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Ambiguous and Brittle Design for Global Transaction Tracking",
+            "description": "The system uses the nextTxId counter from the RegulatedERC7984Upgradeable token as a transaction identifier across multiple contracts, including Wrapper, ERC7984TransferBatcher, and SwapV0. This design is brittle because the Wrapper temporarily decrements nextTxId and relies on a side effect in the token contract to restore it, creating a fragile dependency. It is also ambiguous because each token has its own independent nextTxId, so when global contracts like SwapV0 emit events with txId, it is unclear which token the ID refers to. This forces off-chain clients to perform complex inference to resolve the context, undermining the purpose of a unified tracking system. The root cause is the misuse of a per-token counter as a global identifier without proper scoping or event context.\n",
+            "severity": "Low",
+            "location": [
+                "RegulatedERC7984Upgradeable.sol::nextTxId#127",
+                "Wrapper.sol::onConfidentialTransferReceived#80",
+                "ERC7984TransferBatcher.sol::batchTransfer#49",
+                "swap_v0.sol#45",
+                "swap_v0.sol#100"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Potential Fee Reduction Due to Multiplication Overflow in getUnwrapFee",
+            "description": "The getUnwrapFee function in the FeeManager contract calculates fees by multiplying the encrypted unwrap amount (euint64) by unwrapFeeBasisPoints using FHE.mul. This operation is susceptible to integer overflow if the amount is large enough, causing the product to wrap around to a smaller value. As a result, the calculated fee (product / 10,000) will be significantly lower than intended, leading to a loss of protocol revenue. While this does not directly compromise user funds, it represents a financial risk to the protocol's sustainability. The root cause is the lack of overflow protection in encrypted arithmetic operations. Although the likelihood is low, the impact on fee collection could be substantial for large transactions.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol::getUnwrapFee#74"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Opaque Swap Failures",
+            "description": "The `onUnwrapFinalizedReceived` function in the `SwapV0` contract handles swap failures via a try/catch block and executes recovery logic in `_handleUniswapFailure`, which wraps tokens back to the user. However, the reason for the original swap failure is caught but not logged or emitted in an event.\n\nThe root cause is the lack of proper error observability in the error-handling path. While the system gracefully recovers from failed swaps, it fails to provide diagnostic information about the cause of the failure.\n\nAlthough this is not directly exploitable by an attacker, it enables silent failures where users and off-chain monitoring tools cannot determine why a swap failed. This could be abused in scenarios where an attacker triggers repeated failures without leaving a traceable cause.\n\nThe impact is primarily on user experience and system maintainability. Users cannot debug failed transactions, and developers or operators lack visibility into failure patterns, making it harder to detect issues like router misconfigurations, liquidity problems, or malicious inputs.\n",
+            "severity": "Low",
+            "location": [
+                "swap_v0.sol::onUnwrapFinalizedReceived#58",
+                "swap_v0.sol::_handleUniswapFailure#108"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Missing Ownership Checks on Encrypted Arguments",
+            "description": "Several functions across the codebase accept encrypted `euint64` values but fail to verify that the caller is authorized to use those encrypted values. This includes `FeeManager.getUnwrapFee`, `RegulatedERC7984Upgradeable.burn`, `SwapV0.onConfidentialTransferReceived`, and `Wrapper.onConfidentialTransferReceived`.\n\nThe cause is the omission of `FHE.isSenderAllowed(amount)` checks at the beginning of these functions. The FHE library provides access control mechanisms for encrypted data, but the contracts do not enforce them, relying instead on assumptions about upstream validation.\n\nAn attacker could potentially pass encrypted values they do not own to these functions, attempting to manipulate fee calculations, burn tokens they don't control, or initiate unauthorized transfers. While the actual impact may be limited by other controls, this removes a critical defense-in-depth layer.\n\nThe impact is a weakening of the system's security model around confidential data. Without ownership checks, the integrity of operations involving encrypted values is undermined, increasing the risk of unauthorized actions if other assumptions are violated.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol::getUnwrapFee#68",
+                "RegulatedERC7984Upgradeable.sol::burn#180",
+                "swap_v0.sol::onConfidentialTransferReceived#26",
+                "Wrapper.sol::onConfidentialTransferReceived#64"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Incorrect Fee Refund in `finalizeUnwrap`",
+            "description": "The `Wrapper` contract incorrectly swaps the order of `actualFee` and `expectedFee` during decoding in the `finalizeUnwrap` function. While `onConfidentialTransferReceived` encodes `actualFee` before `expectedFee`, the `finalizeUnwrap` function decodes them in reverse order, assigning the wrong values to local variables.\n\nThe root cause is a mismatch between the serialization and deserialization logic. This leads to incorrect variable assignment, where `actualFeeAmount` holds the decrypted `expectedFee` and vice versa.\n\nIn the rare case where the fee transfer fails (e.g., due to a silent failure), the refund logic uses `actualFeeAmount` (which actually contains the original `expectedFee`) to determine the refund amount. This causes the fee recipient to refund more than it received, leading to a loss of funds.\n\nThe impact is financial loss for the fee recipient in edge cases where fee forwarding fails. Although the scenario is unlikely, the bug introduces an asymmetric risk where incorrect refunds can drain the recipient's balance over time.\n",
+            "severity": "Low",
+            "location": [
+                "Wrapper.sol::onConfidentialTransferReceived#64",
+                "Wrapper.sol::finalizeUnwrap#143",
+                "Wrapper.sol#L95",
+                "Wrapper.sol#L153"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Insufficient Validation in `SwapV0` Contract",
+            "description": "The `SwapV0` contract suffers from three related validation issues: (1) It does not verify that the first token in the swap path matches the underlying asset of the calling confidential token. (2) It does not check whether the input and output tokens have registered wrappers in the `DeploymentCoordinator`. (3) The `onUnwrapFinalizedReceived` function does not authenticate that the caller is a legitimate `Wrapper` contract.\n\nThe cause is a lack of input and sender validation in critical entry points. These omissions allow invalid or malicious inputs to proceed into the swap pipeline.\n\nAn attacker can exploit these flaws in multiple ways: initiating a swap with a mismatched path to freeze funds, triggering a swap with an unregistered output wrapper to lock assets, or directly calling `onUnwrapFinalizedReceived` with a malicious router to steal residual \"dust\" tokens held by the contract.\n\nThe impact includes permanent loss of user funds due to frozen states, incorrect execution of swaps, and potential theft of residual assets. These vulnerabilities undermine the reliability and security of the entire swap mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "swap_v0.sol::onConfidentialTransferReceived#58",
+                "swap_v0.sol::onUnwrapFinalizedReceived#58",
+                "DeploymentCoordinator.sol#L16"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Direct Calls to `name` and `symbol` May Fail for Non-Standard ERC-20 Tokens",
+            "description": "The `DeploymentCoordinator.deploy` function directly calls `name()` and `symbol()` on underlying ERC-20 tokens, assuming they return `string` as per `IERC20Metadata`. However, some tokens like MKR return `bytes32`, causing the call to revert and the entire deployment to fail.\n\nThe cause is the lack of fallback logic to handle non-standard return types. The contract does not use `try/catch` or type-checking to gracefully handle different implementations.\n\nAn attacker cannot directly exploit this, but malicious actors could target deployments for known non-standard tokens, causing denial of service by ensuring the deployment always fails.\n\nThe impact is reduced compatibility and functionality. The system cannot support certain legitimate ERC-20 tokens, limiting its utility and interoperability. Users attempting to deploy wrappers for such tokens will face unexpected failures.\n",
+            "severity": "Low",
+            "location": [
+                "DeploymentCoordinator.sol::deploy#66",
+                "DeploymentCoordinator.sol#L84",
+                "DeploymentCoordinator.sol#L85"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Ambiguous Success Flag in Unwrap Operation",
+            "description": "The `onConfidentialTransferReceived` function sets the `success` flag to `true` even when the incoming encrypted amount is zero (indicating an insufficient balance transfer). The flag only checks for underflow during fee subtraction, not whether the amount itself is zero.\n\nThe root cause is an incomplete definition of \"success\" in the context of confidential transfers. A zero amount should be treated as a failed operation, but it is currently indistinguishable from a valid one.\n\nThis allows a user to initiate a transfer with insufficient funds, which proceeds without revert but results in a zero amount. The system still reports this as a successful unwrap via the `UnwrappedFinalized` event, misleading off-chain systems and users.\n\nThe impact is incorrect event reporting and potential confusion in monitoring tools. Users may believe their unwrap succeeded when no action was taken, leading to trust issues and incorrect accounting.\n",
+            "severity": "Low",
+            "location": [
+                "Wrapper.sol::onConfidentialTransferReceived#64",
+                "Wrapper.sol#L84"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Floating Pragma",
+            "description": "Multiple contracts use floating pragma directives (e.g., `>=0.8.7 <0.9.0` or `^0.8.27`), which can lead to inconsistent compilation across different environments. This increases the risk of compiler-specific bugs or unexpected behavior due to version differences.\n\nThe cause is the use of version ranges instead of fixed compiler versions. While this allows flexibility, it sacrifices reproducibility and auditability.\n\nAn attacker could potentially exploit differences in compiler behavior between versions, especially if optimizations or code generation differ in subtle ways. More likely, it creates risks during deployment or verification if the wrong version is used.\n\nThe impact is reduced determinism and increased risk of undetected bugs due to compiler version drift. It also complicates contract verification and audit reproducibility.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol",
+                "All other contracts using ^0.8.27"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "RetryTransfer Events Can Be Blocked by Cross-Token ID Collisions",
+            "description": "The `ERC7984TransferBatcher` uses a `txIdToSender` mapping keyed only by transaction ID, not by token address. Since each token starts counting from 1, different tokens can produce identical IDs, leading to overwrites in the mapping.\n\nThe cause is the lack of namespace isolation in the mapping. Two different tokens can write to the same key, overwriting previous sender records.\n\nIf a sender from token A attempts to retry a transfer using an ID that was later used by token B, the guard reverts with `OnlyOriginalSenderCanRetry` because the original sender address has been overwritten. This prevents the legitimate retry.\n\nThe impact is denial of service for retry functionality. Users lose the ability to emit `RetryTransfer` events for overwritten IDs, though no funds are at risk. This affects usability and reliability of the batching system.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol::txIdToSender#19",
+                "ERC7984TransferBatcher.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Empty Batches Emit Invalid `BatchTransfer` Ranges",
+            "description": "The `confidentialBatchTransfer` function records `startTxId` before processing transfers and `endTxId` as `startTxId - 1` if no transfers occur. This results in `endTxId < startTxId`, creating an invalid range.\n\nThe cause is the failure to handle the empty array case. The function proceeds with range calculation even when no transactions are processed.\n\nOff-chain systems that consume the `BatchTransfer` event may interpret the negative-length range incorrectly, leading to faulty accounting, analytics errors, or crashes.\n\nThe impact is incorrect data interpretation by external systems. While no funds are lost, the integrity of event-based tracking is compromised, affecting monitoring and reporting tools.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol::confidentialBatchTransfer#32",
+                "ERC7984TransferBatcher.sol#L51"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Missing Bounds Check on Rate Parameter",
+            "description": "The `RegulatedERC7984Upgradeable` contract's `initialize` function does not validate the `rate_` parameter. A zero rate renders conversion logic invalid, while an excessively large rate can cause overflow in `finalizeUnwrap` when calculating `underlyingAmount`.\n\nThe cause is the absence of input validation for a critical initialization parameter. The rate is used in arithmetic operations without bounds checking.\n\nAn attacker with deployment privileges could set an invalid rate to disrupt operations. A zero rate would break wrapping/unwrapping, while a very high rate could cause overflows when unwrapping large amounts.\n\nThe impact includes denial of service for token operations, transaction reverts, and potential loss of functionality. This could permanently impair the usability of the token if not caught during deployment.\n",
+            "severity": "Low",
+            "location": [
+                "RegulatedERC7984Upgradeable.sol::initialize#92",
+                "Wrapper.sol::finalizeUnwrap#143",
+                "Wrapper.sol#L168"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Excessive Unwrap Fee Locks User Balances",
+            "description": "When the unwrap fee exceeds the incoming amount, the `_getFeeAndBurnAmounts` helper returns `success=false`, and no action is taken. In `finalizeUnwrap`, this leads to the `UnwrappedFinalized` event being emitted without returning the user's funds, leaving the confidential tokens locked in the wrapper.\n\nThe cause is the lack of a refund mechanism in the failure path. The contract does not return the original amount when the unwrap fails due to excessive fees.\n\nA user attempting to unwrap a small amount when fees are set too high will lose access to their tokens. The tokens remain under the wrapper's control, but the user cannot reclaim them.\n\nThe impact is permanent loss of user funds in edge cases where fees exceed the balance. This creates a critical usability and security flaw, especially if fee parameters are changed dynamically.\n",
+            "severity": "Low",
+            "location": [
+                "Wrapper.sol::onConfidentialTransferReceived#64",
+                "Wrapper.sol::_getFeeAndBurnAmounts#56",
+                "Wrapper.sol::finalizeUnwrap#143",
+                "Wrapper.sol#L196"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Default Admin Role Overloaded with Operational Privileges",
+            "description": "The `DEFAULT_ADMIN_ROLE` in `FeeManager` is used both for role management and for modifying operational parameters like fee rates and recipients. This combines governance and operational powers in a single role.\n\nThe cause is poor role separation. The same key that can assign roles can also change business-critical parameters, increasing the risk if the key is compromised.\n\nIf the default admin is compromised, the attacker can immediately change fee rates and redirect fees to malicious addresses, in addition to granting themselves other privileges.\n\nThe impact is an increased blast radius from a single point of failure. A compromise of the admin key leads to full control over both access and business logic, violating the principle of least privilege and increasing systemic risk.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol::setWrapFeeBasisPoints",
+                "FeeManager.sol::setUnwrapFeeBasisPoints"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Deploy-Fee Check Allows Accidental Overpayment",
+            "description": "The `DeploymentCoordinator.deploy` function enforces that `msg.value` must be greater than or equal to the required fee retrieved from `FeeManager`. However, any excess ETH sent by the caller is forwarded to the fee recipient without refund, enabling silent loss of funds due to user error, UI rounding, or front-end bugs.\n\nThe root cause is the use of a `>=` comparison instead of an exact equality check, combined with the absence of a refund mechanism for overpayments. This design choice creates a \"footgun\" where users can inadvertently overpay.\n\nAn attacker cannot directly exploit this for profit, but malicious actors could potentially trick users into overpaying via misleading interfaces. More commonly, honest users may lose funds due to mistakes.\n\nThe impact is limited to the loss of excess ETH sent during deployment, which is permanently transferred to the fee recipient without recourse. While not catastrophic, it represents a usability and safety issue that undermines user trust.\n",
+            "severity": "Low",
+            "location": [
+                "DeploymentCoordinator.sol::deploy#66",
+                "DeploymentCoordinator.sol::deploy#73"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Overly Permissive FHE Allowances Result in Unnecessary Gas Costs",
+            "description": "During unwrap operations, the `Wrapper` and `FeeManager` contracts use `FHE.allow` to grant persistent permissions for encrypted value transfers. These permissions are stored in storage and persist beyond the transaction, even though they are only needed temporarily.\n\nThe root cause is the misuse of `FHE.allow` instead of `FHE.allowTransient`, which is designed for short-lived, transaction-scoped permissions. Using persistent allowances leads to unnecessary storage writes.\n\nWhile not directly exploitable for fund theft, this pattern increases gas costs for every unwrap transaction due to the overhead of writing to storage. Repeated use could lead to significant cumulative cost increases.\n\nThe impact is economic inefficiency: higher transaction fees for users and increased network load. This reduces the scalability and affordability of the system, especially under high usage.\n",
+            "severity": "Low",
+            "location": [
+                "Wrapper.sol::_getUnwrapFee#214",
+                "FeeManager.sol::getUnwrapFee#68"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Gas-Intensive Fee Mechanism Using Confidential Tokens",
+            "description": "The `Wrapper` contract processes all fees using confidential tokens, requiring expensive FHE operations for both wrapping and unwrapping. This includes minting confidential fee tokens and performing encrypted arithmetic and transfers.\n\nThe root cause is the architectural decision to handle fees entirely within the encrypted domain, despite the high computational cost of FHE operations compared to standard ERC-20 or ETH transfers.\n\nAttackers cannot directly exploit this, but the high gas costs may deter usage or make certain transactions economically unviable. It also increases the attack surface by involving more complex logic.\n\nThe impact is significantly increased transaction costs and reduced usability. Users must pay higher fees, which could limit adoption and make the system less competitive compared to alternatives with cheaper fee models.\n",
+            "severity": "Low",
+            "location": [
+                "Wrapper.sol#127",
+                "Wrapper.sol#92"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "Inconsistent and Inaccurate ERC-7201 Namespace Identifiers",
+            "description": "The `ERC7984Upgradeable` and `RegulatedERC7984Upgradeable` contracts use incorrect and inconsistent namespace identifiers in their `@custom:storage-location` NatSpec comments. They reference a non-existent `erc7984` formula instead of the correct `erc7201`, and use different domains (`pyratzlabs` vs `zaiffer`).\n\nThe root cause is a lack of standardization and incorrect documentation, which can lead to confusion during upgrades or audits. While the actual storage layout may still be correct, the misleading comments increase the risk of human error.\n\nThis issue does not enable direct exploitation but could lead to incorrect assumptions during future development or integration, potentially resulting in storage collisions or failed upgrades.\n\nThe impact is reduced code clarity, maintainability, and auditability. It increases the likelihood of developer mistakes and undermines confidence in the correctness of the storage layout design.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984Upgradeable.sol#31",
+                "RegulatedERC7984Upgradeable.sol#67"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Stateful Disclosure Mechanism Diverges from Latest Reference Implementation",
+            "description": "The `ERC7984Upgradeable` contract implements a stateful disclosure mechanism using a `_requestHandles` mapping to track disclose requests, which differs from the stateless approach in the OpenZeppelin reference implementation.\n\nWhile the stateful design provides stronger guarantees against replay attacks and unsolicited disclosures, it incurs higher gas costs due to storage operations. The divergence may also lead to inconsistencies with community standards.\n\nThis is not a vulnerability per se, but a design trade-off between security and efficiency. The stateful approach is more robust, but may not be necessary depending on threat model assumptions.\n\nThe impact is increased gas consumption for disclosure operations. The team should evaluate whether the added security justifies the cost, or if aligning with the reference implementation would be preferable for gas savings.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984Upgradeable.sol::discloseEncryptedAmount#240",
+                "ERC7984Upgradeable.sol::finalizeDiscloseEncryptedAmount#254"
+            ],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Lack of Indexed Event Parameters",
+            "description": "Several events in the codebase, including `BatchTransfer`, `RetryTransfer`, and `Wrapped`, do not have any indexed parameters, making it difficult for off-chain services to efficiently query and filter event data.\n\nThe root cause is the omission of the `indexed` keyword on key parameters, which prevents them from being stored in the logs' topic fields. This limits the ability of dApps, indexers, and monitoring tools to react to specific events.\n\nWhile not exploitable, this design flaw reduces the usability and interoperability of the system. It increases the cost and complexity of building reliable off-chain infrastructure.\n\nThe impact is degraded developer experience and reduced functionality for integrators. It may also lead to higher operational costs for services that need to parse large volumes of logs to find relevant events.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol::BatchTransfer#15",
+                "ERC7984TransferBatcher.sol::RetryTransfer#16",
+                "Wrapper.sol::Wrapped#42"
+            ],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "Outbound Fee Transfer Precedes Batch Execution",
+            "description": "The `confidentialBatchTransfer` function sends ETH to the fee recipient before executing the batch transfers, violating the checks-effects-interactions pattern.\nThe cause is the premature external call to `feeRecipient.call` before all internal state changes are completed.\nAn attacker could potentially exploit this by using a malicious fee recipient contract that re-enters the system before batch execution is finalized.\nThe impact includes potential reentrancy-like edge cases or gas exhaustion attacks, although the risk is mitigated by the trustworthiness of the fee recipient.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol::confidentialBatchTransfer#45"
+            ],
+            "files": []
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "Function Visibility Overly Permissive",
+            "description": "Several functions are declared with more permissive visibility (public or internal) than necessary, increasing the attack surface.\nThe cause is incorrect or overly broad access control design, where functions not intended for external or derived contract use are left accessible.\nAn attacker could potentially call public functions unnecessarily or exploit future inheritance chains if internal functions are not properly restricted.\nThe impact includes increased attack surface, potential gas inefficiencies, and reduced code clarity, which could lead to future vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7984TransferBatcher.sol::confidentialBatchTransfer",
+                "DeploymentCoordinator.sol::_getDeployFee",
+                "DeploymentCoordinator.sol::_getFeeRecipient",
+                "DeploymentCoordinator.sol::fallbackUnderlyingDecimals",
+                "DeploymentCoordinator.sol::_maxDecimals",
+                "swap_v0.sol::_handleUniswapSuccess",
+                "swap_v0.sol::_handleUniswapFailure",
+                "Wrapper.sol::_getFeeAndBurnAmounts",
+                "Wrapper.sol::_getWrapFee",
+                "Wrapper.sol::_getUnwrapFee",
+                "Wrapper.sol::_getFeeRecipient",
+                "Wrapper.sol::wrap",
+                "Wrapper.sol::finalizeUnwrap"
+            ],
+            "files": []
+        },
+        {
+            "id": 31,
+            "category": {},
+            "title": "Missing Security Contact",
+            "description": "A dedicated security contact is not defined in any of the smart contracts via NatSpec comments, which hinders responsible vulnerability disclosure.\nThe cause is the absence of the `@custom:security-contact` tag in contract documentation.\nWithout a clear reporting channel, security researchers may fail to report vulnerabilities or misdirect them, leading to unpatched risks.\nThe impact is delayed or missed vulnerability reporting, increasing the window of exposure to potential exploits.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC7984TransferBatcher.sol",
+                "DeploymentCoordinator.sol",
+                "ERC7984Upgradeable.sol",
+                "RegulatedERC7984Upgradeable.sol",
+                "FeeManager.sol",
+                "Wrapper.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 32,
+            "category": {},
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Several mappings in the codebase do not use named parameters, reducing code clarity and maintainability.\nThis is caused by declaring mappings without naming the key or value types, despite Solidity 0.8.18 supporting this feature.\nWhile not directly exploitable, unclear state variable definitions can lead to developer errors during maintenance or upgrades.\nThe impact is increased risk of logic errors due to misinterpretation of mapping purposes, potentially leading to vulnerabilities in future changes.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC7984TransferBatcher.sol::txIdToSender",
+                "DeploymentCoordinator.sol::deployedWrappers",
+                "DeploymentCoordinator.sol::deployedConfidentialTokens",
+                "ERC7984Upgradeable.sol::_operators"
+            ],
+            "files": []
+        },
+        {
+            "id": 33,
+            "category": {},
+            "title": "Unused Code",
+            "description": "Multiple instances of unused code were found across several contracts, including unused errors, events, imports, and state variables.\nThis is caused by leaving in code that is no longer referenced or necessary, possibly due to refactoring without cleanup.\nUnused code increases contract complexity and bytecode size, making audits harder and increasing deployment costs.\nThe impact is reduced code readability, higher gas costs, and potential confusion for developers and auditors, which could lead to oversight of real issues.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC7984Upgradeable.sol::ERC7984UnauthorizedCaller",
+                "RegulatedERC7984Upgradeable.sol::TransferFeeInfo",
+                "RegulatedERC7984Upgradeable.sol::FeeManager import",
+                "RegulatedERC7984Upgradeable.sol::_PLACEHOLDER",
+                "RegulatedERC7984Upgradeable.sol::FHESenderNotAllowed",
+                "RegulatedERC7984Upgradeable.sol::IncorrectETHFeeAmount",
+                "RegulatedERC7984Upgradeable.sol::ETHTransferFailed",
+                "RegulatedERC7984Upgradeable.sol::Transfer",
+                "RegulatedERC7984Upgradeable.sol::IConfidentialERC20",
+                "FeeManager.sol::TransferFeeUpdated",
+                "Wrapper.sol::console.sol import"
+            ],
+            "files": []
+        }
+    ]
+}

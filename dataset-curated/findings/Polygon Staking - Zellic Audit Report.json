@@ -1,0 +1,304 @@
+{
+    "path": "dataset-curated/reports/Zellic/Polygon Staking - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/stakedotlink/contracts"
+        ],
+        "commit_id": [
+            "00b568399854dba200a54cb16b0c337ddc6078f0",
+            "4c35b081f887c9a42c54408ab08b506ea3dc633e"
+        ],
+        "address": [],
+        "chain": "polygon",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-20",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Polygon Staking - Zellic Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect minimum unbond quantity calculation",
+            "description": "The vulnerability arises in the `unbond` function of the PolygonStrategy contract, where the condition for claiming rewards relies on a miscalculated `rewards` value. The `rewards` variable is derived from `getTotalDeposits() - getPrincipalDeposits()`, which includes `token.balanceOf(address(this))`\u2014a value that can be arbitrarily inflated by an attacker via token donations. However, the upstream `ValidatorShare` contract's `minRewardClaimAmount` check only considers actual staking rewards, not external token balances. This discrepancy causes the local check to pass even when the upstream withdrawal would revert due to insufficient actual rewards.\n\nThe root cause is the incorrect inclusion of the contract's token balance in the rewards calculation, which does not align with the upstream contract's logic. An attacker can exploit this by front-running an `unbond` call and donating tokens to the vault, causing the `rewards >= vault.minRewardClaimAmount()` check to pass locally. However, when `vault.withdrawRewards()` is called, the upstream contract reverts due to insufficient actual rewards, causing the entire `unbond` transaction to fail.\n\nThe impact is that legitimate `unbond` requests can be permanently reverted if the attacker's donation keeps the balance above the threshold without triggering actual reward withdrawal. This leads to user inconvenience and potential need for governance intervention to resolve the stuck state.\n",
+            "severity": "High",
+            "location": [
+                "PolygonStrategy.sol::unbond"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The rewards quantity is not deducted if the unbond quantity is lesser",
+            "description": "In the `unbond` function of the PolygonStrategy contract, when a vault's rewards are below the minimum claim threshold, the rewards are not deducted from the `toUnbondRemaining` amount even though they will be automatically claimed upon unbonding principal deposits. This occurs because the logic only subtracts rewards when `toUnbondRemaining > rewards`, but fails to account for cases where the `minRewardClaimAmount` condition fails. As a result, the function unbonds more principal than necessary.\n\nThe root cause is a flaw in the accounting logic that does not consistently treat reward claims during unbonding. The contract assumes that rewards are only claimed when explicitly withdrawn, but the upstream `ValidatorShare` contract automatically claims rewards when unstaking. This leads to a misalignment in expected vs. actual behavior.\n\nAn attacker or user could exploit this by structuring unbonding operations across multiple vaults to cause excess unbonding, which distorts the staking distribution and causes earlier-than-necessary unbonding of subsequent vaults. This could slightly reduce the overall rewards rate and disrupt the intended staking strategy.\n\nThe impact is a financial inefficiency and misallocation of staked assets, leading to suboptimal yield for users and potential imbalance in the staking pool distribution.\n",
+            "severity": "Medium",
+            "location": [
+                "PolygonStrategy.sol::unbond"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lack of maximum-fee check in the constructor",
+            "description": "The `LSTRewardsSplitter` contract lacks a validation check in its constructor to ensure that the total fees passed during initialization do not exceed the 10,000 basis points limit (100%). While the `addFee` and `updateFee` functions include this check, the constructor does not, allowing deployment with an invalid fee configuration.\n\nThe root cause is an omission in input validation during contract initialization. If the total fees exceed 10,000 basis points at deployment, the contract becomes permanently bricked for fee updates, as no single `addFee` or `updateFee` call can reduce the total below the threshold without first exceeding it in intermediate steps.\n\nAn attacker or malicious deployer could exploit this by deploying the contract with excessive fees, rendering the fee management functionality unusable. This would prevent legitimate fee adjustments and could lead to incorrect fee distribution or require contract replacement.\n\nThe impact is a denial of service to the fee update mechanism, potentially leading to incorrect fee collection and distribution, and necessitating contract migration if the issue is not caught early.\n",
+            "severity": "Low",
+            "location": [
+                "LSTRewardsSplitter.sol::constructor"
+            ],
+            "files": [
+                "contracts/contracts/core/lstRewardsSplitter/LSTRewardsSplitter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-770"
+                ],
+                "4": [
+                    "CWE-1325"
+                ]
+            },
+            "title": "Adding too many splitters can cause a denial of service",
+            "description": "The `addSplitter` function in the `LSTRewardsSplitterController` contract allows the owner to add an unlimited number of splitters without any upper limit. While the function itself runs in constant time, the absence of a cap means that the `accounts` array can grow indefinitely. This can lead to gas exhaustion during operations that iterate over all accounts, such as protocol-wide updates or reward distributions.\n\nThe root cause is the lack of a hardcoded limit on the number of splitters, which exposes the system to potential denial-of-service attacks through resource exhaustion. Although `removeSplitter` is optimized to run in constant time for the first element, operations that require full iteration become increasingly expensive.\n\nAn attacker with ownership privileges (or a compromised owner) could exploit this by adding a large number of splitters, eventually making the contract unusable due to out-of-gas errors during normal operations. Even if the owner is honest, accidental accumulation over time could lead to the same outcome.\n\nThe impact is a potential denial of service that could disrupt protocol operations, requiring manual intervention to remove and re-add splitters in a more efficient order to restore functionality.\n",
+            "severity": "Low",
+            "location": [
+                "LSTRewardsSplitterController.sol::addSplitter"
+            ],
+            "files": [
+                "contracts/contracts/core/lstRewardsSplitter/LSTRewardsSplitterController.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Donations can arbitrarily inflate fees to skip paying any fees via an upstream safety check",
+            "description": "The `getDepositChange` function in the `PolygonStrategy` contract includes the contract's token balance and vault balances when calculating profit, which can be inflated by external donations. This inflated profit increases the fee amount calculated by `updateDeposits`. However, the `StakingPool` contract has a safety check that sets fees to zero if they exceed the total staked amount, which can be triggered by large donations.\n\nThe root cause is the inclusion of arbitrary external balances in profit calculations without accounting for the potential to trigger safety mechanisms. The fee recipients are controlled by the owner and may not align with depositors, creating a misalignment of incentives.\n\nAn attacker could exploit this by colluding with fee recipients to donate tokens, inflate reported profits, trigger the safety check, and zero out fees\u2014effectively allowing them to extract value without paying fees. This is particularly effective if the fee recipients are separate from the depositors and MEV recipients.\n\nThe impact is a financial risk where fees are avoided through manipulation, potentially leading to loss of revenue for the protocol and unfair advantage for colluding parties.\n",
+            "severity": "Low",
+            "location": [
+                "PolygonStrategy.sol::getDepositChange"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-266"
+                ]
+            },
+            "title": "Centralization risk of upgradability.",
+            "description": "The `PolygonVault` and `PolygonFundFlowController` contracts are upgradable, meaning their logic can be changed post-deployment by the owner. This introduces a centralization risk, as a malicious or compromised owner could upgrade the contracts to steal funds, disable functionality, or alter behavior in ways that harm users.\n\nThe root cause is the reliance on a single owner for upgrades without decentralized governance or multi-signature controls. While upgradability provides flexibility, it also creates a single point of failure.\n\nAn attacker who gains control of the owner key could exploit this by deploying malicious contract versions that drain funds or lock users out. Even with honest intentions, the owner's unilateral control undermines trust in the system's decentralization.\n\nThe impact is a systemic risk to user funds and protocol integrity, as users must trust the owner not to act maliciously or negligently.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonVault",
+                "PolygonFundFlowController"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonVault.sol",
+                "contracts/contracts/polygonStaking/PolygonFundFlowController.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Hardcoded rate precision",
+            "description": "The `PolygonVault` contract implements its own `_getRatePrecision` function, which is copied from the upstream `ValidatorShare` contract. This creates a dependency on the internal logic of the upstream contract, assuming that the rate precision rules will not change. If the upstream contract modifies its precision logic, the `PolygonVault` implementation may become incorrect.\n\nThe root cause is the duplication of logic instead of relying on the upstream contract's public interface. The contract uses internal calculations based on validator ID ranges to determine precision, but this is not guaranteed to remain consistent with future updates to the `ValidatorShare` contract.\n\nAn attacker could exploit this by influencing or triggering an upstream contract upgrade that changes the rate precision logic, causing `PolygonVault` to miscalculate principal deposits and leading to incorrect staking behavior or financial loss.\n\nThe impact is a potential future vulnerability if the upstream contract evolves, leading to incorrect exchange rate calculations and financial discrepancies in staking operations.\n",
+            "severity": "Low",
+            "location": [
+                "PolygonVault.sol::getPrincipalDeposits",
+                "PolygonVault.sol::_getRatePrecision"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonVault.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Rewards remain unclaimed when principalDeposits is zero",
+            "description": "When `queueValidatorRemoval` is called on a vault with zero principal deposits but non-zero rewards, the rewards are not claimed or transferred to the strategy. The function only processes rewards if `principalDeposits != 0`, and the finalization step does not include a balance withdrawal. This results in lost rewards that remain trapped in the vault.\n\nThe root cause is the omission of a balance check and withdrawal step when removing a validator with no principal. While the impact is minimal due to the rarity of such balances, any accumulated rewards (e.g., from donated shares triggering reward claims) are effectively lost.\n\nAn attacker could exploit this by donating small amounts of shares to a validator marked for removal, causing rewards to be claimed into the vault but not transferred out, resulting in permanent loss of those funds.\n\nThe impact is minimal financial loss, primarily affecting edge cases where token balances accumulate in vaults scheduled for removal. However, it represents a correctness issue in fund management.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonStrategy.sol::queueValidatorRemoval"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-240"
+                ],
+                "3": [
+                    "CWE-130"
+                ]
+            },
+            "title": "No length check is present on the amounts parameter",
+            "description": "The `depositQueuedTokens` and `forceUnbond` functions in the `PolygonStrategy` contract accept two arrays\u2014`_vaultIds` and `_amounts`\u2014but do not validate that they have the same length. If `_amounts` is longer than `_vaultIds`, the extra elements are silently ignored. If it is shorter, the function reverts due to array bounds access.\n\nThe root cause is the absence of an explicit length validation, which could lead to silent data truncation or confusing reverts. This makes the function behavior ambiguous and error-prone for callers.\n\nAn attacker or buggy frontend could exploit this by providing mismatched array lengths, leading to incorrect deposit or unbond amounts being processed, or unexpected transaction failures.\n\nThe impact is a potential for user error or manipulation, leading to incorrect state changes or failed transactions, reducing the reliability and usability of the contract interface.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonStrategy.sol::depositQueuedTokens",
+                "PolygonStrategy.sol::forceUnbond"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "The totalStaked function name could be confusing",
+            "description": "The `totalStaked` function in the `PolygonStrategy` contract may have a misleading name, as it does not clearly indicate what it returns. The function likely returns the total amount of staked assets, but the name does not distinguish between principal, rewards, or queued withdrawals, which could confuse developers or auditors.\n\nThe root cause is poor naming convention, which can lead to misunderstandings about the function's behavior. In security-critical code, clarity is essential to prevent logic errors.\n\nAn attacker could exploit this confusion by manipulating code that depends on `totalStaked`, assuming it includes or excludes certain components, leading to incorrect calculations in integrations or governance decisions.\n\nThe impact is primarily on code maintainability and safety, increasing the risk of logic errors in dependent systems due to ambiguous semantics.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonStrategy.sol::totalStaked"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1176"
+                ],
+                "5": [
+                    "CWE-1067"
+                ]
+            },
+            "title": "Gas optimization in the removeSplitter function",
+            "description": "The removeSplitter function in LSTRewardsSplitterController removes a splitter by looping through an array to find the address, then replacing it with the last element and popping the array. This operation has variable gas costs depending on the array size.\n\nThe cause is the use of an O(n) linear search instead of leveraging the known index of the splitter, which could be provided by the caller or computed off-chain.\n\nAn attacker could force the function to process a large array, leading to high gas consumption, potentially making the function unusable if the gas limit is exceeded.\n\nThe impact is a potential denial of service that increases transaction costs unnecessarily, especially as the number of splitters grows, leading to suboptimal gas usage and reduced scalability.\n",
+            "severity": "Informational",
+            "location": [
+                "LSTRewardsSplitterController::removeSplitter#"
+            ],
+            "files": [
+                "contracts/contracts/core/lstRewardsSplitter/LSTRewardsSplitterController.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Renumbered vault/validator IDs",
+            "description": "The finalizeValidatorRemoval function in PolygonStrategy shifts all validators and vaults after the removed one down by one index, effectively renumbering the IDs of subsequent validators.\n\nThe cause is the use of a compacting array update mechanism that does not preserve stable IDs for validators and vaults.\n\nA block builder can reorder transactions such that calls to functions like unstakeClaim, restakeRewards, or queueValidatorRemoval that reference vault/validator IDs are executed after finalizeValidatorRemoval, causing them to target a different validator than intended.\n\nThe impact is that legitimate user calls can unexpectedly revert if they reference a vault/validator that has been shifted, leading to a minor usability issue and potential confusion, though no direct fund loss occurs.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonStrategy::finalizeValidatorRemoval#"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "The addFee functions can repeat receivers",
+            "description": "The addFee functions in both PolygonStrategy and LSTRewardsSplitter allow the same receiver address to be added multiple times to the fees array.\n\nThe cause is the lack of deduplication checks using a mapping or similar structure to prevent duplicate entries by address.\n\nAn owner could accidentally or intentionally add the same receiver multiple times, leading to that receiver receiving multiple shares of fees proportional to their duplicate entries.\n\nThe impact is potential confusion for users and external systems that expect each receiver to appear only once, and could result in unintended fee distribution if duplicates are not monitored.\n",
+            "severity": "Informational",
+            "location": [
+                "PolygonStrategy::addFee#",
+                "LSTRewardsSplitter::addFee#"
+            ],
+            "files": [
+                "contracts/contracts/polygonStaking/PolygonStrategy.sol"
+            ]
+        }
+    ]
+}

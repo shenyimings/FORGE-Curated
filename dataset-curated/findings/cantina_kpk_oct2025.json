@@ -1,0 +1,1240 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_kpk_oct2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/karpatkey/onchain-investment-vehicles",
+            "https://github.com/karpatkey/karpatkey-tokenized-fund"
+        ],
+        "commit_id": [
+            "3e4e054b",
+            "df62b7238a4a337766adda058bba765ac89071df",
+            "395ceca9569bc2cf55ee1b9a3d2753cb7edab6bb"
+        ],
+        "address": "n/a",
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2023-10-22",
+        "project_path": {
+            "onchain-investment-vehicles": "dataset-curated/contracts/cantina_kpk_oct2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Asset removal during pending subscriptions inflates supply via zero-decimals recomputation",
+            "description": "This vulnerability arises when an asset is removed between the creation and approval of a subscription request. The approval process recomputes the number of shares (sharesOut) using the current global asset configuration, which, after asset removal, returns zero decimals. This causes an incorrect scaling that inflates the computed sharesOut, allowing an oversized sharesAmount to pass the price guard. The contract then mints the originally requested (inflated) sharesAmount despite the incorrect valuation. The root cause is the reliance on mutable asset configuration data at the time of approval, which differs from the state at request creation. An attacker could exploit this by requesting a large number of shares with a valid asset, then having the operator remove the asset before approval, leading to the minting of significantly more shares than should be allowed. This results in share supply inflation and devaluation, potentially enabling theft of value from other holders.\n",
+            "severity": "High",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L493-L509",
+                "kpkShares.sol::kpkShares.sol#L684-L694",
+                "kpkShares.sol::kpkShares.sol#L852-L861"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Subscription approval mints sharesAmount instead of computed sharesOut and event",
+            "description": "During subscription approval, the contract mints the user-requested sharesAmount rather than the price-derived sharesOut computed at approval time. This decouples the minted amount from the current asset price, allowing users to potentially receive more shares than justified by the current rate if the price has moved favorably since request creation. The root cause is the use of stale user input (sharesAmount) instead of the dynamically computed value (sharesOut). An attacker could exploit this by submitting a subscription with a high minOut during a price dip and waiting for approval when the price has recovered, thereby receiving more shares than fair value. The impact includes economic loss to the fund and dilution of existing shareholders. Additionally, the emitted event reflects the requested value, not the computed one, leading to inaccurate off-chain tracking.\n",
+            "severity": "High",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L684-L694"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Mistakes in sharesPriceInAsset have big consequences",
+            "description": "The sharesPriceInAsset parameter in processRequests() directly influences share minting and redemption calculations. If set incorrectly by the operator, it can lead to catastrophic economic consequences, such as massive over-minting or under-minting of shares, effectively breaking the protocol's valuation model. The root cause is the lack of safeguards around price input, relying solely on operator discretion without validation or multi-signature oversight. An attacker with access to the pricing role, or a mistaken operator, could set an incorrect price, leading to severe financial loss for investors and loss of trust in the protocol. This could prevent institutional adoption due to the high risk of operational error.\n",
+            "severity": "Medium",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L382-L391"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "assetsToShares() doesn't check the asset exists",
+            "description": "The assetsToShares() function does not validate whether the provided asset is an approved asset before using its configuration. This allows calculations to proceed with non-existent or unapproved assets, which return zero decimals and other default values, leading to incorrect share calculations. The root cause is the missing validation check for asset existence. This issue contributes to the \"Asset removal during pending subscriptions\" vulnerability and could allow operators to accidentally enable deposits of unsupported or worthless assets. An attacker could exploit this in conjunction with asset removal to inflate shares or manipulate pricing. The impact includes potential loss of funds and incorrect accounting.\n",
+            "severity": "Medium",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L493-L502",
+                "kpkShares.sol::kpkShares.sol#L512-L521"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Performance fee gated by USD assets enables fee avoidance via asset choice and ordering",
+            "description": "Performance fees are only charged when processing batches for assets flagged as isUsd, creating exploitable gaming vectors. Users can avoid fees entirely by redeeming in non-USD assets, and operators can manipulate processing order (e.g., non-USD first, then USD shortly after) to skip fee accrual due to time-based thresholds. The root cause is the coupling of fee accrual logic to the specific asset being processed, rather than a global or per-asset time tracking mechanism. This allows systematic under-collection of performance fees based on operational choices rather than economic fairness. The impact is reduced revenue for the fund and unfair advantage to users who exploit the timing and asset selection, undermining the fee model.\n",
+            "severity": "Medium",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L784-L803",
+                "kpkShares.sol::kpkShares.sol#L793-L795"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Asset removal bricks pending requests and enables sweeping escrowed funds",
+            "description": "Removing an asset while subscription or redemption requests are pending deletes its configuration, which breaks the processing of those requests. For redemptions, approval fails because canRedeem is now false. For subscriptions, escrowed funds can be swept by recovery functions since the asset config is gone, leaving users unable to cancel or approve. The root cause is the immediate deletion of asset config without a deprecation period. This bricks user exits for redemptions and allows unintended sweeping of escrowed funds. The impact includes denial of service for users with pending requests and potential loss of access to funds until TTL expires, reducing user trust and fund reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L554-L557",
+                "kpkShares.sol::kpkShares.sol#L852-L862"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Allowing the share token as an approved asset enables circular accounting",
+            "description": "The updateAsset function does not prevent the share token itself (address(this)) from being added as an approved asset. This creates a circular accounting risk where escrowed shares during redemption could be misinterpreted as underlying assets, leading to artificial inflation or fund draining. The root cause is the missing validation to block self-referential asset registration. An attacker could exploit this by registering the share token as an asset and manipulating accounting functions that rely on asset balances, potentially allowing unauthorized minting or sweeping of shares. The impact includes potential total loss of funds and complete compromise of the share price mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L554-L562",
+                "kpkShares.sol::kpkShares.sol#L852-L854"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "Out of gas with a huge number of assets",
+            "description": "Functions like getApprovedAssets() and _shadowAsset() iterate over all approved assets without pagination or gas limits. If a very large number of assets are added, these functions could run out of gas and become unusable. The root cause is the unbounded loop over asset lists. Although adding assets is restricted to authorized roles, a malicious or mistaken operator could add enough assets to break these functions. The impact is denial of service for critical read operations, preventing users and systems from retrieving asset lists or performing shadow operations, which could halt fund operations.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L463-L469",
+                "kpkShares.sol::kpkShares.sol#L893-L902"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Last asset can be removed",
+            "description": "The contract allows the removal of the last (or last stablecoin) asset, which disables key functions like requestRedemption() and previewRedemption(). Additionally, performance fees stop accruing if no USD-flagged asset remains. The root cause is the lack of a guard to prevent removal of the final asset. While this might be intentional for temporary closure, it could accidentally lock users out of their shares and stop fee collection. The impact is reduced functionality and potential confusion for users and operators, making it harder to manage the fund during edge states.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L784-L795",
+                "kpkShares.sol::kpkShares.sol#L852"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ]
+            },
+            "title": "feeReceiverBalance might not be accurate in _chargeManagementFee()",
+            "description": "The _chargeManagementFee() function uses balanceOf(feeReceiver) to track fee accumulation, but the fee receiver could use the received shares in other protocols (e.g., DeFi), reducing its balance. This makes the recorded balance inaccurate and could cause the fee amount to increase incorrectly in subsequent calculations. The root cause is the assumption that the fee receiver's balance reflects all accrued fees. The impact is incorrect fee accounting and potential over-charging in future periods, leading to economic inefficiency and lack of transparency for investors.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L823-L830"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Status update after _transfer() in _rejectRedeemRequest()",
+            "description": "In _rejectRedeemRequest(), the request status is updated to REJECTED after the _transfer() call. If _transfer() were to make an external call (e.g., via ERC777 hooks), the status would still be PENDING during that call, potentially allowing reentrancy or inconsistent state checks. The root cause is incorrect ordering of state updates. Although current code prevents external calls, future changes could introduce risk. The impact is potential reentrancy vulnerabilities or logic errors if the code evolves, making the contract less secure and harder to maintain.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L706-L714",
+                "kpkShares.sol::kpkShares.sol#L768-L772"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Updating storage while memory copy exists",
+            "description": "Functions like _approveSubscriptionRequest() create a memory copy of a request struct and later update the storage version, causing the memory copy to become stale. If the stale data were used after the update, it could lead to logic errors. The root cause is the use of a memory copy when a storage pointer would be safer. Although current code avoids using stale fields, future modifications could inadvertently introduce bugs. The impact is increased risk of state inconsistency and logic flaws during code maintenance or upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L646-L659",
+                "kpkShares.sol::kpkShares.sol#L663-L674",
+                "kpkShares.sol::kpkShares.sol#L684-L701",
+                "kpkShares.sol::kpkShares.sol#L706-L709",
+                "kpkShares.sol::kpkShares.sol#L738-L753",
+                "kpkShares.sol::kpkShares.sol#L768-L772"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Difference _processApproved() and _processRejected()",
+            "description": "_processApproved() includes a check that request.asset matches the processing asset, but _processRejected() lacks this check. This inconsistency could allow invalid rejection requests to be processed if they reference a different asset. The root cause is a missing validation guard in the rejection path. The impact is potential processing errors or inconsistent state updates, reducing code reliability and increasing the risk of unintended behavior during request rejection.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L646-L652",
+                "kpkShares.sol::kpkShares.sol#L663-L667"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Function requestSubscription() updates administration before receiving tokens",
+            "description": "requestSubscription() updates the request administration (e.g., _requests[]) before calling safeTransferFrom() to receive tokens. This creates a reentrancy-like risk where a malicious token (e.g., ERC777) could callback into the contract during transfer and attempt to cancel or manipulate the request before tokens are received. The root cause is incorrect ordering of state updates and external calls. Although current safeguards (e.g., TTL check) prevent exploitation, the pattern is unsafe and could become vulnerable if those checks change. The impact is potential fund loss or state corruption in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L213-L240",
+                "kpkShares.sol::kpkShares.sol#L256-L270",
+                "kpkShares.sol::kpkShares.sol#L403-L407"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Not all init functions are called",
+            "description": "The contract inherits from upgradeable OpenZeppelin contracts (AccessControlUpgradeable, ERC20Upgradeable) but does not call their initialization functions (__Context_init, __ERC165_init). Although these are currently empty, future versions could include critical initialization logic. The root cause is incomplete initialization of inherited upgradeable components. The impact is potential initialization failure or undefined behavior if OpenZeppelin updates these functions, compromising contract integrity during upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L156-L159"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect timestamp emitted for redemption request events",
+            "description": "The redemption request event emits the current block timestamp, but the interface documentation specifies timestamp + ttl (the expiry time). This mismatch causes off-chain indexers to calculate incorrect cancellation or expiry windows. The root cause is inconsistent event data with documentation. The impact is incorrect behavior by third-party systems relying on the event data, leading to user confusion and potential missed cancellation opportunities.\n",
+            "severity": "Low",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L213",
+                "kpkShares.sol::kpkShares.sol#L242-L250",
+                "kpkShares.sol::kpkShares.sol#L314",
+                "kpkShares.sol::kpkShares.sol#L343-L345"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "minAssetsOut checked against gross instead of net in redemption",
+            "description": "During redemption approval, minAssetsOut is compared against the gross assetsOut before subtracting the redemption fee. However, the user receives net shares (after fee), so the actual assets sent can be less than minAssetsOut. The root cause is checking slippage against the wrong value. This weakens slippage protection and misaligns user expectations. An attacker could exploit this by setting a tight minAssetsOut and receiving less than expected due to the fee. The impact is economic loss for users and reduced trust in the redemption mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "IkpkShares.sol::IkpkShares.sol#L377-L384",
+                "kpkShares.sol::kpkShares.sol#L746-L751"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Validate parameters directly instead of a full struct",
+            "description": "The _validateRequest function accepts a full UserRequest struct but only uses investor and requestStatus. Passing the entire struct wastes gas on memory copying. The root cause is inefficient parameter usage. This leads to unnecessary gas costs for every validation call. The impact is higher transaction fees for users, reducing the efficiency of the contract without functional benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L722"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Single-use cache of totalSupply() adds minor gas overhead",
+            "description": "A local variable caches totalSupply() but is used only once, adding gas overhead from the storage operation. The root cause is unnecessary variable caching for single-use cases. This increases gas consumption slightly. The impact is inefficient gas usage, which could be optimized by inlining the function call.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L824"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Calls to _mint() can be optimized",
+            "description": "The _mint() function is called in _chargeManagementFee() and _chargePerformanceFee() even when the fee amount is zero. Minting zero shares is unnecessary and wastes gas. The root cause is lack of a zero-check before minting. The impact is avoidable gas costs during fee processing, especially when fees are zero.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L823-L830",
+                "kpkShares.sol::kpkShares.sol#L836-L845"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Result of _chargeFees() not used",
+            "description": "The _chargeFees() function returns a FeesCharged struct, but the redemptionFee field is never set, and the return value is never used. The root cause is redundant return data and unused function output. This adds unnecessary code complexity and gas cost for returning unused data. The impact is inefficient code and higher gas usage without benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol::IkpkShares.sol#L118-L122",
+                "kpkShares.sol::kpkShares.sol#L382-L388",
+                "kpkShares.sol::kpkShares.sol#L784",
+                "kpkShares.sol::kpkShares.sol#L784-L803"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant check in previewRedemption()",
+            "description": "previewRedemption() checks canRedeem before calling sharesToAssets(), which performs the same check internally. This redundant validation wastes gas. The root cause is duplicated logic across function layers. The impact is unnecessary gas consumption during preview operations, reducing efficiency for users checking redemption values.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::kpkShares.sol#L186-L198",
+                "kpkShares.sol::kpkShares.sol#L290-L299",
+                "kpkShares.sol::kpkShares.sol#L493-L501",
+                "kpkShares.sol::kpkShares.sol#L512-L521"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Calculations in assetsToShares() and sharesToAssets() can be optimized",
+            "description": "The functions assetsToShares() and sharesToAssets() use large intermediate values during calculation, which can lead to reverts when handling high-precision asset amounts (e.g., 66_666_666_666_666e36). This limits the allowable input range and reduces the robustness of the contract.\n\nThe root cause is the order of operations in the mulDiv calls, which results in unnecessarily large temporary values. Additionally, two mulDiv operations are used in each function, which increases gas costs unnecessarily.\n\nAn attacker could potentially exploit this by providing a large asset amount that causes the function to revert, disrupting expected functionality for legitimate users relying on these preview functions.\n\nThe impact includes reduced usability, potential for unexpected reverts in critical conversion functions, and higher gas consumption than necessary.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::assetsToShares#493",
+                "kpkShares.sol::sharesToAssets#512"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ]
+            },
+            "title": "Symbol not used",
+            "description": "The symbol of supported assets is retrieved and stored in _approvedAssetsMap during _updateAsset(), but it is only ever accessed in getApprovedAsset(). It is not used anywhere else in the contract logic, making its storage redundant.\n\nThe root cause is unnecessary data persistence in storage when the symbol could be fetched on-demand. This leads to avoidable gas costs during asset registration and updates.\n\nWhile not directly exploitable, an attacker could force the contract to store unused data, increasing gas costs for legitimate users during asset setup.\n\nThe impact is increased gas consumption for asset registration and maintenance, with no functional benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol::getApprovedAsset#79",
+                "kpkShares.sol::_updateAsset#472",
+                "kpkShares.sol#852",
+                "kpkShares.sol#875"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Array length in for loop",
+            "description": "Several for loops in the codebase re-evaluate the array length on every iteration (e.g., in _processApproved and _processRedemptions), which results in additional SLOAD operations and higher gas costs.\n\nThe root cause is the lack of caching the array length in a local variable before the loop. This is a well-known gas optimization pattern that was not applied.\n\nAn attacker could exploit this by forcing the execution of these loops with large arrays, increasing the gas cost of transactions and potentially making them unaffordable or exceeding block limits.\n\nThe impact is unnecessarily high gas consumption during batch processing of requests, leading to higher operational costs and potential DoS vectors.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#463",
+                "kpkShares.sol#646",
+                "kpkShares.sol#663"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1084"
+                ]
+            },
+            "title": "memory versus storage UserRequest in cancel functions",
+            "description": "The functions cancelSubscription() and cancelRedemption() use a storage pointer for the UserRequest struct, which causes every field access to read from storage, resulting in higher gas costs compared to using a memory copy.\n\nThe root cause is inefficient data access pattern. Other parts of the code correctly use memory copies when the data is not meant to be modified via the pointer.\n\nAn attacker could exploit this by triggering these cancellation functions repeatedly, increasing the gas cost for users and potentially making cancellations economically unviable.\n\nThe impact is higher gas consumption for cancellation operations, reducing user experience and increasing transaction costs.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::cancelSubscription#256",
+                "kpkShares.sol::cancelRedemption#351"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant check in request functions",
+            "description": "The functions requestSubscription() and requestRedemption() perform a redundant check for assetConfig.asset == address(0) in addition to checking canDeposit/canRedeem. However, other functions like previewSubscription only rely on canDeposit/canRedeem, which is sufficient for access control.\n\nThe root cause is inconsistent validation logic across similar functions, leading to unnecessary complexity and gas cost.\n\nAn attacker could exploit this inconsistency by registering a zero-address asset with canDeposit=true, potentially bypassing intended restrictions (though mitigated by other checks).\n\nThe impact is increased gas cost and code complexity without security benefit, and potential for logic divergence between preview and execution paths.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::requestSubscription#186",
+                "kpkShares.sol::requestRedemption#314"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "preview functions could be external",
+            "description": "The preview functions (previewSubscription and previewRedemption) are currently public but are not called internally by any other function. They could be made external to save gas when called externally, as external functions do not copy arguments to memory.\n\nThe root cause is suboptimal function visibility choice, missing a common gas optimization.\n\nAn attacker could exploit the higher gas cost by forcing users to pay more for previews, though the impact is minimal.\n\nThe impact is slightly higher gas consumption for external callers of preview functions, with no functional downside but missed optimization.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::previewSubscription#186",
+                "kpkShares.sol::previewRedemption#290"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "Off-by-one boundary: redemption cancel not allowed exactly at timestamp + ttl",
+            "description": "The cancelRedemption function uses block.timestamp <= request.timestamp + redemptionRequestTtl to revert, meaning cancellation is only allowed strictly after the TTL expires. However, the emitted event suggests cancellation is allowed starting at timestamp + ttl, creating a discrepancy.\n\nThe root cause is a strict inequality check that excludes the boundary second, while user expectations (based on events) include it.\n\nAn attacker could exploit this by timing a cancellation at the exact boundary second, causing it to revert unexpectedly, while users believe it should succeed.\n\nThe impact is user confusion and potential loss of cancellation opportunity due to off-by-one error in time-based logic.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::cancelRedemption#362"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Difficult to use preview functions",
+            "description": "The preview functions (previewSubscription and previewRedemption) are difficult to use because there is no easy way to estimate sharesPrice for a given asset, which is required for accurate previews.\n\nThe root cause is the lack of accessible historical or current sharesPrice data per asset, forcing external callers to rely on potentially outdated or guessed values.\n\nAn attacker could exploit this by manipulating the sharesPrice (if possible) and causing users to make decisions based on inaccurate previews.\n\nThe impact is reduced usability and reliability of preview functions, leading to poor user experience and potential financial loss due to inaccurate estimates.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::previewSubscription#186",
+                "kpkShares.sol::previewRedemption#290"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Suggestion for calculatePerformanceFee()",
+            "description": "The calculatePerformanceFee() function receives limited information, making it difficult to implement complex fee calculations. It could benefit from additional context such as totalSupply.\n\nThe root cause is a narrow interface that doesn't provide sufficient data for flexible fee logic, unlike _chargeManagementFee() which has more context.\n\nAn attacker could exploit the limited data by designing a fee module that behaves incorrectly under certain conditions due to lack of visibility into total supply.\n\nThe impact is reduced flexibility and potential for incorrect fee calculations in performance fee modules.\n",
+            "severity": "Informational",
+            "location": [
+                "IPerfFeeModule.sol::calculatePerformanceFee#14",
+                "kpkShares.sol::_chargePerformanceFee#823"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/FeeModules/IPerfFeeModule.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Comment in _assetRecoverableAmount() not accurate",
+            "description": "The comment for _assetRecoverableAmount() indicates a boolean return type, but the function actually returns uint256.\n\nThe root cause is outdated or incorrect documentation, leading to confusion for developers reading the code.\n\nAn attacker could exploit this confusion by misinterpreting the return value in a forked or modified version of the contract.\n\nThe impact is developer confusion and potential for bugs in integrations or modifications due to misleading comments.\n",
+            "severity": "Informational",
+            "location": [
+                "RecoverFunds.sol::_assetRecoverableAmount#26"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/utils/RecoverFunds.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Tables in README.md not accurate",
+            "description": "The tables in README.md contain inaccuracies regarding the subscription and redemption flows. For example, they claim share calculation happens in requestSubscription(), but no such calculation occurs.\n\nThe root cause is outdated documentation that does not reflect the actual code behavior.\n\nAn attacker could exploit this by misleading new developers or auditors about the contract's behavior, potentially hiding vulnerabilities.\n\nThe impact is misinformation for developers and users, leading to incorrect assumptions about contract functionality.\n",
+            "severity": "Informational",
+            "location": [
+                "README.md#1"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/README.md"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1110"
+                ]
+            },
+            "title": "Formula and sharesPrice decimals not clear",
+            "description": "The formula for price calculations involving sharesPrice is unclear due to inconsistent documentation and implementation. Different parts of the code show different formulas, and the decimal precision of sharesPrice is not explicitly defined.\n\nThe root cause is lack of clear specification and documentation of the numerical model, leading to potential calculation errors.\n\nAn attacker could exploit this ambiguity to manipulate price calculations if the implementation diverges from expectations.\n\nThe impact is potential for incorrect asset and share conversions, leading to financial loss due to miscalculations.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol::sharesToAssets#287",
+                "kpkShares.sol::sharesToAssets#493",
+                "kpkShares.sol#40"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/IkpkShares.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Comment of event RedemptionRequest not accurate",
+            "description": "The comments for the RedemptionRequest event incorrectly describe the parameters: assetsAmount is documented as \"number of shares being redeemed\" and sharesAmount as \"number of assets being used\".\n\nThe root cause is swapped parameter descriptions in the NatSpec comments.\n\nAn attacker could exploit this by misleading developers integrating with the contract, causing them to misinterpret event data.\n\nThe impact is developer confusion and potential for incorrect event parsing in frontends and monitoring tools.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol::RedemptionRequest#185"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/IkpkShares.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Event name ManagementRateUpdate different than other events",
+            "description": "The event name ManagementRateUpdate is inconsistent with other event naming patterns in the contract, such as ManagementFeeRateUpdate.\n\nThe root cause is inconsistent naming convention, reducing code readability and maintainability.\n\nAn attacker could exploit this by creating confusion during code review, potentially hiding malicious changes.\n\nThe impact is reduced code consistency and maintainability, with potential for oversight during audits.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::ManagementRateUpdate#937"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1357"
+                ]
+            },
+            "title": "OpenZeppelin EnumerableMap / EnumerableSet could be used",
+            "description": "The contract uses a custom combination of _approvedAssets and _approvedAssetsMap to track assets, which could be simplified using OpenZeppelin's EnumerableMap or EnumerableSet.\n\nThe root cause is reinventing functionality that is already securely implemented in well-audited libraries.\n\nAn attacker could exploit the custom implementation if it contains undiscovered bugs, though none are present currently.\n\nThe impact is increased code complexity and maintenance burden without security benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol#79",
+                "kpkShares.sol#64",
+                "kpkShares.sol#893"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/IkpkShares.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "decimals() might not exist",
+            "description": "The ERC20 standard does not require the decimals() function to be implemented, so calling it on an untrusted token could revert.\n\nThe root cause is assuming all ERC20 tokens implement the optional decimals() function.\n\nAn attacker could exploit this by creating a token without decimals() and registering it, causing contract functions to revert.\n\nThe impact is potential for DoS when interacting with non-compliant ERC20 tokens.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#877"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Comment in _approveRedeemRequest() not accurate",
+            "description": "The comment in _approveRedeemRequest() states \"Transfer assets to investor\" but the assets are actually sent to the receiver.\n\nThe root cause is outdated or incorrect comment that does not reflect the actual logic.\n\nAn attacker could exploit this confusion to mislead auditors about the fund flow.\n\nThe impact is developer confusion and potential for incorrect assumptions about asset destination.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::_approveRedeemRequest#738"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "_validateRequest() versus _validateRequestParams()",
+            "description": "The functions _validateRequest() and _validateRequestParams() have similar names but different behaviors: one returns false, the other reverts. This increases the risk of misuse and confusion during maintenance.\n\nThe root cause is inconsistent error handling pattern and unclear naming.\n\nAn attacker could exploit this by convincing developers to use the wrong function, leading to silent failures or unexpected reverts.\n\nThe impact is increased risk of logic errors during code changes due to confusing API.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::_validateRequest#629",
+                "kpkShares.sol::_validateRequestParams#636",
+                "kpkShares.sol#722"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 40,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Value of USDC can fluctuate",
+            "description": "The code assumes USDC always holds $1 value and does not account for de-pegging events, such as when USDC dropped to $0.88.\n\nThe root cause is reliance on unstated assumptions about stablecoin stability.\n\nAn attacker could exploit this by manipulating the market or during a de-peg event to extract value.\n\nThe impact is financial risk during stablecoin de-pegging, as the contract does not have safeguards against price fluctuations.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#596"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 41,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "_validateInitializationParams() allows performanceFeeModule == address(0)",
+            "description": "The function _validateInitializationParams() allows performanceFeeModule to be address(0), but setPerformanceFeeModule() does not, creating inconsistency.\n\nThe root cause is mismatched validation logic between initialization and update paths.\n\nAn attacker could exploit this by initializing with a null module and preventing future updates.\n\nThe impact is potential for inconsistent state and confusion about whether a null module is allowed.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::_validateInitializationParams#452",
+                "kpkShares.sol#579",
+                "kpkShares.sol#836"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 42,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Order of parameters assetsToShares() and sharesToAssets()",
+            "description": "The functions assetsToShares() and sharesToAssets() have different parameter orders, making the API inconsistent and harder to use correctly.\n\nThe root cause is lack of standardized parameter ordering in similar functions.\n\nAn attacker could exploit this by causing developers to pass parameters in the wrong order, leading to incorrect calculations.\n\nThe impact is increased risk of integration errors due to inconsistent API design.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::assetsToShares#493",
+                "kpkShares.sol::sharesToAssets#512"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 43,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Different approach to validate authorization in cancel functions",
+            "description": "cancelSubscription() uses _validateCancellationAuthorization() while cancelRedemption() uses an inline check, leading to code duplication and maintenance risk.\n\nThe root cause is inconsistent use of helper functions for the same logical check.\n\nAn attacker could exploit this by finding a discrepancy between the two checks and bypassing one.\n\nThe impact is increased code complexity and risk of authorization bypass due to inconsistent checks.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::cancelSubscription#256",
+                "kpkShares.sol::cancelRedemption#351",
+                "kpkShares.sol::_validateCancellationAuthorization#636"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 44,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Different approaches to check RequestStatus",
+            "description": "Different functions use different conditions to check if a request exists: cancelSubscription checks timestamp == 0, cancelRedemption checks investor == address(0), and _processApproved uses _validateRequest().\n\nThe root cause is lack of centralized request validation logic.\n\nAn attacker could exploit inconsistencies between these checks to create or manipulate requests in unexpected ways.\n\nThe impact is increased risk of logic errors and inconsistent state handling due to fragmented validation.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::cancelSubscription#256",
+                "kpkShares.sol::cancelRedemption#351",
+                "kpkShares.sol::_processApproved#646",
+                "kpkShares.sol::_validateRequest#722"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 45,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "previewSubscription returns redundant info",
+            "description": "The preview functions return an entire struct but only one field is useful, increasing complexity and gas cost for decoding.\n\nThe root cause is over-fetching of data in the return value.\n\nAn attacker could exploit this by forcing callers to process unnecessary data, increasing gas costs.\n\nThe impact is unnecessary complexity and higher gas costs for integrators.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::previewSubscription#186",
+                "kpkShares.sol::previewRedemption#290"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 46,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ]
+            },
+            "title": "Missing dual timeouts allows cancel/approve race and no user-set expiry",
+            "description": "The current TTL mechanism only controls when a user can cancel, but does not expire the request. This allows a race condition where an operator can approve after the TTL but while the user is canceling.\n\nThe root cause is lack of request expiration mechanism.\n\nAn attacker (e.g., a malicious operator) could exploit this by approving requests after the intended cancellation window.\n\nThe impact is potential for race conditions and lack of user control over request lifetime.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#268"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 47,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Checks missing in the preview functions",
+            "description": "The preview functions perform fewer checks than the corresponding request functions, leading to potential discrepancies between previewed and actual results.\n\nThe root cause is inconsistent validation between preview and execution paths.\n\nAn attacker could exploit this by crafting inputs that pass preview but fail execution, misleading users.\n\nThe impact is user confusion and potential for failed transactions after relying on inaccurate previews.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol::previewSubscription#186",
+                "kpkShares.sol::previewRedemption#290",
+                "kpkShares.sol::_validateRequestParams#629"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 48,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Use of USDC is not fully documented",
+            "description": "The code assumes the base asset is USDC and that it is a stablecoin (via isUsd == true), but this is not clearly documented in comments or README.\n\nThe root cause is missing documentation of critical assumptions.\n\nAn attacker could exploit this by substituting a non-USDC asset and breaking assumptions in the fee logic.\n\nThe impact is potential for incorrect configuration and financial loss due to undocumented requirements.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#127",
+                "kpkShares.sol#596",
+                "kpkShares.sol#852"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 49,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "SECONDS_PER_YEAR doesn't take leap years into account",
+            "description": "1. **Description:** The constant SECONDS_PER_YEAR is defined without accounting for leap years, using a 365-day year instead of a more precise average.\n2. **Cause:** The use of an imprecise integer value (365 days) instead of a more accurate approximation (e.g., 365.2425 days per year on average).\n3. **Exploitation:** This is not directly exploitable but may lead to minor inaccuracies in time-based calculations over long periods.\n4. **Impact:** Long-term calculations involving annualized rates or time-based accruals may drift slightly from real-world time, potentially affecting APY calculations or vesting schedules.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#L51-L52"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 50,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incompatibility with rebasing and fee-on-transfer tokens in escrow/recovery accounting",
+            "description": "1. **Description:** The _assetRecoverableAmount function assumes token balances only change via explicit transfers, which fails for rebasing and fee-on-transfer (FoT) tokens.\n2. **Cause:** The logic does not account for automatic balance changes (rebasing) or transfer fees, leading to incorrect recoverable amount calculations.\n3. **Exploitation:** An attacker could exploit this by using rebasing tokens to create artificial deficits or by using FoT tokens to cause underflow reverts during recovery.\n4. **Impact:** Could result in incorrect accounting, failed transactions due to reverts, or loss of expected funds during recovery operations.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#L555-L557"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 51,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Parameter semantic mismatch between interface/docs and implementation (price vs minSharesOut)",
+            "description": "1. **Description:** The requestSubscription function in IkpkShares documents its second parameter as sharesPrice, but the implementation treats it as minSharesOut.\n2. **Cause:** Mismatch in naming and semantics between the interface, implementation, and documentation.\n3. **Exploitation:** Integrators may pass a price value where a minimum output is expected, leading to incorrect slippage checks or unintended behavior.\n4. **Impact:** Could result in unexpected reverts, incorrect trade execution, or user funds being exposed to slippage beyond intended limits.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol#L334"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/IkpkShares.sol"
+            ]
+        },
+        {
+            "id": 52,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Magic number used for BPS denominator in redemption fee calculation",
+            "description": "1. **Description:** The redemption fee calculation uses a hard-coded value of 10,000 (basis points) without a named constant.\n2. **Cause:** Use of a magic number instead of a defined constant reduces code readability and maintainability.\n3. **Exploitation:** If the denominator needs to change or if other fee paths use different literals, inconsistencies may arise.\n4. **Impact:** Increased risk of bugs during future modifications and reduced code clarity for auditors and developers.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#L810"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 53,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "redemptionFee documented in assets but emitted in shares",
+            "description": "1. **Description:** The interface documentation states that redemptionFee is in assets, but the implementation emits it in shares.\n2. **Cause:** Documentation and implementation are inconsistent in units used for the redemption fee.\n3. **Exploitation:** Integrators or analytics tools relying on the event data may misinterpret the fee amount.\n4. **Impact:** Incorrect UI displays, flawed accounting systems, or misinformed user decisions due to unit confusion.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol#L202"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/IkpkShares.sol"
+            ]
+        },
+        {
+            "id": 54,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "TTL updates apply to existing requests, contradicting docs",
+            "description": "1. **Description:** The setSubscriptionRequestTtl and setRedemptionRequestTtl functions are documented to affect only new requests, but they impact existing pending requests.\n2. **Cause:** The implementation uses the current TTL value during validation instead of storing the TTL at request creation.\n3. **Exploitation:** Changing the TTL could unexpectedly invalidate or extend existing requests.\n4. **Impact:** Users may experience unexpected expiration or prolongation of their requests, leading to confusion or potential fund access issues.\n",
+            "severity": "Informational",
+            "location": [
+                "IkpkShares.sol#L396-L402"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        },
+        {
+            "id": 55,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused global state variables / constants",
+            "description": "1. **Description:** The public state variable updateRequestTtl and the constant _NORMALIZED_PRECISION_USD are declared but not used anywhere in the code.\n2. **Cause:** Dead code that was likely left over from earlier development stages.\n3. **Exploitation:** Not directly exploitable, but increases code complexity and maintenance burden.\n4. **Impact:** Adds unnecessary noise, expands the attack surface slightly, and may mislead developers into thinking certain features are implemented when they are not.\n",
+            "severity": "Informational",
+            "location": [
+                "kpkShares.sol#L43",
+                "kpkShares.sol#L89",
+                "kpkShares.sol#L508",
+                "kpkShares.sol#L528"
+            ],
+            "files": [
+                "3e4e054b/onchain-investment-vehicles/src/kpkShares.sol"
+            ]
+        }
+    ]
+}

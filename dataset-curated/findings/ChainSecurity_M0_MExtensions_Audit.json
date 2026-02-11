@@ -1,0 +1,356 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_M0_MExtensions_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/m0-foundation/evm-m-extensions"
+        ],
+        "commit_id": [
+            "66eb4710e73ce1ffcf198b593e9e81848f9385cc"
+        ],
+        "address": [],
+        "chain": "n/a",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "evm-m-extensions": "dataset-curated/contracts/ChainSecurity_M0_MExtensions_Audit.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "MYieldFee Can Be Forced Into Insolvency if Non Earning",
+            "description": "The MYieldFee contract uses an internal index to track yield and fees, relying on the `latestRate` value to determine if it is earning. If the contract is removed from the earner whitelist but the index is not paused, the internal accounting continues to accrue yield that is never received, leading to insolvency. The root cause is that `updateIndex()` does not validate the current earning status before resuming index growth. An attacker or governance action could trigger `updateIndex()` after removal from the earners list, reactivating the index despite no actual yield generation. This would cause the contract to owe more than it holds, resulting in insolvency and potential loss of user funds.\n",
+            "severity": "High",
+            "location": [
+                "MYieldFee::updateIndex"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/yieldToAllWithFee/MYieldFee.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Wrapped $M V1 Is Unsupported",
+            "description": "The SwapFacility and UniswapV3SwapAdapter contracts assume that `wrap()` and `unwrap()` on Wrapped $M V1 mint and burn exact token amounts. However, the deployed version incurs rounding errors, violating this assumption. The cause is imprecise arithmetic in the token's wrapping logic. When these functions are called, the expected amount-in and amount-out calculations fail due to discrepancies between expected and actual balances, causing reverts in critical swap functions. This impacts the usability of the entire swapping infrastructure, potentially blocking user transactions and reducing system reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapFacility::wrap/unwrap",
+                "UniswapV3SwapAdapter::wrap/unwrap"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/SwapFacility.sol",
+                "evm-m-extensions/src/swap/UniswapV3SwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Wrong Remaining Balance in swapOut()",
+            "description": "In `UniswapV3SwapAdapter.swapOut()`, the remaining wMToken balance after a partial swap is incorrectly calculated because `wrappedMBalanceBefore` is read after the swap instead of before. This causes `remainingBalance` to always be zero, even when leftover tokens exist. The root cause is incorrect ordering of balance checks. As a result, unspent funds may be left stranded in the contract, leading to loss of user assets or incorrect state assumptions in subsequent operations. This could be exploited by manipulating swap routes to leave residual funds that are not returned to the user.\n",
+            "severity": "Medium",
+            "location": [
+                "UniswapV3SwapAdapter::swapOut"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/UniswapV3SwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "MEarnerManager Can Be Forced Into an Irrecoverable State",
+            "description": "The MEarnerManager contract uses `wasEarningEnabled` and `disableIndex` to manage its earning state, forming a state machine where the (0, !0) state is invalid but reachable. If the contract is not an allowed earner at deployment, anyone can call `disableEarning()`, setting it into this invalid state. Once there, calling `enableEarning()` will not restore functionality, permanently disabling interest accrual. The cause is flawed state transition logic that does not validate preconditions. This leads to a bricked contract state, preventing any future yield distribution and effectively freezing user funds indefinitely.\n",
+            "severity": "Medium",
+            "location": [
+                "MEarnerManager::disableEarning",
+                "MEarnerManager::enableEarning"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/earnerManager/MEarnerManager.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Removing MEarnerManager From the Earner List Will Make It Insolvent",
+            "description": "If MEarnerManager is removed from the earner list without proper handling, its internal accounting continues to accrue yield even though no real yield is received. This discrepancy causes the contract to become insolvent, as obligations exceed actual holdings. The root cause is the lack of automatic pausing of the index upon removal from the earners list. An attacker or governance action could exploit this by removing and re-adding the contract, triggering a bank run as users rush to withdraw before insolvency is realized. This undermines trust and financial integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "MEarnerManager::disableEarning"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/earnerManager/MEarnerManager.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-657"
+                ]
+            },
+            "title": "Disable Initializers on Implementation",
+            "description": "Wrapper extension contracts use initializer functions behind proxy patterns, but the implementation contracts remain vulnerable to initialization because `_disableInitializers()` is not called. While no immediate harm occurs, leaving initializers enabled on the implementation contract is a security anti-pattern. The cause is missing defensive coding in the constructor. A malicious actor could potentially re-initialize the implementation, leading to unexpected behavior or future exploit vectors if combined with other vulnerabilities. Though low risk, it violates secure design principles.\n",
+            "severity": "Low",
+            "location": [
+                "MExtenstion::constructor"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/yieldToAllWithFee/MYieldFee.sol",
+                "evm-m-extensions/src/projects/yieldToOne/MYieldToOne.sol",
+                "evm-m-extensions/src/projects/earnerManager/MEarnerManager.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect earnerRate() Returned by MYieldFee When Not Earning",
+            "description": "The `MYieldFee.earnerRate()` function fails to return 0 when the contract is not earning, instead returning the discounted earner rate. This misrepresents the actual earning status. The cause is missing logic to check earning state before returning the rate. External systems relying on this function for decision-making (e.g., UIs, oracles, or other contracts) may incorrectly assume yield generation is ongoing, leading to flawed economic models or user confusion. While not directly exploitable for fund theft, it distorts system transparency.\n",
+            "severity": "Low",
+            "location": [
+                "MYieldFee::earnerRate"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/yieldToAllWithFee/MYieldFee.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Config Should Be Checked on Spoke Chains After MSpokeYieldFee Deployment",
+            "description": "The MSpokeYieldFee contract has two similar initialize functions with different parameter counts. If the wrong one is called during deployment, the configuration may be incorrect. The cause is ambiguous initialization logic that allows for human error. After deployment, there is no built-in mechanism to verify which function was used. This could lead to misconfigured contracts on spoke chains, resulting in incorrect behavior or failed operations. While not a direct exploit, it increases operational risk and requires manual verification.\n",
+            "severity": "Informational",
+            "location": [
+                "MSpokeYieldFee::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Discrepancy in Event Emission",
+            "description": "The `_whitelistToken()` function in UniswapV3SwapAdapter emits the `TokenWhitelisted` event even when the token's whitelist status does not change, deviating from the standard pattern elsewhere in the codebase. The cause is lack of a pre-check for existing status. This inconsistency can mislead off-chain systems that rely on events for state tracking, causing false positives in monitoring tools or analytics platforms. While not security-critical, it reduces reliability of event-based indexing.\n",
+            "severity": "Informational",
+            "location": [
+                "UniswapV3SwapAdapter::_whitelistToken"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/UniswapV3SwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Potentially Redundant Balance Difference",
+            "description": "The `SwapFacility.swapOutToken()` function uses a balance difference to account for rounding errors in Wrapped $M V1's `wrap()` function. This is currently necessary due to known rounding issues. However, if Wrapped $M is upgraded to a version without such errors, this balance difference becomes redundant. The cause is defensive coding for a known bug in an external contract. While not a vulnerability now, it highlights technical debt that should be revisited post-upgrade to simplify logic and reduce gas costs.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapFacility::swapOutToken"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/SwapFacility.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant Balance Difference",
+            "description": "The `_swap()` and `_swapOutM()` functions in SwapFacility recompute amounts using balance differences to handle potential rounding errors in the M token. However, since SwapFacility is not an earner, no such rounding occurs. The cause is unnecessary defensive programming. This redundancy increases gas usage and complicates code logic without benefit. Removing it would improve efficiency and readability without introducing risk.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapFacility::_swap",
+                "SwapFacility::_swapOutM"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/SwapFacility.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The events `IUniswapV3SwapAdapter.SwappedIn` and `IUniswapV3SwapAdapter.SwappedOut` are defined but never emitted in the codebase. The cause is leftover or unused code from prior development iterations. While harmless, unused code reduces readability and increases maintenance burden. It may confuse auditors or developers and should be removed to keep the codebase clean and focused.\n",
+            "severity": "Informational",
+            "location": [
+                "IUniswapV3SwapAdapter.SwappedIn",
+                "IUniswapV3SwapAdapter.SwappedOut"
+            ],
+            "files": [
+                "evm-m-extensions/src/swap/interfaces/IUniswapV3SwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Wrong Storage Location for EIP7201",
+            "description": "The MSpokeYieldFee contract implements EIP-7201 for namespaced storage but incorrectly documents the storage slot in the `@custom` comment as `M0.storage.SpokeMYieldFee`, while the actual computation uses `M0.storage.MSpokeYieldFee`. The cause is a mismatch between documentation and implementation. This could mislead developers or tools relying on the comment for storage layout analysis. Although the code was later removed, the inconsistency highlights the importance of accurate documentation in critical infrastructure.\n",
+            "severity": "Informational",
+            "location": [
+                "MSpokeYieldFee::EIP7201 storage layout"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/yieldToAllWithFee/MSpokeYieldFee.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Blacklist Can Theoretically Be Evaded",
+            "description": "The MYieldToOne token implements a blacklist that prevents blacklisted users from spending allowances but does not block EIP-3009 signatures, which can be used from fresh addresses. The cause is incomplete enforcement of restrictions across all transfer mechanisms. A blacklisted user could use a valid signature from a non-blacklisted account to transfer funds via a lending protocol or similar system. While no such protocol currently exists, this represents a theoretical attack vector that could undermine sanction compliance if exploited in the future.\n",
+            "severity": "Informational",
+            "location": [
+                "MYieldToOne::EIP-3009 transferWithAuthorization"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/yieldToOne/MYieldToOne.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ]
+            },
+            "title": "Wrong feeRate in Event for De-Whitelisted Addresses",
+            "description": "In MEarnerManager, when an address is de-whitelisted, the emitted event shows `feeRate=0` even though the effective fee rate becomes 100%. The cause is incorrect event parameter usage. Observers relying solely on `feeRate` in the event will misinterpret the actual policy change. This inconsistency can lead to incorrect off-chain logic or user confusion, especially in automated systems that monitor fee changes.\n",
+            "severity": "Informational",
+            "location": [
+                "MEarnerManager::deWhitelistAddress"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/earnerManager/MEarnerManager.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "MEarnerManager Fee Can Round to 0",
+            "description": "Due to the 6-decimal precision of $M and its extensions, small yield amounts claimed frequently can result in fees rounding down to zero. The cause is integer division truncation in fee calculation. While not profitable as an attack due to gas costs, it allows users to effectively avoid fees through high-frequency claiming. This creates a minor griefing vector and may lead to revenue loss for the protocol if exploited systematically.\n",
+            "severity": "Informational",
+            "location": [
+                "MEarnerManager::claimFor"
+            ],
+            "files": [
+                "evm-m-extensions/src/projects/earnerManager/MEarnerManager.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "disableEarning() on Base MExtension Might Revert",
+            "description": "The `MExtension.disableEarning()` function reverts if earning is already disabled on the MToken. This creates a race condition where calling `stopEarning(wrapperAddr)` in the MToken contract first will prevent the wrapper's `disableEarning()` from being called. The cause is redundant validation in the wrapper. For current wrappers, this only suppresses event emission, but future extensions may rely on this event, leading to inconsistent state tracking.\n",
+            "severity": "Informational",
+            "location": [
+                "MExtension::disableEarning"
+            ],
+            "files": [
+                "evm-m-extensions/src/MExtension.sol"
+            ]
+        }
+    ]
+}

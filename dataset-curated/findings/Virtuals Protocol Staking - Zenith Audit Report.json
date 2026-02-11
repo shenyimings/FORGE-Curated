@@ -1,0 +1,179 @@
+{
+    "path": "dataset-curated/reports/Zenith/Virtuals Protocol Staking - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Virtual-Protocol/protocol-contracts"
+        ],
+        "commit_id": [
+            "8d55bfdcc7a573c4c1676602427f5012549417e8"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-02",
+        "project_path": {
+            "protocol-contracts": "dataset-curated/contracts/Virtuals Protocol Staking - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Stakers with autoRenew enabled have an unfair advantage",
+            "description": "1. **Description:** Users who enable the autoRenew feature during staking are granted full, non-decaying voting power for the entire lock period, while still being able to withdraw after the standard maxWeeks period. In contrast, users who stake for maxWeeks without autoRenew experience vote decay over time and face the same withdrawal delay, creating an unfair advantage for autoRenew users.\n2. **Cause:** The _balanceOfLockAt() function returns the full lock value if autoRenew is enabled, bypassing vote decay logic. Additionally, the stake() function forces numWeeks to maxWeeks when autoRenew is true, allowing these users to benefit from maximum lock duration without decay.\n3. **Exploitation:** An attacker could repeatedly enable autoRenew on their locks to maintain maximum voting power indefinitely relative to non-autoRenew stakers, gaining disproportionate influence in governance decisions.\n4. **Impact:** This leads to an inequitable distribution of voting power, undermining the fairness and integrity of the protocol's governance system.\n",
+            "severity": "High",
+            "location": [
+                "veVirtual.sol::stake#130",
+                "veVirtual.sol::_balanceOfLockAt#162-181"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-706"
+                ],
+                "3": [
+                    "CWE-386"
+                ]
+            },
+            "title": "withdraw() switches indexes around which can lead to unintended operations when calling toggleAutoRenew(), extend() and withdraw() in a short time",
+            "description": "1. **Description:** The withdraw() function reorders the locks array by moving the last element into the position of the withdrawn lock and then deleting the last entry. However, other functions like toggleAutoRenew(), extend(), and withdraw() itself rely on the index of a lock to perform operations.\n2. **Cause:** The use of array indices as identifiers without a stable lock ID means that concurrent transactions can operate on incorrect locks due to index shifts caused by prior withdrawals.\n3. **Exploitation:** If a user submits multiple transactions targeting different locks in quick succession, the reordering of indices during execution could cause a transaction to act on a different lock than intended, potentially leading to failed transactions or unintended state changes.\n4. **Impact:** This can result in user funds being locked unexpectedly or governance actions being performed on the wrong lock, leading to loss of control or reduced usability.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::withdraw#162",
+                "veVirtual.sol::toggleAutoRenew#183",
+                "veVirtual.sol::extend#199"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "stake() allows to stake for 0 weeks leading to just-in-time voting",
+            "description": "1. **Description:** The stake() function allows users to specify 0 weeks as the lock duration, which immediately makes the tokens eligible for withdrawal while still granting full voting power based on the staked amount.\n2. **Cause:** There is no validation preventing numWeeks from being set to 0, enabling users to stake and vote with zero time commitment.\n3. **Exploitation:** An attacker can stake tokens for 0 weeks, vote in a governance proposal, and immediately withdraw their tokens, effectively executing a just-in-time voting attack to manipulate governance outcomes without any long-term stake.\n4. **Impact:** This undermines the economic security of the governance system by allowing temporary, non-committed stakeholders to influence decisions, potentially leading to malicious proposals passing.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::stake#130"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Changing the maxWeeks variable can lead to unexpected consequences",
+            "description": "1. **Description:** Modifying the maxWeeks parameter via setMaxWeeks() can lead to inconsistent behavior in lock management, particularly for locks with autoRenew enabled. The toggleAutoRenew() function uses the old value of maxWeeks stored in lock.numWeeks, which may no longer reflect the current maxWeeks.\n2. **Cause:** The lock.numWeeks is not updated when maxWeeks changes, and the value calculation in _balanceOfLockAt() does not account for the current maxWeeks, leading to incorrect voting power calculations and potential multipliers exceeding 100%.\n3. **Exploitation:** An attacker with a lock created under a higher maxWeeks value could retain inflated voting power after maxWeeks is reduced, or manipulate the system by timing their autoRenew toggling around a maxWeeks change.\n4. **Impact:** This can result in incorrect voting power distribution, inconsistent lock behavior, and potential exploitation of governance mechanisms due to outdated or mismatched lock parameters.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::toggleAutoRenew#183",
+                "veVirtual.sol::setMaxWeeks#217",
+                "veVirtual.sol::_balanceOfLockAt#106",
+                "veVirtual.sol::getMaturity#221"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "unbounded loops iterations on stakedAmountOf() and balanceOfAt()",
+            "description": "1. **Description:** The stakedAmountOf() and balanceOfAt() functions iterate over a user's entire array of locks without any bound checks, which can lead to out-of-gas failures if the array becomes too large.\n2. **Cause:** The absence of a limit on the number of locks a user can create results in unbounded loop iterations during balance calculations.\n3. **Exploitation:** An attacker could create a large number of small locks to bloat their locks array, causing any function that iterates over it (e.g., delegation or balance queries) to fail due to gas limits.\n4. **Impact:** This can prevent legitimate users from delegating votes or checking balances, leading to denial-of-service conditions and reduced protocol usability.\n",
+            "severity": "Low",
+            "location": [
+                "veVirtual.sol::stakedAmountOf#258",
+                "veVirtual.sol::balanceOfAt#84"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Suboptimal locks array management",
+            "description": "1. **Description:** The withdraw() function uses the delete keyword to clear a lock entry but does not reduce the array length, leaving behind empty slots in the locks array.\n2. **Cause:** Using delete instead of pop results in storage bloat and inefficient iteration over sparse arrays.\n3. **Exploitation:** Over time, repeated withdrawals can accumulate many empty entries, increasing gas costs for any operation that loops through the array (e.g., _getVotingUnits), and potentially leading to out-of-gas errors.\n4. **Impact:** Increased transaction costs and potential denial-of-service for users with long interaction histories, reducing the efficiency and scalability of the contract.\n",
+            "severity": "Low",
+            "location": [
+                "veVirtual.sol::withdraw#176"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "EIP712Upgradeable contract not initialized",
+            "description": "1. **Description:** The veVirtual contract inherits from EIP712Upgradeable but fails to initialize it, leaving the name and version fields unset in the domain separator.\n2. **Cause:** The __EIP712_init() function is not called during contract initialization, resulting in incorrect or unpredictable domain separators.\n3. **Exploitation:** Off-chain signature verification tools may reject valid signatures because the computed domain separator does not match expectations, breaking meta-transaction functionality.\n4. **Impact:** This disrupts off-chain delegation and voting via signatures, impairing user experience and potentially preventing legitimate governance participation.\n",
+            "severity": "Low",
+            "location": [
+                "EIP712Upgradeable.sol::__EIP712_init_unchained#72"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        }
+    ]
+}

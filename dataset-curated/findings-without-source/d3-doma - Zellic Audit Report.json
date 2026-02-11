@@ -1,0 +1,164 @@
+{
+    "path": "dataset-curated/reports/Zellic/d3-doma - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/d3-inc/doma-contracts"
+        ],
+        "commit_id": [
+            "4ad9a812e818f33112e24a9eb8db836d430e8112"
+        ],
+        "address": [],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-02",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Bridging can be used to deliberately block detokenization",
+            "description": "1. **Description:** When a registrar initiates detokenization, the token holder can bridge the token to a remote chain before the detokenization message arrives, causing the detokenization call to revert due to the token being burned.\n2. **Cause:** The system lacks coordination between cross-chain bridging and detokenization processes, allowing users to exploit timing to block detokenization permanently.\n3. **Exploitation:** An attacker can continuously bridge the token across chains upon detecting a detokenization request, ensuring the process never completes.\n4. **Impact:** This prevents the domain from ever being detokenized, even after off-chain ownership transfer, leading to permanent lock-in of the domain in tokenized state.\n",
+            "severity": "Critical",
+            "location": [
+                "ProxyDomaRecord.sol::detokenize",
+                "DomaRecordProxyFacet.sol",
+                "DomaRecordRegistrarFacet.sol::complianceDetokenize",
+                "DomaRecordRegistrarFacet.sol::registrarDelete",
+                "DomaRecordRegistrarFacet.sol::registrarDetokenize"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Token-transfer permanent loss",
+            "description": "1. **Description:** A domain token can be permanently lost when a user transfers it and then bridges it before claiming ownership, resulting in the token being burned on the source chain but not minted on the destination.\n2. **Cause:** The bridging logic in DomaRecordProxyFacet checks if the token is owned by the Doma proxy and returns early without minting on the destination chain, assuming no action is needed.\n3. **Exploitation:** A user who receives a token but does not claim ownership can bridge it, causing the token to be burned without recreation on the target chain.\n4. **Impact:** The token is permanently lost, and the domain remains marked as tokenized, preventing future tokenization and effectively breaking the domain's lifecycle.\n",
+            "severity": "Critical",
+            "location": [
+                "ProxyDomaRecord.sol::bridge",
+                "DomaRecordProxyFacet.sol::bridge",
+                "NameToken.sol::_beforeTokenTransfer"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Overridden ownable functionality can lead to admin lockout",
+            "description": "1. **Description:** The NameToken contract overrides the ownership check to use AccessControl's DEFAULT_ADMIN_ROLE, but transferOwnership from Ownable does not grant this role to the new owner.\n2. **Cause:** Inconsistent ownership model where Ownable's transferOwnership is used but the internal check relies on a role not automatically transferred.\n3. **Exploitation:** After ownership transfer, the new owner cannot call owner-restricted functions if they lack DEFAULT_ADMIN_ROLE, especially if the previous owner renounces the role.\n4. **Impact:** Critical functionality becomes permanently inaccessible, leading to admin lockout and potential freeze of contract operations.\n",
+            "severity": "Critical",
+            "location": [
+                "NameToken.sol::_requireCallerIsContractOwner",
+                "NameToken.sol::transferOwnership"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Transfer block bypass",
+            "description": "1. **Description:** When blockAllTransfers is enabled in NameToken, users can still transfer tokens via bridging, bypassing the intended restriction.\n2. **Cause:** The bridge function does not check the blockAllTransfers flag, creating a policy enforcement gap.\n3. **Exploitation:** A user can bridge a token to another chain and back to a different address, effectively circumventing transfer blocks.\n4. **Impact:** Undermines regulatory or security-related transfer restrictions, allowing unauthorized transfers despite active blocking.\n",
+            "severity": "Medium",
+            "location": [
+                "NameToken.sol::bridge"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Native tokens can remain stuck in some contracts forever",
+            "description": "1. **Description:** Several contracts (ERC7786GatewayReceiver, ERC7786GatewaySource, ProxyDomaRecord) can receive native tokens but lack mechanisms to withdraw them, risking permanent loss.\n2. **Cause:** Payable functions either ignore msg.value or do not enforce strict value checks, and no withdrawal functions exist.\n3. **Exploitation:** Accidental attachment of excess Ether or cross-chain message fees can result in funds being trapped.\n4. **Impact:** Low-severity financial loss due to stuck funds, affecting contract maintainability and fund recovery.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7786GatewayReceiver.sol::executeMessage",
+                "ERC7786GatewaySource.sol::sendMessage",
+                "ProxyDomaRecord.sol::bridge",
+                "ProxyDomaRecord.sol::claimOwnership",
+                "ProxyDomaRecord.sol::requestTokenization"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Registrars can overwrite domain-name details of other registrars",
+            "description": "1. **Description:** The nameTokenize function lacks validation to prevent overwriting existing domain tokens, allowing one registrar to overwrite another's domain data.\n2. **Cause:** Missing check for existing token or matching registrarIanaId in nameTokenize and eoiImport functions.\n3. **Exploitation:** A malicious or mistaken registrar can tokenize a domain already controlled by another, overwriting ownership and metadata.\n4. **Impact:** High potential impact including ownership theft, but likelihood is low due to trusted registrar model, resulting in a Low severity rating.\n",
+            "severity": "Low",
+            "location": [
+                "DomaRecordRegistrarFacet.sol::nameTokenize",
+                "DomaRecordRegistrarFacet.sol::eoiImport"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Add an integrated test suite for all cross-chain interactions",
+            "description": "1. **Description:** The project lacks an integrated test suite for end-to-end cross-chain functionality, increasing the risk of undetected state inconsistencies.\n2. **Cause:** Absence of comprehensive integration tests that simulate full cross-chain flows across multiple chains.\n3. **Exploitation:** Bugs like detokenization blocking or token loss may go undetected during development.\n4. **Impact:** Increases the likelihood of critical cross-chain issues slipping into production, though impact is rated Low due to existing backend tests.\n",
+            "severity": "Low",
+            "location": [
+                "ProxyDomaRecord.sol",
+                "DomaRecord.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Registrars can pass in expiry dates from the past when renewing domains",
+            "description": "1. **Description:** The renew function in DomaRecordRegistrarFacet allows setting expiry dates in the past, leading to inconsistent state with the remote chain.\n2. **Cause:** Missing validation of the expiresAt timestamp in the renew function.\n3. **Exploitation:** A registrar could accidentally set a past date, causing local state inconsistency even if the cross-chain call reverts.\n4. **Impact:** Causes cross-chain state divergence, though impact is Low due to trusted registrar model and low likelihood of occurrence.\n",
+            "severity": "Medium",
+            "location": [
+                "DomaRecordRegistrarFacet.sol::renew"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Stale oracle price risk",
+            "description": "1. **Description:** The ProxyDomaRecord contract retrieves native currency prices from Chainlink without validating freshness, risking use of stale data.\n2. **Cause:** Missing checks for price timestamp or round ID in the getNativePrice function.\n3. **Exploitation:** An attacker could manipulate transactions during periods of stale prices, leading to incorrect fee calculations.\n4. **Impact:** May result in inaccurate fees being charged, with Low impact due to limited financial exposure.\n",
+            "severity": "Low",
+            "location": [
+                "ProxyDomaRecord.sol::getNativePrice"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "IANA ID modification missing",
+            "description": "1. **Description:** There is no mechanism to update a registrar's IANA ID once set, creating operational risk if the ID changes or is revoked.\n2. **Cause:** The LibDoma.Name structure does not support IANA ID updates, and no admin function exists for modification.\n3. **Exploitation:** If a registrar's IANA ID changes, they may lose ability to manage domains, requiring detokenization and retokenization.\n4. **Impact:** Operational disruption in real-world scenarios, but rated Informational due to low likelihood and client's decision not to fix.\n",
+            "severity": "Informational",
+            "location": [
+                "DomaRecordRegistrarFacetBase.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Secondary sales in the Marketplace will revert if the fee is not set correctly",
+            "description": "1. **Description:** The _setSecondarySaleFee function allows setting fees above 10,000, causing underflow in seller profit calculation during secondary sales.\n2. **Cause:** Missing input validation in _setSecondarySaleFee to restrict fee within [0, 10000] range.\n3. **Exploitation:** Admin misconfiguration can set fee >10000, causing secondarySale to revert due to underflow in fee subtraction.\n4. **Impact:** Transactions revert, preventing sales, but no fund loss occurs. Impact is Low due to ease of correction and admin control.\n",
+            "severity": "Low",
+            "location": [
+                "Marketplace.sol::_setSecondarySaleFee",
+                "Marketplace.sol::secondarySale"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Fee-on-transfer tokens will behave incorrectly in the Marketplace",
+            "description": "1. **Description:** If a fee-on-transfer token is whitelisted in the Marketplace, the treasury receives less than expected due to the transfer fee.\n2. **Cause:** The pay function assumes the full amount is transferred, without accounting for tokens that deduct fees on transfer.\n3. **Exploitation:** A malicious or misconfigured token addition could result in revenue loss for the treasury.\n4. **Impact:** Currently Informational as no such tokens are whitelisted, but poses future risk if not monitored during token additions.\n",
+            "severity": "Informational",
+            "location": [
+                "Marketplace.sol::pay"
+            ],
+            "files": []
+        }
+    ]
+}

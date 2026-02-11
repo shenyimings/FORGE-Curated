@@ -1,0 +1,802 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Matter Labs Guardian Recovery Validator Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/matter-labs/zksync-sso-clave-contracts"
+        ],
+        "commit_id": [
+            "c7714c0fe0a33a23acce5aa20355f088d330b4f7"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-05",
+        "project_path": {
+            "zksync-sso-clave-contracts": "dataset-curated/contracts/Matter Labs Guardian Recovery Validator Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-770"
+                ]
+            },
+            "title": "Potential Denial-of-Service While Iterating Hooks",
+            "description": "The `runExecutionHooks` modifier and `runValidationHooks` function iterate over all elements in a set without any gas cost limitations. This design allows the number of hooks to grow unbounded, leading to excessive gas consumption during transaction execution or validation. The root cause is the use of `EnumerableSet.values()` and direct iteration over large sets in state-changing functions, which does not account for block gas limits. An attacker could exploit this by registering a large number of hooks, causing transactions to fail due to gas exhaustion. The impact is a potential denial-of-service, where legitimate users are unable to execute or validate transactions if the hook set becomes too large.\n",
+            "severity": "Medium",
+            "location": [
+                "HookManager.sol::runExecutionHooks#79",
+                "HookManager.sol::runValidationHooks#63"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/HookManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Front-Running Scenarios During Key Registration",
+            "description": "The `WebAuthValidator` contract is vulnerable to front-running attacks during key registration because it checks for duplicate `originDomain` and `credentialId` combinations without associating them securely with the initiating account. The root cause is the lack of account-specific binding in the registration check, allowing any user to preempt a pending registration. An attacker can monitor the mempool for registration transactions and submit their own with the same `originDomain` and `credentialId` but a different `publicKey`, thereby occupying the slot. The impact is that legitimate users' transactions will revert, preventing them from attaching their validator to their account. Additionally, the commit-reveal pattern in `GuardianRecoveryValidator` may be weakened if attackers can correlate hashed values with known account data.\n",
+            "severity": "Medium",
+            "location": [
+                "WebAuthValidator.sol::onInstall#63",
+                "WebAuthValidator.sol#104",
+                "GuardianRecoveryValidator.sol#204-206"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Guardian Can Overwrite Recovery Process and Render It Useless",
+            "description": "The `initRecovery` function in the `GuardianRecoveryValidator` contract lacks a check to prevent overwriting an active recovery process. The root cause is the absence of validation for whether a recovery is already in progress. A malicious guardian can repeatedly initiate a new recovery with incorrect data or refresh the timestamp, thereby blocking a legitimate recovery. This is especially critical in multi-guardian setups where a single malicious actor can indefinitely stall recovery. The impact is a denial-of-service on the recovery mechanism, leaving the account owner unable to regain access even with honest guardians, and no way to remove the malicious guardian without a valid transaction.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initRecovery#202-215"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Failure to Clear `pendingRecoveryData` in `onUninstall` Allows Immediate Account Recovery Upon Reconnection",
+            "description": "The `onUninstall` function clears guardian data but fails to clear the `pendingRecoveryData` mapping. The root cause is the omission of a step to reset the recovery state upon uninstallation. An attacker (or former guardian) could exploit this by waiting for the validator to be reconnected and then executing a pending recovery request immediately, bypassing the intended 24-hour delay. The impact is that the security guarantee of the recovery delay is nullified, allowing unauthorized or premature account recovery based on stale state, which contradicts the intended security model.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Incomplete Recovery Process Due to Missing Validator Attachment",
+            "description": "The recovery process fails if the `SsoAccount` is not pre-attached to the `WebAuthValidator`, but no check enforces this dependency. The root cause is the lack of validation during the setup of `GuardianRecoveryValidator` to ensure `WebAuthValidator` is also installed. A guardian can initiate recovery, but the final step (adding a key via `WebAuthValidator`) will revert if the validator is not attached. The impact is that the recovery flow is rendered ineffective, leaving the account unrecoverable despite correct guardian setup. Even after a partial fix requiring `WebAuthValidator` at install time, a user could later uninstall it, breaking recovery again.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onInstall",
+                "SsoAccount.sol#214"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Uninstall Process Might Revert Due to Pending Guardian Acceptance",
+            "description": "The `onUninstall` function reverts if it attempts to remove an account from a guardian's set when the guardian has not yet accepted (i.e., `isReady` is false). The root cause is the failure to check the `isReady` flag before calling `remove` on the `guardedAccounts` set. This prevents users from uninstalling the validator while any guardian requests are pending. The impact is a denial-of-service on the uninstallation process. Additionally, if the user reinstalls the validator later, a previously pending (and now accepted) guardian could initiate recovery without the user's knowledge, potentially leading to account takeover.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84",
+                "GuardianRecoveryValidator.sol#172",
+                "GuardianRecoveryValidator.sol#93",
+                "GuardianRecoveryValidator.sol#96"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Possible Initialization of an Unusable `SsoAccount`",
+            "description": "The `initialize` function allows creation of an `SsoAccount` with empty `initialValidators` and `initialK1Owners` arrays. The root cause is the lack of input validation to ensure at least one owner or validator is provided. An attacker or mistaken user could deploy an account with no way to authorize transactions. The impact is that the account becomes permanently unusable, leading to loss of funds or functionality, as no transaction can be validated or executed due to the absence of any valid signer or validator.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::initialize#59"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Potential Panic During Data Slicing in `_executeCall`",
+            "description": "The `_executeCall` function performs a slice operation on `_data` to extract a function selector without checking that the data is at least 4 bytes long. The root cause is the absence of input length validation before slicing. If a transaction is sent with less than 4 bytes of calldata, the slicing operation will cause a low-level panic (invalid opcode). The impact is a denial-of-service, where the account cannot process the transaction, and execution is abruptly terminated, potentially disrupting critical operations.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::_executeCall#128"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Builtin Getter For `pendingRecoveryData` Does Not Return `rawPublicKey`",
+            "description": "The `pendingRecoveryData` state variable is declared as `public`, which generates a default getter that cannot return the `rawPublicKey` array due to Solidity's limitations on auto-generated getters for complex struct members. The root cause is the misuse of the `public` keyword on a state variable containing a struct with array fields. The impact is that external callers cannot retrieve the full recovery data via the auto-generated getter, leading to incomplete or misleading data exposure. This is a usability and developer experience issue, as the contract already provides a custom getter (`getPendingRecoveryData`) that works correctly.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#68"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Misleading Error Message in `addValidationKey`",
+            "description": "The `addValidationKey` function in `WebAuthValidator` returns `false` for multiple failure conditions but always triggers the `WEBAUTHN_KEY_EXISTS` error in `onInstall`, which is misleading. The root cause is the lack of differentiated error handling; the function returns `false` for both duplicate keys and invalid inputs (e.g., empty `rawPublicKey`), but the error message only suggests a key conflict. The impact is confusion for users and developers, who may incorrectly believe a key exists when the actual issue is input validation, leading to debugging difficulties and poor user experience.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::addValidationKey#64",
+                "WebAuthValidator.sol#108-111"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Deviation From Specifications",
+            "description": "The code deviates from documented specifications in two main ways. First, the `onUninstall` function's comment claims it removes all past guardians, but it fails to do so if not all `hashedOriginDomains` are passed, and there is no mechanism to verify complete removal. Second, the `_validateTransaction` function uses `_call`, which allows state changes and context variable access, violating zkSync's AA restrictions that require `staticcall` for validation hooks. The root cause is incorrect implementation and lack of compliance checks. The impact includes potential security violations (e.g., state changes during validation) and unreliable uninstallation behavior, undermining system integrity and predictability.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#83",
+                "GuardianRecoveryValidator.sol#85",
+                "GuardianRecoveryValidator.sol#92-100",
+                "SsoAccount.sol::_validateTransaction",
+                "SsoAccount.sol::_call"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Checks for Function Arguments",
+            "description": "Several functions lack validation for critical input parameters. The `GuardianRecoveryValidator` does not check for zero addresses in `_webAuthValidator`, `newGuardian`, `accountToGuard`, and `accountToRecover`. The `WebAuthValidator.addValidationKey` function does not validate `credentialId` and `originDomain` for emptiness or length. The `AAFactory` constructor lacks checks for `_beaconProxyBytecodeHash`. The root cause is insufficient input validation. The impact includes potential loss of access (if a zero address is set), contract lockups (e.g., factory becoming unusable with empty bytecode hash), and unexpected reverts, reducing reliability and security.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#77",
+                "GuardianRecoveryValidator.sol#117",
+                "GuardianRecoveryValidator.sol#171",
+                "GuardianRecoveryValidator.sol#208",
+                "WebAuthValidator.sol#94",
+                "AAFactory.sol#32-35"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol",
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "The contracts in the codebase use floating pragma directives (e.g., ^0.8.24), which do not lock the Solidity compiler version. This can lead to contracts being compiled with untested or future compiler versions, potentially introducing undefined behavior or security vulnerabilities due to changes in compiler behavior. The cause is the use of caret (^) versioning in the pragma directive. An attacker could potentially exploit inconsistencies in compiler output if a newer, incompatible compiler version is used. This could result in unexpected runtime behavior, including potential loss of funds or contract malfunction. While the team acknowledges this, they have chosen not to resolve it for flexibility.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol::#2",
+                "IGuardianRecoveryValidator.sol::#2",
+                "TransparentProxy.sol::#2",
+                "WebAuthValidator.sol::#2"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol",
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Lack of Public Key Validation",
+            "description": "In the `addValidationKey` function of `WebAuthValidator.sol`, the public key is only checked for being non-zero, but not validated as a valid point on the elliptic curve. This lack of validation means an invalid public key can be registered, which may prevent the generation of valid signatures later. The root cause is the absence of cryptographic validation logic during key registration. An attacker could register an invalid key, potentially locking out legitimate users or disrupting authentication flows. This could compromise system integrity and availability, especially in recovery or authentication scenarios. The team acknowledged this and plans to resolve it via a follow-up issue.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::addValidationKey#108"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Missing or Incomplete Documentation",
+            "description": "Several functions and contracts, such as `onInstall` and `onUninstall` in `GuardianRecoveryValidator.sol`, lack proper NatSpec documentation for parameters and return values. This omission makes it difficult for developers and auditors to understand the intended behavior and usage of these functions. The cause is incomplete or missing docstrings in the source code. While not directly exploitable, this can lead to incorrect usage, integration errors, or missed vulnerabilities during audits. The impact is reduced code maintainability, increased risk of human error, and hindered security review processes. This issue was resolved in a later pull request.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::onInstall#81",
+                "GuardianRecoveryValidator.sol::onUninstall#84-109",
+                "IGuardianRecoveryValidator.sol",
+                "WebAuthValidator.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Non-Standardized Storage Location for SSO_STORAGE_SLOT",
+            "description": "The `SsoAccount` contract uses a custom formula `keccak256('zksync-sso.contracts.SsoStorage') - 1` to define the storage slot, which deviates from the EIP-7201 standard. This non-standard approach increases the risk of storage collisions with other contracts or future upgrades, especially in environments using storage layout optimizations like Verkle trees. The cause is the use of a non-compliant storage slot calculation method. If a collision occurs, it could lead to data corruption or unauthorized state manipulation. The impact includes potential loss of state integrity and reduced compatibility with future protocol upgrades. This was resolved in a pull request.\n",
+            "severity": "Low",
+            "location": [
+                "SsoStorage.sol::SSO_STORAGE_SLOT#8"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The `GuardianRecoveryValidator` contract declares custom errors (`PasskeyNotMatched`, `CooldownPeriodNotPassed`, `ExpiredRequest`) that are never used. Additionally, the `signature` variable in `SsoAccount.sol` and imports for `BatchCaller` and `Call` are unused. This bloats the contract size and increases deployment cost. The cause is leftover or redundant code from development. While not directly exploitable, it reduces code clarity and increases maintenance burden. The impact is higher gas costs and reduced readability, which can indirectly affect security. This was resolved in multiple pull requests.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#35-37",
+                "SsoAccount.sol::#212",
+                "GuardianRecoveryValidator.sol::#13"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ],
+                "3": [
+                    "CWE-1060"
+                ]
+            },
+            "title": "Redundant Storage Access",
+            "description": "The `validateTransaction` function in `SsoAccount.sol` calls `_transaction.totalRequiredBalance()` twice in the same scope, resulting in unnecessary gas consumption. Since the value does not change between calls, this is an inefficiency. The cause is failure to cache the result of an expensive function call. An attacker could exploit this in a loop or repeated transaction scenario to increase gas costs for users. The impact is higher transaction fees and reduced efficiency. A similar issue exists in `WebAuthValidator.sol`. This was resolved in a pull request.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::validateTransaction#93",
+                "WebAuthValidator.sol::#80-82"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Getter for publicKeys in WebAuthValidator",
+            "description": "The `publicKeys` mapping is declared as `public`, which automatically generates a getter, but a custom `getAccountKey` function is also provided to return the full array. This creates redundant functionality. The cause is misunderstanding of Solidity's automatic getter behavior for complex types. While not a security risk, it increases code size and confusion. The impact is unnecessary gas costs and reduced code clarity. This was resolved by improving comments and layout.\n",
+            "severity": "Informational",
+            "location": [
+                "WebAuthValidator.sol::publicKeys#37-38",
+                "WebAuthValidator.sol::getAccountKey#40"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inconsistencies Between Interface and Implementation",
+            "description": "The `IGuardianRecoveryValidator` interface has mismatched parameter names (e.g., `externalAccount` vs `newGuardian`), inconsistent function ordering, and missing functions (`discardRecovery`, `guardiansFor`, etc.) compared to its implementation. This can cause integration errors and confusion for developers. The cause is poor synchronization between interface and implementation. The impact includes potential bugs in external integrations and reduced developer experience. This was resolved in a pull request.\n",
+            "severity": "Informational",
+            "location": [
+                "IGuardianRecoveryValidator.sol::#8-10",
+                "GuardianRecoveryValidator.sol::#116-138",
+                "IGuardianRecoveryValidator.sol::#12-19",
+                "GuardianRecoveryValidator.sol::#164-202"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1061"
+                ]
+            },
+            "title": "IGuardianRecoveryValidator Is Not Optimized For Development",
+            "description": "Events, errors, and structs used in `GuardianRecoveryValidator` are not declared in the `IGuardianRecoveryValidator` interface, forcing external contracts to duplicate definitions. This reduces interoperability and developer experience. The cause is poor interface design. The impact is increased complexity for integrators and potential for errors in event decoding or struct handling. This was resolved by moving definitions to the interface.\n",
+            "severity": "Informational",
+            "location": [
+                "IGuardianRecoveryValidator.sol",
+                "GuardianRecoveryValidator.sol::#18-57"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Refactor Opportunity Over Address Casting",
+            "description": "The `GuardianRecoveryValidator` contract uses direct casting from `uint256` to `address` instead of the existing `safeCastToAddress` utility function. This bypasses potential safety checks and reduces code consistency. The cause is failure to reuse existing safe utilities. The impact is reduced code maintainability and potential for unsafe casting in other areas. This was resolved by adopting the safe casting function.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#254-256",
+                "Utils.sol::safeCastToAddress#12"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent Variable Types for Time Measurements",
+            "description": "The `addedAt` and `timestamp` variables in `GuardianRecoveryValidator.sol` use different types for time data, which can lead to confusion and errors in time-based logic. The cause is inconsistent type usage. The impact is potential logic bugs in time comparisons or calculations. This was resolved by standardizing types or documenting the choice.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::Guardian#21",
+                "GuardianRecoveryValidator.sol::RecoveryRequest#27"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Misleading Function Naming in GuardianRecoveryValidator",
+            "description": "Functions like `proposeValidationKey` and `addValidationKey` suggest key management but actually manage guardians, leading to confusion. The cause is inaccurate naming that does not reflect functionality. The impact is increased risk of misuse by developers and auditors. This was resolved by renaming functions to better reflect their purpose.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::proposeValidationKey#116",
+                "GuardianRecoveryValidator.sol::removeValidationKey#138",
+                "GuardianRecoveryValidator.sol::addValidationKey#164",
+                "WebAuthValidator.sol::addValidationKey#79"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The contract uses `require` statements with string messages (e.g., \"Only function calls are supported\", \"Overflow\") instead of custom errors, which are more gas-efficient and cleaner. The cause is outdated error handling practice. The impact is higher gas costs and less readable revert messages. This was resolved by introducing custom errors.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#253",
+                "GuardianRecoveryValidator.sol::#254"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings like `accountGuardians`, `guardedAccounts`, and `pendingRecoveryData` in `GuardianRecoveryValidator.sol` lack named parameters, reducing code clarity. The cause is omission of optional but recommended Solidity syntax. The impact is reduced readability and maintainability. This was resolved by adding named parameters.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::accountGuardians#64-65",
+                "GuardianRecoveryValidator.sol::guardedAccounts#66-67",
+                "GuardianRecoveryValidator.sol::pendingRecoveryData#68",
+                "GuardianRecoveryValidator.sol::accountGuardianData#69-70"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "Contracts like `GuardianRecoveryValidator` and `IGuardianRecoveryValidator` do not include a `@custom:security-contact` NatSpec tag, making it difficult for researchers to report vulnerabilities. The cause is missing documentation practice. The impact is delayed or missed vulnerability disclosures, increasing security risk. This was resolved by adding security contact information.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol",
+                "IGuardianRecoveryValidator.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Prefix Increment Operator Can Save Gas in Loops",
+            "description": "Postfix increment operators (`i++`, `j++`) are used in loops across `GuardianRecoveryValidator.sol` and `WebAuthValidator.sol`, which are less gas-efficient than prefix increments (`++i`). The cause is suboptimal coding practice. The impact is higher gas consumption during loop execution. This was resolved by switching to prefix increment operators.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#86",
+                "GuardianRecoveryValidator.sol::#89",
+                "GuardianRecoveryValidator.sol::#315",
+                "WebAuthValidator.sol::#73"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inconsistent Order Within Contracts",
+            "description": "Contracts like `GuardianRecoveryValidator` and `WebAuthValidator` do not follow the Solidity style guide for element ordering (e.g., modifiers between functions, structs after functions). The cause is inconsistent code organization. The impact is reduced readability and maintainability. This was resolved by reordering elements according to best practices.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::onlyGuardianOf#188",
+                "GuardianRecoveryValidator.sol::#219-246",
+                "WebAuthValidator.sol::PasskeyId#50-53",
+                "WebAuthValidator.sol::#57-119"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-732"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Multiple functions across the codebase are declared with more permissive visibility than necessary, which violates the principle of least privilege. The root cause is the use of `public` or `internal` when `external` or `private` would suffice. While these functions are not exposed to direct malicious exploitation in most cases, unnecessarily broad visibility can increase attack surface and reduce code clarity. An attacker could potentially interact with `public` functions that were not intended for external use, leading to unexpected behavior or increased gas costs for users. The impact is generally low, but it contributes to poor code hygiene and potential future vulnerabilities if the contract evolves.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initialize#76-78",
+                "GuardianRecoveryValidator.sol::finishRecovery#230-237",
+                "GuardianRecoveryValidator.sol::_discardRecovery#241-243",
+                "GuardianRecoveryValidator.sol::guardiansFor#312-319",
+                "GuardianRecoveryValidator.sol::guardianOf#325-327",
+                "GuardianRecoveryValidator.sol::getPendingRecoveryData#333-338"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Use calldata Instead of memory",
+            "description": "Several parameters in external functions are declared with the `memory` data location when they should use `calldata`. This leads to unnecessary gas costs because `memory` forces a copy of the input data, while `calldata` is a cheaper, read-only location for function arguments. The root cause is suboptimal parameter declaration in external functions. Although this does not pose a direct security risk, it increases transaction costs for users and reduces contract efficiency. An attacker could potentially exploit this by crafting large inputs to increase gas usage in edge cases, though the primary impact is economic inefficiency. The consequence is higher operational costs and reduced scalability.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol::rawPublicKey#205",
+                "GuardianRecoveryValidator.sol::dismissed#296"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Suboptimal ERC-165 Interface Check Implementation",
+            "description": "The `_supportsModuleValidator` and `_supportsHook` functions perform separate ERC-165 interface checks, resulting in six external calls instead of using the more efficient `supportsAllInterfaces` function, which would require only four. This inefficiency increases gas consumption during contract initialization. The root cause is the failure to use an optimized library function for batch interface checks. While this does not introduce a security vulnerability, it leads to unnecessarily high gas fees, which could deter user interaction or make certain operations prohibitively expensive. The impact is economic inefficiency and reduced usability, especially during account setup or module registration.\n",
+            "severity": "Low",
+            "location": [
+                "ValidatorManager.sol::_supportsModuleValidator#91",
+                "HookManager.sol::_supportsHook#154"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/ValidatorManager.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Typographical Error",
+            "description": "A typographical error exists in the NatSpec comment of the `initialize` function in `SsoAccount.sol`, where an extra closing parenthesis is present in a code snippet (`abi.encode(validatorAddr,validationKey))`). While this does not affect the compiled code, it can mislead developers or auditors reading the documentation. The root cause is a simple syntax error in a comment. This has no direct security impact, but it reduces code quality and can cause confusion during maintenance or review. The impact is limited to documentation clarity and developer experience.\n",
+            "severity": "Informational",
+            "location": [
+                "SsoAccount.sol::initialize#57"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1176"
+                ]
+            },
+            "title": "Redundant Hashing Operations in webAuthVerify",
+            "description": "The `webAuthVerify` function performs redundant hashing operations when comparing constant strings (e.g., \"webauthn.get\", \"false\") using `Strings.equal`, which hashes both operands. Since the constant strings do not change, their hashes should be precomputed and stored. The root cause is inefficient string comparison logic. This leads to higher gas costs for each call to `webAuthVerify`, increasing transaction fees. An attacker could potentially exploit this by triggering repeated calls with valid inputs to increase network load or cost, though the primary impact is economic inefficiency. Optimizing this by caching hash values would reduce execution cost and improve scalability.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::webAuthVerify#147"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,124 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2024.12.21 - Final - Idle Finance Credit Vaults Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Idle-Labs/idle-tranches"
+        ],
+        "commit_id": [
+            "5fac661dd68723fbac9464958434b844c981c4ce"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-12-13",
+        "project_path": {
+            "idle-tranches": "dataset-curated/contracts/2024.12.21 - Final - Idle Finance Credit Vaults Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "A single depositor can grief other depositors on the liquidity deposited for the first epoch",
+            "description": "This vulnerability allows a single depositor to exploit the withdrawal mechanism before the first epoch begins, enabling them to claim both principal and interest immediately without waiting for epoch finalization. The root cause lies in the `claimWithdrawRequest` function of `IdleCreditVault.sol`, which fails to enforce a check on `epochEndDate` when validating withdrawal claims. Since `epochEndDate` is initialized as 0, the condition `if (epochEndDate != 0 && ...)` evaluates to false, allowing withdrawals to be claimed prematurely. An attacker can continuously deposit, request withdrawal, and claim the request before the first epoch ends, effectively stealing interest (and potentially principal) from other depositors. This leads to a loss of funds for honest users who deposited liquidity expecting to earn interest over the epoch.\n",
+            "severity": "High",
+            "location": [
+                "IdleCreditVault.sol::claimWithdrawRequest#194-196",
+                "IdleCDOEpochVariant.sol::_additionalInit#67-92"
+            ],
+            "files": [
+                "idle-tranches/contracts/strategies/idle/IdleCreditVault.sol",
+                "idle-tranches/contracts/IdleCDOEpochVariant.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Depositing to IdleCDO is vulnerable to inflation attacks",
+            "description": "The IdleCDO contract is susceptible to an inflation attack where an attacker can manipulate the share price by donating a large amount of underlying assets just before a user's deposit transaction. The vulnerability arises because the share price calculation in `_tranchePrice` and `_virtualPriceAux` relies on the contract's balance via `balanceOf(address(this))`, which includes unsolicited donations. When the total supply of LP tokens is zero, the first depositor mints shares at a 1:1 ratio. An attacker can then donate a large amount of tokens, inflating the net asset value (NAV), causing subsequent depositors to receive fewer or zero shares due to rounding. The attacker later redeems their minimal share for a disproportionately large amount of assets. This results in loss of funds for users due to rounding errors and creates an implicit minimum deposit requirement to avoid value loss.\n",
+            "severity": "High",
+            "location": [
+                "IdleCDO.sol::_deposit#128",
+                "IdleCDO.sol::_mintShares#270",
+                "IdleCDO.sol::_tranchePrice#188",
+                "IdleCDO.sol::_virtualPriceAux#315",
+                "IdleCDO.sol::getContractValue",
+                "IdleCDO.sol::_contractTokenBalance"
+            ],
+            "files": [
+                "idle-tranches/contracts/IdleCDO.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Users may not withdraw their funds because of the grief attack",
+            "description": "A malicious user can manipulate the tranche share price by donating a large amount of underlying tokens after deposits but before withdrawals, thereby increasing the value per share. When the attacker requests a withdrawal, they receive a disproportionately large amount of underlying tokens due to the inflated share price. This depletes the available strategy tokens in the contract, leaving insufficient balance for other users to withdraw their full amount. The root cause is the lack of protection against donation-based manipulation of the share price during the withdrawal phase. Although the attacker does not profit directly, they can grief other users by preventing them from withdrawing their expected funds, leading to potential loss of user funds and reduced trust in the system.\n",
+            "severity": "Medium",
+            "location": [
+                "IdleCDOEpochVariant.sol::requestWithdraw#490"
+            ],
+            "files": [
+                "idle-tranches/contracts/IdleCDOEpochVariant.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "A user can avoid paying fees in the requestWithdraw function",
+            "description": "Due to precision loss in fee calculation, a user can avoid paying withdrawal fees by splitting a large withdrawal into multiple smaller ones. The fee is calculated as a percentage of the interest earned on the withdrawn amount, but because of integer division and truncation, very small interest amounts result in zero fees. On tokens with low decimals (e.g., WBTC with 8 decimals), an attacker can structure withdrawals such that the interest per transaction is less than 10 wei, causing the 10% fee to round down to zero. Given low L2 transaction costs (e.g., Optimism), this attack is economically feasible and can be repeated thousands of times at minimal cost, leading to significant loss of protocol fees over time.\n",
+            "severity": "Medium",
+            "location": [
+                "IdleCDOEpochVariant.sol::requestWithdraw#519"
+            ],
+            "files": [
+                "idle-tranches/contracts/IdleCDOEpochVariant.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Interest will be lost if funds are withdrawn from a tranche in which the APRRatio != FULL_ALLOC",
+            "description": "When a user withdraws from a tranche with a non-full APR ratio (e.g., the junior BB tranche with 0% APR), the contract only calculates interest owed to the user but fails to account for the total interest that should be generated by the lent funds. Specifically, the `_calcInterestWithdrawRequest` function multiplies interest by `_trancheAprRatio`, which is zero for the junior tranche, resulting in no interest being collected. However, the underlying assets are still lent out and should generate yield for the senior tranche. Because this interest is not captured, the senior tranche loses out on expected yield. This flaw leads to a loss of revenue for senior tranche holders whenever a junior tranche withdrawal occurs, undermining the yield distribution model.\n",
+            "severity": "Medium",
+            "location": [
+                "IdleCDOEpochVariant.sol::requestWithdraw#518-524"
+            ],
+            "files": [
+                "idle-tranches/contracts/IdleCDOEpochVariant.sol"
+            ]
+        }
+    ]
+}

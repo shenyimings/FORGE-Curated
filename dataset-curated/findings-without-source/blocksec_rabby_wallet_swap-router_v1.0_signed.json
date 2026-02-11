@@ -1,0 +1,79 @@
+{
+    "path": "dataset-curated/reports/BlockSec/blocksec_rabby_wallet_swap-router_v1.0_signed.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/DeBankDeFi/swap-router-v1"
+        ],
+        "commit_id": [
+            "c776ccc3efd4b601e9bebea62d309fe2529683e3"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-22",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Improper pause() mechanism causes the contract to be permanently paused",
+            "description": "The contract's pause mechanism uses a counter (pauseCount) and a mapping (adminPaused) to track which admins have paused the system. However, the unpause() function contains a requirement that reverts if pauseCount >= 2, preventing the contract from being unpaused if two or more admins have called pause(). This design flaw means that once two admins pause the contract, it becomes permanently paused, as no combination of unpause calls can decrement the counter below zero due to the guard condition.\nThe root cause is flawed access control logic in the unpause function, which fails to account for multi-admin coordination. An attacker (or even well-intentioned admins) could exploit this by having two admins call pause(), rendering the contract inoperable.\nThe impact is a permanent denial of service (DoS), where all contract functionality requiring the unpaused state becomes inaccessible, effectively freezing user funds and protocol operations.\n",
+            "severity": "Medium",
+            "location": [
+                "src/library/Admin.sol::pause#56-64",
+                "src/library/Admin.sol::unpause#67-79"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Fee mechanism can be circumvented",
+            "description": "The fee mechanism in both DexSwap and Router contracts allows users to fully control the feeRate and feeReceiver parameters during swap operations. Since these values are passed directly by the caller without validation or enforcement by the protocol, a user can set feeRate to zero or redirect feeReceiver to their own address, effectively bypassing any intended fee collection.\nThe root cause is the lack of centralized control or validation over fee parameters, treating them as fully user-configurable despite their critical role in protocol revenue. Any user can exploit this by crafting a swap transaction with feeRate = 0 or feeReceiver = msg.sender.\nThe impact is that the protocol may fail to collect its intended fees, leading to loss of revenue and potential economic imbalance, especially if widely exploited by arbitrageurs or bots.\n",
+            "severity": "Medium",
+            "location": [
+                "src/aggregatorRouter/DexSwap.sol::swap#116-118",
+                "src/aggregatorRouter/DexSwap.sol::SwapParams",
+                "src/router/Router.sol::swap"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Pause and unpause conflict between different admins",
+            "description": "The unpause function allows any admin to decrement the pauseCount and potentially unpause the contract, even if they were not the one who initiated the pause. This creates a race condition where one admin can unilaterally unpause the system, preventing the original pausing admin from re-pausing (because their adminPaused flag remains true, causing the !adminPaused[msg.sender] check to fail on subsequent pause attempts).\nThe root cause is inconsistent state management in the pause/unpause logic, where the adminPaused mapping is not properly synchronized with the global pauseCount. A malicious or miscoordinated admin could exploit this to lock out other admins from pausing the contract.\nThe impact is a loss of access control integrity, where administrative privileges become inconsistent and unreliable, undermining the intended governance model and potentially leading to operational disruptions.\n",
+            "severity": "Medium",
+            "location": [
+                "src/library/Admin.sol::pause#56-64",
+                "src/library/Admin.sol::unpause#67-79"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Fee deduction after slippage check may reduce actual user received amount",
+            "description": "In the DexSwap contract, the swap function performs the slippage check (comparing receivedAmount against minAmountOut) before deducting fees from the output token. If fees are taken from the toToken (feeOnFromToken = false), the user receives less than the amount that passed the slippage check.\nThe root cause is incorrect execution order: fee deduction should occur before the slippage validation to ensure the final amount meets the user's minimum expectation. An attacker could exploit this by routing swaps through fee-on-output paths and extracting fees after the check, effectively delivering less value than promised.\nThe impact is that users may receive less tokens than expected, violating the slippage guarantee and potentially leading to financial loss or degraded user trust.\n",
+            "severity": "Low",
+            "location": [
+                "src/aggregatorRouter/DexSwap.sol::swap#153-160"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Lack of refund mechanism in the contract Executor",
+            "description": "The Executor contract's executeMultiPath function does not include a refund mechanism for unused input tokens when a multi-path swap fails or executes partially (e.g., due to insufficient liquidity). As a result, any remaining fromToken balance after execution is left stranded in the contract.\nThe root cause is the absence of post-swap balance checks and refund logic. A malicious actor could exploit this by creating fake or illiquid pools to trap user funds during partial swaps.\nThe impact includes potential permanent loss of user funds and an increased attack surface where bad actors can drain user assets by manipulating swap paths with partial execution.\n",
+            "severity": "Low",
+            "location": [
+                "src/executor/Executor.sol::executeMultiPath"
+            ],
+            "files": []
+        }
+    ]
+}

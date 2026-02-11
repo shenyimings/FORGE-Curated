@@ -1,0 +1,56 @@
+name: Slither scanner
+
+on: pull_request
+
+jobs:
+  slither:
+    name: Slither check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.11.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
+        with:
+          node-version: lts/Iron
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install -r --frozen-lockfile
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.8
+
+      - name: Install foundry-zksync
+        run: |
+          mkdir ./foundry-zksync
+          curl -LO https://github.com/matter-labs/foundry-zksync/releases/download/nightly/foundry_nightly_linux_amd64.tar.gz
+          tar zxf foundry_nightly_linux_amd64.tar.gz -C ./foundry-zksync
+          chmod +x ./foundry-zksync/forge ./foundry-zksync/cast
+          echo "$PWD/foundry-zksync" >> $GITHUB_PATH
+
+      - name: Foundry config file
+        run: |
+          echo "[profile.default]" > foundry.toml
+          echo "optimizer = true" >> foundry.toml
+          echo "optimizer_runs = 20_000" >> foundry.toml
+          echo "via_ir = true" >> foundry.toml
+          echo "" >> foundry.toml
+
+      - name: Install Slither
+        run: |
+          pip install slither-analyzer
+
+      - name: Run Slither
+        working-directory: ./
+        run: |
+          slither --config ./slither.config.json .

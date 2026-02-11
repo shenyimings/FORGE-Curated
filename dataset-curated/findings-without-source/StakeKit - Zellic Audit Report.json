@@ -1,0 +1,78 @@
+{
+    "path": "dataset-curated/reports/Zellic/StakeKit - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/stakekit/contracts"
+        ],
+        "commit_id": [
+            "ff3423ceb63eeb3216d79744d2c4a63e6c0da8e3"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "EVM",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-05",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Users' funds can be stolen",
+            "description": "The vulnerability exists in the `redeem` function of the AllocatorVaultV1.sol contract, which fails to enforce proper authorization checks as required by the ERC-4626 standard. According to the standard, when `msg.sender` is not the `owner`, the function should deduct from an allowance to prevent unauthorized redemptions. However, the current implementation directly burns shares from the `owner` without verifying that `msg.sender` is either the owner or has been granted allowance. This design flaw allows an attacker to call the `redeem` function with another user's `owner` address, thereby burning their shares and redirecting the withdrawn assets to an arbitrary `receiver`. As a result, an attacker can effectively steal funds from any user by redeeming their shares without permission. The impact is severe, as it directly enables theft of user assets, undermining the fundamental security of the vault.\n",
+            "severity": "Critical",
+            "location": [
+                "AllocatorVaultV1.sol::redeem"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Fee can be minted multiple times",
+            "description": "The `harvest` function in AllocatorVaultV1.sol is designed to mint fees to the `feeRecipient` based on time elapsed and underlying assets. However, the function does not update the `lastStamp` and `totalUnderlyingStamp` state variables, which are used to calculate the fee amount. These variables are only updated in other functions like `deposit`, `withdraw`, `mint`, and `redeem`, but not in `harvest` itself. Because of this, an attacker can repeatedly call the `harvest` function externally without any change in the recorded state, causing the same fee to be calculated and minted multiple times. This leads to an inflationary bug where new shares are continuously minted to the `feeRecipient`, artificially increasing the total supply and distorting the exchange rate between shares and assets. The impact includes economic imbalance and potential devaluation of user holdings due to unauthorized share inflation.\n",
+            "severity": "High",
+            "location": [
+                "AllocatorVaultV1.sol::harvest"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Drain and financial loss resulting from rounding issue",
+            "description": "The `convertToShares` and `convertToAssets` functions in AllocatorVaultV1.sol are susceptible to rounding errors due to integer division truncation. When the ratio between `totalAssets()` and `totalSupply()` becomes significantly skewed\u2014either due to initial liquidity imbalances or excessive fee accumulation\u2014these rounding errors can be exploited. Specifically, if `totalAssets()` is much larger than `totalSupply()`, an attacker can withdraw a small `_underlying` amount that results in `convertToShares` returning zero, allowing them to drain assets without burning any shares. Conversely, if `totalSupply()` is much larger than `totalAssets()`, users calling `redeem` may have their shares burned while receiving zero assets in return. This creates conditions for both asset drain and user fund freezing. The impact includes potential financial loss for users and erosion of trust in the protocol's reliability, especially under edge-case conditions.\n",
+            "severity": "Medium",
+            "location": [
+                "AllocatorVaultV1.sol::convertToShares",
+                "AllocatorVaultV1.sol::convertToAssets",
+                "AllocatorVaultV1.sol::withdraw",
+                "AllocatorVaultV1.sol::redeem"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Freezing of users' funds due to excessive fee settings",
+            "description": "The `configureVault` function allows the admin to set fee parameters up to a maximum of 10,000 basis points (100%). If an attacker gains control of the admin role or if the admin mistakenly sets extremely high fees, the `harvest` function can be used to mint an excessive number of shares to the `feeRecipient`. This causes the `totalSupply()` to inflate dramatically, which in turn skews the exchange rate between shares and assets. As a result, when users attempt to withdraw, the calculated asset amount may become so small due to division by a massive `totalSupply()` that it rounds down to zero, effectively freezing their funds. Although the likelihood is low due to the need for admin compromise or misconfiguration, the impact is significant as it can lead to permanent loss of access to user funds. This represents a protocol-level risk stemming from insufficient guardrails on fee configuration.\n",
+            "severity": "Low",
+            "location": [
+                "AllocatorVaultV1.sol::configureVault"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Precision loss prevents harvesting fees",
+            "description": "The `computeHarvestFee` function calculates fees based on time elapsed and fee rates, using a denominator of `SECONDS_IN_YEAR` (31,536,000). Due to integer division, the calculated fee can be rounded down to zero if the accumulated fee is less than 1 basis point. This means that unless at least approximately 3.65 days have passed (for a 1% annual fee), no fee will be harvested, leading to revenue loss for the protocol. The issue arises from precision loss in fixed-point arithmetic, where small time intervals or low fee rates fail to accumulate measurable fees. As a result, the `harvest` function may return zero even when fees have technically accrued, undermining the economic model of the vault. While the impact is low and does not lead to direct fund loss, it affects the protocol's ability to reliably collect fees over short periods.\n",
+            "severity": "Low",
+            "location": [
+                "AllocatorVaultV1.sol::computeHarvestFee"
+            ],
+            "files": []
+        }
+    ]
+}

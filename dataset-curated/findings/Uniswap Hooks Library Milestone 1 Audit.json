@@ -1,0 +1,520 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Uniswap Hooks Library Milestone 1 Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/OpenZeppelin/uniswap-hooks"
+        ],
+        "commit_id": [
+            "1db96464698ee567521bd2dd65833ff1e1864ac7"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-07",
+        "project_path": {
+            "uniswap-hooks": "dataset-curated/contracts/Uniswap Hooks Library Milestone 1 Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Non-Explicit Multiple-Pool Support Allows Overwriting Hook State",
+            "description": "The BaseCustomAccounting hook is designed to support only a single Uniswap V4 pool, identified by the `poolKey` state variable, which is set during the `_beforeInitialize` callback. However, the hook does not prevent re-initialization with a different pool, allowing the `poolKey` to be overwritten by registering the same hook with another pool. This occurs because Uniswap V4 allows any pool to use any hook without the hook's explicit consent unless actively rejected.\n\nThe root cause is the lack of a guard in the `_beforeInitialize` function to ensure `poolKey` is set only once. As a result, an attacker or any user can register the hook with a new pool, overwriting the original `poolKey`. This causes all subsequent operations (like liquidity additions or removals) to target the new pool, while the original pool's liquidity remains locked and inaccessible through the hook.\n\nAn attacker could exploit this by registering the hook with a new pool after users have deposited liquidity, effectively freezing their funds in the original pool. The impact is loss of access to user funds and potential permanent loss if no external mechanism exists to recover the liquidity.\n",
+            "severity": "Critical",
+            "location": [
+                "BaseCustomAccounting.sol::poolKey#35",
+                "BaseCustomAccounting.sol::_beforeInitialize#220",
+                "BaseCustomAccounting.sol#196"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Hooks Do Not Support Native Tokens",
+            "description": "The CurrencySettler library supports native token transfers via the `settle` function, which uses the `payable` `PoolManager.settle` method. However, none of the hook contracts are designed to receive native tokens (e.g., ETH), meaning they cannot hold a non-zero native token balance.\n\nThe root cause is the absence of a `receive` or `fallback` function in the hook contracts, which prevents them from accepting native token payments. As a result, any operation that requires the hook to settle native tokens\u2014such as providing liquidity to a pool involving ETH\u2014will fail because the hook cannot receive the necessary funds.\n\nAn attacker cannot directly exploit this, but malicious actors could front-run or manipulate interactions knowing that ETH-denominated pools are unsupported. The impact is that the hooks are incompatible with native token pools, severely limiting their utility and potentially leading to failed transactions or locked funds in ETH-based pools.\n",
+            "severity": "High",
+            "location": [
+                "CurrencySettler.sol::settle#28",
+                "CurrencySettler.sol#34"
+            ],
+            "files": [
+                "uniswap-hooks/src/utils/CurrencySettler.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Insufficient Slippage Check",
+            "description": "The BaseCustomAccounting hook lacks sufficient slippage protection during liquidity operations. When removing liquidity, there is no slippage check at all, leaving users exposed to front-running via swaps that alter the pool's tick and token balances. When adding liquidity, the slippage check uses the total delta (principal + fees), which can be manipulated.\n\nThe root cause is the incorrect use of the full delta returned by `PoolManager.modifyLiquidity`, which includes accrued fees. If fees exceed the principal delta, the net delta can be positive, leading to an unsafe cast of `-amount` to `uint256`, which results in a very large number and bypasses the slippage check entirely.\n\nAn attacker can exploit this by front-running add/remove liquidity calls with swaps that shift the tick or accrue large fees. The impact includes users receiving far fewer tokens than expected when removing liquidity, or being forced to deposit significantly more than intended when adding liquidity, leading to economic loss.\n",
+            "severity": "High",
+            "location": [
+                "BaseCustomAccounting.sol::addLiquidity#132",
+                "BaseCustomAccounting.sol::removeLiquidity#151-162",
+                "BaseCustomAccounting.sol#199"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Unsafe Casting Due to Accrued Fees",
+            "description": "In the BaseCustomAccounting hook, the delta returned from `PoolManager.modifyLiquidity` includes both principal and accrued fees. When processing this delta, the code assumes negative amounts for deposits, but accrued fees can make one or both token amounts positive. The code then performs an unsafe cast of `-amount` to `uint256`, which can result in extremely large values.\n\nThe root cause is the incorrect assumption that delta amounts are always negative when adding liquidity. If fees are large, the net delta can be positive, leading to a large unsigned value when negated, which may either cause a revert or result in the user paying far more than intended.\n\nAn attacker can exploit this by increasing fees (e.g., via concentrated liquidity or time-based accrual) before a user's liquidity operation. The impact is either a failed transaction or a significant overpayment by the user, leading to loss of funds.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseCustomAccounting.sol#199",
+                "BaseCustomAccounting.sol#208",
+                "BaseCustomAccounting.sol#184"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Dynamic After Swap Fees May Not Work as Intended",
+            "description": "The DynamicAfterFee contract only applies its fee logic to exact-input swaps, allowing users to avoid the fee entirely by using exact-output swaps. Additionally, the `targetDelta` is reset after each swap and lacks a built-in mechanism for updating, making it vulnerable to front-running.\n\nThe root cause is the lack of fee enforcement on exact-output swaps and the absence of a secure, documented method to update `targetDelta`. An attacker can front-run a legitimate swap with a tiny exact-input swap, setting the `targetDelta` to a high value, causing the next user's entire output to be taken as a fee.\n\nThis can be exploited by front-running transactions to either avoid fees or steal value from subsequent swaps. The impact includes loss of user funds due to unexpected fee deductions and reduced trust in the fee mechanism, undermining the intended economic model.\n",
+            "severity": "Medium",
+            "location": [
+                "DynamicAfterFee.sol::afterSwap#48-49",
+                "DynamicAfterFee.sol#56",
+                "DynamicAfterFee.sol#59-74"
+            ],
+            "files": [
+                "uniswap-hooks/src/fee/BaseDynamicAfterFee.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "BaseDynamicFee Hook Can Be Poked Arbitrarily",
+            "description": "The BaseDynamicFee hook exposes a public `poke` function that allows anyone to trigger a fee update based on the `_getFee` function. If `_getFee` depends on external state (e.g., pool balances), this enables manipulation of the fee in a single transaction.\n\nThe root cause is the lack of access control on the `poke` function. An attacker can manipulate external conditions (e.g., via a flash loan), call `poke` to set a favorable fee, and execute low-fee swaps before the state is corrected.\n\nThis can be exploited to temporarily reduce swap fees, allowing cheap trades at the expense of the pool or protocol. The impact includes revenue loss for liquidity providers and potential market manipulation, especially if fee updates are not promptly corrected.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseDynamicFee.sol::poke#59",
+                "BaseDynamicFee.sol::_getFee#37"
+            ],
+            "files": [
+                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "BaseAsyncSwap Operation Is Unclear",
+            "description": "The BaseAsyncSwap hook skips normal swap logic for exact-input swaps by minting ERC-6909 claim tokens to itself, but it does not specify how these tokens should be handled. There is no mechanism to track which user or pool the tokens belong to, nor any logic for distributing or refunding them.\n\nThe root cause is incomplete design and lack of required override guidance. The hook receives tokens from multiple pools but does not separate accounting by user or pool. Additionally, it does not handle exact-output swaps, allowing users to bypass the hook entirely.\n\nThis can be exploited by users who perform exact-output swaps to avoid the hook's logic. The impact includes undefined behavior, potential loss of user funds, and integration difficulties due to unclear responsibilities for inheriting contracts. The lack of user tracking prevents proper accounting and redemption.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseNoOp.sol::BaseAsyncSwap#27",
+                "BaseNoOp.sol#54"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseAsyncSwap.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Comments in Codebase",
+            "description": "Multiple comments throughout the codebase are inaccurate or misleading, which can lead to incorrect assumptions by developers using or extending the hooks. Examples include incorrect unit descriptions (e.g., fee units described as hundredths of a percent instead of hundredths of a bip), incorrect modifier behavior (e.g., `onlyValidPools` does not validate `msg.sender`), and incorrect function return descriptions (e.g., `_getAddLiquidity` in BaseCustomCurve does not return encoded `ModifyLiquidityParams` as documented).\n\nThe root cause is outdated or imprecise documentation that does not reflect the actual implementation or Uniswap V4's internal logic. This creates a risk that inheriting contracts will be implemented based on false assumptions, leading to logic errors or security vulnerabilities.\n\nWhile not directly exploitable, an attacker could exploit misunderstandings caused by these comments. For example, a developer might incorrectly implement fee logic based on the wrong unit assumption, leading to unexpectedly high or low fees. The impact is reduced code reliability, increased risk of integration bugs, and potential security flaws in derived contracts.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseDynamicFee.sol#35",
+                "BaseOverrideFee.sol#49",
+                "BaseHook.sol#81",
+                "BaseHook.sol#42",
+                "BaseCustomAccounting.sol#128",
+                "BaseOverrideFee.sol#72",
+                "BaseCustomAccounting.sol#296",
+                "BaseCustomCurve.sol#57",
+                "BaseCustomCurve.sol#71",
+                "BaseCustomCurve.sol#153",
+                "BaseCustomCurve.sol#132",
+                "BaseCustomCurve.sol#114",
+                "BaseCustomCurve.sol#120"
+            ],
+            "files": [
+                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Unintuitive Return Delta",
+            "description": "The `_unlockCallback` function in the `BaseCustomCurve` hook always returns two negative amounts in its delta, regardless of whether liquidity is being added or removed. This behavior is inconsistent with the expectations of the `_mint` and `_burn` functions in the parent `BaseCustomAccounting` contract, which expect deltas with signs matching the operation (positive for minting, negative for burning). The root cause is the hardcoded negative return values in `_unlockCallback`, which fails to reflect the actual economic action. An attacker or developer misunderstanding this behavior could implement incorrect logic in inheriting contracts, potentially leading to incorrect accounting or miscalculations in token minting or burning. The impact is limited to potential logic errors in derived contracts rather than direct fund loss, but it increases the risk of integration bugs.\n",
+            "severity": "Low",
+            "location": [
+                "BaseCustomCurve.sol::_unlockCallback#147",
+                "BaseCustomAccounting.sol::_mint#129",
+                "BaseCustomAccounting.sol::_burn#162"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Redundant `virtual` Function Modifier",
+            "description": "The `validateHookAddress` function in the `BaseHook` contract is marked as `virtual`, allowing it to be overridden by inheriting contracts. However, this modifier was inherited from Uniswap's v4-periphery codebase where it was introduced solely for testing purposes. In the current context, there is no need for this function to be overridden in production, making the `virtual` modifier unnecessary. The root cause is a direct copy of code without adjusting modifiers for the new context. If a derived contract incorrectly overrides this function, it could weaken access control checks, potentially allowing unauthorized hooks to be registered. While the immediate impact is low, it introduces unnecessary complexity and risk of misuse, reducing code safety and clarity.\n",
+            "severity": "Low",
+            "location": [
+                "BaseHook.sol::validateHookAddress#100"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseHook.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "BaseHook's `unlockCallback` Not Needed",
+            "description": "The `BaseHook` contract includes an `unlockCallback` function and an internal `_unlockCallback` implementation that are not necessary for minimal hooks. Only hooks that initiate calls to the `PoolManager` need such a callback. The current implementation uses low-level calls that are difficult to use safely and are always overridden. Retaining it creates a potential reentrancy vector if a derived contract does not properly secure it. The root cause is inclusion of unnecessary boilerplate code. This increases attack surface and maintenance burden without providing benefit, potentially leading to security vulnerabilities in inheriting contracts if the function is exposed unintentionally.\n",
+            "severity": "Low",
+            "location": [
+                "BaseHook.sol::unlockCallback#109",
+                "BaseHook.sol::_unlockCallback#118"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseHook.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Non-Existent Named Return Variable",
+            "description": "The documentation for the `unlockCallback` function in `BaseCustomCurve.sol` refers to a return parameter named `delta`, but the function does not actually declare such a return variable. The root cause is outdated or incorrect NatSpec comments. This discrepancy can mislead developers into believing a value is returned when it is not, potentially leading to incorrect assumptions in integrating contracts or manual audits.\n",
+            "severity": "Low",
+            "location": [
+                "BaseCustomCurve.sol::unlockCallback#147"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Insufficient Documentation",
+            "description": "Multiple critical functions and contracts lack adequate NatSpec documentation, increasing the risk of incorrect implementation by developers. For example, the `_getAddLiquidity` and `_getRemoveLiquidity` functions do not document the need for a unique salt per liquidity provider, which is essential to prevent unauthorized withdrawal of others' liquidity. The `DynamicAfterFee` contract does not warn about potential donation exploitation by just-in-time liquidity providers. Additionally, internal functions like `_getAmountOutFromExactInput` lack parameter and return value documentation. The root cause is incomplete developer documentation practices. This can lead to insecure integrations where developers misunderstand the expected behavior, potentially resulting in loss of fees or incorrect state changes due to misuse of the hooks.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseCustomAccounting.sol::_getAddLiquidity#248",
+                "BaseCustomAccounting.sol::_getRemoveLiquidity#248",
+                "DynamicAfterFee.sol#28",
+                "BaseCustomCurve.sol::_beforeSwap#82",
+                "BaseCustomCurve.sol::_unlockCallback#147",
+                "BaseHook.sol::unlockCallback#109",
+                "BaseCustomCurve.sol::_getAmountOutFromExactInput#208"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Insufficient Arguments",
+            "description": "Several `virtual` functions in base hooks lack parameters that would make them more flexible and secure. For example, the `_getFee` function in `BaseDynamicFee` could benefit from `currentTick` and `sqrtPricex96` parameters to enable price-aware fee logic. The `_modifyLiquidity` function does not return the `feesAccrued` delta, preventing `_mint` and `_burn` from accessing this data. Additionally, the `AddLiquidityParams` and `RemoveLiquidityParams` structs lack a `salt` field, which is needed to support multiple positions on the same tick range. The root cause is overly restrictive function interfaces. This limits the functionality available to inheriting contracts and may force developers to re-fetch data or implement workarounds, increasing gas costs and potential for error.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseDynamicFee.sol::_getFee#37",
+                "BaseCustomAccounting.sol::_modifyLiquidity",
+                "BaseCustomAccounting.sol::AddLiquidityParams#59",
+                "BaseCustomAccounting.sol::RemoveLiquidityParams#70"
+            ],
+            "files": [
+                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Typographical Errors",
+            "description": "The codebase contains several typographical errors in comments, such as \"implementator\" instead of \"implementer\", \"Aditionally\" instead of \"Additionally\", and \"An\" instead of \"A\". These errors occur in documentation for `BaseCustomAccounting.sol` and `CurrencySettler.sol`. The root cause is lack of proofreading. While these do not affect code execution, they reduce professionalism and clarity, potentially causing confusion for developers reading the documentation, especially non-native English speakers.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseCustomAccounting.sol#22",
+                "BaseCustomAccounting.sol#40",
+                "CurrencySettler.sol#13"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Optimizable State Reads",
+            "description": "In the `BaseCustomCurve` contract, the `poolKey` storage variable is read multiple times within the `_unlockCallback` function without being cached. Each read performs an SLOAD operation, which is expensive in gas. The root cause is inefficient coding practice. By caching `poolKey` in memory at the start of the function, redundant state reads can be avoided, reducing gas consumption during execution. This is a performance optimization with no security impact but improves efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseCustomCurve.sol::_unlockCallback#147"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Modifier",
+            "description": "The `onlySelf` modifier in the `BaseHook` contract is defined but never used anywhere in the codebase. The root cause is inclusion of unused helper code. While it does not introduce a direct vulnerability, it adds unnecessary complexity and reduces code clarity. Developers may\u8befassume it is used for access control, leading to incorrect security assumptions. Unused code should be removed to maintain a clean and auditable codebase.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseHook.sol::onlySelf#75"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseHook.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "None of the contracts include a `@custom:security-contact` NatSpec tag, making it difficult for security researchers to report vulnerabilities. The root cause is omission of a best practice for responsible disclosure. Without a clear contact, vulnerabilities may go unreported or be disclosed publicly without coordination, increasing risk to users. While the team states implementers should add their own, the base contracts should encourage this practice by including a placeholder.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol",
+                "uniswap-hooks/src/base/BaseHook.sol",
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol",
+                "uniswap-hooks/src/base/BaseAsyncSwap.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Different Pragma Version From `PoolManager`",
+            "description": "The base contracts use a floating pragma `^0.8.24`, while the Uniswap `PoolManager` contract uses `0.8.26`. The root cause is version mismatch in dependency management. This can lead to unexpected compiler behavior or compatibility issues when integrating with the `PoolManager`, especially if new compiler features or bugs are introduced between versions. Using a fixed version aligned with the `PoolManager` would improve consistency and safety.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol",
+                "uniswap-hooks/src/base/BaseHook.sol",
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol",
+                "uniswap-hooks/src/base/BaseAsyncSwap.sol",
+                "uniswap-hooks/src/fee/BaseDynamicAfterFee.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Naming Suggestions",
+            "description": "Several identifiers in the codebase could be improved for clarity. For example, `manager` variables should be renamed to `poolManager` for consistency, `DynamicAfterFee` should be `BaseDynamicAfterFee` to indicate it's abstract, `liquidity` should be `shares` to distinguish from Uniswap V4 liquidity, and `amountIn` in `_getAmount` should be `amountSpecified` to reflect its actual use. The root cause is inconsistent or imprecise naming. Poor naming increases cognitive load and risk of misunderstanding, potentially leading to integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "CurrencySettler.sol#28",
+                "DynamicAfterFee.sol#28",
+                "BaseCustomAccounting.sol#123",
+                "BaseCustomCurve.sol::_getAmount#195",
+                "BaseCustomCurve.sol::_getAmountInForExactOutput#216"
+            ],
+            "files": [
+                "uniswap-hooks/src/utils/CurrencySettler.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Functions Are Updating the State Without Event Emissions",
+            "description": "Functions like `_beforeInitialize` in `BaseCustomAccounting` and the constructor in `BaseHook` modify state but do not emit events. The root cause is lack of observability design. Without events, off-chain systems cannot easily track state changes, making monitoring, debugging, and indexing more difficult. While the team states implementers should add their own events, base contracts should emit core events by default to ensure critical changes are always logged.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseCustomAccounting.sol::_beforeInitialize#218",
+                "BaseHook.sol::constructor#59"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomAccounting.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ],
+                "3": [
+                    "CWE-1064"
+                ]
+            },
+            "title": "Unnecessary Restriction On the `_getAmount` `virtual` Function",
+            "description": "The `_getAmount` function in `BaseCustomCurve` imposes unnecessary restrictions by requiring `input`, `output`, and `zeroForOne` parameters, even though the direction can be inferred from the currencies. It also splits logic based on `exactInput`, forcing inheriting contracts to follow a rigid structure. The root cause is over-constrained API design. This reduces flexibility and complicates implementations. Passing `IPoolManager.SwapParams` directly would simplify the interface and allow more natural implementations, reducing the risk of errors in complex fee logic.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseCustomCurve.sol::_getAmount#195"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseCustomCurve.sol"
+            ]
+        }
+    ]
+}

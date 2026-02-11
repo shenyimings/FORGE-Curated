@@ -1,0 +1,481 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-leech-protocol-leech-protocol-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Ackee-Blockchain/tests-leech-protocol"
+        ],
+        "commit_id": [
+            "ba2a753875dc91415caaf883ac4785d5cadce3a5"
+        ],
+        "address": [],
+        "chain": "evm/optimism/binance-smart-chain",
+        "compiler_version": "n/a",
+        "audit_date": "2024-11-05",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Lack of Atomicity in Cross-Chain Transactions",
+            "description": "The Leech protocol allows cross-chain deposits and withdrawals, where funds are first transferred to the LeechRouter contract on the destination chain and await finalization by an off-chain finalizer. This design introduces a non-atomic process, leaving funds in a vulnerable intermediate state. The root cause is the separation of fund receipt and finalization into two distinct steps, which breaks atomicity. An attacker can exploit this by front-running the finalizer's transaction after a user's deposit, causing the deposited funds to be credited to the attacker's account instead of the rightful depositor. This could lead to complete loss of all cross-chain deposited funds, making the impact critical.\n",
+            "severity": "Critical",
+            "location": [
+                "LeechRouter.sol::926-945",
+                "LeechRouter.sol::722-731"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Donation attack",
+            "description": "The StrategyVelodromeV3StableFarm contract uses `balanceOf(address(this))` to determine the amount of tokens available for providing liquidity to Velodrome V3 pools. This approach is flawed because it does not differentiate between legitimate strategy funds and externally donated tokens. The root cause is the reliance on dynamic balance checks instead of tracking internal accounting. An attacker can donate a large amount of one stablecoin (e.g., USDC) to unbalance the ratio required for liquidity provision, causing subsequent calls to `increaseLiquidity` to revert. This results in a denial-of-service condition where the strategy cannot operate, disrupting yield generation and user withdrawals.\n",
+            "severity": "High",
+            "location": [
+                "StrategyVelodromeV3StableFarm.sol::426-435"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "data.swapperAddress is not checked in withdraw function",
+            "description": "The LeechRouter contract allows users to specify a `swapperAddress` in the `Request` struct when performing deposits or withdrawals involving token swaps. However, this address is not validated against a whitelist or access control, allowing any arbitrary contract to be used as the swapper. The root cause is missing input validation for a critical external call destination. An attacker can deploy a malicious contract that accepts tokens but never performs the swap, effectively stealing the input tokens. When the withdraw function executes, it transfers the input tokens to the malicious swapper and then sends the expected output tokens to the user, but since no actual swap occurs, the protocol loses the difference, leading to fund loss.\n",
+            "severity": "Medium",
+            "location": [
+                "LeechRouter.sol::266-277",
+                "LeechRouter.sol::282-286",
+                "LeechRouter.sol::859-871"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Initialization Function Vulnerable to Front-Running",
+            "description": "Multiple contracts in the Leech protocol, including LeechRouter, LeechSwapper, and various strategy contracts, contain unprotected initialization functions that can be called by anyone before the legitimate owner initializes them. The root cause is the lack of access control on the `initialize` functions and the absence of atomic deployment via a factory contract. An attacker can monitor the mempool for contract deployments and front-run the legitimate initialization transaction by calling `initialize` with their own parameters, thereby gaining ownership and control over the proxy. This would allow the attacker to drain all funds managed by the contract, resulting in catastrophic loss.\n",
+            "severity": "Medium",
+            "location": [
+                "LeechRouter.sol",
+                "LeechSwapper.sol",
+                "StrategyVelodromeV2StableFarm.sol",
+                "StrategyVelodromeV2StableCHIDAIFarm.sol",
+                "StrategyVelodromeV3_USDC_LUSD.sol",
+                "StrategyVelodromeV3_USDC_SDAI.sol",
+                "StrategyVelodromeV3_USDC_SUSD.sol",
+                "StrategyVelodromeV3StableFarm.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "strategy.poolShare attribute is not checked properly",
+            "description": "The Leech protocol uses the strategy.poolShare value to define the percentage allocation of deposited funds across multiple strategies. For example, in a pool with two strategies and equal distribution, each strategy\u2019s poolShare should sum to 10,000. However, the protocol does not validate that the sum of all strategy.poolShare values equals exactly 10,000.\n\nThe root cause is the lack of input validation in the setPool function, which allows administrators to configure pools with incorrect share distributions. If the sum of poolShare values is less than 10,000, a portion of user funds remains locked in the LeechRouter contract after swapping. Conversely, if the sum exceeds 10,000, the protocol attempts to deposit more funds than available, causing transaction reverts.\n\nAn attacker or misconfigured administrator could set incorrect poolShare values, leading to partial loss of user funds or failed deposits. For example, if two strategies are each set to 2,500 instead of 5,000, only half of the swapped funds are distributed, leaving the rest trapped in the contract.\n\nThe impact includes potential loss of user funds due to misconfiguration, reduced user trust, and failed transactions. While the issue requires administrative error rather than active exploitation, the consequences for users are significant.\n",
+            "severity": "Medium",
+            "location": [
+                "LeechRouter.sol::setPool#513-519"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "No error if there is no bridge configured",
+            "description": "The BaseLeechTransporter.bridgeOut function fails silently when no bridge is configured (i.e., activeBridge is not set). Instead of reverting or emitting an error, the function executes successfully while leaving user tokens locked in the contract without being bridged to the destination chain.\n\nThe root cause is the absence of a validation check for the activeBridge variable before proceeding with bridge logic. The control flow only checks for specific bridge types (e.g., Multichain) but does not handle the case where no bridge is set at all.\n\nAn attacker cannot directly exploit this, but a user initiating a cross-chain deposit will experience a silent failure: the transaction succeeds on the source chain, but funds are not bridged. The user may assume the transaction was successful, only to discover later that their tokens are stuck.\n\nThe impact is classified as medium because user funds remain locked in the contract. However, recovery is possible via the rescue function, which mitigates the severity. Still, the lack of feedback leads to poor user experience and potential fund loss if rescue is not performed.\n",
+            "severity": "Low",
+            "location": [
+                "BaseLeechTransporter.sol::bridgeOut#124-144"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Pool Configuration Data Can Be Overwritten",
+            "description": "The LeechRouter contract allows the administrator to overwrite existing pool configurations via the setPool function without checking whether a pool with the given ID already exists. This can lead to accidental overwriting of active pool data, including strategy addresses and total token amounts.\n\nThe root cause is the direct assignment pools[poolId] = poolData without prior existence checks. Since the function is only callable by an admin, this is considered a logic error rather than a malicious exploit vector.\n\nAn administrator might accidentally reuse a pool ID when creating a new pool, overwriting an existing one. Users who have deposited into the original pool would then face incorrect accounting, potentially leading to loss of funds during withdrawals or reward calculations.\n\nThe impact is low because the administrator retains control and can manually restore the correct configuration. However, in the absence of backups or monitoring, this could result in permanent fund loss for users.\n",
+            "severity": "Low",
+            "location": [
+                "LeechRouter.sol::setPool#513-519"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Oracle Price Feed Data Validation Missing",
+            "description": "The BaseStrategy contract retrieves price data from Chainlink oracles using latestAnswer() without validating the freshness of the data. It does not check the timestamp of the latest update, making it vulnerable to stale price feeds.\n\nThe root cause is the direct use of potentially outdated oracle values in financial calculations, such as determining the value of deposited tokens. The contract assumes the oracle is always up-to-date, which may not hold during network congestion or oracle failures.\n\nIf the oracle price becomes stale (e.g., due to a node outage), the system may under-value or over-value user deposits. For example, if the VELO token doubles in price but the oracle hasn't updated, a user depositing VELO will receive fewer shares than deserved.\n\nThe impact includes incorrect share calculations, unfair reward distribution, and potential loss of user funds during deposits or withdrawals. While the likelihood is low due to Chainlink's reliability, the financial impact can be high during extreme market movements.\n",
+            "severity": "Low",
+            "location": [
+                "BaseStrategy.sol#113-116"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "External interaction with Chainlink is not appropriately handled",
+            "description": "The BaseStrategy contract directly calls Chainlink's latestAnswer() function without using try/catch to handle potential reverts. If the Chainlink node is down or the price feed is paused, the entire deposit transaction will revert.\n\nThe root cause is the lack of defensive programming when interacting with external oracles. External calls can fail for reasons outside the protocol\u2019s control, including node downtime or access restrictions by Chainlink multisig.\n\nDuring a Chainlink outage, users attempting to deposit will face failed transactions without clear error messages. Additionally, if Chainlink blocks the contract address, all deposit functionality becomes permanently unusable unless mitigated.\n\nThe impact includes denial of service for deposit functionality, poor user experience, and potential loss of business. While funds are not at direct risk, the protocol's availability is compromised.\n",
+            "severity": "Low",
+            "location": [
+                "BaseStrategy.sol#113-116"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Two step ownership is not used",
+            "description": "Several critical contracts (BanList.sol, Rewarder.sol, BaseLeechTransporter.sol, BaseStrategy.sol) use a single-step ownership transfer via transferOwnership, which immediately assigns ownership to a new address without confirmation.\n\nThe root cause is the use of OpenZeppelin\u2019s OwnableUpgradeable instead of Ownable2StepUpgradeable. This design allows ownership to be transferred to any address without requiring the recipient to accept it, increasing the risk of accidental or irreversible transfers.\n\nAn administrator might mistype an address during ownership transfer, resulting in permanent loss of contract control. For example, sending ownership to a random EOA or zero address would lock all administrative functions.\n\nThe impact is medium because loss of ownership means loss of control over critical functions like pausing, upgrading, or recovering funds. However, since this requires an admin error rather than exploitation, the likelihood is low.\n",
+            "severity": "Low",
+            "location": [
+                "BanList.sol",
+                "Rewarder.sol",
+                "BaseLeechTransporter.sol",
+                "BaseStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Usage of transfer instead of call",
+            "description": "The LeechRouter contract uses the .transfer() function to send ETH, which forwards a fixed 2,300 gas stipend. This can cause transaction failures if the recipient is a contract that requires more gas for execution (e.g., multisigs, wallets with complex fallback logic).\n\nThe root cause is the use of a deprecated method for ETH transfers. The transfer function is known to be unsafe in modern Solidity development due to its gas limitations and has been replaced by call in best practices.\n\nRecipients such as smart contract wallets or proxy contracts may fail to receive ETH because their fallback functions consume more than 2,300 gas. This results in failed withdrawals and locked funds.\n\nThe impact includes failed transactions and user fund lockups. However, the issue was fixed by removing functions that used transfer, reducing the risk.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Direct Token Balance Checks Using balanceOf(address(this)) Present Security Risks",
+            "description": "The LeechRouter and other contracts use balanceOf(address(this)) to determine token amounts after swaps. This method is vulnerable to manipulation if tokens are sent to the contract outside of normal operations (e.g., direct transfers).\n\nThe root cause is reliance on post-transfer balance checks instead of tracking expected amounts. This can lead to discrepancies if tokens are donated or accidentally sent to the contract.\n\nA malicious user could front-run a deposit by sending tokens directly to the contract, causing the balance difference to be miscalculated and allowing them to claim more shares than they should.\n\nWhile no immediate exploit is demonstrated, this pattern increases the attack surface and could compound other vulnerabilities. It is considered a code quality and security best practice issue.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol#738",
+                "LeechRouter.sol#226",
+                "LeechRouter.sol#863"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Getter of pools does not return all members of a complex struct",
+            "description": "The pools mapping in LeechRouter.sol is declared as public, causing Solidity to auto-generate a getter. However, because Pool contains a nested array (strategies), the default getter cannot return the full struct.\n\nThe root cause is the limitation of Solidity\u2019s automatic getter generation for complex types. External callers cannot retrieve the strategies array via the default getter, limiting transparency and integration capabilities.\n\nFrontends or external services that rely on reading pool configurations will be unable to access strategy data without additional custom functions.\n\nThe impact is limited to usability and interoperability. No funds are at risk, but the design reduces the contract\u2019s utility for external consumers.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol#94"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Unnecessary token swaps in withdrawal process",
+            "description": "During withdrawals, the protocol unnecessarily converts token0 and token1 to USDC before converting back to the requested token, even when the requested token matches one of the pair tokens.\n\nThe root cause is inefficient logic in the withdrawal flow. Instead of checking whether a swap is needed, the protocol always routes through USDC, incurring avoidable trading fees.\n\nUsers requesting withdrawals in token0 or token1 suffer unnecessary slippage and fee losses due to redundant swaps. This reduces net returns and harms user experience.\n\nThe impact is economic inefficiency and increased cost for users. While not a security vulnerability, it represents a significant code quality and optimization issue.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyVelodromeV2StableFarm.sol#314-331"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Epoch Time Range Overlap in Reward Distribution",
+            "description": "The Rewarder contract allows administrators to create reward epochs that overlap in time. This can result in users receiving rewards from multiple concurrent epochs, leading to excessive token emissions.\n\nThe root cause is the lack of validation in the setEpoch function to ensure that new epochs do not start before the previous one ends. The function only checks that the start time is not in the distant future.\n\nAn administrator could accidentally or intentionally create overlapping epochs, doubling or tripling reward payouts for the same period.\n\nThe impact is inflationary pressure on the reward token supply and potential financial loss for the protocol due to overspending. While the risk is mitigated by admin control, the design invites errors.\n",
+            "severity": "Informational",
+            "location": [
+                "Rewarder.sol::setEpoch#111-124"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Account abstraction users cannot receive unused funds back",
+            "description": "The protocol uses tx.origin to refund unused funds and specify recipient addresses in cross-chain messages. This breaks compatibility with smart contract wallets (e.g., ERC-4337 accounts), as tx.origin returns the EOA initiator, not the contract wallet.\n\nThe root cause is the insecure and outdated use of tx.origin, which is discouraged in modern smart contract development due to its incompatibility with account abstraction.\n\nUsers operating through smart contract wallets will not receive refunded tokens or bridged assets, as the funds are sent to their EOA instead of their wallet contract.\n\nThe impact is loss of functionality for advanced wallet users and reduced accessibility. The issue was partially fixed, but residual usage remains a concern.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol",
+                "BaseLeechTransporter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Missing Storage Gaps",
+            "description": "The BaseStrategy contract, which is inherited by all strategy contracts, does not include storage gaps (_gap) for future upgrades. This makes it risky to add new state variables in future versions, as it may cause storage collisions.\n\nThe root cause is non-compliance with OpenZeppelin\u2019s upgradeable contract patterns. Without reserved slots, any future addition of state variables could misalign storage between proxy and implementation.\n\nDuring an upgrade, if new variables are added without gaps, the storage layout may shift, leading to corrupted data or critical failures (e.g., overwriting paused flag with another variable).\n\nThe impact is high risk to upgradability and long-term maintainability. While not an immediate exploit, it threatens the integrity of future upgrades.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "console.log Statements Present in Production Code",
+            "description": "The codebase contains multiple console.log statements used for debugging, particularly in LeechRouter.sol and LeechSwapper.sol. These are typically included via Hardhat's console library and are not meant for production.\n\nThe root cause is oversight in removing development artifacts before deployment. While these statements are inert on-chain (they consume gas but do nothing), they increase deployment cost and expose internal logic.\n\nThese logs can leak implementation details and increase bytecode size unnecessarily. In some cases, they may also cause deployment to fail due to size limits.\n\nThe issue was fixed by removing the statements, so the current risk is low. However, their presence in the audited version indicates a process gap.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol#862",
+                "LeechSwapper.sol#34-37"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Unused Custom Error Declarations",
+            "description": "Multiple interfaces (e.g., IVelodromePair.sol, IRouterVelodrome.sol, IGauge.sol, etc.) declare custom errors that are never used in revert statements anywhere in the codebase.\n\nThe root cause is leftover code from development or incomplete refactoring. These errors were likely intended for use but were never implemented.\n\nUnused errors increase contract bytecode size, raise deployment costs, and create confusion for developers reading the code.\n\nWhile not a security risk, this represents poor code hygiene and inefficiency. The issue was acknowledged but not fixed.\n",
+            "severity": "Informational",
+            "location": [
+                "IVelodromePair.sol",
+                "IRouterVelodrome.sol",
+                "IGauge.sol",
+                "IBaseStrategy.sol",
+                "IRewarder.sol",
+                "LeechSwapper.sol",
+                "ILeechRouter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Unused Event Declarations",
+            "description": "Several interfaces declare events that are never emitted in the implementation contracts. Examples include ClaimFees, Deposit, NotifyReward, and AssetBridged in various interfaces.\n\nThe root cause is likely incomplete integration or abandoned features. These events were defined but never wired into the actual logic.\n\nUnused events contribute to bloat in the ABI and deployment cost without providing any benefit. They may mislead developers into thinking certain actions are logged when they are not.\n\nThe impact is limited to code clarity and efficiency. However, removing them improves maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "ICLGauge.sol",
+                "IVelodromePair.sol",
+                "IGauge.sol",
+                "ILeechTransporter.sol",
+                "IRewarder.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Autocompound function lacks access control",
+            "description": "The autocompound function in StrategyVelodromeV2StableCHIDAIFarm.sol is public and can be called by any external account. While currently safe due to hardcoded logic, it lacks access control modifiers that would restrict it to authorized callers.\n\nThe root cause is missing use of onlyRole or similar modifiers. Although the function only interacts with trusted addresses now, future changes (e.g., adding a pool parameter) could introduce reentrancy or redirection risks.\n\nAny user can trigger autocompounding, which may lead to unnecessary gas consumption or front-running opportunities. More critically, it sets a precedent for insecure design in sensitive functions.\n\nThe impact is currently low, but the lack of access control violates security best practices and increases technical debt.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyVelodromeV2StableCHIDAIFarm.sol::autocompound#132-151"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Unused Contract Functions",
+            "description": "Multiple utility functions across various libraries (BytesLib.sol, FullMath.sol, LiquidityAmounts.sol, Path.sol, BaseLeechTransporter.sol) are declared but never used in the codebase.\n\nThe root cause is inclusion of general-purpose libraries with unused components. Some functions may have been intended for future use or were left behind after refactoring.\n\nUnused functions increase contract size, deployment cost, and attack surface. Even if not directly callable, they contribute to complexity and potential confusion.\n\nThe client acknowledged the issue, though noted that some unused functions were introduced due to removal of cross-chain functionality.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseLeechTransporter.sol::_withSlippage",
+                "BytesLib.sol::concat",
+                "BytesLib.sol::concatStorage",
+                "BytesLib.sol::toUint8",
+                "BytesLib.sol::toUint16",
+                "BytesLib.sol::toUint32",
+                "BytesLib.sol::toUint64",
+                "BytesLib.sol::toUint96",
+                "BytesLib.sol::toUint128",
+                "BytesLib.sol::toUint256",
+                "BytesLib.sol::toBytes32",
+                "BytesLib.sol::equal",
+                "BytesLib.sol::equalStorage",
+                "FullMath.sol::mulDivRoundingUp",
+                "LiquidityAmounts.sol::getLiquidityForAmounts",
+                "Path.sol::hasMultiplePools",
+                "Path.sol::getFirstPool"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Unused imports",
+            "description": "The contracts IRewarder.sol, ILeechRouter.sol, and several StrategyVelodromeV* contracts contain import statements that are not utilized in their respective files. This includes redundant imports of OpenZeppelin's IERC20 and SafeERC20 libraries, as well as Babylonian, Path, and UniV3Utils. The presence of unused imports increases code complexity and compilation overhead, and may lead to confusion during maintenance or potential naming conflicts. The root cause is the inclusion of unnecessary import statements that serve no functional purpose. While this does not directly enable exploitation, it degrades code quality and maintainability. The impact is limited to increased deployment gas costs and reduced readability.\n",
+            "severity": "Informational",
+            "location": [
+                "IRewarder.sol",
+                "ILeechRouter.sol",
+                "StrategyVelodromeV2StableCHIDAIFarm.sol",
+                "StrategyVelodromeV2StableFarm.sol",
+                "StrategyVelodromeV3StableFarm.sol",
+                "StrategyVelodromeV3_USDC_LUSD.sol",
+                "StrategyVelodromeV3_USDC_SDAI.sol",
+                "StrategyVelodromeV3_USDC_SUSD.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Unused modifiers",
+            "description": "The BaseStrategy.sol contract contains two unused modifiers: onlyController and notZeroAddress. These modifiers are defined but never applied to any function in the codebase. Additionally, the LeechRouter contract contains deprecated cross-chain related modifiers such as allowCrosschain, checkCrosschainMsgValue, and onlyFinalizer, which were left behind after the removal of cross-chain functionality. The root cause is incomplete cleanup after feature removal. These unused modifiers increase contract size unnecessarily, leading to higher deployment costs and reduced code clarity. There is no direct security risk, but it indicates poor code hygiene and may confuse auditors or developers. The impact is limited to increased gas costs and maintenance burden.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseStrategy.sol::onlyController",
+                "BaseStrategy.sol::notZeroAddress",
+                "LeechRouter.sol::allowCrosschain",
+                "LeechRouter.sol::checkCrosschainMsgValue",
+                "LeechRouter.sol::onlyFinalizer"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Unused using for",
+            "description": "Several contracts contain unused 'using for' directives. For example, BaseStrategy.sol declares 'using SafeERC20Upgradeable for IERC20Upgradeable' but does not use it. Similarly, multiple Velodrome V3 strategy contracts declare 'using HelpersUpgradeable for bytes' and 'using TickMath for int24' without actual usage. The root cause is leftover code from prior implementations or incomplete refactoring. These directives increase contract size and gas costs during deployment without providing any functional benefit. While not exploitable, they reduce code clarity and maintainability. The impact is limited to increased deployment cost and code bloat.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseStrategy.sol",
+                "StrategyVelodromeV2StableCHIDAIFarm.sol",
+                "StrategyVelodromeV2StableFarm.sol",
+                "StrategyVelodromeV3StableFarm.sol",
+                "StrategyVelodromeV3_USDC_LUSD.sol",
+                "StrategyVelodromeV3_USDC_SDAI.sol",
+                "StrategyVelodromeV3_USDC_SUSD.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Inconsistent msg.sender Role Validation in pause Functions",
+            "description": "The LeechRouter.sol contract has two pause-related functions with inconsistent authorization patterns. The pause() function uses a manual check with hasRole for ADMIN_ROLE or PAUSER_ROLE, while setCrosschainPaused() uses the onlyRole(ADMIN_ROLE) modifier. This inconsistency reduces code readability and increases the risk of future authorization errors. The root cause is a lack of standardized access control patterns. While both functions are secure in isolation, the inconsistency makes the codebase harder to audit and maintain. There is no direct exploit path, but it violates best practices for code consistency. The impact is limited to reduced maintainability and potential for future bugs.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol::pause",
+                "LeechRouter.sol::setCrosschainPaused"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "The initializePosition function in Velodrome V3 strategies should be external",
+            "description": "The initializePosition function in all Velodrome V3 strategy contracts is declared as public but is never called internally. This violates the principle of least privilege, as public functions can be called by anyone, even if access is restricted by other checks. The function includes an authorization check (msg.sender == owner() || msg.sender == controller), but its visibility should still be external since it is only intended to be called externally. The root cause is incorrect function visibility assignment. While not currently exploitable due to the authorization check, using public instead of external wastes gas when called externally because it copies arguments to memory instead of using calldata directly. The impact is inefficient gas usage and deviation from Solidity best practices.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyVelodromeV3StableFarm.sol::initializePosition",
+                "StrategyVelodromeV3_USDC_LUSD.sol::initializePosition",
+                "StrategyVelodromeV3_USDC_SDAI.sol::initializePosition",
+                "StrategyVelodromeV3_USDC_SUSD.sol::initializePosition"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Unused Function Parameters",
+            "description": "The _deposit function in StrategyVelodromeV2StableFarm.sol and StrategyVelodromeV2StableCHIDAIFarm.sol declares three parameters: depositToken, minAmount, and bytes memory, but only uses depositToken in the implementation. The minAmount and bytes parameters are completely ignored. The root cause is likely a carryover from a previous design or incomplete refactoring. Unused parameters increase function call overhead and reduce code clarity. While not directly exploitable, they can mislead developers into thinking the parameters are used. The impact is reduced readability and slightly higher gas costs due to unnecessary parameter passing.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyVelodromeV2StableFarm.sol::_deposit",
+                "StrategyVelodromeV2StableCHIDAIFarm.sol::_deposit"
+            ],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Inconsistent parameter naming in setRoutes functions across Velodrome strategies",
+            "description": "The setRoutes function in StrategyVelodromeV3StableFarm.sol uses parameters named tokenIn, tokenOut, and path, while the same function in StrategyVelodromeV2StableFarm.sol uses tokenFrom, tokenTo, and newPaths. Both functions perform identical logic but with inconsistent naming. The root cause is lack of naming standardization across similar components. This inconsistency can confuse developers and increase the risk of integration errors. While not a security vulnerability, it reduces code maintainability and readability. The impact is limited to developer experience and long-term codebase health.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyVelodromeV3StableFarm.sol::setRoutes",
+                "StrategyVelodromeV2StableFarm.sol::setRoutes"
+            ],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "Unused Multichain Integration Code Present in Codebase",
+            "description": "The BaseLeechTransporter.sol contract contains a function _bridgeOutMultichain() that is part of a deprecated Multichain integration. This function and related code are no longer used but remain in the codebase. The root cause is incomplete removal of a deprecated feature. Unused integration code increases attack surface unnecessarily and may confuse auditors about the current system architecture. While not currently exploitable, it represents technical debt and potential confusion. The impact is reduced code clarity and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseLeechTransporter.sol::_bridgeOutMultichain"
+            ],
+            "files": []
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "Unused Interface and Library",
+            "description": "The IRewarder.sol interface is defined but not implemented by any contract in the codebase. Additionally, the UniV3Utils.sol library is imported in multiple files but contains no function calls. The root cause is incomplete implementation or removal of features. Unused interfaces and libraries increase compilation and deployment costs and may mislead developers about intended functionality. There is no direct security impact, but it indicates poor code hygiene. The impact is limited to increased gas costs and reduced code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "IRewarder.sol",
+                "UniV3Utils.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 31,
+            "category": {},
+            "title": "Incorrect Event Name in NatSpec Documentation",
+            "description": "The NatSpec comment in LeechRouter.sol incorrectly references the event 'WithdrawalRequested' when the actual event name is 'WithdrawRequest'. The root cause is a documentation error, likely due to a rename without updating comments. This inconsistency can mislead developers using documentation to integrate with the contract. While not a runtime vulnerability, it can cause integration bugs if developers rely on the documented name. The impact is limited to developer confusion and potential integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "LeechRouter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 32,
+            "category": {},
+            "title": "wake detect complex-struct-getter",
+            "description": "The public state variable 'pools' in LeechRouter.sol maps to a struct Pool that contains multiple fields, including a dynamic array 'strategies'. The auto-generated getter function for 'pools' does not return all members of the struct, particularly the 'strategies' array, making it impossible to query the full state via the getter. The root cause is Solidity's limitation with complex struct getters. This can mislead external callers into thinking they can retrieve the full struct data. The impact is reduced transparency and potential for incorrect off-chain state interpretation.\n",
+            "severity": "High",
+            "location": [
+                "LeechRouter.sol::pools"
+            ],
+            "files": []
+        },
+        {
+            "id": 33,
+            "category": {},
+            "title": "wake detect chainlink-deprecated-functions",
+            "description": "The BaseStrategy.sol contract uses the deprecated Chainlink function latestAnswer() in oracle price retrieval. The latestAnswer() function has been deprecated in favor of newer, more secure versions. The root cause is outdated integration with Chainlink's API. Using deprecated functions may lead to incorrect price feeds or future incompatibility if the underlying oracle changes behavior. The impact is potential incorrect valuation of assets, leading to economic imbalance or incorrect reward calculations.\n",
+            "severity": "High",
+            "location": [
+                "BaseStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 34,
+            "category": {},
+            "title": "wake detect tx-origin",
+            "description": "The StrategyVelodromeV3StableFarm.sol contract uses tx.origin to send leftover tokens back to the originator in a callback. Using tx.origin is unsafe because it can be manipulated by malicious contracts in phishing attacks or proxy setups. Additionally, tx.origin is not supported in ERC-4337 account abstraction, which may break compatibility with smart wallets. The root cause is insecure access control pattern. An attacker could potentially trick a user into triggering a function that sends funds to the attacker's contract via tx.origin. The impact includes potential loss of funds and incompatibility with modern wallet standards.\n",
+            "severity": "Low",
+            "location": [
+                "StrategyVelodromeV3StableFarm.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 35,
+            "category": {},
+            "title": "wake detect unused-error",
+            "description": "The IRewarder.sol contract defines several custom errors, including BadAmount(), NotAvailable(), and ZeroAddress(), but some of these errors are never reverted in the codebase. The root cause is incomplete error handling implementation or leftover code. Unused errors increase contract size and may mislead developers about the error conditions that are actually enforced. The impact is limited to increased deployment cost and reduced code clarity.\n",
+            "severity": "High",
+            "location": [
+                "IRewarder.sol::BadAmount"
+            ],
+            "files": []
+        }
+    ]
+}

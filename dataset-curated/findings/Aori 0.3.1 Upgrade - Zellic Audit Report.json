@@ -1,0 +1,149 @@
+{
+    "path": "dataset-curated/reports/Zellic/Aori 0.3.1 Upgrade - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/aori-io/aori"
+        ],
+        "commit_id": [
+            "1b3d4bb8c4076b6e3498c61c2ffc683859dd8c86"
+        ],
+        "address": [],
+        "chain": "EVM",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-19",
+        "project_path": {
+            "aori": "dataset-curated/contracts/Aori 0.3.1 Upgrade - Zellic Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Missing reentrancy guard in the cancel function",
+            "description": "The cancel function in the Aori contract lacks a reentrancy guard modifier, making it vulnerable to reentrancy attacks. This issue arises because the function does not follow the checks-effects-interactions pattern and allows external calls (such as native token transfers) before state changes are finalized. An attacker who compromises a solver's address and converts it into a malicious contract via EIP-7702 can trigger a reentrant call to the cancel function during the fallback execution. This could allow the attacker to manipulate balance states across multiple orders, particularly by canceling an order while funds are being transferred, leading to inconsistent accounting. The impact includes potential financial gain for the attacker by exploiting settlement logic on cross-chain orders, especially when paired with failed settlements on the destination chain.\n",
+            "severity": "High",
+            "location": [
+                "Aori.sol::cancel"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-460"
+                ]
+            },
+            "title": "Incorrect state update on settlement failure",
+            "description": "The _settleOrder function in the Aori contract updates balances without ensuring atomicity. If one balance update succeeds (e.g., increasing the filler's unlocked balance) but the other fails (e.g., decreasing the offerer's locked balance), the function returns early without reverting the successful operation. This leads to an inconsistent state where the filler gains unlocked funds without the corresponding deduction from the offerer, and the order remains active. The root cause is the lack of a rollback mechanism when either balance update fails. An attacker could potentially trigger such a failure condition (e.g., through balance overflow or underflow edge cases) to gain unauthorized tokens. The impact is incorrect balance accounting, which undermines the integrity of the protocol's financial state.\n",
+            "severity": "High",
+            "location": [
+                "Aori.sol::_settleOrder"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "The deposit function with a hook supports native tokens",
+            "description": "Although the deposit function is not intended to handle native tokens, the internal _executeSrcHook function still includes logic to process native token transfers when the inputToken is the NATIVE_TOKEN address. This creates a discrepancy between intended design and implemented logic. The cause is redundant and unused code paths that assume native tokens might be passed, even though the deposit function is not payable and thus cannot accept them. While the immediate security impact is low because the code path is unreachable under normal conditions, it increases code complexity and could lead to confusion or future vulnerabilities if the function is modified to accept native tokens without proper safeguards. The impact is primarily informational, relating to code clarity and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "Aori.sol::_executeSrcHook"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant code in the fill function",
+            "description": "The fill function contains separate logic branches for handling native and ERC-20 token transfers, even though the safeTransfer utility function in NativeTokenUtils already supports both token types. This results in duplicated and unnecessary conditional logic. The root cause is a failure to abstract common functionality, leading to increased code size and complexity. While this does not introduce a direct security vulnerability, it makes the code harder to audit and maintain, increasing the risk of future bugs. The impact is reduced code quality and gas inefficiency due to longer bytecode and more complex control flow, falling under code maturity concerns.\n",
+            "severity": "Informational",
+            "location": [
+                "Aori.sol::fill"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Redundant native token\u2013handling logic in _executeDstHook function",
+            "description": "The _executeDstHook function includes unreachable logic for handling native tokens via the preferredToken field when msg.value is zero. Because the function first checks if msg.value > 0 and handles native transfers directly, the subsequent check for hook.preferredToken.isNativeToken() can never be reached when msg.value is zero but preferedDstInputAmount > 0. This creates dead code that adds unnecessary complexity and confusion. The cause is flawed control flow design where two overlapping conditions for native token handling are used without proper prioritization or consolidation. The impact is purely code quality-related, increasing maintenance burden and reducing readability.\n",
+            "severity": "Informational",
+            "location": [
+                "Aori.sol::_executeDstHook"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Outdated version in EIP-712 domain separator",
+            "description": "The _domainNameAndVersion function in the Aori contract returns version \"0.3.0\" despite the contract being upgraded to version 0.3.1. This discrepancy affects the EIP-712 domain separator used in message signing, potentially causing user confusion about which contract version they are interacting with. The root cause is a manual oversight in updating the version string during the upgrade process. While this does not enable direct exploitation or fund loss, it weakens trust in the integrity of the system, as users may question whether they are signing messages for the correct, audited version. The impact is informational, relating to user experience and transparency.\n",
+            "severity": "Informational",
+            "location": [
+                "Aori.sol::_domainNameAndVersion"
+            ],
+            "files": [
+                "aori/contracts/Aori.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,198 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_seamless_sep2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/seamless-protocol/leverage-tokens"
+        ],
+        "commit_id": [
+            "063cf5bc69719ec975471d14174f96f4d4fc5976"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-09-03",
+        "project_path": {
+            "leverage-tokens": "dataset-curated/contracts/cantina_seamless_sep2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-74"
+                ]
+            },
+            "title": "Unauthorized Transfer of User-Approved ERC20 Tokens via LeverageRouter",
+            "description": "1. **Description:** The _depositAndRepayMorphoFlashLoan and _redeemAndRepayMorphoFlashLoan internal functions allow arbitrary external calls to any address passed via the swapCalls parameter in deposit or redeem functions. This enables a malicious actor to include a transferFrom call in the calldata, thereby draining user-approved ERC20 tokens.\n2. **Cause:** The vulnerability arises from the lack of validation or whitelisting of external calls made through the swapCalls array. The LeverageRouter holds temporary ERC20 allowances during mint and redeem operations, making it a target for abuse.\n3. **Exploitation:** An attacker can craft a malicious swapCall that includes a transferFrom call to transfer tokens from a user who has approved the router, to an attacker-controlled address. This can also be extended to stealing future allowances via permit2 or triggering untrusted callbacks through flash loans.\n4. **Impact:** Successful exploitation allows theft of user funds that have been approved to the router, especially on chains with public mempools where transaction details can be front-run.\n",
+            "severity": "High",
+            "location": [
+                "LeverageRouter::deposit",
+                "LeverageRouter::redeem",
+                "_depositAndRepayMorphoFlashLoan",
+                "_redeemAndRepayMorphoFlashLoan"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/LeverageRouter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "PricingAdapter doesn't account for fee adjusted supply, leading to potential overpricing",
+            "description": "1. **Description:** The PricingAdapter contract calculates leverage token prices using totalSupply(), which does not account for accrued management fees. This results in an underreported supply and thus an overpriced output.\n2. **Cause:** The use of raw totalSupply() instead of getFeeAdjustedTotalSupply(ILeverageToken token) fails to reflect the true economic supply after fee accrual.\n3. **Exploitation:** Off-chain or on-chain systems relying on PricingAdapter for pricing data may overvalue tokens, leading to incorrect valuations in trading, lending, or analytics platforms.\n4. **Impact:** Mispricing can lead to financial losses for users or integrators who rely on accurate pricing data, especially in automated systems.\n",
+            "severity": "Low",
+            "location": [
+                "PricingAdapter.sol#L26-L38",
+                "PricingAdapter.sol#L41-L53"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Ceiling rounding in _getAccruedManagementFee can yield a much higher effective fee being charged than set",
+            "description": "1. **Description:** The _getAccruedManagementFee function uses ceiling rounding, which causes the effective management fee to often exceed the set rate, and in extreme cases (e.g., low supply due to donation attacks), the fee can be orders of magnitude higher.\n2. **Cause:** Ceiling rounding in fee calculation introduces upward bias, especially when supply is low or fees are small, leading to disproportionate accruals.\n3. **Exploitation:** While not directly exploitable for profit, users may be overcharged in fee accruals, particularly in edge cases involving low token supply.\n4. **Impact:** Users are charged higher fees than intended, undermining fee predictability and fairness. This could damage trust in the protocol's fee model.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol#L259-L260"
+            ],
+            "files": [
+                "leverage-tokens/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "_computeFeesForNetShares fails to account for additional rounding step in reversal of _computeFeesForGrossShares",
+            "description": "1. **Description:** The _computeFeesForNetShares function does not account for the rounding step used in _computeFeesForGrossShares, leading to discrepancies between previewRedeem and previewWithdraw outputs.\n2. **Cause:** Inconsistent rounding logic between the two functions results in off-by-one errors in fee calculations, particularly affecting treasury fee shares.\n3. **Exploitation:** Users could potentially exploit the mismatch to minimize treasury fees by choosing the lower-fee path (e.g., withdraw instead of redeem), though the impact is minimal.\n4. **Impact:** Inconsistencies in fee previews reduce transparency and may lead to suboptimal user decisions or reduced treasury revenue in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol#L228-L238"
+            ],
+            "files": [
+                "leverage-tokens/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Struct in FeeManager has variables that could be tightly packed",
+            "description": "1. **Description:** The FeeManagerStorage struct contains two separate mappings to uint256 values that are often accessed together, leading to inefficient storage usage.\n2. **Cause:** Poor struct packing results in unnecessary SLOAD and SSTORE operations, increasing gas costs.\n3. **Exploitation:** No direct security exploit, but inefficient gas usage increases transaction costs for users.\n4. **Impact:** Higher gas consumption than necessary, reducing cost-efficiency for on-chain operations.\n",
+            "severity": "Informational",
+            "location": [
+                "FeeManager.sol#L50-L53"
+            ],
+            "files": [
+                "leverage-tokens/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "_getAccruedManagementFee can be optimized for on-chain callpaths",
+            "description": "1. **Description:** The _getAccruedManagementFee function performs redundant operations when called during deposit, mint, redeem, or withdraw, where chargeManagementFee has already updated state.\n2. **Cause:** The function does not early-return when duration is zero, leading to unnecessary computation and storage loads.\n3. **Exploitation:** No security risk, but wasted gas on every call where duration is zero.\n4. **Impact:** Increased gas costs for users; optimization could save at least 100 gas per call.\n",
+            "severity": "Informational",
+            "location": [
+                "FeeManager.sol::getAccruedManagementFee"
+            ],
+            "files": [
+                "leverage-tokens/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Public function with internal variant, should just be set to external",
+            "description": "1. **Description:** The convertCollateralToShares function is marked public but is only used externally or via its internal counterpart, indicating a likely oversight in visibility.\n2. **Cause:** Incorrect visibility setting; public functions are accessible internally and externally, but if only external access is intended, external is more efficient.\n3. **Exploitation:** No direct exploit, but internal calls could bypass external checks if added in the future.\n4. **Impact:** Slight gas inefficiency and potential for future logic errors if internal behavior diverges.\n",
+            "severity": "Informational",
+            "location": [
+                "LeverageManager.sol#L134"
+            ],
+            "files": [
+                "leverage-tokens/src/LeverageManager.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "New mints are possible post complete liquidation",
+            "description": "1. **Description:** After a complete liquidation (totalSupply != 0 and totalCollateral == 0), it is still possible to deposit collateral directly via the lending adapter, making both non-zero and allowing new mints.\n2. **Cause:** The protocol does not enforce a permanent shutdown state post-liquidation, allowing deposits to restart the system.\n3. **Exploitation:** A user could manipulate the exchange rate by depositing a small amount, though shares are effectively worthless post-liquidation.\n4. **Impact:** Undermines assumptions in comments and documentation, though no major financial impact due to zero-value shares.\n",
+            "severity": "Informational",
+            "location": [
+                "LeverageManager.sol#L642-L647"
+            ],
+            "files": [
+                "leverage-tokens/src/LeverageManager.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "PricingAdapter should be discouraged for on-chain use",
+            "description": "1. **Description:** The getLeverageTokenPriceAdjusted function may return imprecise or zero values due to rounding, especially when oracle precision and base asset decimals differ significantly.\n2. **Cause:** The calculation involves multiple divisions and rounding steps that can erase value in extreme cases.\n3. **Exploitation:** On-chain integrators relying on this price feed could make incorrect decisions due to inaccurate pricing.\n4. **Impact:** Risk of incorrect valuation in on-chain logic, leading to potential financial loss if used in critical paths.\n",
+            "severity": "Informational",
+            "location": [
+                "PricingAdapter.sol#L56-L73"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
+            ]
+        }
+    ]
+}

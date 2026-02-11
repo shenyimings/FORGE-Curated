@@ -1,0 +1,929 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/notional-finance/notional-v4",
+            "https://github.com/sherlock-audit/2025-06-notional-exponent",
+            "https://github.com/morpho-org/morpho-blue",
+            "https://github.com/notional-finance/leveraged-vaults"
+        ],
+        "commit_id": [
+            "0096f1f64071cafbf20062a7c092c6ec89c28275",
+            "82c87105f6b32bb362d7523356f235b5b07509f9",
+            "731e3f7ed97cf15f8fe00b86e4be5365eb3802ac",
+            "7e0abc3e118db0abb20c7521c6f53f1762fdf562"
+        ],
+        "address": [
+            "0xF403C135812408BFbE8713b5A23a04b3D48AAE31",
+            "0x752ebeb79963cf0732e9c0fec72a49fd1defaeac",
+            "0xb576491f1e6e5e62f1d8f26062ee822b40b0e0d4"
+        ],
+        "chain": [
+            "evm/ethereum/arbitrum",
+            "evm"
+        ],
+        "compiler_version": "vyper:0.3.1",
+        "audit_date": "2025-06-01",
+        "project_path": {
+            "2025.07.18 - Final - Notional Exponent Audit Report.pdf-source": "dataset-curated/contracts/2025.07.18 - Final - Notional Exponent Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Cross-contract reentrancy allows YIELD_- TOKEN theft for the GenericERC4626 WithdrawalRequestManager variant",
+            "description": "The WithdrawalRequestManager in the GenericERC4626 variant is vulnerable to a cross-contract reentrancy attack due to the absence of reentrancy guards in critical functions. The vulnerability arises because the contract allows multiple whitelisted vaults to interact with it, and functions like initiateWithdraw do not employ nonReentrant modifiers or equivalent protections against reentrancy from external contracts.\n\nThe root cause is the lack of reentrancy protection in the WithdrawalRequestManager, particularly in functions that handle asset transfers and state changes. Since the contract relies on external calls to yield strategies that may contain malicious code, an attacker can exploit the reentrancy window during a Uniswap swap that includes a malicious pool. This pool can trigger a callback into the protocol, re-entering the deposit function before the initial transaction completes.\n\nAn attacker can initiate a withdrawal, leaving YIELD_TOKENs in the WithdrawalRequestManager, then execute a multihop swap through a malicious pool that re-enters the protocol to deposit assets. This reentrant call manipulates the accounting of YIELD_TOKEN balances, causing the system to mint more shares than deserved based on inflated balance differences.\n\nThe impact is severe: attackers can steal YIELD_TOKENs from pending withdrawal requests of other users, effectively draining funds from the WithdrawalRequestManager. This leads to loss of user funds and undermines the integrity of the withdrawal mechanism.\n",
+            "severity": "High",
+            "location": [
+                "src/withdraws/GenericERC4626.sol",
+                "src/withdraws/WithdrawalRequestManager.sol::initiateWithdraw"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/GenericERC4626.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/WithdrawalRequestManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Attacker can drain the entire suppliers on Morpho market by inflating collateral price",
+            "description": "The AbstractYieldStrategy contract allows users to initiate a withdrawal without burning their shares, only escrowing them. This leads to a reduction in effectiveSupply() while keeping totalSupply() unchanged. An attacker can exploit this by initiating a large withdrawal, drastically reducing effectiveSupply(), and then donating a large amount of yield tokens to inflate the price() function's output.\n\nThe root cause lies in the price() calculation, which depends on effectiveSupply() and the yield token balance. Since effectiveSupply() can be reduced arbitrarily by initiating withdrawals, and the price is calculated as (yieldTokens * convertYieldTokenToAsset()) / effectiveSupply(), a low effectiveSupply() combined with a high yield token balance results in an extremely high price.\n\nThe attacker can then borrow a massive amount of assets from the Morpho market using this inflated price as collateral value. Since Morpho allows direct borrowing without going through the LendingRouter, the transient state checks are bypassed, making the attack feasible. After borrowing, the attacker can finalize their withdrawal and reclaim their original collateral.\n\nThe impact is catastrophic: the attacker can borrow nearly the entire supply of the loan asset from the Morpho market, leading to a complete loss of funds for all suppliers in that market. The only cost to the attacker is the donated yield tokens, which is negligible compared to the borrowed amount.\n",
+            "severity": "High",
+            "location": [
+                "src/AbstractYieldStrategy.sol::initiateWithdraw#280-307",
+                "src/AbstractYieldStrategy.sol::convertToAssets",
+                "src/AbstractYieldStrategy.sol::convertSharesToYieldToken",
+                "src/AbstractYieldStrategy.sol::price"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/AbstractYieldStrategy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "DineroWithdrawRequestManager vulnerable to token overwithdrawal via batch ID overlap",
+            "description": "The DineroWithdrawRequestManager does not track individual upxETH token balances per withdrawal request. Instead, it records a range of batch IDs during withdrawal initiation and redeems all tokens within that range upon finalization. This design flaw allows for overlapping batch ID ranges across different users' requests.\n\nThe root cause is in the _initiateWithdrawImpl function, which captures the initial and final batch IDs before and after calling PirexETH::initiateRedemption. Since batch IDs are incremented per deposit size, multiple withdrawal requests can share overlapping batch IDs. When a user finalizes their request, they redeem all tokens in the recorded range, including those that belong to other users' requests.\n\nAn attacker can front-run another user's withdrawal request to create overlapping batch ID ranges. When the attacker finalizes first, they withdraw more tokens than they are entitled to, including those meant for other users. The victim user, when finalizing later, receives less than expected because some tokens have already been redeemed.\n\nThe impact includes unfair distribution of assets, financial loss for honest users, and potential for malicious actors to profit by exploiting the overlap. This undermines the fairness and security of the withdrawal system and can lead to significant user losses.\n",
+            "severity": "High",
+            "location": [
+                "src/withdraws/Dinero.sol::_initiateWithdrawImpl",
+                "src/withdraws/Dinero.sol::_finalizeWithdrawImpl",
+                "src/withdraws/PirexETH.sol::_initiateRedemption"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Dinero.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/PirexETH.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "When users borrow directly from Morpho price of the collateral will not be accurate",
+            "description": "The vulnerability arises because the Morpho price oracle prices withdrawal requests based on the requested value when going through the lending router, but when users borrow directly from Morpho, the pricing falls back to the raw share value via super.convertToAssets(shares), which does not account for active withdrawal requests. The root cause is the reliance on the t_currentAccount variable being set only by the lending router, leading to inconsistent pricing logic. An attacker can exploit this by initiating a withdrawal request and then borrowing directly from Morpho without using the lending router, causing the oracle to misprice their collateral. This results in incorrect collateral valuation, potentially allowing over-borrowing or under-collateralized positions, which threatens protocol solvency.\n",
+            "severity": "High",
+            "location": [
+                "AbstractYieldStrategy.sol#L118-L120",
+                "AbstractSingleSidedLP.sol#L300-L303"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/AbstractYieldStrategy.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "migrateRewardPool Fails Due to Incompatible Storage Design in CurveConvexLib",
+            "description": "The migrateRewardPool function in AbstractRewardManager is designed to migrate rewards from an old to a new Convex reward pool by updating internal storage and using delegatecall. However, the function fails in practice because CurveConvexLib, used by CurveConvex2Token, stores the reward pool address as immutable. As a result, even if the reward manager updates its state, newly minted LP tokens continue to deposit into the old reward pool. The root cause is the incompatibility between the mutable storage assumption in AbstractRewardManager and the immutable design of CurveConvexLib. There is no direct attack path, but if Convex deprecates a reward pool, the protocol cannot migrate, breaking expected functionality. This violates the IRewardManager interface specification, which requires support for reward pool changes.\n",
+            "severity": "High",
+            "location": [
+                "AbstractRewardManager.sol#L44-L65",
+                "IRewardManager.sol#L82-L86"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/rewards/AbstractRewardManager.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/interfaces/IRewardManager.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "DoS might happen to DineroWithdrawRequestManager#_initiateWithdrawImpl() due to overflow on ++s_batchNonce",
+            "description": "The vulnerability exists in DineroWithdrawRequestManager#_initiateWithdrawImpl(), where the requestId is generated using a nonce derived from s_batchNonce, a uint16 variable. Since uint16 can only hold values up to 65535, once this limit is reached, any further call to initiateWithdraw will revert due to arithmetic overflow. The root cause is the insufficient size of the s_batchNonce variable, which was chosen to fit within a uint256 requestId structure alongside two uint120 batch IDs. An attacker can exploit this by repeatedly calling initiateWithdraw through an approved vault using different accounts to exhaust the nonce space. The impact is a complete denial of service for WETH withdrawals, locking all user funds deposited via DineroWithdrawRequestManager indefinitely.\n",
+            "severity": "High",
+            "location": [
+                "Dinero.sol#L17-L39"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Dinero.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "RewardManagerMixin.claimAccountRewards lacks of necessary param check",
+            "description": "The claimAccountRewards function in RewardManagerMixin does not validate the account parameter, allowing any caller to specify any address, including privileged addresses like MORPHO. The root cause is the absence of input validation and the logic that uses balanceOf(account) when the caller is not a lending router. If MORPHO is passed as the account, it will receive rewards based on its vault token balance, which accumulates when users enter positions via AbstractLendingRouter. An attacker can exploit this by calling enterPosition with MORPHO as the account, causing rewards to be incorrectly distributed to MORPHO. This leads to users receiving fewer rewards than expected, as MORPHO holds a large portion of vault tokens, thereby misallocating reward distributions.\n",
+            "severity": "High",
+            "location": [
+                "RewardManagerMixin.sol#L155-L177",
+                "AbstractLendingRouter.sol#L241",
+                "AbstractLendingRouter.sol#L244"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/AbstractLendingRouter.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/rewards/RewardManagerMixin.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Incorrect assumption that one (1) Pendle Standard Yield (SY) token is equal to one (1) Yield Token when computing the price in the oracle",
+            "description": "The vulnerability stems from the assumption in PendlePTOracle that one Pendle Standard Yield (SY) token is always equivalent to one underlying Yield Token when calculating prices. The root cause is the use of PENDLE_ORACLE.getPtToSyRate() when useSyOracleRate_ is true, which returns SY per PT, combined with Chainlink price feeds for the Yield Token, under the false assumption that 1 SY == 1 Yield Token. However, SY contracts may involve slippage or fees during redemption, meaning 1 SY can be worth less than 1 Yield Token. This discrepancy leads to inflated price calculations when computing baseToQuote, as the oracle multiplies ptRate and baseToUSD without adjusting for potential SY devaluation. The impact is overvaluation of collateral, allowing users to borrow more than they should, increasing the risk of bad debt and threatening protocol solvency.\n",
+            "severity": "High",
+            "location": [
+                "PendlePTOracle.sol#L63",
+                "PendlePTOracle.sol#L68",
+                "IStandardizedYield.sol#L87"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/leveraged-vaults/contracts/oracles/PendlePTOracle.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Hardcoded useEth = true in remove_liquidity_one_coin or remove_liquidity lead to stuck fund",
+            "description": "The vulnerability arises when exiting a Curve V2 pool via the _exitPool function in single-sided strategies, where the useEth parameter is hardcoded to true during remove_liquidity_one_coin and remove_liquidity calls. This causes the Curve pool to return native ETH instead of WETH. However, the protocol expects WETH, and the subsequent logic in unstakeAndExitPool fails to wrap the received native ETH back into WETH because it only checks if TOKEN_1 or TOKEN_2 is ETH_ADDRESS (0x0), which is false when dealing with WETH. The root cause is the hardcoded useEth = true regardless of the actual token configuration. An attacker cannot directly exploit this, but any user action triggering an exit will leave native ETH in the vault. The impact is severe: the vault becomes desynchronized from its expected asset (WETH), leading to incorrect balance accounting and potential loss of user funds during withdrawals, as _burnShares measures WETH balance changes and returns zero if only native ETH is present.\n",
+            "severity": "High",
+            "location": [
+                "CurveConvex2Token.sol::add_liquidity#236-238",
+                "CurveConvex2Token.sol::remove_liquidity_one_coin#255-258",
+                "CurveConvex2Token.sol::remove_liquidity#281-283",
+                "CurveConvex2Token.sol::unstakeAndExitPool#205-211",
+                "AbstractYieldStrategy.sol::_burnShares#416-433"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/AbstractYieldStrategy.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Malicious user can change the TradeType to steal funds from the vault or withdraw request manager",
+            "description": "The vulnerability exists in the _executeRedemptionTrades function of AbstractSingleSidedLP and the _preStakingTrade function of AbstractWithdrawRequestManager, where the trade type (TradeType) is not hardcoded and can be arbitrarily set by the caller. The intended behavior is to use TradeType.EXACT_IN_SINGLE to swap a precise amount of non-asset tokens (e.g., DAI) for an unknown amount of the asset token (e.g., WBTC). However, a malicious user can set the trade type to TradeType.EXACT_OUT_SINGLE, which instead swaps an arbitrary amount of input tokens to receive an exact, potentially massive amount of output tokens (e.g., 10,000 DAI swapped to receive 1e14 WBTC). The root cause is the lack of validation or hardcoding of the trade type, allowing user-controlled parameters to dictate critical trade behavior. This can be exploited during redemption or withdrawal flows by crafting malicious trade data, especially via flexible adapters like ZeroExAdaptor. The impact is high: attackers can drain vaults or withdraw request managers by extracting vastly more assets than entitled, leading to significant fund loss.\n",
+            "severity": "High",
+            "location": [
+                "AbstractSingleSidedLP.sol::_executeRedemptionTrades#223",
+                "AbstractWithdrawRequestManager.sol::_preStakingTrade#268",
+                "AbstractSingleSidedLP.sol::Trade#223"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/AbstractWithdrawRequestManager.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/AbstractSingleSidedLP.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing Slippage Protection in Expired PT Redemption Causes User Fund Loss",
+            "description": "When redeeming expired Pendle PT tokens, the _redeemPT function calls PendlePTLib.redeemExpiredPT, which in turn calls sy.redeem with minTokenOut set to 0. This lack of slippage protection allows the SY contract to perform external DEX swaps at arbitrarily unfavorable rates during the redemption process. The root cause is the hardcoded minTokenOut: 0 in redeemExpiredPT, which fails to account for market volatility or MEV attacks. This affects two critical user flows: instant redemption and withdraw initiation. An attacker or MEV bot can exploit this by frontrunning or manipulating market conditions during the external swap, causing the user to receive significantly fewer target tokens (e.g., sUSDe) than expected. The impact is high: users suffer direct financial loss with no recourse, as the system provides no slippage guardrails during expired token redemption, undermining trust and economic security.\n",
+            "severity": "High",
+            "location": [
+                "PendlePTLib.sol::redeemExpiredPT#87",
+                "_redeemPT#87",
+                "_executeInstantRedemption",
+                "_initiateWithdraw"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/PendlePTLib.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "WETH.withdraw called on native ETH balance causes revert",
+            "description": "The vulnerability arises when a yield strategy deposits into a Curve pool where one of the underlying tokens is ETH. In such cases, the strategy receives native ETH after a trade, but later attempts to call WETH.withdraw(msgValue) when msgValue > 0, assuming it holds WETH. However, since the contract only holds native ETH and not WETH, the withdraw call reverts, blocking further operations.\n\nThe root cause is the incorrect assumption that receiving ETH via trade implies holding WETH, leading to an invalid WETH.withdraw() call. The code checks if TOKEN_1 or TOKEN_2 is ETH_ADDRESS and sets msgValue accordingly, then calls WETH.withdraw(msgValue), which fails because no WETH is present.\n\nAn attacker cannot directly exploit this, but the condition occurs naturally when users deposit into ETH-paired Curve pools. The attack path requires no malicious action\u2014simply depositing into such a pool triggers the issue.\n\nThe impact is that users cannot complete deposits if the asset is one of the Curve LP tokens. If the reward token is WETH, the entire strategy state can be disrupted due to failed withdrawals, rendering the strategy unusable.\n",
+            "severity": "High",
+            "location": [
+                "CurveConvex2Token.sol::deposit#180-196",
+                "AbstractSingleSidedLP.sol::executeTrade#181-219",
+                "TradingUtils.sol::ensureEtherBalance#164-172"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/single-sided-lp/CurveConvex2Token.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/single-sided-lp/AbstractSingleSidedLP.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Hard-Coded Mainnet WETH Address Breaks All Non-Mainnet Deployments",
+            "description": "The protocol uses a compile-time constant WETH = WETH9(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2), which is the WETH address on Ethereum mainnet. This constant is used across core contracts like AbstractStakingStrategy, CurveConvexLib, and various withdraw managers. The root cause is the hardcoding of a chain-specific address in a protocol designed for multi-chain deployment. When deployed on L2s like Arbitrum or Base, where WETH exists at a different address or is not present, calls to WETH.withdraw() will revert and WETH.deposit{value:...}() will fail to mint tokens. This breaks critical functionality such as withdrawals and redemptions. The impact is medium: while the protocol functions on mainnet, it becomes unusable on other chains, contradicting the project's stated goal of supporting multiple networks. The likelihood is medium given the explicit mention of future Base and Arbitrum deployments.\n",
+            "severity": "Medium",
+            "location": [
+                "Constants.sol::WETH#19",
+                "AbstractStakingStrategy",
+                "CurveConvexLib",
+                "EtherFiWithdrawRequestManager"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/utils/Constants.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/AbstractStakingStrategy.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect tokensClaimed calculation in EthenaCooldownHolder::_finalizeCooldown() blocks withdrawals",
+            "description": "When sUSDe.cooldownDuration() is 0, the _startCooldown function immediately redeems sUSDe to USDe and transfers it to the EthenaCooldownHolder contract. Later, during _finalizeCooldown, the function calculates tokensClaimed as balanceAfter - balanceBefore, but since the USDe was already transferred during _startCooldown, both balances are equal, resulting in tokensClaimed = 0. The root cause is the flawed assumption that the balance change occurs only during finalization, ignoring the earlier transfer. This leads to users being unable to claim any tokens from their withdrawal requests if initiated when cooldownDuration was 0. The impact is medium: affected users are permanently locked out of their funds unless the state is manually corrected. The issue stems from incorrect state tracking across two separate function calls in the withdrawal lifecycle.\n",
+            "severity": "Medium",
+            "location": [
+                "Ethena.sol::_startCooldown#16",
+                "Ethena.sol::_finalizeCooldown#30"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/withdraws/Ethena.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Single sided strategy cant do trades for ETH pools",
+            "description": "When users deposit the asset into a single-sided Curve LP strategy where one of the pool's underlying tokens is ETH (not WETH), the trade execution fails. The issue occurs because the TRADING_MODULE returns native ETH when ETH is requested, but the strategy code expects to receive WETH. The root cause is a mismatch between the expected token type (WETH) and the actual received token (ETH) in the trade settlement logic. This leads to accounting errors or reverts when the contract attempts to handle the received ETH as WETH. Exploitation is not direct, but users attempting to use the strategy with ETH-pool assets will find their deposits fail or result in lost funds. The impact is medium: it breaks functionality for a specific but valid use case, limiting the protocol's flexibility.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Liquidations can be frontrunned to avoid by paying as little as 1 share",
+            "description": "The protocol integrates with Morpho for debt management, and during liquidation, the full debt is expected to be repaid. However, a user can frontrun their own liquidation by repaying just 1 share of debt via exitPosition, which reduces their borrowShares.\n\nThe root cause lies in Morpho's internal accounting: when liquidate() is called after a partial repayment, it attempts to subtract the full sharesToLiquidate from the borrower's reduced borrowShares, causing an underflow revert. This is exacerbated by the lack of a cooldown or rate-limiting mechanism on exitPosition.\n\nThe attack path involves a user detecting an impending liquidation and frontrunning it with a minimal repayment (1 share), causing the liquidation transaction to revert due to arithmetic underflow when subtracting shares.\n\nThe impact is that liquidations can be consistently avoided by borrowers at minimal cost, undermining the protocol's solvency mechanism and increasing systemic risk.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoLendingRouter.sol::_liquidate",
+                "Morpho.sol::liquidate#247",
+                "Morpho.sol::position#L532"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Minting yield tokens single sided can be impossible if CURVE_V2 dexId is used on redemptions",
+            "description": "In single-sided yield strategies, the strategy contract grants infinite allowance to the Curve pool for both underlying tokens upon deployment. However, when a user withdraws and chooses CURVE_V2 as the dexId to swap one of the underlying tokens back to the asset token, the TRADING_MODULE revokes the allowance of the sellToken (which is the asset token) after the swap.\n\nThe root cause is that the trading module revokes token allowances for security after swaps, but does not account for the fact that the strategy itself depends on those allowances to continue depositing into the yield pool. If the swap uses the same pool the strategy is LP'ing into, the allowance revocation breaks future deposits.\n\nAn attacker can exploit this by withdrawing double-sided and selecting the same Curve pool via CURVE_V2 to swap one token to the other, triggering the allowance revocation. This can be done repeatedly to permanently block deposits.\n\nThe impact is that the strategy becomes permanently unusable for new deposits, as it loses the required token allowance to mint LP tokens, effectively bricking the strategy.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol::constructor#169-178",
+                "AbstractSingleSidedLP.sol::withdrawDoubleSided#163-178",
+                "TradingUtils.sol::executeTrade#54-57",
+                "CurveV2Adapter.sol::swap#42-63"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Withdrawals ongoing for OETH, apxETH, weETH, and almost any LST are overpriced by the oracle",
+            "description": "When a user initiates a withdrawal of an LST (like OETH), the yield token is sent to the Withdraw Request Manager to start beacon chain unstaking. However, during the pending withdrawal period, the protocol continues to price the collateral using the yield token's oracle rate, even though the LST has stopped earning yield.\n\nThe root cause is that the pricing logic in getWithdrawRequestValue defaults to using the YIELD_TOKEN's oracle price if the withdrawal is not yet finalized. Since the LST no longer accrues rewards after unstaking begins, this leads to overvaluation of the collateral.\n\nAn attacker can initiate a withdrawal, keep the overvalued collateral on the Morpho market, and borrow additional funds based on the inflated value, even though the underlying asset is no longer generating yield.\n\nThe impact is that users can over-leverage by borrowing against collateral that is no longer earning yield, creating a risk of under-collateralization. In extreme cases (e.g., slashing), the collateral could be significantly overvalued, threatening protocol solvency.\n",
+            "severity": "Medium",
+            "location": [
+                "AbstractStakingStrategy.sol::initiateWithdraw#64-74",
+                "AbstractWithdrawRequestManager.sol::getWithdrawRequestValue#307-340",
+                "Origin.sol::withdraw#12-19"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/AbstractStakingStrategy.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Rounding discrepancy between MorphoLendingRouter::healthFactor and Morpho::repay causes position migration failures",
+            "description": "The MorphoLendingRouter::healthFactor function calculates borrowed assets using integer division (rounding down), while Morpho's internal repay function uses a rounding-up method (toAssetsUp). This discrepancy causes the router to underestimate the amount of debt that must be repaid during a position migration.\n\nThe root cause is the inconsistent rounding logic between the two systems: the router uses truncating division, while Morpho uses ceiling division for asset conversion. Over time, as interest accrues, the difference\u2014though small (e.g., 1 wei)\u2014becomes significant enough to cause failures.\n\nDuring a migratePosition call, the router computes a flash loan amount based on the underestimated debt. When Morpho attempts to repay the full shares, it demands slightly more assets than were borrowed, causing a balance shortfall and revert.\n\nThe impact is that position migrations fail unexpectedly, even for healthy positions, breaking a core protocol feature. This issue is latent and may only manifest after prolonged market activity, making it difficult to detect.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoLendingRouter.sol::healthFactor#279",
+                "Morpho.sol::_isHealthy#532",
+                "Morpho.sol::repay#284"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Incorrect rounding in MorphoLendingRouter::healthFactor breaks migratePosition",
+            "description": "The vulnerability lies in the MorphoLendingRouter::healthFactor function, which calculates the borrow amount for position migration using integer division that rounds down. This causes an underestimation of the required repayment amount during flash loans. The root cause is the use of truncating integer division (a * b) / c instead of ceiling division, which fails to account for the rounding-up behavior used by Morpho Blue's toAssetsUp() during actual repayment. An attacker cannot directly exploit this, but any user attempting to migrate a position will trigger a revert when the flash loaned amount is insufficient by ~1 wei to cover the actual repayment. This results in a denial of service for the migratePosition functionality, a core protocol feature, rendering it unusable despite correct user intent and sufficient underlying collateral.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoLendingRouter.sol::healthFactor",
+                "AbstractLendingRouter.sol::migratePosition#L74",
+                "AbstractLendingRouter.sol::_enterPosition#L97",
+                "MorphoLendingRouter.sol::onMorphoFlashLoan#L140",
+                "AbstractLendingRouter.sol::_enterOrMigrate#L236",
+                "MorphoLendingRouter.sol::_exitWithRepay#L192",
+                "Morpho.sol::repay#L284",
+                "MorphoLendingRouter.sol::onMorphoRepay#L224"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Emission rewards accrue when yield strategy is empty due to virtual shares",
+            "description": "The vulnerability occurs in the AbstractRewardManager and AbstractYieldStrategy contracts, where emission rewards continue to accrue even when there are no real depositors in a yield strategy. The root cause is the assumption that effectiveSupply can reach zero to halt reward accrual, but due to the use of VIRTUAL_SHARES (a non-zero minimum), effectiveSupply never reaches zero. This leads to the rewardPerToken accumulator continuing to increase unnecessarily. The issue is triggered naturally whenever a strategy has no real deposits but still holds virtual shares. The impact is that reward distribution logic remains active when it should be paused, leading to incorrect state accumulation and potential future miscalculations or unfair reward distribution when users eventually join. This breaks the intended economic model and wastes protocol resources.\n",
+            "severity": "Medium",
+            "location": [
+                "AbstractRewardManager.sol#L298",
+                "AbstractYieldStrategy.sol#L149-L151"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/AbstractYieldStrategy.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/rewards/AbstractRewardManager.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "OETH Strategy fails to generate yield due to rebasing disabled",
+            "description": "The vulnerability is a design flaw in the Origin ETH yield strategy, where OETH is used with rebasing disabled. The root cause is the direct use of OETH without opting into rebasing, as required by the Origin Protocol's design. Smart contracts holding OETH forfeit yield unless they explicitly opt in, but the Notional protocol does not do so. This issue is not exploitable by an attacker but represents a critical functional failure. The impact is that the yield strategy generates no returns, while user debt continues to accrue, significantly increasing the risk of liquidation. This undermines the core purpose of the strategy and misleads users about expected returns. The protocol team confirmed the issue and intends to migrate to Wrapped OETH to resolve it.\n",
+            "severity": "Medium",
+            "location": [
+                "Origin.sol::_stakeTokens"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Origin.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Incorrect ETH/WETH comparison causes DoS in CurveConvexStrategy exit",
+            "description": "The vulnerability exists in the CurveConvexStrategy's _executeRedemptionTrades function, where a strict address comparison fails to recognize that ETH and WETH are economically equivalent. The root cause is the use of direct address equality (tokens[i] == asset) without considering that ETH is automatically wrapped into WETH during the exit process. When the strategy asset is WETH and one of the pool tokens is ETH, the function incorrectly attempts to trade ETH to WETH, using invalid trade parameters. This leads to a revert during redemption, preventing users from exiting their positions. The impact is a denial of service that can lock user funds in the vault, especially affecting users redeeming shares when the pool contains ETH. This breaks a fundamental user expectation of liquidity and exitability.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol#L205",
+                "AbstractSingleSidedLP.sol#L176",
+                "AbstractSingleSidedLP.sol#L229"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Users cannot claim rewards when LP tokens are staked directly to Curve Gauge",
+            "description": "The vulnerability is in the AbstractRewardManager's _claimVaultRewards function, which fails to handle the case where LP tokens are staked directly to a Curve Gauge without using Convex Booster. The root cause is a conditional check that returns early if rewardPool is address(0), which is the case when staking directly to Gauge. This short-circuits the reward claim process, preventing any rewards from being distributed. The impact is that users who have their LP tokens staked in Curve Gauges are unable to claim their earned rewards, leading to loss of expected yield and reduced protocol trust. This affects all users in strategies that bypass Convex and stake directly to Gauges, effectively locking their rewards indefinitely unless the contract is upgraded.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol#L291-L298",
+                "AbstractRewardManager.sol#L190"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/rewards/AbstractRewardManager.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "PendlePTOracle._getPTRate returns incorrect decimals for some markets",
+            "description": "The vulnerability is in the PendlePTOracle._getPTRate function, which assumes that all ptRate values are returned in 1e18 decimals, but this is not true for all markets when using getPtToSyRate. The root cause is the lack of decimal normalization between different Pendle oracle functions: getPtToAssetRate returns 1e18 decimals, but getPtToSyRate can return higher decimals for certain markets. This leads to incorrect price calculations when useSyOracleRate is true and the market has non-standard decimals. The impact is that the oracle returns inaccurate prices for PT tokens, which can lead to incorrect valuation of collateral or debt, potentially causing undercollateralized positions, incorrect liquidation decisions, or unfair trading outcomes. This undermines the reliability of the entire pricing mechanism for affected markets.\n",
+            "severity": "Medium",
+            "location": [
+                "PendlePTOracle.sol#L60-L66",
+                "IPendle.sol#L411"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/oracles/PendlePTOracle.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "Incompatibility of ERC20::approve with USDT tokens on Ethereum",
+            "description": "The vulnerability arises from the use of high-level Solidity calls (e.g., ERC20(token).approve) that expect a boolean return value, which is not returned by certain ERC-20 tokens like USDT on Ethereum. The root cause is the violation of the ERC-20 standard by USDT, which omits the return statement in its approve function. When the Notional protocol calls approve on such tokens, the EVM attempts to decode a return value that does not exist, causing the transaction to revert. This leads to a failure in token approval, preventing users from depositing or interacting with USDT in the protocol. The impact is a denial of service for USDT users, blocking core functionality such as entering positions or migrating assets. This issue affects all operations requiring approval of USDT and similar non-conforming tokens.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC20.sol#L81"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/AbstractLendingRouter.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/AbstractStakingStrategy.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/GenericERC4626.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "USDT approve() reverts due to non-standard return value",
+            "description": "The AbstractLendingRouter::_enterOrMigrate, MorphoLendingRouter::_supplyCollateral, AbstractStakingStrategy::_mintYieldToken, and GenericERC4626::_stakeTokens functions use the standard ERC20::approve function to set token allowances. However, the USDT token on Ethereum does not return a boolean value upon approval, which violates the ERC20 standard expectation that approve() returns a bool. As a result, any call to approve() for USDT will revert.\n\nThe root cause is the direct use of IERC20.approve without handling non-conforming implementations like USDT. Additionally, these functions do not first reset the allowance to zero before setting a new one, which is required by USDT's implementation. If the current allowance is non-zero, the approve() call will revert again due to USDT's internal requirement that the previous allowance must be zero.\n\nAn attacker cannot directly exploit this, but any legitimate user attempting to use USDT in core protocol functions (e.g., entering a vault, staking, or migrating) will face transaction reverts. This breaks core functionality for a supported asset.\n\nThe impact is critical because USDT is a primary token the protocol intends to support, and users are unable to perform essential operations when using USDT on Ethereum Mainnet.\n",
+            "severity": "Critical",
+            "location": [
+                "AbstractLendingRouter.sol::deposit#222-245",
+                "MorphoLendingRouter.sol::supplyCollateral#150-164",
+                "AbstractStakingStrategy.sol::mintYieldToken#77-81",
+                "GenericERC4626.sol::stakeTokens#77-81"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/AbstractLendingRouter.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/AbstractStakingStrategy.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/GenericERC4626.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Value of Etherna's Withdrawal Request is incorrect",
+            "description": "The protocol prices pending withdrawal requests using the yield token's (e.g., sUSDe) oracle price, even when the underlying asset amount is fixed at initiation. For tokens like sUSDe, where the cooldownShares function converts shares into a predetermined amount of USDe that is escrowed and guaranteed, the value should be based on the fixed USDe amount, not the fluctuating sUSDe price.\n\nThe root cause is that the getWithdrawRequestValue function in AbstractWithdrawRequestManager always uses the yield token price from Chainlink oracles, regardless of whether the yield token is subject to slashing or price changes. This is incorrect for stable staking tokens like sUSDe, where the final payout is fixed upon cooldown initiation.\n\nIf the sUSDe price increases after withdrawal initiation, the protocol overvalues the withdrawal request, making an undercollateralized position appear healthy and preventing timely liquidation. Conversely, if the price drops, it may cause premature liquidation. An attacker could exploit timing to initiate withdrawals when sUSDe is undervalued and borrow excessively against inflated collateral values.\n\nThe impact is high: incorrect valuation can lead to bad debt accumulation due to missed liquidations or unjust liquidations, threatening protocol solvency and user funds.\n",
+            "severity": "High",
+            "location": [
+                "AbstractWithdrawRequestManager.sol::getWithdrawRequestValue#330",
+                "StakedUSDeV2.sol::cooldownShares#112-117",
+                "Ethena.sol::canFinalizeWithdrawRequest#94-97"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/AbstractWithdrawRequestManager.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Loss of reward tokens during initiating withdrawal due to cooldown",
+            "description": "When a user initiates a withdrawal, the protocol skips claiming rewards from external protocols if the reward pool is in cooldown. However, the accumulatedRewardPerVaultShare is updated based only on claimed rewards, leading to an outdated state when calculating user rewards.\n\nThe root cause is that _claimVaultRewards in AbstractRewardManager.sol skips external reward claims during cooldown periods, even though this is the last chance for the withdrawing user to claim their entitled rewards. Since effectiveSupply changes after withdrawal initiation, future reward accruals will be based on a different total supply, but the user's final reward is calculated before the supply change using incomplete data.\n\nFor example, if 10 WETH has accrued but only 5 were claimed before withdrawal due to cooldown, the user receives rewards based on 5 WETH instead of 10. The remaining unclaimed rewards are distributed to remaining stakers, effectively redistributing the withdrawing user's share.\n\nThe impact is high, as users initiating withdrawals lose a portion of their earned reward tokens, resulting in direct financial loss.\n",
+            "severity": "High",
+            "location": [
+                "AbstractRewardManager.sol::updateAccountRewards#159",
+                "AbstractRewardManager.sol::claimVaultRewards#159",
+                "RewardManagerMixin.sol::_initiateWithdraw#131"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/rewards/AbstractRewardManager.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Users will be unfairly liquidated if collateral value drops after initiating withdraw request",
+            "description": "After a user initiates a withdrawal request, they are blocked from minting new shares, which also prevents them from depositing additional collateral to avoid liquidation. This occurs because _isWithdrawRequestPending reverts minting if a withdrawal is pending.\n\nThe root cause is the design decision to lock the account from further minting once a withdrawal is initiated, without allowing separate collateral top-ups. While the position remains active and subject to market fluctuations, the user cannot adjust their collateralization ratio during the cooldown period (e.g., 7 days for sUSDe).\n\nIf the value of the collateral drops during this period, the user\u2019s position may become undercollateralized and subject to liquidation. Unlike standard leveraged systems, the user cannot \u201ctop up\u201d their margin to avoid this, leading to forced liquidation and loss of funds.\n\nThe impact is high, as users risk losing a portion of their assets to liquidators despite being willing and able to maintain their position, resulting in unfair economic loss.\n",
+            "severity": "High",
+            "location": [
+                "AbstractYieldStrategy.sol::mintShares#197",
+                "AbstractYieldStrategy.sol::_isWithdrawRequestPending#197"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/AbstractYieldStrategy.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "User unable to migrate under certain edge case",
+            "description": "During migration, the _exitWithRepay function sets assetToRepay to type(uint256).max, which can result in both assetToRepay and sharesToRepay being zero when the user has no debt. This causes the Morpho.repay() call to revert due to the UtilsLib.exactlyOneZero(assets, shares) check, which requires exactly one of the two values to be zero.\n\nThe root cause is the lack of a conditional check to skip repayment when the user has no debt. Since users without debt have zero borrow shares, and assetToRepay is set to max (which Morpho interprets as zero), both parameters become zero, violating Morpho Blue's safety invariant.\n\nAn attacker cannot exploit this, but legitimate users with only collateral and no debt are unable to migrate their positions, leading to a denial of service for a core protocol feature.\n\nThe impact is medium, as it affects a specific edge case (users with no debt), but migration is a critical function for protocol flexibility and user experience.\n",
+            "severity": "Medium",
+            "location": [
+                "AbstractLendingRouter.sol::_exitWithRepay#237",
+                "MorphoLendingRouter.sol::repay#192",
+                "Morpho.sol::repay#278"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/routers/AbstractLendingRouter.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Reducing liquidity in the hardcoded Curve sDAI/sUSDe pool leads to unnecessary slippage loss",
+            "description": "The protocol uses a hardcoded path (sUSDe -> sDAI -> asset) for swapping via the Curve sDAI/sUSDe pool (0x167478921b907422F8E88B43C4Af2B8BEa278d3A). Over time, liquidity in this pool has decreased as users migrate from sDAI to sUSDS under the new SKY protocol, where most incentives are now directed.\n\nThe root cause is the static swap logic in PendlePT_sUSDe.sol that does not adapt to changing market conditions or liquidity levels. As sDAI reserves decline, slippage on swaps increases significantly, especially for large trades.\n\nUsers are forced to use this low-liquidity pool even when better alternatives exist, resulting in worse execution prices. This is particularly problematic during periods of high volatility or large withdrawals.\n\nThe impact is high, as users incur unnecessary slippage losses during exits, reducing their net returns and potentially making the protocol less competitive compared to alternatives with dynamic routing.\n",
+            "severity": "High",
+            "location": [
+                "PendlePT_sUSDe.sol::swap#42"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/staking/PendlePT_sUSDe.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Unable to deposit to Convex in Arbitrum",
+            "description": "The protocol attempts to deposit Curve LP tokens to Convex using the IConvexBooster interface on Arbitrum. However, the deposit function on Arbitrum's Convex Booster contract only accepts two parameters (_pid, _amount), whereas the Ethereum version accepts three parameters (_pid, _amount, _stake). The code calls a three-parameter version on Arbitrum, which does not exist, causing the transaction to revert.\n\nThe root cause is the lack of chain-specific handling for the Convex deposit function interface differences.\n\nAn attacker cannot directly exploit this, but any user attempting to stake LP tokens on Arbitrum will face transaction reverts.\n\nThis renders the protocol non-functional on Arbitrum, preventing users from entering positions and undermining cross-chain compatibility.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol::deposit#291",
+                "CurveConvex2Token.sol::constructor#137"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lack of minimum debt threshold enables unliquidatable small positions",
+            "description": "The protocol allows users to partially repay debt via the exitPosition() function, potentially leaving behind minimal debt (e.g., 1 wei). Since liquidation rewards are proportional to repaid debt and gas costs are fixed, liquidators have no economic incentive to liquidate such tiny debts.\n\nThe root cause is the absence of a minimum debt threshold or a mechanism to enforce full repayment before closing a position.\n\nA borrower can strategically leave behind negligible debt after partial repayment, effectively creating an unliquidatable position.\n\nOver time, accumulation of these positions skews the protocol\u2019s debt accounting and may lead to insolvency, especially on high-gas chains like Ethereum.\n",
+            "severity": "Medium",
+            "location": [
+                "AbstractLendingRouter.sol::exitPosition#120",
+                "AbstractLendingRouter.sol::_exitWithRepay"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/routers/AbstractLendingRouter.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Funds stuck if one of the withdrawal requests cannot be finalized",
+            "description": "The protocol requires all withdrawal requests (WRs) to be finalized before allowing redemption. If one WR fails to finalize due to external factors (e.g., protocol compromise, liquidity issues, slashing events, or zero-asset redemption reverts), the entire withdrawal is blocked\u2014even if other WRs are ready.\n\nThe root cause is the all-or-nothing design in handling multiple WRs and the lack of a minimum position size, which can trigger reverts during redemption (e.g., due to rounding errors in ERC4626 vaults like PirexETH).\n\nAn external event such as a hack or pause in a staking protocol (e.g., LIDO) can prevent finalization of one WR, thereby freezing funds in other WRs.\n\nThis leads to total loss of access to funds, even those unrelated to the failed WR, resulting in high user impact and potential fund loss.\n",
+            "severity": "High",
+            "location": [
+                "AbstractSingleSidedLP.sol::finalizeAndRedeemWithdrawRequest#397",
+                "AbstractSingleSidedLP.sol::hasPendingWithdrawals#338"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/single-sided-lp/AbstractSingleSidedLP.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Setup with asset = WETH and a Curve pool that contains Native ETH will lead to a loss for the users",
+            "description": "When a yield strategy uses WETH as its asset and a Curve pool containing Native ETH (e.g., ETH/wstETH), the protocol incorrectly handles token addresses by mapping Native ETH (0xEeeee...) to address(0). This causes the _PRIMARY_INDEX to point to Native ETH, leading to incorrect trade execution during proportional exits.\n\nThe root cause is improper handling of Native ETH in token comparisons and trade routing logic, particularly in _executeRedemptionTrades, where the vault attempts to sell Native ETH it no longer holds (after wrapping to WETH).\n\nDuring withdrawal initiation, the vault wraps all ETH to WETH, leaving zero Native ETH balance. However, the trade logic still tries to sell Native ETH, causing a revert due to insufficient balance.\n\nUsers cannot initiate withdrawals, and during liquidation or position exit, they are forced into single-sided exits on Curve, which incur higher slippage and asset loss when the pool is imbalanced.\n",
+            "severity": "High",
+            "location": [
+                "CurveConvex2Token.sol::_PRIMARY_INDEX#59",
+                "AbstractSingleSidedLP.sol::_executeRedemptionTrades#223",
+                "CurveConvex2Token.sol::unstakeAndExitPool#207"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Unable to support Curve Pool with Native ETH",
+            "description": "When a Curve pool includes Native ETH, the _rewriteAltETH() function converts its address to 0x00000000. Later, during withdrawal or liquidation, the protocol attempts to fetch a Withdraw Request Manager (WRM) for this zero address via ADDRESS_REGISTRY.getWithdrawRequestManager(address(tokens[i])).\n\nThe root cause is the assumption that all tokens have a corresponding WRM, without validating whether the token is a standard ERC20 or Native ETH (which has no WRM).\n\nAny operation that loops through tokens to check pending withdrawals or finalize them (e.g., getWithdrawRequestValue, hasPendingWithdrawals) will revert when encountering Native ETH.\n\nThis breaks core functionality for pools with Native ETH, potentially bricking user accounts by making withdrawals and liquidations impossible, leading to permanently stuck funds.\n",
+            "severity": "High",
+            "location": [
+                "CurveConvex2Token.sol::_rewriteAltETH#54",
+                "AbstractSingleSidedLP.sol::getWithdrawRequestValue#326",
+                "AbstractSingleSidedLP.sol::hasPendingWithdrawals#338"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Convex cannot be configured for the Yield Strategy vault in Arbitrum even though Convex is available in Arbitrum",
+            "description": "The constructor of CurveConvex2Token checks if block.chainid == CHAIN_ID_MAINNET before configuring the Convex booster and pool ID. This condition prevents the configuration of Convex on Arbitrum, even though Convex is deployed and functional there.\n\nThe root cause is a hardcoded chain ID check that excludes Arbitrum from Convex integration, despite it being in scope per the contest README.\n\nAs a result, yield strategies on Arbitrum cannot leverage Convex staking, limiting yield potential and rendering the Convex integration unusable on that chain.\n\nThis breaks intended cross-chain functionality and reduces capital efficiency for Arbitrum users.\n",
+            "severity": "Medium",
+            "location": [
+                "CurveConvex2Token.sol::constructor#137"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/CurveConvex2Token.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Revert in getWithdrawRequestValue Can Freeze Account Positions",
+            "description": "The getWithdrawRequestValue function in AbstractSingleSidedLP.sol reverts if no withdraw request exists for any of the pool tokens (Line 332). This revert can be triggered when a token's exit balance is zero, which can occur due to rounding down during proportional withdrawal, especially for tokens with low decimals or in cases of near-total asset swaps or depeg events.\n\nThe root cause is the lack of a conditional check to skip tokens with zero withdrawal amounts instead of requiring a withdraw request to exist. Since Notional's price() function depends on getWithdrawRequestValue(), a revert here will cause the entire price calculation to fail.\n\nAn attacker could exploit this by manipulating pool balances (e.g., via large swaps) to force a zero exit balance for a token, thereby ensuring any call to price() reverts. This would prevent any interaction with affected accounts.\n\nThe impact is severe: affected accounts become permanently stuck, as no operations (repay, withdraw, liquidate, exit) can proceed if the price oracle reverts. This leads to a denial of service for user positions and potential permanent loss of access to funds.\n",
+            "severity": "Critical",
+            "location": [
+                "AbstractSingleSidedLP.sol::getWithdrawRequestValue#332",
+                "AbstractSingleSidedLP.sol::getWithdrawRequestValue#362"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/single-sided-lp/AbstractSingleSidedLP.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "initializeMarket Can Be Frontran, Preventing Markets From Being Configured in MorphoLendingRouter",
+            "description": "The initializeMarket function in MorphoLendingRouter.sol can be frontran by an attacker who calls Morpho's createMarket() with the same market parameters before the legitimate initialization. This is possible because initializeMarket does not use try/catch and assumes it will always succeed in creating the market.\n\nThe root cause is the lack of error handling for market creation. Since Morpho enforces that each market can only be created once, a malicious actor can preemptively create the market, causing the legitimate initializeMarket call to revert.\n\nAn attacker can monitor the mempool for calls to initializeMarket and quickly submit a transaction calling createMarket directly with identical parameters. This would block the router from storing the market configuration in s_morphoParams.\n\nThe impact is medium: it results in a denial of service for market initialization, preventing the router from supporting the affected vault. While the issue is recoverable via an upgrade (as noted in discussion), it still disrupts normal operations and requires manual intervention, reducing system reliability and autonomy.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoLendingRouter.sol::initializeMarket#51"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/routers/MorphoLendingRouter.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,550 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_eco_february2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/eco/eco-routes"
+        ],
+        "commit_id": [
+            "2e7bc2f01f81f4a4b7e4dc30f91284d328ac0e88",
+            "d79785448e6aa905c49d5c75252df3dd51daead4"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2023-03-22",
+        "project_path": {
+            "eco-routes": "dataset-curated/contracts/cantina_eco_february2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "An incorrect predicate operator allows anyone to prevent fillers from withdrawing rewards by overfunding intent vaults",
+            "description": "The IntentVault contract uses an incorrect predicate `amount < balance` in a conditional check that reverts if the balance is insufficient. This logic is flawed because it allows an attacker to deposit excess tokens into the vault, making the balance greater than the intended reward amount. As a result, when a filler attempts to withdraw rewards, the condition `amount < balance` becomes true, causing the transaction to revert due to an assumed insufficient balance, even though sufficient funds are present.\n\nThe root cause is the misuse of the comparison operator in the balance validation logic. Instead of checking if the available balance is sufficient (i.e., `balance >= amount`), the code checks the inverse, leading to incorrect reverts.\n\nAn attacker can exploit this by funding an intent vault with more tokens than specified in the reward structure. This can be done by anyone, including a malicious intent creator, who can then block legitimate fillers from claiming their rewards.\n\nThe impact is critical as it disrupts the core functionality of reward distribution, potentially leading to denial of service for fillers and undermining trust in the protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "IntentVault.sol#L69-L72"
+            ],
+            "files": [
+                "eco-routes/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-172"
+                ]
+            },
+            "title": "ERC-7683 intents can never be filled because of an incorrectly encoded contract address",
+            "description": "The Eco7683OriginSettler contract incorrectly sets the `FillInstruction.destinationSettler` field by using `bytes20(uint160(Eco7683DestinationSettler))`, which does not resolve to the correct contract address. This breaks the ERC-7683 compliance, as the destination settler address must point to a contract that implements the `fill()` function.\n\nThe cause is a hardcoded or incorrectly referenced address in the struct assignment, which results in the `destinationSettler` pointing to an invalid or non-existent contract on the destination chain.\n\nWhen an ERC-7683-aware filler attempts to fill an intent, it calls the `fill()` function on the address specified in `destinationSettler`. Since this address does not implement the required function, the call reverts, making it impossible to fulfill any ERC-7683-compliant intent.\n\nThe impact is high because it renders the entire ERC-7683 integration non-functional, preventing interoperability with external fillers and limiting the protocol's utility.\n",
+            "severity": "High",
+            "location": [
+                "Eco7683OriginSettler.sol#L186-L190",
+                "Eco7683OriginSettler.sol#L280-L282",
+                "ERC7683.sol#L96"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Malicious reward token can block legitimate reward claims",
+            "description": "The IntentVault contract attempts to transfer all reward tokens atomically to the claimant upon intent fulfillment. If one of the reward tokens has malicious logic (e.g., reverts on transfer), the entire withdrawal transaction will fail, blocking all other legitimate transfers.\n\nThe root cause is the use of high-level transfer calls in a loop without handling potential failures individually. This creates a single point of failure for the entire reward distribution process.\n\nAn attacker can exploit this by creating or specifying a malicious ERC20 token as a reward, which reverts on transfer. Once such a token is included in an intent, no filler can successfully claim rewards, even if other tokens are legitimate and transferable.\n\nThe impact is high as it allows a single malicious token to disrupt the reward mechanism, leading to denial of service and potential loss of incentives for honest participants.\n",
+            "severity": "High",
+            "location": [
+                "IntentVault.sol#L52-L83"
+            ],
+            "files": [
+                "eco-routes/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing enforcement of route.destination check may allow fillers to solve intents on other supported chains",
+            "description": "The protocol does not enforce that `route.destination` matches the current chain ID (`block.chainid`) in either `Eco7683DestinationSettler.fill()` or `Inbox._fulfill()`. This allows fillers to fulfill intents on chains different from the intended destination, as long as the required contracts exist at the same addresses.\n\nThe cause is the absence of a validation check comparing `route.destination` with `block.chainid`, which is a critical security control for cross-chain systems.\n\nAn attacker can exploit this by fulfilling an intent on a different chain than specified, potentially leading to unexpected outcomes such as incorrect asset transfers or arbitrage manipulation. This is especially dangerous for native gas tokens, where the economic impact is direct.\n\nThe impact is high for native tokens due to potential profit from misrouted intents, and lower for ERC20s depending on address consistency across chains. However, it violates the expected behavior of cross-chain routing and undermines system integrity.\n",
+            "severity": "High",
+            "location": [
+                "Eco7683DestinationSettler.sol#L46-L107",
+                "Inbox.sol#L380-L446"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683DestinationSettler.sol",
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Missing enforcement of openDeadline check breaks ERC-7683 requirement and user expectations",
+            "description": "The `openFor()` function in `Eco7683OriginSettler` does not enforce the `openDeadline` timestamp, which is a required field in the `GaslessCrossChainOrder` struct per ERC-7683. This allows fillers to open intents beyond the user-specified deadline.\n\nThe cause is the omission of a `block.timestamp <= openDeadline` check in the `openFor()` function, which should be present to comply with the standard and protect user intent validity.\n\nAn attacker or careless filler can exploit this by opening time-sensitive intents (e.g., arbitrage opportunities) after the intended deadline, potentially capturing value that should no longer be available.\n\nThe impact is medium, as it primarily affects time-sensitive intents and may lead to user dissatisfaction or financial loss in specific scenarios, but does not result in direct fund loss from the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "Eco7683OriginSettler.sol#L88-L122",
+                "Eco7683OriginSettler.sol#L211",
+                "Eco7683OriginSettler.sol#L310"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing enforcement of fillDeadline check breaks ERC-7683 requirement and may lead to loss of filler rewards",
+            "description": "The `fill()` function in `Eco7683DestinationSettler` does not enforce the `fillDeadline` check against `block.timestamp`, allowing fillers to attempt fulfillment after the deadline has passed. Although rewards are not claimable due to checks in `withdrawRewards()`, the filler still incurs gas costs for a futile transaction.\n\nThe root cause is the lack of a defensive `block.timestamp <= order.fillDeadline` check in the `fill()` function, which is required by ERC-7683 and necessary for user and filler protection.\n\nA filler may accidentally or intentionally call `fill()` after the deadline. While the protocol eventually prevents reward withdrawal, the filler loses gas and time due to the missing early validation.\n\nThe impact is medium, as it breaks ERC-7683 compliance and may lead to economic loss for fillers, though funds are not permanently lost from the system.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "eco-routes/contracts/Eco7683DestinationSettler.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-116"
+                ]
+            },
+            "title": "ERC-7683 intents can never be filled because of incorrectly encoded originData",
+            "description": "The `resolve()` and `resolveFor()` functions in `Eco7683OriginSettler` incorrectly encode `onchainCrosschainOrderData.route.calls[j]` into `FillInstruction.originData`, instead of the full `onchainCrosschainOrderData` struct. This causes the `Eco7683DestinationSettler.fill()` function to fail when attempting to decode the data.\n\nThe cause is a logic error in data serialization, where only a subset of the required data is encoded, violating the expected format defined in ERC-7683.\n\nWhen a filler calls `fill()` on the destination chain, the contract attempts to decode `originData` as a full `OnchainCrosschainOrderData` struct, but receives only a fragment, leading to decoding failure and transaction revert.\n\nThe impact is medium, as it prevents ERC-7683-compliant intents from being fulfilled, reducing interoperability. However, sophisticated fillers might work around it by re-encoding correctly.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol",
+                "eco-routes/contracts/Eco7683DestinationSettler.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Intents can be published multiple times due to default claim state",
+            "description": "The `publishIntent()` function in `IntentSource` checks if an intent is already published by comparing `claims[intentHash].status` to `ClaimStatus.Initiated`. However, since uninitialized mappings default to 0 (the same value as `Initiated`), new intents appear as already initiated.\n\nThe root cause is the lack of a dedicated `Uninitialized` state in the enum, leading to ambiguity between uninitialized and initiated intents.\n\nAn attacker can exploit this by publishing the same intent multiple times, potentially leading to duplicated processing or confusion in intent tracking.\n\nThe impact is low, as it does not lead to fund loss, but can cause operational issues and incorrect state tracking.\n",
+            "severity": "Medium",
+            "location": [
+                "IntentSource.sol#L204-L206"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing nonce tracking in EIP-7683 integration allows for duplicate intent openings",
+            "description": "The `openFor()` function in `Eco7683OriginSettler` does not track or validate nonces, allowing a relayer to reuse a valid user signature to open the same intent multiple times.\n\nThe nonce is used only as a salt in the `Route` struct but is not stored or checked for uniqueness, enabling replay attacks.\n\nA malicious relayer can obtain a single signature and repeatedly call `openFor()` to create duplicate intents, potentially draining user funds or causing unintended side effects.\n\nThe impact is medium, as users may lose excess funds transferred, though they can eventually recover them. The likelihood is low due to specific conditions required for exploitation.\n",
+            "severity": "Medium",
+            "location": [
+                "Eco7683OriginSettler.sol#L319-L339"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Fund intent allows creation with invalid or incorrect route parameters",
+            "description": "The `fundIntent()` function accepts a `routeHash` without validating the underlying parameters, and `publishIntent()` allows funding even when `route.source` does not match the current chain ID.\n\nThis allows creation of intents with invalid routes or on incorrect chains, potentially leading to funds being locked in vaults until expiration.\n\nThe cause is missing validation logic in both functions to ensure route integrity and chain correctness.\n\nAn attacker or user error can result in intents that cannot be fulfilled, locking funds until expiration. This undermines user trust and capital efficiency.\n\nThe impact is high due to potential fund lockup, and the likelihood is medium due to both malicious and accidental vectors.\n",
+            "severity": "Medium",
+            "location": [
+                "IntentSource.sol#L120-L128"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Opening ERC-7683 gasless cross-chain orders on behalf of users may lead to loss of native tokens for fillers",
+            "description": "In `openFor()`, the `reward.nativeValue` is incorrectly transferred from `msg.sender` (the filler) instead of the user, leading to unintended loss of native tokens for the filler.\n\nThe cause is a logic error in fund handling, where the filler's ETH is used instead of the user's, despite the user being the intended funder.\n\nA filler calling `openFor()` will lose their own ETH if `reward.nativeValue > 0`, as the contract transfers from `msg.value` without refunding.\n\nThe impact is medium, as it leads to direct financial loss for fillers, though the likelihood is low due to expected due diligence.\n",
+            "severity": "Low",
+            "location": [
+                "Eco7683OriginSettler.sol#L354-L365"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing checks for overfunding of intents will lock up creator funds until rewards withdrawal or intent expiration",
+            "description": "The protocol lacks checks to prevent overfunding of intent vaults with native or ERC20 tokens beyond the specified reward amounts. Excess funds remain locked until withdrawal or expiration.\n\nFunctions like `open()` and `openFor()` do not check if the intent is already fully funded, allowing repeated funding.\n\nA creator or filler can accidentally or intentionally overfund an intent, leading to temporary lockup of excess capital.\n\nThe impact is low, as funds are not lost, only locked. The likelihood is low due to accidental or griefing scenarios.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol",
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Missing validation of orderDataType and incorrect EIP-712 encoding may break ERC-7683 requirement",
+            "description": "The `orderDataType` field in `OnchainCrossChainOrder` and `GaslessCrossChainOrder` is not validated against the correct typehashes. Additionally, the EIP-712 encoding contains errors, such as incorrect struct names and missing fields.\n\nThis breaks ERC-7683 compliance, as the standard requires ABI decodability and correct typehash validation.\n\nFillers relying on proper EIP-712 signing may fail to process intents, leading to interoperability issues.\n\nThe impact is low, as it affects compliance and integration but does not directly compromise funds.\n",
+            "severity": "Low",
+            "location": [
+                "EcoERC7683.sol#L21-L47",
+                "EcoERC7683.sol#L49-L55"
+            ],
+            "files": [
+                "eco-routes/contracts/types/EcoERC7683.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing route and reward validations allows creating economically non-viable intents",
+            "description": "The `IntentSource` contract lacks basic sanity checks for route and reward parameters, allowing creation of intents that are economically unprofitable or nonsensical.\n\nThis could lead to wasted effort by solvers who attempt to fulfill intents that yield no profit.\n\nWhile the protocol assumes solvers perform their own checks, adding low-cost validations could improve UX and reduce spam.\n\nThe impact is medium, but the likelihood is low as solvers are expected to filter unprofitable intents.\n",
+            "severity": "Low",
+            "location": [
+                "IntentSource.sol#L120-L254"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Permit call success check enables front-running DoS",
+            "description": "The `fundIntent()` function requires each `permit` call to succeed, which can be exploited by an attacker to front-run and invalidate the permit, causing the entire transaction to revert.\n\nRemoving the success check or handling failures gracefully would mitigate this.\n\nThe impact is low, as it enables a denial-of-service vector but does not lead to fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "IntentSource.sol#L162-L166"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Accidentally sent native currency is not refunded for intents",
+            "description": "If an intent creator sends ETH to `fundIntent()` or `_openEcoIntent()` when `reward.nativeValue == 0`, the excess ETH is not refunded and remains stuck in the contract.\n\nThe refund logic is conditional on `reward.nativeValue > 0`, so no refund occurs when it's zero.\n\nUsers can lose funds due to simple mistakes.\n\nThe impact is low, as it affects only accidental payments, but still represents a loss of user funds.\n",
+            "severity": "Low",
+            "location": [
+                "Eco7683OriginSettler.sol#L354-L365",
+                "IntentSource.sol#L137-L155"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Add contract existence checks when intent specifies calldata",
+            "description": "The `Inbox` contract does not verify that target addresses contain code when `calldata` is present, allowing calls to EOAs or non-existent contracts.\n\nThis can lead to failed executions or unintended behavior.\n\nAdding `extcodesize` checks would prevent this.\n\nThe impact is low, as it improves robustness but does not expose critical vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "Inbox.sol#L432-L442"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Unsafe casting between uint256 and int256 values",
+            "description": "The `IntentSource` and `IntentFunder` contracts perform unsafe casts between `uint256` and `int256`, which can lead to overflow/underflow issues if values exceed safe ranges.\n\nUsing unchecked casts risks incorrect arithmetic and potential state corruption.\n\nThe impact is low, as the actual risk depends on usage context, but it violates secure coding practices.\n\nThe recommendation is to use SafeCast libraries for safe conversions.\n",
+            "severity": "Low",
+            "location": [
+                "IntentFunder.sol#L60-L70",
+                "IntentSource.sol#L134-L140"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Prefer call over transfer for native token transfers",
+            "description": "The protocol uses `.transfer()` which forwards only 2300 gas, risking failure when sending to contracts that require more gas for fallback functions.\n\nUsing `.call()` is safer and more flexible.\n\nThe impact is low, as current usage is between trusted contracts, but it's a best practice to use `.call()`.\n\nEco has acknowledged but not fixed this, citing internal trust.\n",
+            "severity": "Low",
+            "location": [
+                "Eco7683OriginSettler.sol#L359",
+                "IntentSource.sol#L142",
+                "IntentSource.sol#L231"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683OriginSettler.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-74"
+                ]
+            },
+            "title": "Restrict arbitrary calls in fund intent to permit operations only",
+            "description": "The `fundIntent()` function allows arbitrary calls via `permitCalls`, which could be abused to execute unintended logic.\n\nLimiting this to a strict permit interface would reduce risk.\n\nThe impact is low, as the current implementation has been fixed to use safer patterns.\n",
+            "severity": "Low",
+            "location": [
+                "IntentSource.sol#L157-L162"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Reward claims should be allowed until end of deadline",
+            "description": "The `IntentVault` contract uses `< deadline` instead of `<= deadline`, disallowing claims at the exact deadline timestamp.\n\nThis reduces UX and may unfairly deny legitimate claims.\n\nThe impact is informational, as it's a minor logic inconsistency.\n",
+            "severity": "Informational",
+            "location": [
+                "IntentVault.sol#L39-L50"
+            ],
+            "files": [
+                "eco-routes/contracts/IntentSource.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Natspec can be improved for better code comprehension and UX",
+            "description": "Several Natspec comments are incorrect or misleading, such as wrong function descriptions, copied documentation, or outdated explanations.\n\nThis reduces code readability and increases the risk of misinterpretation.\n\nThe impact is informational, affecting maintainability and developer experience.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1110"
+                ]
+            },
+            "title": "Protocol design recommendations",
+            "description": "General design suggestions were provided, such as improving state tracking, clarifying access control, and enhancing documentation.\n\nThese are not security vulnerabilities but aim to improve long-term maintainability and clarity.\n\nThe impact is informational, with no direct security implications.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing sanity checks on solver whitelisting may cause unexpected behavior",
+            "description": "The protocol uses a solver whitelist to restrict intent fulfillment to whitelisted solvers, but only when isSolvingPublic is set to false. The current implementation does not enforce a conditional check to ensure that the solver whitelist is only modified or applied when isSolvingPublic is false. This lack of validation during construction and during calls to changeSolverWhitelist means that whitelist changes could be made in a state where they are irrelevant or ineffective, leading to potential confusion or incorrect assumptions by off-chain systems. An attacker or misconfigured owner could manipulate the whitelist in a public solving context where it should not apply, potentially leading to inconsistent behavior. While the impact is limited due to the logic being state-consistent, the absence of sanity checks increases the risk of operational errors and reduces code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "Inbox.sol#L43-L52",
+                "Inbox.sol#L350-L369"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing emit of orderFilled event in Eco7683DestinationSettler may affect offchain monitoring",
+            "description": "The Eco7683DestinationSettler contract declares an event orderFilled(bytes32 _orderId, address _solver) intended to signal when an intent is fulfilled using Hyperlane instant proving. However, this event is not emitted in the fill() function, which is one of the key entry points for intent fulfillment. As a result, off-chain monitoring systems that rely on this event to track order settlements may fail to detect certain fulfillment actions, leading to incomplete or inaccurate data. The cause is the omission of the event emission in the relevant function. An attacker cannot directly exploit this, but it could enable front-running or manipulation in systems that depend on timely and complete event data. The impact is primarily on observability and integration reliability rather than direct fund loss.\n",
+            "severity": "Informational",
+            "location": [
+                "Eco7683DestinationSettler.sol#L25-L30",
+                "Eco7683DestinationSettler.sol#L85-L104"
+            ],
+            "files": [
+                "eco-routes/contracts/Eco7683DestinationSettler.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,82 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_ondo_jan2026.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/ondoprotocol/rwa-internal"
+        ],
+        "commit_id": [
+            "e89c9020"
+        ],
+        "address": [],
+        "chain": null,
+        "compiler_version": "n/a",
+        "audit_date": "2026-01-31",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Batch execution of limit orders can be DOS'ed",
+            "description": "The executeOrderBatch() function in GMTokenLimitOrder.sol uses a complete-or-fail approach, meaning that if any single order in the batch fails, the entire batch reverts. This behavior can be exploited by malicious users who can frontrun the batch execution to either cancel their own order or revoke token approval, causing the entire batch to revert. Since the batch may include orders from multiple users, this allows one user to deny service to others. The root cause is the lack of fault isolation in batch processing. An attacker could exploit this by strategically timing cancellation or approval revocation to disrupt batch executions. The impact is limited to a denial-of-service condition on batch processing, which can be mitigated by resubmitting the batch without the problematic order, but it increases operational friction and gas costs for legitimate users.\n",
+            "severity": "Low",
+            "location": [
+                "GMTokenLimitOrder.sol#L323-L327"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Precision loss due to sequential divisions in calculateQuoteAmount() can undercharge BUY orders",
+            "description": "The calculateQuoteAmount() function in LimitOrderLib.sol performs two sequential division operations, which introduces intermediate truncation due to integer division in Solidity. Specifically, quantity * price is first divided by 1e18 (for USDC), and then scaled by token decimals before rounding logic is applied. This order of operations can discard fractional amounts prematurely, leading to precision loss. For certain values\u2014particularly when (quantity * price) % 1e12 equals zero\u2014this can result in BUY orders being undercharged by one wei. The root cause is improper arithmetic ordering that fails to preserve full precision until the final step. An attacker could exploit this by placing many small BUY orders to accumulate undercharged amounts over time. The impact is a minor financial loss to the protocol due to systematic underpayment, though the amount per transaction is minimal.\n",
+            "severity": "Low",
+            "location": [
+                "LimitOrderLib.sol#L347-L354"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "ReentrancyGuardTransient can be used to save gas on all nonReentrant calls",
+            "description": "The GMTokenLimitOrder.sol contract currently uses OpenZeppelin's standard ReentrancyGuard, which uses a storage write (SSTORE) operation to set a lock status, consuming more gas than necessary. A more gas-efficient alternative, ReentrancyGuardTransient, uses transient storage (available since EIP-1153) to store the lock status, reducing gas costs significantly for reentrancy protection. The root cause is the use of a legacy reentrancy guard pattern that does not leverage modern EVM features. While this does not introduce a security vulnerability, it increases transaction costs unnecessarily. Any caller of nonReentrant functions pays higher gas fees than needed. The impact is increased operational cost for users and the protocol, with no direct security risk.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "LimitOrderLib::calculateQuoteAmount can round down to zero for small buy orders",
+            "description": "The calculateQuoteAmount() function in LimitOrderLib.sol can return zero for very small BUY orders due to integer division truncation. When the product of quantity and price is extremely small, the intermediate calculation of usdValue may round down to zero before the ceiling logic is applied, effectively bypassing the intended rounding-up behavior for BUY orders. The root cause is the absence of a minimum deposit threshold check within GMTokenManager. An attacker could exploit this by placing many near-zero deposits to potentially mint GM tokens without paying any quote token, if minimumDepositUSD were set to zero. However, Ondo has acknowledged that minimumDepositUSD will always be non-zero in production, mitigating this risk. The impact is theoretical value extraction under misconfiguration, but currently not exploitable in practice.\n",
+            "severity": "Informational",
+            "location": [
+                "LimitOrderLib.sol#L347"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Partial fills of buy orders can result in user losses due to the absence of refunds",
+            "description": "When executing EXACT_QUOTE buy orders, the system pulls the full quote amount (e.g., 100 USDC) from the user, but only a portion may be used for minting GM tokens if the executed quantity is lower than expected. The unused USDon is refunded to the GMTokenLimitOrder contract but not returned to the user. This occurs because there is no validation to ensure a minimum amount of GM tokens is received by the user, unlike the protection in place for sell orders. The root cause is an asymmetry in validation logic between buy and sell paths. An attacker (or executor) could exploit this by providing a valid but low-quantity quote, causing the user to overpay. While Ondo acknowledges this, they consider it an acceptable trade-off for UX simplicity, as under normal conditions the excess is negligible. The impact is potential user fund loss in edge cases involving market gaps, though manual recovery is possible.\n",
+            "severity": "Informational",
+            "location": [
+                "LimitOrderLib.sol#L322-L336"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Incorrect mocked quote typehash",
+            "description": "In the test file GMTokenLimitOrder.t.sol, the mocked quote typehash uses bytes for additionalData, whereas the actual implementation uses bytes32. This discrepancy does not affect the current test suite because the mocked value is not being validated against real signatures, but it could lead to false positives or missed issues in future tests if signature validation is expanded. The root cause is a mismatch between test mocks and the actual contract ABI. An attacker could potentially exploit this if test results are used to certify correctness without proper validation. However, since this is confined to test code, the impact is limited to reduced test reliability and potential confusion during development or future audits.\n",
+            "severity": "Informational",
+            "location": [
+                "GMTokenLimitOrder.t.sol#L49"
+            ],
+            "files": []
+        }
+    ]
+}

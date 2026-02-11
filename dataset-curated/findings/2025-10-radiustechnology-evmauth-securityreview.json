@@ -1,0 +1,173 @@
+{
+    "path": "dataset-curated/reports/TrailofBits/2025-10-radiustechnology-evmauth-securityreview.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/evmauth/evmauth-core"
+        ],
+        "commit_id": [
+            "63835cf772c8b95e6a1bd69cdf6f47834c356eca"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-04",
+        "project_path": {
+            "evmauth-core": "dataset-curated/contracts/2025-10-radiustechnology-evmauth-securityreview.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Incorrect account assignment in token burning logic",
+            "description": "The token burning logic incorrectly assigns the wrong account address when burning tokens. Specifically, during a burn operation, the code sets `_account = to`, which is `address(0)` when burning, instead of using the `from` address representing the token holder. This causes the contract to attempt to burn tokens from the zero address, which has no balance, leading to transaction reverts.\n\nThe root cause lies in the `_update` function within the `_burnGroupBalances` and `_pruneGroups` calls, where the `to` address is used instead of `from` during burn operations. This improper account assignment violates the expected semantics of ERC-1155 token burning.\n\nAn attacker or even a legitimate admin attempting to burn tokens on behalf of a user will find the operation failing silently or reverting, as the burn is incorrectly sourced from the zero address. This exploitation does not require malicious intent but occurs naturally during intended administrative actions.\n\nThe impact is that tokens cannot be properly burned, allowing users to retain access privileges even after intended revocation. This undermines the authentication mechanism of the system and results in a denial of service for administrative token management.\n",
+            "severity": "High",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::_update",
+                "src/base/EVMAuthExpiringERC1155.sol::_burnGroupBalances",
+                "src/base/EVMAuthExpiringERC1155.sol::_pruneGroups"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ]
+            },
+            "title": "Expired token groups not synchronized with ERC1155 balance tracking",
+            "description": "The `_pruneGroups` function removes expired token groups from the custom group array but fails to update the underlying ERC1155 `_balances` mapping. This creates a critical data inconsistency between the two balance tracking systems: the group-based expiration system and the standard ERC1155 balance.\n\nThe cause is the omission of a call to the parent contract's `_burn` function within `_pruneGroups`. While expired tokens are removed from the group array and an `ExpiredTokensBurned` event is emitted, the actual ERC1155 balance remains unchanged because no balance deduction occurs.\n\nAn attacker can exploit this by holding tokens past expiration and transferring them to another account. Since the ERC1155 balance is not reduced during pruning, these \"zombie\" expired tokens retain transferability despite being logically invalid.\n\nThe impact is severe: expired tokens remain usable for transfers and potentially for authentication, breaking the intended time-based access control. This undermines the entire expiration mechanism and allows indefinite access extension without re-authentication.\n",
+            "severity": "High",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::_pruneGroups"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Missing debt validation in group transfer function",
+            "description": "The `_transferGroups` function fails to validate that the full transfer amount (debt) is satisfied after processing all valid (non-expired) token groups. It skips expired groups during iteration but does not ensure that `debt == 0` after the loop completes. If expired groups are encountered and skipped, the function may exit early with a non-zero debt, yet still allow the transfer to proceed at the ERC1155 level.\n\nThe root cause is the absence of a final check confirming that all requested tokens were transferred. Expired groups are skipped, and only non-expired tokens are used to satisfy the transfer amount, but no enforcement ensures completeness.\n\nAn attacker can exploit this by structuring their token holdings to include expired groups, then initiating a transfer. The function will partially transfer only the non-expired tokens while the ERC1155 balance is fully deducted, creating a discrepancy between on-chain balances and group state.\n\nThe impact is data inconsistency between the group accounting system and ERC1155 balances, leading to incorrect access control decisions and potential loss of tokens. Users may lose tokens without receiving the expected amount, and system integrity is compromised.\n",
+            "severity": "High",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::_transferGroups"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Missing debt validation in group burn function",
+            "description": "The `_burnGroupBalances` function does not verify that the full burn amount was processed. Similar to the transfer issue, it skips expired groups but fails to check whether the `debt` variable reaches zero after processing all applicable groups.\n\nThe cause is the lack of a post-loop validation that all requested tokens were burned. Expired groups are skipped, and only non-expired tokens are used to satisfy the burn amount, but no enforcement ensures completeness.\n\nAn attacker (or system process) attempting to burn tokens may believe the operation succeeded, but only a partial burn occurs. For example, if a user has both expired and valid tokens, the burn will consume only the valid ones up to the available balance, leaving the debt unmet but unenforced.\n\nThe impact is a mismatch between the ERC1155 balance (which is correctly reduced) and the group state (which reflects an incomplete burn). This leads to inconsistent accounting, potential access control flaws, and undermines trust in the token lifecycle management.\n",
+            "severity": "High",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::_burnGroupBalances"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-770"
+                ],
+                "4": [
+                    "CWE-1325"
+                ]
+            },
+            "title": "Unbounded group array growth causes gas limit exceeded",
+            "description": "The contract allows unbounded growth of the `_group[account][id]` array, where each token purchase with a unique expiration time creates a new entry. Functions like `_transferGroups`, `_pruneGroups`, and `_upsertGroup` perform linear iterations over this array, leading to increasing gas costs.\n\nThe root cause is the use of an unbounded dynamic array with ordered insertion (by expiration time), which requires O(n) operations for insertion, pruning, and transfers. As the number of groups grows, these operations can exceed the block gas limit.\n\nAn attacker can exploit this by repeatedly transferring small token amounts with different expiration times to a target account, forcing the creation of thousands of groups. Once the array is large enough, legitimate operations like transfers or balance checks will fail due to gas exhaustion.\n\nThe impact is a denial of service for affected users, who become unable to interact with their tokens. Their assets are effectively frozen, breaking core functionality and availability of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::_upsertGroup",
+                "src/base/EVMAuthExpiringERC1155.sol::_transferGroups",
+                "src/base/EVMAuthExpiringERC1155.sol::_pruneGroups"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Inconsistent implementation between blacklist functions and batch versions",
+            "description": "The batch blacklist functions (`addBatchToBlacklist`, `removeBatchFromBlacklist`) lack the same validations and event emissions as their single-account counterparts (`addToBlacklist`, `removeFromBlacklist`). This inconsistency introduces security and operational risks.\n\nThe cause is code duplication without alignment: `addToBlacklist` validates against blacklisting the zero address and blacklist managers, and emits events, while the batch version omits these. Similarly, `removeFromBlacklist` uses `delete` and emits events, but the batch version does not.\n\nAn attacker (or careless admin) can exploit this by using `addBatchToBlacklist` to blacklist `address(0)`, which is prohibited in the single version. Since mint and burn operations use `address(0)` as a source or destination, this breaks core token functionality system-wide.\n\nThe impact includes potential disruption of minting and burning, reduced auditability due to missing events, and inconsistent access control behavior. While not directly leading to fund loss, it causes denial of service and operational failures.\n",
+            "severity": "Low",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::addToBlacklist",
+                "src/base/EVMAuthExpiringERC1155.sol::addBatchToBlacklist",
+                "src/base/EVMAuthExpiringERC1155.sol::removeFromBlacklist",
+                "src/base/EVMAuthExpiringERC1155.sol::removeBatchFromBlacklist"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "TTL validation missing when updating burnable status",
+            "description": "The `setBaseMetadata` function allows setting a token as non-burnable without validating or resetting an existing TTL (time-to-live). This creates an inconsistent state where a token has an expiration time but cannot be burned, violating the intended lifecycle logic.\n\nThe cause is a missing validation in `setBaseMetadata`. While `setTTL` enforces that TTL can only be set for burnable tokens, the reverse is not enforced: making a token non-burnable does not check or clear an existing TTL.\n\nAn attacker cannot directly exploit this, but a misconfigured admin can create tokens in an ambiguous state. For example, a token with TTL=30 days but burnable=false will never have its expired tokens cleaned up, as burning is required for expiration enforcement.\n\nThe impact is configuration inconsistency and potential system logic errors. Tokens may remain active past expiration, undermining access control. While not critical, it reduces reliability and increases maintenance burden.\n",
+            "severity": "Informational",
+            "location": [
+                "src/base/EVMAuthExpiringERC1155.sol::setBaseMetadata"
+            ],
+            "files": [
+                "evmauth-core/src/base/EVMAuthExpiringERC1155.sol"
+            ]
+        }
+    ]
+}

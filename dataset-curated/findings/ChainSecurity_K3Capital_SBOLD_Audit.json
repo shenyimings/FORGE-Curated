@@ -1,0 +1,654 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_K3Capital_SBOLD_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/K3Capital/sBOLD"
+        ],
+        "commit_id": [
+            "e52e34078faa2238846a637cbf6263396e7363e6"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-07",
+        "project_path": {
+            "sBOLD": "dataset-curated/contracts/ChainSecurity_K3Capital_SBOLD_Audit.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Withdraw Fail Because Stability Pool Cannot Be Emptied",
+            "description": "The Liquity V2 Stability Pool enforces a minimum deposit of 1 BOLD, preventing the pool from being completely emptied. The sBOLD vault does not account for this constraint in its withdrawal logic, particularly in the maxRedeem() and maxWithdraw() functions. As a result, withdrawal attempts that would reduce a Stability Pool's BOLD balance below 1 will revert. The root cause is the lack of a pre-check in sBOLD to ensure withdrawals do not violate Liquity's minimum balance requirement. An attacker cannot directly exploit this for profit, but users may face failed transactions during large withdrawals. The impact is limited to transaction reverts and potential user inconvenience, with a workaround involving depositing 1 BOLD to restore functionality. The issue has been acknowledged by the client but not fixed, as it is considered unlikely to occur in practice.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::withdraw#",
+                "sBold.sol::redeem#",
+                "StabilityPool.sol::withdrawFromSP#"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Profit Can Be Extracted Through Slippage Tolerance",
+            "description": "The swap() function allows unpermissioned callers to trigger swaps of accumulated collateral for BOLD, with a slippage tolerance (maxSlippage) that can be up to 10%. The caller receives a reward (rewardBps) and benefits from the slippage buffer, which is not clawed back. This design allows a malicious actor to extract value by generating self-liquidations (converting BOLD into collateral via undercollateralized troves) and then swapping the received collateral back into BOLD via sBOLD, capturing the slippage as profit. The cause is the combination of unpermissioned swaps, high slippage tolerance, and reward incentives. The exploitation relies on repeated cycles of liquidation and swap to drain value. The impact is potential long-term erosion of protocol assets, especially if maxSlippage is set above the liquidation bonus (5%). The issue was acknowledged and partially mitigated by changes in Liquity V2 that make self-liquidations less practical.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::swap#",
+                "SwapLogic.sol::_execute#"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Reentrancies From Swap()",
+            "description": "The swap() function in sBOLD is vulnerable to reentrancy attacks because it calls an untrusted swapAdapter with user-provided data without applying reentrancy guards. The root cause is the lack of a mutex or lock during state-modifying operations. An attacker can exploit this by using a malicious token or router (e.g., 1inch) that contains a callback to reenter sBOLD functions during the swap. Two critical exploitation paths exist: (1) Reentering withdraw() or redeem() to artificially inflate the BOLD balance before the balance check in _execute(), causing the system to accept an invalid swap outcome; (2) Reentering view functions like calcFragments() or getSBoldRate() during a swap, where collateral has been sent but BOLD not yet received, leading to an underestimated share price. This allows depositing at a discount or manipulating oracle values for external systems (e.g., triggering false liquidations). The impact includes loss of funds and manipulation of financial state. The issue was resolved in Version 2 by adding reentrancy guards to state-modifying functions and in Version 3 for view functions.\n",
+            "severity": "Critical",
+            "location": [
+                "sBold.sol::swap#",
+                "SwapLogic.sol::_execute#",
+                "sBold.sol::withdraw#",
+                "sBold.sol::redeem#",
+                "sBold.sol::calcFragments#",
+                "sBold.sol::getSBoldRate#"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "swap() Calls Incorrect Function in SP to Receive Collateral",
+            "description": "In Version 1, the swap() function incorrectly used a Stability Pool function that did not properly claim stashed collateral and yield. The cause was a logic error in the integration with Liquity V2's StabilityPool contract. Specifically, the function failed to set the _doClaim flag to true when withdrawing collateral, resulting in pending and stashed collateral not being transferred back to sBOLD. This led to an inaccurate accounting of total assets and potential loss of yield and collateral. An attacker could exploit timing windows to manipulate the reported asset value, though direct theft was not possible. The impact was incorrect share pricing and reduced capital efficiency. The issue was corrected in later versions by ensuring proper use of withdrawFromSP() with _doClaim set to true. Additionally, the swap() function incorrectly calls SP.claimAllCollGains() to receive collateral from the StabilityPool. This function reverts when the depositor has a non-zero BOLD balance, making swap() permanently unavailable whenever it is called. The root cause is the misuse of a function that enforces a balance check not required in this context. An attacker cannot directly exploit this, but users are effectively blocked from using the swap functionality, leading to a denial of service. The impact is a critical disruption of core functionality, rendering the swap mechanism unusable under common conditions.\n",
+            "severity": "Critical",
+            "location": [
+                "sBold.sol::swap#",
+                "StabilityPool.sol::withdrawFromSP#",
+                "StabilityPool.sol::claimAllCollGains#354",
+                "sBold.sol::swap"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Collateral Value Is Not Accounted Below maxCollInBold Threshold",
+            "description": "In Version 2, the sBOLD vault excluded collateral value below the maxCollInBold threshold from total asset calculations, treating it as unrealized gain. The root cause was a design decision to gate asset inclusion based on a threshold. This led to an underestimation of total assets and share price when collateral value was below the threshold. Users could exploit this by timing deposits when collateral value was just below the threshold, allowing them to mint shares at a discount. The impact was economic imbalance and potential value transfer from existing to new shareholders. The issue was resolved in Version 3 by including all collateral value in asset calculations regardless of the threshold. Additionally, the calcFragments() function excludes the value of collateral up to the maxCollInBold threshold when calculating total assets, which leads to an underestimation of sBOLD's asset value. This design flaw allows new users to mint sBOLD shares at a discount and redeem them at full value after a swap, effectively extracting value from existing depositors. The root cause is the intentional exclusion of collateral value below a threshold, which creates an economic imbalance. An attacker can exploit this by self-liquidating troves to reduce sBOLD's accounted assets, minting discounted shares, executing a swap to restore asset value, and redeeming at a profit. The impact is a potential gradual draining of sBOLD's collateral, especially if the attacker controls a sufficient share of the Stability Pool liquidity.\n",
+            "severity": "High",
+            "location": [
+                "sBold.sol::calcFragments#",
+                "sBold.sol::totalAssets#",
+                "sBold.sol::calcFragments",
+                "SpLogic.sol::swap"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Quote Calculation",
+            "description": "The oracle system in sBOLD had a flaw in how it calculated quotes for collateral valuation. The cause was an incorrect scaling or precision handling in the getQuote() method of the ChainlinkLstOracle and PythOracle contracts. This led to inaccurate USD-to-BOLD conversions, which affected both swap slippage checks and total asset valuation. An attacker could exploit this by manipulating oracle inputs or timing swaps when discrepancies were largest, potentially leading to overpayment or underpayment during swaps. The impact included incorrect pricing, loss of funds during swaps, and inaccurate share redemption values. The issue was corrected by fixing the precision scaling and validation logic in the oracle contracts. Additionally, the functions QuoteLogic.getInBoldQuote() and sBold._calcCollValue() incorrectly calculate the price of collateral in BOLD by multiplying two USD-denominated prices instead of dividing them. This results in an incorrect quote when BOLD is depegged. For example, if BOLD is worth $0.5, the collateral should be multiplied by 2, not 0.5. The root cause is a mathematical error in the price conversion logic. This leads to inaccurate asset valuation and flawed slippage protection, which can cause users to receive unfavorable swap rates or be exposed to unexpected losses during swaps. The impact is financial loss due to incorrect pricing and reduced user trust in the system's reliability.\n",
+            "severity": "High",
+            "location": [
+                "ChainlinkLstOracle.sol::getQuote#",
+                "PythOracle.sol::getQuote#",
+                "Registry.sol::getQuote#",
+                "QuoteLogic.sol::getInBoldQuote",
+                "sBold.sol::_calcCollValue"
+            ],
+            "files": [
+                "sBOLD/contracts/oracle/chainlink/ChainlinkLstOracle.sol",
+                "sBOLD/contracts/oracle/pyth/PythOracle.sol",
+                "sBOLD/contracts/libraries/logic/QuoteLogic.sol",
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Stashed Collateral Not Taken Into Account",
+            "description": "The sBOLD vault failed to include stashed collateral in its total asset calculation. The root cause was the calcFragments() function not querying the stashedColl() mapping from the StabilityPool contract. Since stashed collateral represents real assets owned by sBOLD, excluding it led to an underestimation of total assets and share price. An attacker could exploit this by triggering withdrawals that unstash collateral, creating a temporary discrepancy that could be used to deposit at a discount. The impact was economic dilution of existing shareholders and incorrect pricing. The issue was resolved by updating calcFragments() to include stashed collateral in the valuation. Additionally, the SpLogic._getCollBalanceSP() function fails to include stashed collateral in its balance calculation, relying only on sp.getDepositorCollGain(addr) instead of also checking sp.stashedColl(addr). This occurs when provideToSP() is called with _doClaim set to false, which is the case during deposit() and mint(). The root cause is incomplete accounting logic. As a result, the true collateral balance of sBOLD is underestimated, allowing users to acquire shares at a discount and redeem them at full value after a swap. The impact is economic dilution of existing shareholders and potential loss of value due to arbitrage exploitation.\n",
+            "severity": "High",
+            "location": [
+                "sBold.sol::calcFragments#",
+                "sBold.sol::totalAssets#",
+                "StabilityPool.sol::stashedColl#",
+                "SpLogic.sol::_getCollBalanceSP",
+                "SpLogic.sol::provideToSP",
+                "sBold.sol::deposit",
+                "sBold.sol::mint"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol",
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "provideToSP() Can Be Called With Zero Amount",
+            "description": "The provideToSP() function reverts when called with a zero amount, which can occur during withdrawal if two withdrawals happen in the same block or due to rounding down of small asset amounts. The root cause is the lack of a zero-value check before the external call. This leads to the second withdrawal being blocked, resulting in a denial of service for users attempting to withdraw. The impact is temporary lockup of user funds and reduced system usability, especially under high-frequency withdrawal scenarios.\n",
+            "severity": "Medium",
+            "location": [
+                "SpLogic.sol::provideToSP",
+                "SpLogic.sol::withdrawFromSP"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "BOLD Yield Is Never Redeposited",
+            "description": "When withdrawing from the Stability Pool via SpLogic.withdrawFromSP(), the BOLD yield is pulled into the sBOLD contract but never redeposited. The root cause is the absence of a mechanism to reinvest the accumulated yield. Over time, this leads to a growing amount of idle BOLD that does not earn interest, reducing capital efficiency. The impact is suboptimal yield generation for the vault and gradual erosion of potential returns for depositors.\n",
+            "severity": "Medium",
+            "location": [
+                "SpLogic.sol::withdrawFromSP"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Early Return in withdrawFromSP",
+            "description": "The withdrawFromSP() function contains a return statement when a pro-rata amount is zero, which causes it to skip processing subsequent stability pools even if they have non-zero balances. The root cause is incorrect loop control logic. This can result in incomplete withdrawals, where users fail to withdraw from all eligible pools. The impact is reduced withdrawal efficiency and potential user fund inaccessibility across multiple collateral types.\n",
+            "severity": "Medium",
+            "location": [
+                "SpLogic.sol::withdrawFromSP"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent Fee Calculation",
+            "description": "The fee calculation differs between deposit() and mint(): in deposit(), the fee is deducted from input, while in mint(), it is added to output. This makes mint() more favorable for users and causes the fee vault to receive more than the user actually pays, with the difference being covered by existing shareholders. The root cause is inconsistent fee application logic. This discrepancy enables a potential draining attack by the fee vault administrator, who can mint large amounts, pay fees to themselves, and withdraw profitably. The impact is unfair fee distribution and potential exploitation of shareholder value.\n",
+            "severity": "Medium",
+            "location": [
+                "sBold.sol::deposit",
+                "sBold.sol::mint"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Partial Swaps Are Not Allowed",
+            "description": "The swap() function requires swapping the entire outstanding balance of collateral, with no support for partial swaps. The root cause is the lack of granular swap control. If a large swap exceeds slippage tolerance, no swaps can occur, and deposits/withdrawals are paused due to the maxCollInBold threshold. The impact is fund lockup and reduced system resilience during volatile market conditions.\n",
+            "severity": "Medium",
+            "location": [
+                "sBold.sol::swap",
+                "SwapAdapter.sol"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Undiscounted Collateral Used in maxCollInBold",
+            "description": "The calcFragments() function uses the raw collateral value (collInBold) instead of the net value (collInBoldNet) when subtracting up to maxCollInBold. Since collInBold is higher than collInBoldNet, this leads to an underestimation of protocol value. In extreme cases, if boldAmount is less than the difference between collInBold and collInBoldNet, the subtraction can underflow, breaking deposit and withdrawal functionality. The root cause is incorrect use of undiscounted collateral value in a net asset calculation. The impact is potential reverts in core functions and inaccurate valuation.\n",
+            "severity": "Medium",
+            "location": [
+                "sBold.sol::calcFragments"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "amountProRata Withdrawn From SP Is Too High",
+            "description": "The withdrawFromSP() function computes amountProRata based on total BOLD assets including yield, but passes it to SP.withdrawFromSP() which only withdraws from deposits. Since _doClaim is true, the full yield is transferred, resulting in more BOLD being withdrawn than necessary. The root cause is incorrect pro-rata calculation that includes yield in the withdrawal amount. The impact is excess BOLD accumulating in the sBOLD contract, reducing capital efficiency and creating idle balances.\n",
+            "severity": "Medium",
+            "location": [
+                "SpLogic.sol::withdrawFromSP"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "totalAssets() Is Not Overridden",
+            "description": "The sBOLD contract inherits from OpenZeppelin's ERC4626 but does not override totalAssets(), so it defaults to returning the contract's BOLD balance. This balance does not reflect the actual total assets, which include BOLD deposited in Stability Pools. The root cause is missing function override. The impact is incorrect reporting of total assets, violating ERC-4626 specifications and misleading users and integrators about the vault's true value.\n",
+            "severity": "Medium",
+            "location": [
+                "sBold.sol::totalAssets"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Incorrect Transient Storage Slot",
+            "description": "The TransientStorage.loadCollValue() function uses COLLATERAL_IN_BOLD_STORAGE instead of COLLATERAL_VALUE_STORAGE for the transient storage slot. The root cause is a constant misuse. Although the return value is not used internally, this affects the public calcFragments() view function, potentially returning incorrect data. The impact is low, limited to incorrect view data, but could mislead off-chain systems relying on accurate collateral valuation.\n",
+            "severity": "Low",
+            "location": [
+                "TransientStorage.sol::loadCollValue",
+                "sBold.sol::calcFragments"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/helpers/TransientStorage.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Dead Shares Can Be Invested",
+            "description": "The swap() and rebalanceSPs() functions are supposed to keep 1 BOLD (dead shares) in the contract, but if the balance is less than 1 BOLD, the entire balance is redeposited. The root cause is incorrect conditional logic in assetsToProvide calculation. This violates the convention of preserving dead shares. The impact is minimal, but breaks an expected invariant in the system.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::swap",
+                "sBold.sol::rebalanceSPs"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "ERC4626 Function maxDeposit Should Reflect Pausability",
+            "description": "The maxDeposit(), maxMint(), maxWithdraw(), and maxRedeem() functions do not account for the paused state and could revert instead of returning 0. The root cause is missing pausability checks. This violates ERC-4626 best practices. The impact is potential reverts in integrations expecting non-reverting behavior, reducing system robustness during emergency pauses.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::maxDeposit",
+                "sBold.sol::maxMint",
+                "sBold.sol::maxWithdraw",
+                "sBold.sol::maxRedeem"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Inconsistent Decimal Adjustments",
+            "description": "Decimal adjustments are applied inconsistently across the codebase, such as using wrong precision constants or unnecessary scaling. The root cause is lack of uniform decimal handling. While not currently exploitable due to token choices, it introduces fragility and potential bugs if different tokens are used. The impact is low, but increases maintenance risk and potential for future vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::decimals",
+                "Decimals.sol::scale",
+                "BaseChainlinkOracle.sol",
+                "ChainlinkLstOracle.sol",
+                "PythOracle.sol"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Incorrect Rounding",
+            "description": "The _convertToAssets() and _convertToShares() functions use getSBoldRate() without proper rounding control, potentially rounding in favor of the user instead of the protocol. The root cause is incorrect rounding direction in mathematical operations. ERC-4626 requires rounding in favor of the protocol. The impact is a minor economic imbalance, though likely not profitable to exploit due to gas costs.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::_convertToAssets",
+                "sBold.sol::_convertToShares",
+                "sBold.sol::previewMint",
+                "sBold.sol::previewDeposit"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Rounding in withdrawFromSP",
+            "description": "The withdrawFromSP() function does not account for rounding errors in portion calculation, potentially resulting in a 1 wei shortfall. The root cause is integer division truncation. Under normal conditions, the dead share balance covers the gap, but in edge cases, it could cause reverts. The impact is low, limited to minor withdrawal inaccuracies.\n",
+            "severity": "Low",
+            "location": [
+                "SpLogic.sol::withdrawFromSP"
+            ],
+            "files": [
+                "sBOLD/contracts/libraries/logic/SpLogic.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Unable to Swap a Single Collateral",
+            "description": "The swap() function requires swap instructions for all collateral types, even if only one needs swapping. The root cause is inflexible swap interface design. This blocks swaps if any oracle is down or if dust amounts exist. The impact is reduced usability and potential fund lockup due to external oracle or AMM issues.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::swap"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-636"
+                ]
+            },
+            "title": "maxDeposit() Should Never Revert",
+            "description": "The maxDeposit(), maxMint(), maxWithdraw(), and maxRedeem() functions can revert due to stale or invalid oracle data. The root cause is lack of error handling for oracle failures. ERC-4626 recommends returning 0 instead of reverting. The impact is integration failures and reduced system resilience during oracle outages.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::maxDeposit",
+                "sBold.sol::maxMint",
+                "sBold.sol::maxWithdraw",
+                "sBold.sol::maxRedeem"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "swap() Reverts if rewardBps Is Set to 100%",
+            "description": "If rewardBps is set to 100%, the entire swap proceeds go to the caller, leaving 0 to deposit to Stability Pools. This causes provideToSP() to revert due to zero amount. The root cause is missing validation on rewardBps. The impact is denial of service for swap functionality when misconfigured, though the risk is mitigated by later capping the value.\n",
+            "severity": "Low",
+            "location": [
+                "sBold.sol::setReward",
+                "sBold.sol::swap",
+                "SpLogic.sol::provideToSP"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Gas Optimizations",
+            "description": "Several gas inefficiencies exist: redundant _checkCollHealth() calls, repeated copying of sps array in memory, unnecessary memory allocation in setOracles(), suboptimal storage packing in weight and struct fields. The root cause is suboptimal code design. The impact is higher transaction costs, though not a security risk. Some optimizations were not fully implemented.\n",
+            "severity": "Informational",
+            "location": [
+                "sBold.sol::withdraw",
+                "sBold.sol::redeem",
+                "sBold.sol::swap",
+                "Registry.sol::setOracles",
+                "ISBold.sol::SP",
+                "BaseChainlinkOracle.sol::Feed"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "No Rebalancing Between Stability Pools",
+            "description": "The weights set in the constructor are only used during deposit and after swap, but there is no mechanism to rebalance pools over time. The root cause is missing rebalancing logic. If liquidations or yield accrual are uneven, allocation drifts from target weights. The impact is suboptimal capital allocation and reduced yield efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "sBold.sol::deposit",
+                "sBold.sol::mint",
+                "sBold.sol::swap"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-267"
+                ]
+            },
+            "title": "Unstated Owner Privileges",
+            "description": "The owner has several critical privileges not clearly documented: draining the contract, manipulating oracles, blocking deposits/swaps via fee receiver or reward settings. The root cause is excessive and undocumented admin powers. The impact is high trust assumption on the owner, creating centralization risk and potential for abuse, even if later mitigated.\n",
+            "severity": "Informational",
+            "location": [
+                "sBold.sol::setSwapAdapter",
+                "sBold.sol::setOracles",
+                "sBold.sol::setFeeReceiver",
+                "sBold.sol::setReward",
+                "sBold.sol::setSwapFeeBps"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Weights Cannot Be Modified Once Set",
+            "description": "The capital allocation weights are fixed at deployment and cannot be updated. The root cause is lack of mutability. This prevents adaptation to changing conditions, such as Liquity V2 disabling a collateral branch. The impact is continued allocation to potentially inactive or low-yield pools, reducing capital efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "sBold.sol::constructor",
+                "sBold.sol::rebalanceSPs"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Collateral Counted Twice if Collaterals Repeated",
+            "description": "If the same collateral type is used in multiple branches (e.g., WETH with different LTVs), the balance is double-counted in calculations. The root cause is lack of deduplication in collateral accounting. While not an issue for mainnet deployment, it limits code reusability in forks. The impact is informational, affecting potential future deployments.\n",
+            "severity": "Informational",
+            "location": [
+                "sBold.sol::calcFragments"
+            ],
+            "files": [
+                "sBOLD/contracts/sBold.sol"
+            ]
+        }
+    ]
+}

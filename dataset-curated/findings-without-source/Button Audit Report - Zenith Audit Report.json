@@ -1,0 +1,129 @@
+{
+    "path": "dataset-curated/reports/Zenith/Button Audit Report - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/buttonxyz/button-protocol"
+        ],
+        "commit_id": [
+            "f04d5b16c4fbffcbd27030ee00f3e5c882d5f616"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2026-01-16",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "providePocketAllowance() allows approval of arbitrary spenders",
+            "description": "1. **Description:** The providePocketAllowance() function allows an AGENT_ROLE address to grant ERC20 approvals from any pocket to any spender without requiring the spender to be on an allowlist. This breaks the system's intended security model where sensitive flows are restricted to vetted addresses.\n2. **Cause:** The function only validates non-zero addresses and pocket existence but does not check whether the spender is part of an approved list, enabling unrestricted approval delegation via IPocket.approve.\n3. **Exploitation:** A malicious or compromised agent could approve an attacker-controlled contract as a spender for a pocket's tokens, allowing the attacker to pull funds via transferFrom without further authorization.\n4. **Impact:** This could lead to unauthorized transfer of assets from user pockets, bypassing withdrawal and adapter controls, resulting in potential loss of funds.\n",
+            "severity": "Medium",
+            "location": [
+                "BasisTradeTailor.sol::providePocketAllowance#713"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "lastTransferBlock updated for non-EVM/Core transfers",
+            "description": "1. **Description:** The lastTransferBlock variable is updated in functions that perform internal operations within HyperCore (e.g., transferPerp, depositToStaking), even though it is intended to track cross-chain transfers between HyperEVM and HyperCore.\n2. **Cause:** The variable is updated regardless of the type of operation, leading to semantic inconsistency between its name and actual usage.\n3. **Exploitation:** While not directly exploitable, this mislabeling could mislead developers or off-chain systems relying on this state to infer cross-chain activity.\n4. **Impact:** Reduced code clarity and potential for incorrect assumptions in monitoring or integration systems, leading to operational or debugging issues.\n",
+            "severity": "Informational",
+            "location": [
+                "BasisTradeTailor.sol::transferPerp",
+                "BasisTradeTailor.sol::depositToStaking"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "State variables usdcAddress and coreDepositWallet could be immutable",
+            "description": "1. **Description:** The state variables usdcAddress and coreDepositWallet are set once during initialization and never modified, yet they are stored in mutable storage.\n2. **Cause:** These variables are declared as regular public state variables instead of being marked immutable or constant, despite their values not changing post-deployment.\n3. **Exploitation:** No direct exploitation path, but the current implementation wastes gas and increases storage costs unnecessarily.\n4. **Impact:** Higher deployment and runtime gas costs, and missed optimization opportunities. Declaring them immutable would reduce storage overhead and improve code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "BasisTradeTailor.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Missing asset registration check in providePocketAllowance()",
+            "description": "1. **Description:** The providePocketAllowance() function does not verify that the token being approved is a registered asset in the system, unlike other token-handling functions.\n2. **Cause:** The function omits a check against the registeredAssets mapping, allowing approvals for unregistered or potentially malicious tokens.\n3. **Exploitation:** An agent could approve a malicious token, potentially leading to confusion or misuse in downstream systems expecting only registered assets.\n4. **Impact:** Inconsistency in security policy and potential for integration errors or front-running by malicious tokens if not validated elsewhere.\n",
+            "severity": "Informational",
+            "location": [
+                "BasisTradeTailor.sol::providePocketAllowance"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "transferHypeToCore() could use transferNative() for clarity",
+            "description": "1. **Description:** The transferHypeToCore() function uses execWithValue() with empty calldata to send native HYPE, instead of the more semantically appropriate transferNative() function.\n2. **Cause:** The implementation relies on low-level calls even though a dedicated high-level function exists for native transfers.\n3. **Exploitation:** No security risk, but the current approach is less clear and could confuse developers.\n4. **Impact:** Reduced code readability and maintainability. Using transferNative() would make the intent explicit and align with best practices.\n",
+            "severity": "Informational",
+            "location": [
+                "BasisTradeTailor.sol::transferHypeToCore"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "executeAdapter() does not support native HYPE value in calls",
+            "description": "1. **Description:** The executeAdapter() function uses IPocket(pocket).exec() which does not forward native value, preventing adapters from making calls that require sending HYPE.\n2. **Cause:** The function does not include a value parameter in the call structure or pass any ETH value during execution.\n3. **Exploitation:** Future adapters requiring native token transfers would fail, limiting extensibility.\n4. **Impact:** Reduced flexibility for future adapter development, potentially blocking integration with protocols that require ETH/HYPE deposits.\n",
+            "severity": "Informational",
+            "location": [
+                "BasisTradeTailor.sol::executeAdapter"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "MorphoBlueAdapter withdrawCollateral() receiver parameter is redundant",
+            "description": "1. **Description:** The withdrawCollateral() function in MorphoBlueAdapter accepts a receiver parameter, but validateCalls() enforces that it must be the pocket address.\n2. **Cause:** The validation logic makes the parameter redundant since only one valid value (pocket) is allowed.\n3. **Exploitation:** No exploit, but the parameter adds unnecessary complexity.\n4. **Impact:** Increased code complexity and gas usage due to extra parameter handling. Removing it would simplify the interface and reduce potential confusion.\n",
+            "severity": "Informational",
+            "location": [
+                "MorphoBlueAdapter.sol::withdrawCollateral"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "MorphoBlueAdapter uses raw approve() instead of SafeERC20",
+            "description": "1. **Description:** The adapter uses raw IERC20.approve.selector instead of SafeERC20's forceApprove(), which may fail with non-standard tokens like USDT that do not return a boolean.\n2. **Cause:** Direct use of low-level approve selector without handling non-standard ERC20 behaviors.\n3. **Exploitation:** Calls could revert when interacting with tokens that do not return values on approve, breaking expected functionality.\n4. **Impact:** Potential failure in approval operations for certain tokens, leading to failed transactions and user frustration.\n",
+            "severity": "Informational",
+            "location": [
+                "MorphoBlueAdapter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Upgrade script should not be used with current implementation",
+            "description": "1. **Description:** The UpgradeBasisTradeTailor.s.sol script exists but cannot be safely used due to incompatible storage layouts and lack of re-initialization logic.\n2. **Cause:** The contract state layout has changed, and upgrading without migration would corrupt storage or leave state uninitialized.\n3. **Exploitation:** Accidental use of the script could brick the proxy or result in an inconsistent contract state.\n4. **Impact:** High risk of contract failure if the upgrade script is used, leading to potential loss of functionality or funds.\n",
+            "severity": "Informational",
+            "location": [
+                "script/UpgradeBasisTradeTailor.s.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Redundant balance check in Pocket execWithValue()",
+            "description": "1. **Description:** The execWithValue() function in Pocket.sol performs a manual balance check before calling OpenZeppelin's functionCallWithValue(), which already includes the same check.\n2. **Cause:** Redundant validation logic that duplicates functionality provided by a trusted library.\n3. **Exploitation:** No security impact, but results in unnecessary gas consumption.\n4. **Impact:** Increased transaction costs due to extra SLOAD operations. Removing the check would save gas without compromising safety.\n",
+            "severity": "Informational",
+            "location": [
+                "Pocket.sol::execWithValue"
+            ],
+            "files": []
+        }
+    ]
+}

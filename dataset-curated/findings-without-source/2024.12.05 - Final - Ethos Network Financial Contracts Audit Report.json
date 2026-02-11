@@ -1,0 +1,102 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2024.12.05 - Final - Ethos Network Financial Contracts Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/trust-ethos/ethos"
+        ],
+        "commit_id": [
+            "12e6a9d3b813040463266483733a84218a35847f"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "base",
+        "compiler_version": "n/a",
+        "audit_date": "2024-11-29",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Bonding curve logic can be exploited to pay less for buying votes",
+            "description": "The bonding curve logic in the _calcVotePrice function of the ReputationMarket contract allows attackers to manipulate the vote pricing mechanism by alternating purchases between trust and distrust votes or by temporarily buying the opposite vote type before making a large purchase. The root cause lies in the formula used to calculate vote prices, which depends on the current ratio of trust to distrust votes, enabling price manipulation within the same block. An attacker can exploit this by strategically purchasing lower-priced votes first to alter the ratio, then buying the desired votes at a reduced effective price, and finally selling the initially purchased votes. This leads to a direct financial advantage for the attacker, allowing them to acquire votes at a significantly lower cost than intended, undermining the economic model of the reputation market.\n",
+            "severity": "High",
+            "location": [
+                "ReputationMarket.sol::buyVotes",
+                "ReputationMarket.sol::_calcVotePrice#920-923"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Users could overpay fees when buying votes",
+            "description": "The buyVotes function applies fees to the total funds submitted by the user, even if only a portion of those funds are actually used to purchase votes. The root cause is that the fee calculation is based on the entire amount sent by the user, rather than the actual amount spent on votes during the purchase loop. An attacker or regular user could end up paying fees on unused funds when the dynamic vote price increases during execution, causing the transaction to stop early due to insufficient remaining funds. As a result, users pay full fees on their entire input even when only a fraction is used for actual vote purchases, leading to an overpayment of fees. This results in a direct financial loss for users and reduces trust in the protocol's fairness, especially in volatile market conditions.\n",
+            "severity": "Medium",
+            "location": [
+                "ReputationMarket.sol::buyVotes",
+                "ReputationMarket.sol::_calculateBuy"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Market funds cannot be withdrawn because of incorrect calculation of fundsPaid",
+            "description": "The contract incorrectly includes protocol and donation fees in the fundsPaid variable when updating marketFunds, even though these fees are already separately accounted for via the applyFees function. The root cause is the failure to deduct protocolFee and donation from fundsPaid before adding it to marketFunds, resulting in double-counting of fees. When a market graduates and the owner attempts to withdraw funds, the contract tries to transfer more funds than are actually available because marketFunds includes the already-redirected fees. This leads to a revert during withdrawal, effectively locking the market owner's legitimate funds. The impact is severe as it prevents rightful withdrawal of funds, potentially causing permanent loss of access to capital or incorrect cross-market fund reallocation.\n",
+            "severity": "High",
+            "location": [
+                "ReputationMarket.sol::buyVotes#442",
+                "ReputationMarket.sol::applyFees",
+                "ReputationMarket.sol::withdrawGraduatedMarketFunds"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "A user can pay less in fees by vouching initially with a smaller amount and then using the EthosVouch::increaseVouch function to add the remaining vouch value",
+            "description": "The fee mechanism in EthosVouch allows users to reduce their effective fee burden by splitting a large vouch into multiple smaller transactions. The root cause is that the vouchersPoolFee is redistributed to all existing vouchers, including the one making the new increase, without distinguishing between initial vouches and subsequent increases. An attacker can exploit this by first making a small initial vouch to become an existing voucher, then calling increaseVouch multiple times with additional funds. In each increase, they not only add value but also receive a share of the vouchersPoolFee from other vouches, effectively reclaiming part of what they paid. This undermines the intended fee distribution model and results in financial loss for other existing voucher holders, as the total fee pool is diluted and redistributed in a way that benefits the attacker.\n",
+            "severity": "High",
+            "location": [
+                "EthosVouch.sol::vouch",
+                "EthosVouch.sol::increaseVouch"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "authorProfileId can avoid being slashed",
+            "description": "The vulnerability allows an accused user (authorProfileId) to avoid being slashed by withdrawing their vouched funds before the slashing mechanism is triggered. The root cause is the absence of a lock mechanism on staking and withdrawals for the accused profile during a whistleblower accusation. According to the project's whitepaper, a 24-hour lock should be enforced upon accusation, but this is not implemented. An attacker can monitor incoming accusations and unvouch their funds before any slashing occurs. This undermines the integrity of the reputation and accountability system, allowing malicious actors to evade penalties.\n",
+            "severity": "Medium",
+            "location": [
+                "EthosVouch.sol#L452"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing slippage protection on sellVotes()",
+            "description": "The sellVotes() function in the ReputationMarket contract lacks slippage protection, exposing users to financial loss due to price volatility between simulation and execution. While buyVotes() includes a minAmountOut parameter to protect buyers, sellVotes() does not have an equivalent maxAmountIn or minAmountOut safeguard. The root cause is the omission of a slippage control parameter in the function interface and validation logic. An attacker or high-fee-paying user can manipulate execution order on Base L2 (despite its private mempool) by paying higher fees, causing price movement that negatively impacts pending sell transactions. Users may receive significantly fewer funds than expected from their sale, leading to direct asset loss.\n",
+            "severity": "Medium",
+            "location": [
+                "ReputationMarket.sol#L495"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Separate calculation of fees in applyFees results in inflated total fee percentage",
+            "description": "The applyFees function in EthosVouch.sol calculates multiple fees (protocol, donation, vouchers pool) independently using calcFee, which leads to a compounding effect and results in a higher total fee than intended. The root cause is the sequential subtraction of each fee from the original amount without adjusting the base for subsequent fees, effectively applying fees on top of previously deducted fees. This allows the effective total fee to exceed the sum of the configured basis points\u2014for example, 20% + 25% intended becomes ~57.89% in practice. Users are overcharged during vouching or vote transactions, leading to unexpected costs and reduced trust in the protocol's fee transparency.\n",
+            "severity": "Medium",
+            "location": [
+                "EthosVouch.sol#L936"
+            ],
+            "files": []
+        }
+    ]
+}

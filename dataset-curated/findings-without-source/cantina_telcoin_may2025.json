@@ -1,0 +1,161 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_telcoin_may2025.pdf",
+    "project_info": {
+        "url": [],
+        "commit_id": [],
+        "address": [],
+        "chain": null,
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Missing validators in _getValidators() due to token ID gaps",
+            "description": "1. **Description:** The _getValidators() function in the ConsensusRegistry contract fails to return all active validators when there are gaps in validator token IDs due to burned NFTs. This occurs because the function iterates from 1 to totalSupply, which decreases when a validator NFT is burned, potentially skipping higher-valued token IDs that are still active.\n\n2. **Cause:** The root cause is the reliance on totalSupply as the upper bound for iteration, rather than using ERC721Enumerable's tokenByIndex to safely iterate over all existing tokens. When a validator with a non-sequential ID is burned, totalSupply decreases, causing subsequent IDs to be skipped.\n\n3. **Exploitation:** An attacker or malicious validator could exploit this by strategically burning and re-staking to manipulate validator enumeration, potentially avoiding detection or slashing in functions that depend on _getValidators().\n\n4. **Impact:** Critical functions that rely on validator enumeration\u2014such as slashing, committee selection, and reward distribution\u2014may operate on incomplete data, leading to incorrect consensus decisions or financial loss.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::_getValidators"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Slashing penalties circumvented due to missing balance reset in _consensusBurn()",
+            "description": "1. **Description:** The _consensusBurn() function in the ConsensusRegistry contract does not reset the validator's balance to zero after slashing, which allows the validator to later unstake using their pre-slash balance.\n\n2. **Cause:** The function fails to explicitly set the validator's balance to zero when called during slashing or forced burn operations, creating a discrepancy between the intended state (zero balance) and the recorded balance.\n\n3. **Exploitation:** A validator whose balance should have been zeroed out due to slashing could call unstake() and withdraw funds that should have been forfeited, effectively circumventing the slashing penalty.\n\n4. **Impact:** This undermines the economic security of the staking system by allowing validators to avoid penalties, potentially leading to repeated malicious behavior without consequence. The impact is high as it directly affects the integrity of the slashing mechanism.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::_consensusBurn",
+                "ConsensusRegistry.sol::applySlashes"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Payable permitWrap function can silently lose user funds",
+            "description": "1. **Description:** The permitWrap() function in the InterchainTEL contract is marked as payable but does not handle ETH sent to it, causing user funds to be silently lost.\n\n2. **Cause:** The function lacks any logic to accept or reject ETH, and there is no revert or warning when ETH is included in the transaction. This is compounded by the existence of a similar function, doubleWrap(), which is correctly payable and handles ETH.\n\n3. **Exploitation:** Users may mistakenly send ETH to permitWrap(), expecting it to behave like doubleWrap(), only to have their funds locked in the contract with no way to recover them.\n\n4. **Impact:** Users can permanently lose ETH due to confusion between similarly named functions, resulting in financial loss and reduced trust in the system.\n",
+            "severity": null,
+            "location": [
+                "InterchainTEL.sol::permitWrap"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "stake does not validate all intended staking parameters",
+            "description": "1. **Description:** The stake() function in the ConsensusRegistry contract only validates the msg.value (stakeAmount) but does not verify other staking parameters such as minWithdrawAmount, epochIssuance, or epochDuration that may have changed via upgradeStakeVersion().\n\n2. **Cause:** The function relies solely on the value check, assuming that all parameters are consistent with the current StakeConfig, but governance can update the config without invalidating existing stake transactions.\n\n3. **Exploitation:** A user who submits a stake transaction after a config update but before realizing the change could unknowingly stake under new, potentially unfavorable terms (e.g., longer epochs, higher withdrawal thresholds).\n\n4. **Impact:** Users may be locked into staking conditions they did not intend, leading to reduced flexibility and potential economic loss, especially if parameters like minWithdrawAmount become unattainable.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::stake"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing validation in upgradeStakeVersion() function",
+            "description": "1. **Description:** The upgradeStakeVersion() function in the ConsensusRegistry contract accepts a new StakeConfig without validating the reasonableness of its parameters.\n\n2. **Cause:** There are no checks on values like minWithdrawAmount, epochDuration, or epochIssuance, allowing governance to set values that could break the economic model or consensus stability.\n\n3. **Exploitation:** Malicious or mistaken governance actions could set extreme values\u2014such as an epochDuration of 1 block or an epochIssuance of 1 billion tokens\u2014disrupting staking rewards and network security.\n\n4. **Impact:** Poorly set parameters could lead to inflation, unclaimable rewards, or consensus instability, threatening the long-term viability of the protocol.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::upgradeStakeVersion"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing Transfer events in InterchainTEL's _mint() and _burn() functions",
+            "description": "1. **Description:** The InterchainTEL contract overrides _mint() and _burn() but does not emit Transfer events, violating ERC20 compliance.\n\n2. **Cause:** The parent contract (RecoverableWrapper) does not emit Transfer events, and InterchainTEL fails to override this behavior despite modifying token balances.\n\n3. **Exploitation:** Indexers, wallets, and DeFi protocols that rely on Transfer events to track balance changes will fail to detect mints and burns, leading to incorrect balance displays and potential fund loss in integrated systems.\n\n4. **Impact:** Non-compliance with ERC20 standards breaks interoperability with external tools and services, reducing trust and usability of the token.\n",
+            "severity": null,
+            "location": [
+                "InterchainTEL.sol::_mint",
+                "InterchainTEL.sol::_burn"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Rewards are payed out from StakeManager instead of Issuance",
+            "description": "1. **Description:** Rewards are incorrectly routed through the StakeManager contract instead of being directly distributed by the Issuance contract.\n\n2. **Cause:** The StakeManager forwards rewards from Issuance but also sets the reward amount to zero in the process, creating a discrepancy in accounting.\n\n3. **Exploitation:** This could lead to incorrect reward tracking and reporting, especially in systems that query Issuance directly for payout data.\n\n4. **Impact:** Misleading reward data could affect analytics, governance decisions, and user trust in the reward distribution mechanism.\n",
+            "severity": null,
+            "location": [
+                "StakeManager.sol",
+                "Issuance.sol::distributeStakeReward"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Missing zero committee size check in _checkCommitteeSize() function",
+            "description": "1. **Description:** The _checkCommitteeSize() function does not explicitly check for a zero committee size, relying instead on indirect reverts.\n\n2. **Cause:** While the function reverts if committeeSize > activeOrPending, it does not assert that committeeSize > 0, leaving open a potential edge case.\n\n3. **Exploitation:** If governance or an admin function were to pass an empty committee, the function might not revert as expected, potentially leading to undefined behavior in consensus.\n\n4. **Impact:** An empty committee could disrupt consensus, especially in admin-triggered burns or slashes, leading to a denial of service or incorrect state transitions.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::_checkCommitteeSize"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Permit front-running vulnerability in permitWrap() function",
+            "description": "1. **Description:** The permitWrap() function is vulnerable to front-running because it uses EIP-2612 permit signatures that can be extracted and reused by attackers.\n\n2. **Cause:** The function calls permit() on wTEL using user-provided signatures, which are visible in the mempool. Attackers can observe and replay the permit before the original transaction is confirmed.\n\n3. **Exploitation:** An attacker can front-run the permitWrap() call by submitting a direct permit() transaction, consuming the signature and causing the user's transaction to revert.\n\n4. **Impact:** Users experience failed transactions and may be forced to resubmit with higher fees, enabling denial-of-service and MEV exploitation. The issue is particularly dangerous for users with large approvals.\n",
+            "severity": null,
+            "location": [
+                "InterchainTEL.sol::permitWrap"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Incorrect balance check in Issuance's distributeStakeReward() function",
+            "description": "1. **Description:** The distributeStakeReward() function in the Issuance contract checks only the rewardAmount against the contract balance, not the totalAmount (rewardAmount + msg.value).\n\n2. **Cause:** The balance validation uses rewardAmount in the require statement, but the actual transfer uses totalAmount, creating a gap where the contract can attempt to send more than it holds.\n\n3. **Exploitation:** An attacker could trigger the function with a large msg.value when the contract balance is just above rewardAmount, causing a revert due to insufficient funds after the check passes.\n\n4. **Impact:** The function may revert unexpectedly, disrupting reward distribution and potentially locking user funds if the condition persists.\n",
+            "severity": null,
+            "location": [
+                "Issuance.sol::distributeStakeReward"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "_updateEpochInfo stores end block number of previous epoch instead of start block of the current epoch",
+            "description": "1. **Description:** The _updateEpochInfo function stores the current block.number at the end of an epoch, which corresponds to the last block of the previous epoch, not the start of the new one.\n\n2. **Cause:** The function is called during concludeEpoch(), so block.number reflects the final block of the prior epoch, leading to incorrect epoch timing metadata.\n\n3. **Exploitation:** This could cause miscalculations in time-dependent logic, such as reward accrual or validator eligibility, especially if external systems rely on the stored start block.\n\n4. **Impact:** Inaccurate epoch timing could lead to incorrect reward distribution, flawed committee selection, or bugs in time-based governance mechanisms.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::_updateEpochInfo"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Incorrect iTEL mint amount if baseERC20 charges fees",
+            "description": "1. **Description:** The doubleWrap function mints iTEL tokens based on the input amount to WTEL, but if the baseERC20 charges fees, the actual WTEL received may be less, leading to incorrect iTEL minting.\n\n2. **Cause:** The mint amount is calculated before the deposit, so any fee taken by the base token reduces the effective WTEL balance without adjusting the iTEL mint.\n\n3. **Exploitation:** If the base token were changed to one with fees, users would receive fewer WTEL than expected but still be minted the full iTEL amount, creating an imbalance.\n\n4. **Impact:** This could lead to over-minting of iTEL, breaking the 1:1 peg and potentially enabling arbitrage or inflation if exploited at scale.\n",
+            "severity": null,
+            "location": [
+                "InterchainTEL.sol::doubleWrap"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "NewEpoch event mixes information about different epochs",
+            "description": "1. **Description:** The NewEpoch event emits a start block and duration that refer to different epochs than the committee being announced, creating confusion in event interpretation.\n\n2. **Cause:** The event uses block.number + 1 as the start block (for the current epoch) but includes a committee that is actually for epoch + 2, leading to inconsistent epoch metadata.\n\n3. **Exploitation:** Indexers or off-chain systems consuming the event may misinterpret the timing and composition of committees, leading to incorrect state reconstruction.\n\n4. **Impact:** Misaligned event data can break monitoring tools, governance dashboards, and consensus tracking systems, reducing transparency and reliability.\n",
+            "severity": null,
+            "location": [
+                "ConsensusRegistry.sol::concludeEpoch",
+                "NewEpoch event"
+            ],
+            "files": []
+        }
+    ]
+}

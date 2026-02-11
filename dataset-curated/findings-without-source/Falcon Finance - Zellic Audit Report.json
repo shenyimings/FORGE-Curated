@@ -1,0 +1,87 @@
+{
+    "path": "dataset-curated/reports/Zellic/Falcon Finance - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/falconfinance/falcon-contracts-evm"
+        ],
+        "commit_id": [
+            "d082d36019a0fda922f65740528a1d5a249cec20"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-11",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Incorrect maturityFeeGrowthX128 may lead to miscalculated rewards",
+            "description": "The maturityFeeGrowthX128 mapping in the FalconPosition contract is used to store fee growth at maturity time for a specific staking duration. However, it is indexed only by timestamp, not by duration. When multiple durations share the same maturity timestamp, the fee growth value can be overwritten by a different duration's value. This causes the _unrealizedRewards function to use an incorrect fee growth snapshot when calculating rewards for a position. The root cause is the lack of duration-specific indexing in the mapping. An attacker could potentially manipulate or benefit from incorrect reward calculations by timing deposits or maturities across overlapping durations. The impact is miscalculated rewards, which could result in users receiving more or less than their fair share, undermining the protocol's economic model and user trust.\n",
+            "severity": "Medium",
+            "location": [
+                "FalconPosition.sol::mature#",
+                "FalconPosition.sol::_unrealizedRewards#"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Function _cleanupMaturedBuckets may run out of gas",
+            "description": "The _cleanupMaturedBuckets function in the FalconPosition contract iterates from the last matured date to the current date in daily increments to process matured buckets. If a significant amount of time has passed since the last update, the loop may execute an excessive number of iterations, leading to an out-of-gas error. The root cause is the absence of a loop limit or gas usage safeguard. An attacker could potentially exploit this by forcing a long delay in calling depositReward (or a function that triggers this cleanup), making the function unusable until gas limits are increased or external intervention occurs. The impact is a potential denial of service for reward distribution, preventing users from claiming rewards until the issue is manually resolved.\n",
+            "severity": "Low",
+            "location": [
+                "FalconPosition.sol::_cleanupMaturedBuckets#"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "The rescueTokens does not validate that the token does not match USDf token",
+            "description": "The rescueTokens function in the StakingRewardsDistributor contract allows administrators to withdraw mistakenly sent tokens, including ERC-20 tokens and native ETH. However, it lacks a validation check to prevent the withdrawal of the USDf reward token itself. The root cause is the absence of a conditional check excluding the USDf token address. Since the function is accessible to DEFAULT_ADMIN_ROLE, a malicious or compromised admin could withdraw the entire reward pool, disrupting the reward distribution mechanism. While the impact is mitigated by admin trust assumptions, the lack of a safeguard increases risk. The impact is potential loss of reward funds or disruption of the staking economy if USDf tokens are accidentally or maliciously withdrawn.\n",
+            "severity": "Informational",
+            "location": [
+                "StakingRewardsDistributor.sol::rescueTokens#"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Function updateDurationSettings allows resetting totalLiquidity and feeGrowthX128",
+            "description": "The updateDurationSettings function in the FalconPosition contract resets totalLiquidity and feeGrowthX128 to zero when re-enabling a previously disabled staking duration. The root cause is the unconditional re-initialization of the DurationInfo struct when isSupported is set to true, regardless of prior state. This behavior erases critical accounting data, which would lock users out of withdrawing or collecting rewards for positions under that duration. Although the function is restricted to DEFAULT_ADMIN_ROLE and not intended for toggling durations, the design flaw could lead to accidental or intentional disruption. The impact is a potential freeze of user funds and reward claims for affected durations, though the risk is considered low due to access control.\n",
+            "severity": "Informational",
+            "location": [
+                "FalconPosition.sol::updateDurationSettings#"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Account restrictions can be bypassed in StakedUSDf contract",
+            "description": "The StakedUSDf contract implements account restrictions for deposit and withdrawal via _checkRestricted, but it does not enforce these restrictions on token transfers. Since sUSDf is an ERC-4626 vault share token, users can bypass restrictions by transferring their shares to another address. The root cause is the lack of transfer-level validation. A restricted user could transfer their shares to an unrestricted address and then withdraw from there, effectively circumventing the restriction mechanism. Although Falcon considers this an intentional design due to lack of compliance requirements, the functionality undermines the purpose of having restrictions. The impact is reduced effectiveness of account controls, potentially allowing restricted users to exit their positions.\n",
+            "severity": "Informational",
+            "location": [
+                "StakedUSDf.sol::_deposit#",
+                "StakedUSDf.sol::_withdraw#"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "The setVestingPeriod may relock previously released assets",
+            "description": "The setVestingPeriod function in the StakedUSDf contract allows increasing the vesting period without verifying that the current unvested amount is zero. The root cause is the absence of a pre-condition check on the vesting state. If the vesting period is extended after some assets have already vested and been withdrawn, the system may incorrectly recalculate vesting, effectively relocking assets that were already released. This could lead to discrepancies in totalAssets and user balances. While the function is admin-controlled and intended only for reductions, the lack of validation introduces accounting risk. The impact is potential misrepresentation of available assets and user funds being unintentionally locked again.\n",
+            "severity": "Informational",
+            "location": [
+                "StakedUSDf.sol::_setVestingPeriod#",
+                "StakedUSDf.sol::getUnvestedAmount#"
+            ],
+            "files": []
+        }
+    ]
+}

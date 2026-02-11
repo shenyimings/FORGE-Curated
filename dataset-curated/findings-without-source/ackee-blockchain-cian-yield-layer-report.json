@@ -1,0 +1,324 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-cian-yield-layer-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/cian-protocol"
+        ],
+        "commit_id": [
+            "54e9538f04743db9e1d996baf8d8099daf34d98d"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-11-27",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Invalid calculations due to intermediary division",
+            "description": "The vulnerability arises from the use of two consecutive mulDiv operations in the RedeemOperator contract, which leads to loss of precision during arithmetic calculations. This occurs when calculating the cutPercentage_ value and the assetPerShare_ distribution, where intermediate division reduces accuracy, especially with smaller input values. The root cause is improper handling of fixed-point arithmetic by splitting a single mathematical expression into multiple division steps. An attacker or malicious operator could exploit this by triggering withdrawal confirmations when exchange prices differ significantly, leading to miscalculated user payouts. The impact is that users receive fewer assets than expected during withdrawals, resulting in financial loss due to imprecise calculations.\n",
+            "severity": "Medium",
+            "location": [
+                "RedeemOperator.sol::confirmWithdrawal#186-190",
+                "RedeemOperator.sol::confirmWithdrawal#196-204"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Pool state variables have insufficient data validation",
+            "description": "The initialize and setter functions in Pool.sol, PoolArb.sol, and PoolOp.sol lack proper input validation for critical state variables such as exchange price and fee rates. This allows potentially malicious or erroneous inputs, such as zero exchange prices (leading to division by zero) or excessively high fees. The root cause is the absence of require() checks or modifier-based validations on these parameters. An attacker with privileged access could set unreasonable fee values or zero exchange rates, disrupting contract functionality. The impact includes incorrect accounting, potential reverts due to division by zero, and user financial loss from unfair fee deductions during deposits or withdrawals.\n",
+            "severity": "Medium",
+            "location": [
+                "Pool.sol::initialize",
+                "PoolArb.sol::initialize",
+                "PoolOp.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Users have almost no control over their deposited funds",
+            "description": "Users who deposit funds into the Vault contract cannot directly withdraw them and must rely on a privileged operator to process withdrawal requests. The amount they receive is subject to dynamic adjustments via the cutPercentage_, which depends on the exchange price update timing controlled off-chain. The root cause is a centralized trust model where protocol owners control key parameters and withdrawal confirmation logic. An attacker or malicious operator could delay exchange price updates to inflate the cutPercentage_, reducing user payouts. The impact is significant loss of user funds during withdrawal, lack of transparency, and reduced user autonomy, making the system highly dependent on trusted parties.\n",
+            "severity": "Medium",
+            "location": [
+                "RedeemOperator.sol::confirmWithdrawal#175-185",
+                "VaultYieldBasic.sol::previewRedeem#495-496"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Double-entrypoint initialize functions",
+            "description": "The LzBridgeArb.sol and LzBridgeOp.sol contracts have two initialization functions: one defined locally and another inherited from LayerZeroBridgeHelper. This creates a risk of partial initialization if the inherited function is used, as it does not set the Arbitrum Outbox parameter. The root cause is improper inheritance design without overriding or restricting the parent initializer. An attacker or mistaken deployer could call the inherited initialize function, leaving critical state uninitialized, which would break cross-chain functionality. The impact is a partially initialized contract requiring redeployment, leading to operational disruption and potential loss of trust.\n",
+            "severity": "Low",
+            "location": [
+                "LzBridgeArb.sol::initialize#22-27",
+                "LzBridgeOp.sol::initialize",
+                "LayerZeroBridgeHelper::initialize#26-29"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Using transfer instead of call",
+            "description": "The transfer function in Solidity imposes a 2,300 gas limit on the recipient contract, which can lead to transaction failures when the recipient requires more gas for execution. The root cause is the use of the transfer function instead of the more flexible call function, which allows custom gas stipends and proper handling of return values. An attacker or regular user attempting to send ETH to a contract that consumes more than 2,300 gas during fallback execution will face failed transactions. This results in a denial of service for legitimate transfers, reducing reliability and user experience.\n",
+            "severity": "Low",
+            "location": [
+                "Pool.sol",
+                "BridgeHelper.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing initializers on constructors",
+            "description": "All upgradeable contracts in the codebase are missing the initializer modifier or equivalent protection mechanism, allowing the initialize function to be called multiple times or by unauthorized actors. The root cause is the absence of safeguards in the constructor or initialization logic. An attacker can front-run the legitimate initialization transaction after proxy deployment, gaining ownership of the contract. Alternatively, any user could re-initialize the logic contract if not properly protected, potentially taking ownership. This could lead to full contract takeover if ownership is not properly secured during deployment.\n",
+            "severity": "Low",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Strategy Position Limit Calculation Inaccuracy",
+            "description": "The VaultYieldBasic.transferToStrategy function incorrectly reverts when a strategy has not actually reached its position limit due to a discrepancy between totalAssets() and underlyingTvl(). The cause is the use of exchangePrice in totalAssets(), which may not reflect real-time asset value if price updates are delayed. When exchangePrice increases due to yield accrual but hasn't been updated, totalAssets() returns a lower value than actual TVL, causing transfers that should succeed to fail. Conversely, if exchangePrice decreases, transfers may exceed the intended limit. This leads to inaccurate enforcement of position limits, potentially blocking valid operations or allowing over-allocation.\n",
+            "severity": "Low",
+            "location": [
+                "VaultYieldBasic"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Strict equality check for balances",
+            "description": "The OneInchCallerV6 contract performs a strict equality check (spentAmount_ != _amount) after a swap, which can cause the transaction to revert if the spent amount differs even slightly. The root cause is the lack of tolerance for minor discrepancies, such as dust ETH received during the call or rounding differences. If the contract receives additional ETH (e.g., via self-destruct or prior balance), the balance check fails. This creates a denial-of-service risk where legitimate swaps are reverted due to minor balance variations, reducing reliability and robustness.\n",
+            "severity": "Informational",
+            "location": [
+                "OneInchCallerV6.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Potential depeg of ETH-based assets",
+            "description": "The system uses ETH, WETH, and stETH, which are generally stable, but does not maintain ratio invariance between them once deposited. The root cause is the lack of safeguards against significant price deviations in ETH-pegged assets. If a token like stETH depegs significantly, the protocol could suffer losses due to incorrect valuation assumptions. This is particularly relevant if new ETH-based assets are added without proper price validation. The impact includes potential insolvency or unfair user withdrawals if asset values diverge.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Vault is not ERC4626 compliant",
+            "description": "The VaultYieldBasic contract does not fully comply with the ERC-4626 standard. The previewWithdraw and previewRedeem functions are not fee-inclusive, which can mislead users about expected outputs. Additionally, the withdraw and redeem functions are missing, deviating from standard expectations. The root cause is incomplete implementation of the ERC-4626 interface. This can confuse integrators and users who expect standard behavior, leading to incorrect assumptions and potential financial loss.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultYieldBasic.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Protocol owner can set arbitrary exchange price to pools",
+            "description": "The exchange price of pools is set by the protocol owner without sufficient constraints, creating a trust issue. The root cause is centralized price setting without decentralized oracles. The owner could manipulate prices to benefit themselves or cause incorrect exchange rates, enabling exploitation. While a 5% daily change limit was introduced as partial mitigation, older unapplied changes can accumulate, allowing large jumps. This undermines trust in fair pricing and exposes users to manipulation risk.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Pitfalls of the Ownable contract",
+            "description": "The codebase uses the basic Ownable contract, which allows accidental or malicious transfer or renouncement of ownership. The root cause is the lack of safeguards in Ownable, such as two-step transfer or disabled renounceOwnership. If ownership is renounced or sent to a zero address, critical functions may become permanently inaccessible. This is especially dangerous if the contract relies on owner permissions for maintenance or emergency actions. Using Ownable2Step and overriding renounceOwnership would mitigate this risk.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Protocol owner can artificially mint Vault shares",
+            "description": "The Vault contract allows the protocol owner (via a multisig) to mint unbacked shares through the mintUnbacked function, which could be abused to withdraw underlying assets without depositing. The root cause is the lack of backing verification for minted shares. Although caps and operator controls exist, the functionality remains, allowing potential inflation attacks. The client claims this is by design for cross-chain liquidity, but it introduces trust assumptions that contradict decentralization principles.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Underflow can cause DoS in confirmWithdrawal",
+            "description": "The confirmWithdrawal function in RedeemOperator.sol subtracts gasPerUser_ from thisUserGet_ without checking for underflow. The root cause is unsafe arithmetic when calculating user payouts after gas compensation. If a user requests a very small withdrawal, their thisUserGet_ amount may be less than the gas cost, causing an underflow and reverting the entire transaction. This allows a single small withdrawal request to block processing for all users, resulting in a denial-of-service condition.\n",
+            "severity": "Informational",
+            "location": [
+                "RedeemOperator.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Users are not able to request more than one withdrawal",
+            "description": "The registerWithdrawal function reverts if a user already has a pending withdrawal, preventing multiple concurrent requests. The root cause is a design decision to enforce single withdrawal per user. This becomes a usability issue when users want to deposit more funds and immediately request another withdrawal, forcing them to wait. While not a direct security vulnerability, it limits user flexibility and could lead to poor user experience or fund management inefficiencies.\n",
+            "severity": "Informational",
+            "location": [
+                "RedeemOperator.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Potential issues with retrieving borrow and supply caps",
+            "description": "The AaveV3FlashLeverageHelper contract masks borrow and supply caps with 0x7FFFF, which only covers 19 bits, while Aave uses up to 36 bits. The root cause is incorrect bit masking, potentially truncating large cap values. Additionally, the contract does not properly handle zero as an indicator of unlimited caps. This could lead to incorrect borrowing or supplying decisions, such as blocking operations that should be allowed or exceeding caps. Even with mask adjustments, zero handling remains unaddressed.\n",
+            "severity": "Informational",
+            "location": [
+                "AaveV3FlashLeverageHelper.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "The function can be declared as a view function",
+            "description": "The underlyingTvl function and related functions like getNetAssets are not declared as view despite not modifying state. The root cause is incorrect function mutability declaration. This leads to unnecessary gas costs when called externally and confusion for developers and tools. Declaring them as view would improve gas efficiency and clarity. However, the client notes that future strategies may require state changes in getNetAssets, justifying the current design.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultYieldBasic.sol",
+                "IStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Missing documentation",
+            "description": "The codebase lacks comprehensive in-repository documentation covering architecture, design decisions, and user flows. While NatSpec comments exist, they are insufficient for understanding cross-chain logic. The root cause is incomplete documentation practices. This reduces code maintainability and increases the risk of incorrect usage or integration by developers. Adding high-level documentation would improve transparency and long-term sustainability.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Typos and incorrect NatSpec comments",
+            "description": "The codebase contains several typos and incorrect NatSpec comments, such as missing parameter descriptions (_positionLimit, _offset, _asset), incorrect descriptions (e.g., \"deposit\" instead of \"withdrawal\" for _token), and wrong bit range comments (e.g., \"80-151\" instead of \"80-115\"). The root cause is lack of review for documentation accuracy. While not a direct security issue, this reduces code clarity and can mislead developers, increasing the risk of integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "*"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Missing underscore in internal function\u2019s name",
+            "description": "Several internal functions (e.g., getStorage, getBlockTimestamp) do not follow the naming convention of starting with an underscore. The root cause is inconsistent naming practices. This reduces code readability and increases the risk of confusion between internal and external functions, potentially leading to accidental exposure or incorrect usage during maintenance.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::optionalDepositDeal",
+                "BridgeHelper.sol::getStorage",
+                "LayerZeroBridgeHelper.sol::getHelperStorage",
+                "LzBridgeArb.sol::getArbBridgeStorage",
+                "LzBridgeOp.sol::getOpBridgeStorage",
+                "UnbackedMintAuthority.sol::getStorage",
+                "Pool.sol::getStorage",
+                "PoolArb.sol::getArbPoolStorage",
+                "PoolOp.sol::getOpPoolStorage",
+                "Timelock.sol::getBlockTimestamp"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Modifier consistency on access controls",
+            "description": "Access control checks are implemented inconsistently across the codebase\u2014some use custom require statements, others use modifiers. For example, VaultYieldBasic uses inline checks for owner and rebalancer in multiple functions. The root cause is lack of standardized access control patterns. This increases the risk of introducing bugs during future development, such as missing checks or incorrect logic, especially when new functions are added.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultYieldBasic.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Unused variable",
+            "description": "The variable leverageableAmount_ in AaveV3FlashLeverageHelper.sol is declared and modified but not used after computation. The root cause is leftover debugging or incomplete refactoring. This increases code complexity and gas costs slightly due to unnecessary operations. Removing unused variables improves code clarity and efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "AaveV3FlashLeverageHelper.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Unused using-for directives",
+            "description": "The using SafeERC20 for IERC20 directive is declared in LayerZeroBridgeHelper.sol and StrategyFactory but not used. The root cause is leftover code from prior implementations. Unused using directives increase compilation size and reduce code clarity. Removing them improves maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "LayerZeroBridgeHelper.sol",
+                "StrategyFactory"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Unused imports",
+            "description": "StrategyFactory.sol imports PausableUpgradeable, ReentrancyGuardUpgradeable, and IRedeemOperator but does not use them. The root cause is incomplete cleanup after refactoring. Unused imports increase deployment cost and compilation time. Removing them optimizes the codebase.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyFactory.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Unused events",
+            "description": "The UpdateOperator event in StrategyFactory.sol is declared but never emitted. The root cause is incomplete implementation or removal of related logic. Unused events bloat the contract and can mislead developers into thinking certain actions are logged. Removing or implementing them ensures event integrity.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyFactory.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Unchecked return value for OFT receipt",
+            "description": "The send function in LzSend.sol returns a receipt containing cross-chain transfer data, but this value is not captured or emitted. The root cause is missing logging of critical transaction data. This reduces transparency and debugging capability for users and operators. Capturing and emitting the receipt in an event would improve traceability and user experience.\n",
+            "severity": "Informational",
+            "location": [
+                "LzSend.sol"
+            ],
+            "files": []
+        }
+    ]
+}

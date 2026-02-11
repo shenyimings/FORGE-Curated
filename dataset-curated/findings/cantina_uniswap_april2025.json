@@ -1,0 +1,302 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_uniswap_april2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Uniswap/minimal-delegation"
+        ],
+        "commit_id": [
+            "732247c5e3146b9340cb29e0f2b8f9e2f1df67a4"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "minimal-delegation": "dataset-curated/contracts/cantina_uniswap_april2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Execute calls can be front-run",
+            "description": "1. **Description:** The `execute` function in the MinimalDelegation contract is publicly callable, allowing any external address to invoke it if a valid signature is provided. This enables front-running of execute calls by malicious actors.\n2. **Cause:** The lack of an intended executor address in the signature's domain separator allows any relayer to submit the transaction, removing execution exclusivity.\n3. **Exploitation:** An attacker can front-run a legitimate execute call with a zero-value transaction, potentially causing batched calls to revert, especially when `shouldRevert` is false, thereby disrupting the intended execution flow.\n4. **Impact:** This can lead to denial of service or manipulation of transaction outcomes, undermining the reliability of batched operations.\n",
+            "severity": "High",
+            "location": [
+                "MinimalDelegation.sol::execute#66"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Execute calls can be forced to fail with an out of gas error",
+            "description": "1. **Description:** The `execute` function allows a malicious user to specify a gas limit that is sufficient for the high-level validation but insufficient for the low-level `_dispatch` and `_execute` calls, causing them to fail with an out-of-gas error.\n2. **Cause:** The contract does not enforce a minimum gas limit for the execution phase, relying solely on the caller's gas allocation.\n3. **Exploitation:** An attacker can submit a transaction with a gas limit just above the threshold required for signature validation but below what is needed for the actual call execution, forcing the subcalls to revert.\n4. **Impact:** This can result in partial execution failure of batched calls, especially when `shouldRevert` is false, leading to inconsistent state changes and potential fund loss.\n",
+            "severity": "High",
+            "location": [
+                "MinimalDelegation.sol::execute#66"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Potential double-counting allowance risk",
+            "description": "1. **Description:** The MinimalDelegation wallet supports both persistent and transient native allowances. This dual mechanism could lead to confusion or unintended double-spending if both allowances are active for the same spender.\n2. **Cause:** The contract does not prevent setting a transient allowance when a persistent one already exists, creating overlapping permissions.\n3. **Exploitation:** A user or hook might unintentionally use both allowances in sequence, leading to higher-than-intended spending limits.\n4. **Impact:** While not directly exploitable by external attackers, this could lead to user error or misuse in complex delegation scenarios, potentially resulting in loss of funds.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7914.sol::approveNativeTransient#14-25"
+            ],
+            "files": [
+                "minimal-delegation/src/ERC7914.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "Off-by-one issue in isExpired()",
+            "description": "1. **Description:** The `isExpired()` function in SettingsLib.sol considers a signature expired when `expiration == block.timestamp`, while `validateUserOp` treats `validUntil == block.timestamp` as valid, creating a discrepancy.\n2. **Cause:** Inconsistent time boundary checks between the library function and the validation logic.\n3. **Exploitation:** A signature valid at the exact block timestamp may be rejected by `isExpired()` but accepted in `validateUserOp`, leading to inconsistent behavior.\n4. **Impact:** This could cause valid signatures to be incorrectly rejected in certain contexts, leading to denial of service or user confusion.\n",
+            "severity": "Low",
+            "location": [
+                "SettingsLib.sol::isExpired#48"
+            ],
+            "files": [
+                "minimal-delegation/src/libraries/SettingsLib.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Potential privilege escalation in nonce management",
+            "description": "1. **Description:** In the NonceManager, all keyHashes share the same nonce mapping. While only admin keys can invalidate entire nonce spaces, non-admin keys can invalidate specific nonces, enabling front-running of other keyHashes' execute calls.\n2. **Cause:** Centralized nonce management without segregation per keyHash.\n3. **Exploitation:** A non-admin key can sign a nonce invalidation to block another key's transaction, acting as a denial-of-service vector.\n4. **Impact:** This allows lower-privileged keys to interfere with higher-privileged ones, undermining the access control model.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::invalidateNonce#156-159"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-393"
+                ]
+            },
+            "title": "_checkExpiry will revert if the signature is expired in validateUserOp",
+            "description": "1. **Description:** When a signature is expired, `_checkExpiry(settings)` reverts with a `KeyExpired` error instead of returning `SIG_VALIDATION_FAILED` as required by EIP-4337.\n2. **Cause:** The function uses `revert` instead of returning a validation failure code.\n3. **Exploitation:** This deviation from the standard causes the entire UserOperation to revert rather than being marked as invalid, affecting bundler behavior.\n4. **Impact:** Non-compliance with EIP-4337 may lead to rejection by compliant bundlers and reduced interoperability.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::validateUserOp#142"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "ModeDecoder implements a subset of EIP-7821",
+            "description": "1. **Description:** The ModeDecoder and MinimalDelegation contract only support a limited subset of EIP-7821 execution modes (single-batch and multi-batch), without parsing optional opData or supporting recursive \"batch of batches\".\n2. **Cause:** The implementation is intentionally minimal and does not fully adopt the EIP-7821 specification.\n3. **Exploitation:** Users expecting full EIP-7821 functionality may encounter unexpected behavior or limitations.\n4. **Impact:** Reduced interoperability with tools or wallets expecting full EIP-7821 support, potentially leading to integration issues.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC7821.sol::ModeDecoder#9-16"
+            ],
+            "files": [
+                "minimal-delegation/src/ERC7821.sol",
+                "minimal-delegation/src/libraries/ModeDecoder.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect comment",
+            "description": "1. **Description:** The comment in SettingsLib.sol at line 9 is inaccurate or misleading regarding the functionality or expected behavior of the code.\n2. **Cause:** The comment was not updated after code changes or was written incorrectly initially.\n3. **Exploitation:** Misleading comments can lead developers to misunderstand the code, potentially introducing bugs during maintenance.\n4. **Impact:** Increased risk of human error during development or auditing due to incorrect documentation.\n",
+            "severity": "Informational",
+            "location": [
+                "SettingsLib.sol#9"
+            ],
+            "files": [
+                "minimal-delegation/src/libraries/SettingsLib.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "HookData is not included in the signature digest",
+            "description": "1. **Description:** The `hookData` parameter passed to `handleAfterVerifySignature` and `handleAfterIsValidSignature` is not included in the EIP-712 signature digest, allowing it to be arbitrarily modified by external callers.\n2. **Cause:** The signature covers only the core operation, not the hook data, making it untrusted input.\n3. **Exploitation:** An attacker can alter `hookData` in the `wrappedSignature`, causing the hook to execute with unintended parameters, potentially leading to unexpected behavior.\n4. **Impact:** The security of the hook logic depends on `hookData` integrity, which is compromised, leading to potential privilege escalation or state corruption depending on hook implementation.\n",
+            "severity": "Informational",
+            "location": [
+                "MinimalDelegation.sol::handleAfterVerifySignature#127",
+                "MinimalDelegation.sol::handleAfterIsValidSignature#127"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "MinimalDelegation EntryPoint compatibility",
+            "description": "1. **Description:** The MinimalDelegation wallet is incompatible with EntryPoint v0.6.0 and earlier due to lack of `executeUserOp` support. It is compatible with later versions but lacks support for certain features like EIP-7702 in some versions.\n2. **Cause:** The contract was built against a different EntryPoint interface and does not implement the full `UserOperation` struct or required functions.\n3. **Exploitation:** Attempting to use the wallet with an incompatible EntryPoint version will result in transaction failure.\n4. **Impact:** Limits deployment flexibility and requires careful version matching, increasing operational complexity.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use of unlicensed smart contracts",
+            "description": "1. **Description:** All smart contracts in the codebase are currently unlicensed, which may create legal ambiguity for users and contributors.\n2. **Cause:** No open-source license was explicitly declared in the repository.\n3. **Exploitation:** Lack of a license may deter adoption or contribution due to uncertainty about usage rights.\n4. **Impact:** Potential legal risks and reduced community engagement due to unclear licensing terms.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "minimal-delegation/src/ERC7914.sol",
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-393"
+                ]
+            },
+            "title": "When transferring 0 amount, ERC7914 is better to return true",
+            "description": "1. **Description:** The ERC7914 contract returns `false` when transferring a zero amount, which is interpreted as a failed transfer, though no value is moved.\n2. **Cause:** The transfer logic does not treat zero-value transfers as successful by default.\n3. **Exploitation:** External systems relying on the return value may incorrectly flag zero transfers as failures.\n4. **Impact:** Can lead to incorrect state assumptions in integrations, affecting accounting or event handling logic.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC7914.sol::transfer#28-37"
+            ],
+            "files": [
+                "minimal-delegation/src/ERC7914.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-430"
+                ]
+            },
+            "title": "_execute() may call handleAfterExecute() on stale hook",
+            "description": "1. **Description:** In `_execute()`, the `handleAfterExecute()` function is called on a hook that was cached before the `to.call()` execution. If the call updates the hook via `KeyManagement.update()`, the after-hook may execute on an outdated hook address.\n2. **Cause:** The hook address is not reloaded after the main call execution.\n3. **Exploitation:** An attacker could manipulate the hook update flow to force execution of an old, potentially vulnerable or unintended hook.\n4. **Impact:** May lead to unexpected behavior or security issues if the stale hook has different logic than the current one.\n",
+            "severity": "Informational",
+            "location": [
+                "MinimalDelegation.sol::_execute#109-117"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "validateUserOp() should not return early when the signature is invalid",
+            "description": "1. **Description:** According to EIP-4337, `validateUserOp()` should not return early on invalid signatures but should continue validation. However, the current implementation returns early, deviating from the standard.\n2. **Cause:** The function uses early returns instead of proceeding to return a validation failure code.\n3. **Exploitation:** This can cause bundlers to misinterpret the validation result, potentially leading to incorrect inclusion or rejection of UserOperations.\n4. **Impact:** Non-compliance with EIP-4337 may result in interoperability issues with standard-compliant infrastructure.\n",
+            "severity": "Informational",
+            "location": [
+                "MinimalDelegation.sol::validateUserOp#137-153"
+            ],
+            "files": [
+                "minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        }
+    ]
+}

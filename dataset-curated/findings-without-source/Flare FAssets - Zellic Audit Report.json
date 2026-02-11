@@ -1,0 +1,247 @@
+{
+    "path": "dataset-curated/reports/Zellic/Flare FAssets - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://gitlab.com/flarenetwork/fassets/"
+        ],
+        "commit_id": [
+            "09ecd5c5b7c7bc2257a76ce3912691fbdd37cde8"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-07-02",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Blocked redemption payments cannot be confirmed due to incorrect address validation",
+            "description": "The _validatePayment function in RedemptionConfirmationsFacet incorrectly validates the receivingAddressHash for PAYMENT_BLOCKED proofs, which are set to bytes32(0). This causes valid blocked payment confirmations to fail because the function compares the zeroed hash against the expected redeemer address. The root cause is a mismatch between the specification and implementation: while the system accepts PAYMENT_BLOCKED status, the address validation does not account for nonsuccessful payments where the receiving address is not set. An attacker can exploit this by requesting redemption to a blocking address, forcing the agent into default even when fulfilling their obligation. The impact is that agents are unfairly penalized, and attackers can collect default premiums without the agent being at fault.\n",
+            "severity": "High",
+            "location": [
+                "RedemptionConfirmationsFacet::_validatePayment"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Incorrect calculation in maxLiquidationAmountAMG",
+            "description": "The maxLiquidationAmountAMG function in the Liquidation contract calculates the maximum liquidatable amount based only on mintedAMG, ignoring other backed obligations such as reservedAMG and redeemingAMG. This leads to an underestimation of the actual liquidatable amount, violating the intended collateral ratio logic. The root cause is the failure to include all forms of backed AMG in the calculation. An attacker could exploit this by delaying liquidation opportunities or manipulating the system's perception of under-collateralization. The impact is reduced capital efficiency and potential under-liquidation, which may allow undercollateralized agents to persist longer than intended.\n",
+            "severity": "Medium",
+            "location": [
+                "Liquidation::maxLiquidationAmountAMG"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Dust amount not handled in _selfCloseExitTo",
+            "description": "The _selfCloseExitTo function in CollateralPool uses _getFAssetRequiredToNotSpoilCR to compute the required FAsset amount, which may return a non-integer AMG value. When this value is converted via convertUBAToAmg, the dust (remainder) is lost because it is transferred but not redeemed. The root cause is the lack of rounding up to the nearest AMG unit before transfer. An attacker cannot directly exploit this, but users are harmed as they lose up to just under one AMG per transaction. The impact includes user fund loss and accumulation of unredeemed dust in the pool, complicating accounting and fairness.\n",
+            "severity": "Medium",
+            "location": [
+                "CollateralPool::_selfCloseExitTo",
+                "CollateralPool::_getFAssetRequiredToNotSpoilCR"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Accounting discrepancy in redemption-pool fee minting",
+            "description": "The _mintPoolFee function in RedemptionConfirmationsFacet mints FAsset tokens based on the full poolFeeUBA amount but records only the floored AMG equivalent via convertUBAToAmg. This creates a discrepancy where more FAssets are minted than recorded in AMG, leading to understated agent obligations. The root cause is inconsistent rounding: minting uses raw UBA while obligation tracking floors it. There is no direct exploitation path, but over time, the accounting drift could affect system-wide collateralization tracking. The impact is minor but accumulates across many redemptions, potentially affecting auditability and trust in obligation reporting.\n",
+            "severity": "Medium",
+            "location": [
+                "RedemptionConfirmationsFacet::_mintPoolFee"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Challengers can submit challenges when the agent is in DESTROYING status",
+            "description": "The challenge functions in ChallengesFacet do not block submissions when an agent is in DESTROYING status. Additionally, proofs are not marked as used, enabling replay. If an agent withdraws underlying assets during DESTROYING, an attacker can reuse valid payment proofs to repeatedly call illegalPaymentChallenge or doublePaymentChallenge. The root cause is missing status checks and lack of proof uniqueness enforcement. The impact is that an attacker can drain the agent vault by repeatedly claiming challenge rewards, even though the agent is already being destroyed, leading to significant fund loss.\n",
+            "severity": "High",
+            "location": [
+                "ChallengesFacet::illegalPaymentChallenge",
+                "ChallengesFacet::doublePaymentChallenge",
+                "ChallengesFacet::startFullLiquidation",
+                "AssetManager.sol::illegalPaymentChallenge",
+                "AssetManager.sol::doublePaymentChallenge"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "The underlyingFeeUBA is not included in the calculation of redemptionValue within freeBalanceNegativeChallenge",
+            "description": "In freeBalanceNegativeChallenge, the function offsets the free balance deduction by the gross redemption value (underlyingValueUBA) instead of the net amount (underlyingValueUBA - underlyingFeeUBA). This contradicts the redemption confirmation logic, which validates payments against the net amount. The root cause is inconsistent treatment of redemption value across modules. An attacker (agent) could temporarily avoid challenges by exploiting this gap during open redemptions. However, the impact is limited because challengers can still act after redemption completion. The vulnerability only creates a short-term window of under-enforcement.\n",
+            "severity": "Low",
+            "location": [
+                "ChallengesFacet::freeBalanceNegativeChallenge"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Unnecessary rounding operation in maxLiquidationAmountAMG",
+            "description": "The maxLiquidationAmountAMG function rounds up the liquidatable amount to the nearest lot size, even though closeTickets can handle partial lots. This unnecessary rounding increases the liquidation cap by up to lotSizeAMG - 1, potentially allowing more to be liquidated than necessary. The root cause is redundant logic that assumes lot granularity enforcement is needed. There is no direct exploitation, but it introduces imprecision in liquidation mechanics. The impact is minor, leading to slightly inflated liquidation bounds, which could affect fairness or capital efficiency in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "Liquidation::maxLiquidationAmountAMG"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Incorrect rounding in _getFAssetRequiredToNotSpoilCR",
+            "description": "The _getFAssetRequiredToNotSpoilCR function in CollateralPool uses mulDiv (rounding down) when calculating the FAsset amount needed to maintain the collateral ratio. To preserve the ratio, it should round up to ensure sufficient burn. The root cause is incorrect rounding direction in critical collateral math. This can lead to minor deterioration of the pool's collateralization ratio when below exitCR. The impact is small per transaction but may accumulate over time, slightly weakening the pool's economic security.\n",
+            "severity": "Low",
+            "location": [
+                "CollateralPool::_getFAssetRequiredToNotSpoilCR"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incorrect rounding direction in payout",
+            "description": "The payout function in CollateralPool uses mulDiv (rounding down) to calculate maxSlashedTokens, meaning agents pay slightly less than their proportional share of responsibility. The root cause is the use of floor division instead of ceiling in a liability calculation. Over time, this results in the pool absorbing small losses that should be borne by agents. The impact is gradual erosion of pool funds, though minimal per event, affecting long-term fairness and risk distribution.\n",
+            "severity": "Low",
+            "location": [
+                "CollateralPool::payout"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "The agent can front-run the executor by calling executeMinting for the executor fee",
+            "description": "The executeMinting function in MintingFacet allows the agent to call it and claim the executor fee if it exceeds gas costs, by triggering distributeCollateralReservationFee. The root cause is lack of enforcement that only the executor can claim the fee. The agent can profit by front-running the executor, who then receives nothing. The impact is that executors are disincentivized to act, potentially disrupting the minting flow, and agents gain unfair profits at the expense of designated executors.\n",
+            "severity": "Medium",
+            "location": [
+                "MintingFacet::executeMinting"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "No upper cap for exitCollateralRatioBIPS",
+            "description": "The setPoolExitCollateralRatioBIPS function allows unbounded increases over time, despite per-step limits. An agent can repeatedly raise the exit collateral ratio, eventually blocking withdrawals. The root cause is the absence of a global maximum. The impact is that users may be unable to exit the pool, effectively locking their liquidity. This could be exploited maliciously by an agent to freeze user funds, making it a business logic risk with medium severity due to timelock mitigations.\n",
+            "severity": "Medium",
+            "location": [
+                "CollateralPool::setPoolExitCollateralRatioBIPS",
+                "CollateralPool::_exitTo"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Unnecessary rounding in closeTickets",
+            "description": "The closeTickets function unnecessarily rounds down the maximum ticket redeemable amount (maxTicketRedeemAMG) to whole lots using the modulus operation before processing it in removeFromTicket. This operation is redundant because the removeFromTicket function is capable of handling amounts that are not whole lots. The root cause is an excess validation step that does not align with the actual capabilities of the downstream function. An attacker cannot directly exploit this, but the inefficiency results in delayed consumption of agent.dustAMG during redemption iterations. The impact is reduced gas efficiency and suboptimal use of dust AMG, leading to unnecessary complexity in redemption logic and potentially higher gas costs over time.\n",
+            "severity": "Informational",
+            "location": [
+                "Redemptions::closeTickets"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Unused code path in closeTickets",
+            "description": "The _closeWholeLotsOnly parameter in the closeTickets function is always passed as false throughout the codebase, making the associated conditional logic redundant. The cause is a lack of usage of this parameter in any external or internal calls, rendering the branch inside the function dead code. This unused code path does not introduce a direct security risk but reduces code readability and increases contract size, which can complicate audits and future maintenance. The impact is limited to code quality and maintainability, with no direct financial or operational consequences.\n",
+            "severity": "Informational",
+            "location": [
+                "closeTickets#_closeWholeLotsOnly"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Unnecessary operation in _createFAssetFeeDebt when _fAssets equals zero",
+            "description": "The _createFAssetFeeDebt function performs storage writes and emits a CPFeeDebtChanged event even when the _fAssets parameter is zero. This is caused by the absence of an early return or validation check for zero values. As a result, unnecessary gas is consumed due to redundant state modifications and event emissions. While this does not lead to incorrect state changes, it increases transaction costs for callers when no meaningful change occurs. The impact is inefficient gas usage, which could be avoided by adding a simple zero-check at the beginning of the function.\n",
+            "severity": "Informational",
+            "location": [
+                "_createFAssetFeeDebt"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Storage layout unaligned with ERC-7201",
+            "description": "The contract uses a single keccak256 hash for namespaced storage layout (e.g., STATE_POSITION = keccak256(\"fasset.AssetManager.State\")), which deviates from the ERC-7201 standard that recommends a double-hash-and-mask scheme. This design choice reduces the collision safety margin because single-hash preimages are predictable, increasing the risk of accidental or adversarial storage collisions. Additionally, it reduces compatibility with ecosystem tools that expect ERC-7201 compliance. The cause is a non-standard implementation of storage namespacing. The impact includes reduced security guarantees around storage isolation and potential tooling integration issues.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Incorrect comment for burnAddress",
+            "description": "The comment for the burnAddress variable incorrectly states that the collateral reservation fee is burned on successful minting. In reality, this fee is distributed between the agent and the collateral pool, not sent to the burn address. The root cause is outdated or inaccurate documentation. This misleading comment could lead developers to make incorrect assumptions during future development or integration efforts, potentially introducing bugs or incompatible features. The impact is primarily on code maintainability and developer understanding, with no direct runtime consequences.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "The updateCollateral is not called within claimAirdropDistribution and claimDelegationRewards",
+            "description": "The claimAirdropDistribution and claimDelegationRewards functions increase the pool's wNat balance and increment totalCollateral but fail to call updateCollateral to notify the AssetManager. Other collateral-increasing flows (e.g., enter, depositNat) do make this call, creating an inconsistency. The cause is an omission in these two functions. As a result, the system may delay liquidation recovery, allowing undercollateralized agents to remain in liquidation longer than necessary despite having sufficient collateral after claiming rewards. The impact is a temporary deviation from expected economic invariants, potentially affecting system stability during liquidation events.\n",
+            "severity": "Informational",
+            "location": [
+                "claimAirdropDistribution",
+                "claimDelegationRewards"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Inconsistent minimum requirement for agentTimelockedOperationWindowSeconds",
+            "description": "The agentTimelockedOperationWindowSeconds parameter has inconsistent validation: SettingsInitializer requires a minimum of one hour, while SettingsManagementFacet allows a minimum of one minute. This discrepancy allows governance to reduce the window below the initial one-hour requirement after deployment. The root cause is misaligned validation logic between initialization and runtime setters. The impact is a policy mismatch that weakens the intended security posture, as the shorter window could reduce the effectiveness of timelocked operations by giving less time for monitoring and response.\n",
+            "severity": "Informational",
+            "location": [
+                "SettingsInitializer::_validateSettings",
+                "SettingsManagementFacet::setAgentTimelockedOperationWindowSeconds"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Uninitialized ReentrancyGuard",
+            "description": "The AgentVault and CollateralPool contracts inherit from ReentrancyGuard but do not call initializeReentrancyGuard() during initialization. This causes the first call to a nonReentrant function to perform a cold storage write to initialize the guard, consuming more gas than subsequent calls. The cause is a missing initializer call in the constructor or initializer function. While this does not compromise security\u2014since the guard still functions correctly\u2014it results in inconsistent gas costs across calls. The impact is higher gas usage for the first invocation of protected functions, which could affect user experience and transaction reliability under high congestion.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentVault",
+                "CollateralPool"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Duplicate destination-allowlist checks in CoreVaultClientFacet flows",
+            "description": "Both requestReturnFromCoreVault and redeemFromCoreVault perform redundant checks on isDestinationAddressAllowed before calling requestTransferFromCoreVault, which performs the same check internally. The cause is duplicated validation logic across layers. This results in unnecessary gas costs due to repeated storage reads. While the duplication does not introduce security vulnerabilities, it represents an optimization opportunity. The impact is increased transaction fees for users without any additional security benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "requestReturnFromCoreVault",
+                "redeemFromCoreVault",
+                "CoreVaultManager::requestTransferFromCoreVault"
+            ],
+            "files": []
+        }
+    ]
+}

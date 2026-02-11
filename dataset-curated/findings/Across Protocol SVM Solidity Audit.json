@@ -1,0 +1,186 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Across Protocol SVM Solidity Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts"
+        ],
+        "commit_id": [
+            "7f0cedb5a88aefeecbf9c640447263d87a6a7693",
+            "401e24ccca1b3af919dd521e58acd445297b65b6"
+        ],
+        "address": [],
+        "chain": "evm/solana",
+        "compiler_version": "n/a",
+        "audit_date": "2024-12-12",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Across Protocol SVM Solidity Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Anyone Can Lock Relayer Refunds and Contract Can Be Drained",
+            "description": "This vulnerability exists in the `claimRelayerRefund` function of the `SpokePool` contract, where a relayer can claim outstanding refunds when transfers fail due to edge cases like blacklisted tokens. The root cause is that the function uses `refundAddress` as the key to reset the `relayerRefund` mapping instead of `msg.sender`. This allows any malicious relayer to zero out another relayer's refund by specifying their address as the `refundAddress`, causing loss of funds for legitimate relayers. Furthermore, because the original `msg.sender`'s refund balance is never reset, the attacker can repeatedly call the function to drain the entire token balance of the contract associated with that `l2TokenAddress`. The impact is severe, potentially leading to complete loss of funds in the affected token pools and undermining trust in the relayer system.\n",
+            "severity": "Critical",
+            "location": [
+                "SpokePool.sol::claimRelayerRefund#1265"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Function Can Be Declared external",
+            "description": "The `claimRelayerRefund` function in the `SpokePool` contract is currently declared as `public`, which allows both external calls and internal contract calls. However, since there is no internal usage of this function within the contract, it should be declared as `external` to optimize gas costs for external callers. The root cause is suboptimal code design that results in unnecessary gas overhead. An attacker cannot directly exploit this, but all users interacting with the function will incur higher transaction costs than necessary. The impact is limited to increased gas consumption, reducing the efficiency and economic viability of using the function, especially under high network congestion.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::claimRelayerRefund#1265"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "_destinationSettler Can Return Zero Address",
+            "description": "In the `_resolveFor` function of the `ERC7683OrderDepositor` contract, the return value from the internal `_destinationSettler` function is used without validating that it is non-zero. The `_destinationSettler` function retrieves the settler contract address for the destination chain, and if it has not been properly set, it returns the default zero address. This unchecked value is then assigned to the `fillInstructions` field of the `resolvedOrder` struct. The root cause is missing input validation for critical system parameters. An attacker could potentially craft a transaction that results in funds being sent to the zero address or cause a revert in downstream operations, leading to a loss of user funds or denial of service. The impact is medium to low depending on the execution path, but it introduces unnecessary risk due to improper validation.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7683OrderDepositor.sol::_resolveFor#245"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositor.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1335"
+                ]
+            },
+            "title": "Incorrect Right Shift in AddressConverters Library",
+            "description": "The `toAddress` function in the `AddressConverters` library performs a right shift by 192 bits when converting a `bytes32` value to an `address`. However, to correctly validate that the upper 96 bits are empty (ensuring a valid EVM address), the function should shift right by 160 bits instead. The root cause is an arithmetic error in bit manipulation logic. This can lead to incorrect address conversion, where invalid `bytes32` values with non-zero upper bits may be incorrectly interpreted as valid addresses. An attacker could exploit this by providing a malformed `bytes32` input that bypasses validation and results in funds being sent to an unintended address. The impact includes potential loss of funds and incorrect execution of cross-chain operations, especially in the context of Solana compatibility where `bytes32` is used extensively.\n",
+            "severity": "Low",
+            "location": [
+                "AddressConverters.sol::toAddress#11"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Repeated Function",
+            "description": "The `_toBytes32` internal function in the `ERC7683OrderDepositor` contract duplicates the functionality of the `toBytes32` function from the `AddressConverters` library. Both functions perform the same conversion logic and are used interchangeably within the contract. The root cause is code redundancy due to lack of reuse of existing library functions. While this does not introduce a direct security vulnerability, it reduces code clarity, increases maintenance burden, and raises the risk of inconsistent behavior if one function is updated and the other is not. The impact is primarily on code quality and long-term maintainability, making audits and future development more error-prone. It also slightly increases deployment gas costs due to duplicated bytecode.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7683OrderDepositor.sol::_toBytes32#355",
+                "AddressConverters.sol::toBytes32#23"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositor.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Lack of Unit Tests for ERC-7683",
+            "description": "The codebase currently lacks unit tests for the `ERC7683OrderDepositor` and `ERC7683OrderDepositorExternal` contracts, which are critical components of the new ERC-7683 implementation. The root cause is insufficient test coverage for newly introduced features. Without proper unit tests, it is difficult to verify the correctness of the implementation, detect regressions, or ensure robustness under edge cases. An attacker could potentially identify and exploit untested code paths that were not considered during manual review. The impact is an increased risk of undiscovered vulnerabilities in a core part of the system, reducing overall confidence in the security and reliability of the ERC-7683 integration.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7683OrderDepositor.sol",
+                "ERC7683OrderDepositorExternal.sol"
+            ],
+            "files": [
+                "contracts/contracts/erc7683/ERC7683OrderDepositor.sol",
+                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Duplicate Fill Execution",
+            "description": "A critical issue was reported by the client where duplicate fills could be executed due to a change in the `_getV3RelayHash` function. Instead of hashing the entire `V3RelayData` struct, the updated version only hashed the `message` field. This creates two valid hash representations for the same deposit\u2014one before and one after the upgrade\u2014because contract upgrades happen asynchronously. The `filledStatuses` mapping uses this hash to prevent replays, but with differing hash methods, it fails to detect duplicate fills. The root cause is a breaking change in hash derivation logic without ensuring backward compatibility. Off-chain relayers or bundlers that use the hash as a unique identifier may not recognize a filled order, leading to a second fill. The impact is severe: the protocol could lose funds by paying out twice for a single deposit, resulting in direct financial loss.\n",
+            "severity": "Critical",
+            "location": [
+                "SpokePool.sol::_getV3RelayHash#1641-1660",
+                "SpokePool.sol#1702"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Missing Valid Address Check",
+            "description": "The `deposit` function in the `SpokePool` contract does not validate that the `bytes32` parameters (e.g., depositor address) represent valid EVM addresses. Since the system now uses `bytes32` for cross-chain compatibility, there is a risk that an incorrectly formatted address could be submitted. The root cause is missing input validation for parameters that are expected to be valid addresses. If a user accidentally provides a `bytes32` value that does not correspond to a valid EVM address (e.g., with non-zero upper bits), any funds sent to that address may be irrecoverable. The impact includes potential permanent loss of user funds and inability to refund deposits, especially in cases where no fill occurs and the address cannot receive tokens.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::deposit#512"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        }
+    ]
+}

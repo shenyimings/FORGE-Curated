@@ -1,0 +1,196 @@
+{
+    "path": "dataset-curated/reports/Zellic/Takara Lend Contracts - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Takara-Lend/Takara_Contract"
+        ],
+        "commit_id": [
+            "8098516cfcd8bbb06c2fc432458043f39302cc8f",
+            "6ef5c86880c66ed4c07e3b987868f518e0b78a3b"
+        ],
+        "address": [],
+        "chain": "sei",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-10",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Debts owed by blacklisted users cannot be liquidated",
+            "description": "The Comptroller contract implements a blacklist to restrict certain user actions such as minting and borrowing. However, while the blacklist is enforced in functions like mintAllowed and borrowAllowed, it is not properly integrated into the liquidation workflow. Specifically, although liquidateBorrowAllowed and seizeAllowed do not check the blacklist, the actual liquidation process calls repayBorrowFresh, which in turn invokes Comptroller.repayBorrowAllowed\u2014this function does enforce the blacklist, thereby blocking liquidation of blacklisted users' positions. The root cause is an inconsistency between intended design (to allow liquidation of blacklisted positions) and actual implementation (which prevents it due to indirect blacklist enforcement). An attacker could exploit this by getting blacklisted while maintaining a risky, undercollateralized position, knowing it cannot be liquidated. The impact is severe: such positions continue accruing interest and may lead to unresolvable protocol insolvency if asset prices fluctuate significantly, creating a dangerous skew in the system's solvency.\n",
+            "severity": "Critical",
+            "location": [
+                "Comptroller.sol::mintAllowed#",
+                "Comptroller.sol::borrowAllowed#",
+                "Comptroller.sol::repayBorrowAllowed#",
+                "TToken.sol::liquidateBorrowFresh#"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "AssetDeployer deploys tokens that are vulnerable to inflation attacks",
+            "description": "The AssetDeployer contract initializes new TErc20 tokens by minting and burning 1 Wei of the underlying asset to set the initial exchange rate. However, because this minimal amount does not establish a meaningful initial share supply, the exchange rate remains highly sensitive to small changes in the underlying balance. This exposes the system to ERC-4626-style inflation attacks where an attacker can front-run the first legitimate deposit by donating underlying tokens to manipulate the exchange rate. The root cause is the insufficient initialization of the token's internal accounting state during deployment. A malicious actor can exploit this by monitoring for new token deployments and quickly donating underlying tokens before the first real user mints, causing the victim to receive disproportionately few shares. The impact is financial loss for early depositors, undermining trust in newly deployed markets.\n",
+            "severity": "High",
+            "location": [
+                "AssetDeployer.sol::deployAsset#"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Lack of freshness check in Api3Aggregator and LinkedAssetAggregator",
+            "description": "The Api3Aggregator and LinkedAssetAggregator contracts implement latestRoundData() but fail to validate the freshness of the price data returned by the originPriceFeed. While Api3LinkedAggregator checks the freshness of the exchange rate feed, it does not apply the same check to the timestamp from originPriceFeed.latestRoundData(). The root cause is the omission of a required validation step in the price retrieval logic. An attacker could exploit this by manipulating or disrupting the underlying price feed so that stale prices are returned without detection. The protocol would then use outdated price data for critical operations such as collateral valuation and liquidation, potentially leading to incorrect liquidations or insolvency due to mispriced assets.\n",
+            "severity": "High",
+            "location": [
+                "oracles/Api3Aggregator.sol::latestRoundData#",
+                "oracles/LinkedAssetAggregator.sol::latestRoundData#"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Underlying tokens can be swept by the admin",
+            "description": "The TErc20 contract's sweepToken function contains a logic error where it incorrectly requires that the token being swept *must* be the underlying token, contrary to the intended purpose of sweeping only unrelated or accidentally sent tokens. This is due to a contradictory requirement: the function checks both that the token is not the underlying and that it is the underlying, which results in only the underlying token passing the condition. The root cause is likely a copy-paste or editing mistake during development. An admin could exploit this to withdraw the underlying token from the contract, effectively removing liquidity and potentially rendering the contract insolvent. The impact is medium severity because it introduces a significant centralization risk and undermines the economic security of the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "TErc20.sol::sweepToken#"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Markets entered automatically can be exited",
+            "description": "The Comptroller contract introduces enterAllMarkets, which automatically enrolls users in all non-deprecated markets upon minting. However, the exitMarket function remains unchanged and allows users to freely exit any market they are in, even if they have no borrow balance. The root cause is a lack of corresponding restriction on exitMarket to enforce the intended automatic enrollment policy. Sophisticated users can exploit this by bundling a mint and exitMarket call in a single transaction to bypass the intended behavior. The impact is low: it reduces the effectiveness of the automatic enrollment feature and creates a usability gap between advanced and regular users, but does not lead to direct financial loss.\n",
+            "severity": "Low",
+            "location": [
+                "Comptroller.sol::enterAllMarkets#",
+                "TToken.sol::mintFresh#"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Infinite token approval is triggered outside the spec",
+            "description": "The Rate token's approve function maps both type(uint256).max and type(uint96).max to unlimited approval due to internal use of uint96 for allowance storage. The root cause is a mismatch between the external interface expectation (EIP-717, which defines only type(uint256).max as the sentinel for infinite approval) and the internal implementation. A caller intending to approve exactly type(uint96).max tokens may unintentionally grant unlimited approval if the contract is used by systems assuming strict EIP-717 compliance. The exploitation would occur in a DeFi composability context where another protocol misinterprets the allowance. The impact is low but non-zero, as it could contribute to a larger exploit chain involving multiple systems.\n",
+            "severity": "Low",
+            "location": [
+                "Rate.sol::approve#"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Nonce collision in permit and delegateBySig functions",
+            "description": "The Rate token uses a single nonce counter for both permit and delegateBySig functions, despite these being distinct signature domains. The root cause is shared state without domain separation. If a user attempts to sign both a permit and a delegateBySig message simultaneously with the same nonce (e.g., 0), the first transaction will succeed but the second will fail because the nonce has already been incremented. This can confuse front-end applications and users who expect independent nonces per signature type. The impact is low: it may cause transaction failures and UX issues, but does not enable fund loss or unauthorized actions.\n",
+            "severity": "Low",
+            "location": [
+                "Rate.sol::permit#",
+                "Rate.sol::delegateBySig#"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Potential underflow in getUnderlyingPrice due to high decimals",
+            "description": "The CompositeOracle.getUnderlyingScaledPrice function performs a scaling operation: price = price * 10 ** (36 - 2 * decimals). If the token's decimals exceed 18, this exponent becomes negative, leading to a division by a large number, which Solidity interprets as an underflow (revert). The root cause is insufficient input validation and lack of support for tokens with high decimal precision. An attacker could exploit this by listing a token with more than 18 decimals, causing price queries to fail. The impact is low: it would prevent the market from functioning correctly for such tokens, but the protocol can avoid this by not supporting high-decimal tokens.\n",
+            "severity": "Low",
+            "location": [
+                "oracles/CompositeOracle.sol::getUnderlyingScaledPrice#"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Api3Aggregator returns a duration for the updatedAt field",
+            "description": "The Api3Aggregator contract incorrectly returns block.timestamp - updatedAt_ as the updatedAt value in latestRoundData(), which is a duration rather than a timestamp as required by the AggregatorV3Interface. The root cause is a misunderstanding of the interface specification. Although currently unused, this would cause serious issues if integrated with CompositeOracle, which assumes updatedAt is a timestamp and computes block.timestamp - updatedAt. This would result in comparing a timestamp against a small duration (interpreted as Unix epoch), causing valid prices to be incorrectly rejected. The impact is currently informational because the contract is not in use, but it represents a critical footgun for future deployments.\n",
+            "severity": "Informational",
+            "location": [
+                "oracles/Api3Aggregator.sol::latestRoundData#"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Missing math-error handling in redeemFresh function",
+            "description": "In TToken.redeemFresh, the math error from divScalarByExpTruncate is overwritten by a subsequent operation before being checked. The root cause is improper error handling sequencing. Although the impact is mitigated by later validation and caller control over inputs, a math error could go unreported, leading to silent incorrect calculations. There is no direct security impact because the conditions under which this occurs do not allow exploitation beyond what the caller could already do intentionally. However, it violates best practices for robust error handling in smart contracts. The impact is purely operational and relates to reliability rather than security.\n",
+            "severity": "Informational",
+            "location": [
+                "TToken.sol::redeemFresh#"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Lack of event emissions for configuration changes",
+            "description": "The Comptroller and CompositeOracle contracts allow critical configuration changes (e.g., parameter updates, admin actions) without emitting events. The root cause is missing event emissions in setter functions. This makes it difficult for off-chain systems and users to detect and react to changes in protocol behavior. While not directly exploitable, it reduces transparency and auditability. An attacker could potentially combine this with other issues to hide malicious changes, though no direct exploit path exists. The impact is informational, as it affects observability rather than security.\n",
+            "severity": "Informational",
+            "location": [
+                "Comptroller.sol",
+                "oracles/CompositeOracle.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Missing Event Emission in Admin Configuration Functions",
+            "description": "The admin-only functions in the Comptroller and CompositeOracle contracts, such as updateLiquidateWhiteList(), triggerLiquidation(), _setBlackList(), _setProtocolPaused(), and setL2Aggregators(), do not emit events when they modify critical protocol state. This omission is due to the lack of explicit event declarations after state changes. As a result, off-chain monitoring tools, bots, and users cannot reliably detect when these critical configuration parameters are altered. An attacker or malicious admin could exploit this by making stealth changes to the whitelist or pausing functionality without detection, reducing transparency. The impact is reduced protocol transparency and increased risk of undetected malicious or erroneous configuration changes, which could delay user responses to critical state changes.\n",
+            "severity": "Low",
+            "location": [
+                "Comptroller::updateLiquidateWhiteList#",
+                "Comptroller::triggerLiquidation#",
+                "Comptroller::_setBlackList#",
+                "Comptroller::_setProtocolPaused#",
+                "CompositeOracle::setL2Aggregators#"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Misleadingly Named liquidatable Global Flag",
+            "description": "The boolean state variable `liquidatable` in the Comptroller contract is named in a way that contradicts its actual function. Despite its name suggesting that it controls whether accounts can be liquidated, it actually controls whether the liquidator whitelist is enforced. When `liquidatable` is true, only whitelisted liquidators can liquidate; when false, anyone can liquidate, meaning liquidations are more permissive. This misnaming stems from poor variable naming during development. A user or front-end relying on the intuitive meaning of \"liquidatable\" may incorrectly assume risk levels. An attacker could exploit this confusion to manipulate user expectations or bypass expected restrictions. The impact includes potential logic errors in off-chain systems, incorrect risk assessment, and possible misuse during emergency scenarios.\n",
+            "severity": "Informational",
+            "location": [
+                "Comptroller::liquidatable",
+                "Comptroller::liquidateBorrowAllowed#"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Unused Constants in TTokenStorage",
+            "description": "The TTokenStorage contract defines two constants, `redemptionReserveFactorMaxMantissa` and `minRedemptionCashRequire`, which are not used anywhere in the codebase. This is a result of incomplete cleanup after development. While these constants do not introduce direct runtime vulnerabilities, they may mislead auditors or developers into believing that certain protocol-level restrictions are enforced when they are not. This could lead to incorrect assumptions during future development or audits. There is no direct exploitation path, but the impact is reduced code clarity and potential confusion about protocol invariants.\n",
+            "severity": "Informational",
+            "location": [
+                "TTokenInterfaces.sol::TTokenStorage#"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Potential Revert Griefing in Liquidation Flow",
+            "description": "The `liquidateBorrowAllowed` function in the Comptroller contract includes a require statement `require(borrowBalance >= repayAmount)` when dealing with deprecated markets. This check can be exploited by a borrower who performs a small self-repayment just before a liquidation attempt, causing the liquidation transaction to revert if the `repayAmount` exceeds the updated `borrowBalance`. This allows the borrower to grief liquidators by forcing them to waste gas on failed transactions. The root cause is the lack of off-chain state validation before liquidation and the absence of a mechanism to prevent such timing-based manipulation. While this behavior exists in the upstream code and may be considered acceptable for sophisticated liquidators, it still poses a denial-of-service risk to honest liquidators. The impact is increased operational cost for liquidators and potential delays in liquidating undercollateralized positions.\n",
+            "severity": "Low",
+            "location": [
+                "Comptroller::liquidateBorrowAllowed#"
+            ],
+            "files": []
+        }
+    ]
+}

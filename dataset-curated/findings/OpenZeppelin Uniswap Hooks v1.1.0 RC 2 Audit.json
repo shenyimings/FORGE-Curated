@@ -1,0 +1,133 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/OpenZeppelin Uniswap Hooks v1.1.0 RC 2 Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/OpenZeppelin/uniswap-hooks"
+        ],
+        "commit_id": [
+            "3e9fa228ec0f7fe05a95e09e25442466b459a712"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-16",
+        "project_path": {
+            "uniswap-hooks": "dataset-curated/contracts/OpenZeppelin Uniswap Hooks v1.1.0 RC 2 Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ],
+                "3": [
+                    "CWE-835"
+                ]
+            },
+            "title": "Infinite Loop in Tick Iteration Due to Misaligned Current Tick",
+            "description": "The AntiSandwichHook contract implements an anti-MEV mechanism that stores a snapshot of the pool state at the beginning of each block. As part of this, the _beforeSwap function iterates over tick indices from the last checkpoint to the current tick using a step equal to the pool's tickSpacing. The loop condition checks whether the current tick index is not equal to the target currentTick. However, the currentTick may not be aligned with the tickSpacing, meaning that the loop increment may skip over the target tick, causing the loop condition to never be satisfied. This results in an infinite loop that consumes all available gas, leading to a denial-of-service condition where users cannot execute swaps in the affected pool. The impact is a complete disruption of pool functionality for the duration of the block, preventing legitimate transactions from being processed.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::_beforeSwap#98-105",
+                "AntiSandwichHook.sol#L76"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Fee Application When `unspecifiedAmount` Represents Input Instead of Output",
+            "description": "The BaseDynamicAfterFee contract is designed to enforce dynamic fees by comparing the swap's unspecifiedAmount with a target value and charging the difference as a fee. However, the logic incorrectly assumes that unspecifiedAmount always represents the output of the swap. In exact output swaps, unspecifiedAmount actually represents the input amount (and is negative). When this occurs, the fee calculation uses `feeAmount = uint128(unspecifiedAmount) - targetOutput`, which leads to incorrect fee application because it treats an input value as an output. This can result in users being overcharged for swaps, as fees are calculated based on input amounts rather than outputs. Although no direct exploit was identified in the current AntiSandwichHook implementation, the issue exists in an abstract base contract intended for reuse, meaning future implementations could inherit this flawed logic, leading to unexpected user losses.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseDynamicAfterFee.sol#L111",
+                "BaseDynamicAfterFee.sol"
+            ],
+            "files": [
+                "uniswap-hooks/src/fee/BaseDynamicAfterFee.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Missing Docstrings",
+            "description": "Multiple functions and state variables across the codebase lack NatSpec documentation. Specifically, the poolManager state variable in BaseHook.sol and all state variables in LiquidityPenaltyHook.sol are undocumented. Additionally, other public or sensitive functions lack proper docstrings. The absence of documentation reduces code readability and increases the risk of misinterpretation by developers, auditors, or integrators. While this does not directly lead to exploits, it can result in incorrect usage of the contracts, especially for complex logic such as fee handling or tick management. The lack of clear parameter and return value descriptions makes it harder to verify correctness and increases the likelihood of integration errors.\n",
+            "severity": "Low",
+            "location": [
+                "BaseHook.sol::poolManager#30",
+                "LiquidityPenaltyHook.sol"
+            ],
+            "files": [
+                "uniswap-hooks/src/base/BaseHook.sol",
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Liquidity Penalty Can Be Circumvented Using Secondary Accounts",
+            "description": "The LiquidityPenaltyHook is designed to penalize JIT liquidity attacks by redirecting fees to in-range LPs when liquidity is removed within a short window. However, an attacker can use a secondary account to position liquidity in a low-traffic tick range. After generating fees with a primary account, the attacker can move the price into the secondary account's range and remove liquidity, causing the penalty fees to be donated to the secondary account. This allows the attacker to bypass the intended penalty mechanism and extract fees. While this attack is theoretically possible, it is impractical in high-liquidity pools due to the high cost of price manipulation. The impact is limited to low-liquidity environments, where the attacker could profitably redirect fees, undermining the fairness of fee distribution.\n",
+            "severity": "Low",
+            "location": [
+                "LiquidityPenaltyHook.sol#L63",
+                "LiquidityPenaltyHook.sol"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Misleading Naming in `getTargetOutput` Can Cause Developer Confusion",
+            "description": "The getTargetOutput function in AntiSandwichHook.sol calculates the unspecified amount in a swap based on the beginning-of-block state, which can represent either the input or output depending on the swap direction and type. However, the function name suggests it always returns an output amount, which is misleading. This naming inconsistency can lead developers to incorrectly assume the return value is always an output, potentially resulting in logic errors when integrating or extending the contract. While this does not introduce a direct security vulnerability, it increases the cognitive load and risk of misuse, especially in complex fee or accounting logic. Renaming the function to reflect its true behavior would improve code clarity and reduce integration risks.\n",
+            "severity": "Low",
+            "location": [
+                "AntiSandwichHook.sol::getTargetOutput#173"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        }
+    ]
+}

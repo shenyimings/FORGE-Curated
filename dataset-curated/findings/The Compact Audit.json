@@ -1,0 +1,817 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/The Compact Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Uniswap/the-compact"
+        ],
+        "commit_id": [
+            "102fa069a9aaaf0323cbe05ce3a50183d81dec22"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-28",
+        "project_path": {
+            "the-compact": "dataset-curated/contracts/The Compact Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Single Emissary Configuration Allows Users to Set Emissaries for Others",
+            "description": "The Emissary role allows a designated individual to authorize claims on behalf of a sponsor. However, due to incorrect memory management in the `_getEmissaryConfig` function, the storage slot computation omits the sponsor's address and relies only on `_EMISSARY_SCOPE` and `lockTag`. This causes all users sharing the same `lockTag` to share the same emissary configuration.\nThe root cause is a memory overwrite during slot calculation, which fails to isolate per-user configurations. An attacker can exploit this by setting a malicious emissary for a shared `lockTag`, which will apply to all users under that tag.\nThis allows the attacker to bypass proper sponsor authorization and approve fraudulent claims on behalf of other users. The impact includes unauthorized control over claim processing, potentially leading to loss of funds or unauthorized transfers for affected sponsors.\n",
+            "severity": "High",
+            "location": [
+                "EmissaryLib.sol::_getEmissaryConfig#65"
+            ],
+            "files": [
+                "the-compact/src/lib/EmissaryLib.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Bypassing Element Verification Allows for Unauthorized Manipulation of Exogenous Claim Data",
+            "description": "The protocol uses cryptographic hashes to validate exogenous multichain claim requests, which include arbiter addresses, token IDs, and allocated amounts. These are signed by the sponsor to ensure integrity. However, the `toExogenousMultichainClaimMessageHash` function skips inserting the current element's hash if the `chainIndex` is out of bounds.\nThe cause is a flaw in boundary checking logic, which allows an attacker to manipulate the hash computation by providing an invalid `chainIndex`. This omission creates a gap that can be exploited using the `witness` field, which is placed at a predictable memory offset.\nThe attacker can manually insert the last `additionalChain` hash via the `witness` field to reconstruct the original sponsor-signed hash, while substituting malicious data (e.g., their own arbiter address and arbitrary allocations) into the current element. By front-running a legitimate claim with valid allocator authorization, the attacker can execute unauthorized payouts.\nThe impact includes full control over claim parameters, enabling theft of funds or misdirection of token transfers, even without compromising the sponsor's private key.\n",
+            "severity": "High",
+            "location": [
+                "HashLib.sol::toExogenousMultichainClaimMessageHash#413",
+                "HashLib.sol#459-462",
+                "HashLib.sol#466",
+                "HashLib.sol#433"
+            ],
+            "files": [
+                "the-compact/src/lib/HashLib.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "EOAs Can Be Registered as Allocators",
+            "description": "Externally owned accounts (EOAs) can be registered as allocators in the protocol, even though allocators are expected to implement specific logic such as the `authorizeClaim` function. The `_registerAllocator` function does not verify whether the provided address contains contract code, allowing EOAs to be registered. Since EOAs cannot execute code or respond to function calls, any attempt to invoke `authorizeClaim` on such an EOA will result in a revert with the error `InvalidAllocation(allocator)`. This issue stems from the lack of a contract code check during registration. An attacker or misconfigured user could register an EOA as an allocator, leading to failed claims or transfers when that allocator is used. The impact includes denial of service for claim processing involving such allocators, potentially locking user funds or disrupting protocol functionality.\n",
+            "severity": "High",
+            "location": [
+                "AllocatorLogic.sol::_registerAllocator#69"
+            ],
+            "files": [
+                "the-compact/src/lib/AllocatorLogic.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Improper Typecasting in `EfficiencyLib` Functions",
+            "description": "The `EfficiencyLib` library contains low-level type conversion functions such as `asBool` and `asBytes12` that use inline assembly without proper bit cleaning. The `asBool` function casts a `uint256` to a `bool` but does not ensure that only the least significant bit is considered, potentially leaving \"dirty bits\" that persist if the value is later cast back. Similarly, `asBytes12` does not apply a mask to clear higher-order bits, risking unintended data leakage. This is caused by unsafe assembly-level typecasting without masking or normalization. If these dirty values are used in critical conditions or comparisons, they could lead to incorrect logic execution or state corruption. The impact includes potential manipulation of control flow or data integrity issues in functions relying on these conversions, especially in security-critical contexts.\n",
+            "severity": "High",
+            "location": [
+                "EfficiencyLib.sol::asBool#64",
+                "EfficiencyLib.sol::asBytes12#76"
+            ],
+            "files": [
+                "the-compact/src/lib/EfficiencyLib.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "Activation and Compact Typehashes Differ from Typestring Used in `writeWitnessAndGetTypehashes`",
+            "description": "The `writeWitnessAndGetTypehashes` function in `DepositViaPermit2Lib` incorrectly constructs the EIP-712 typestring when no witness is provided, appending \")TokenPermissions(address token,\" one byte too early. This results in an invalid typestring ending with \"Mandate)TokenPermissions...\" instead of \"Mandate()\".\nThe root cause is a string concatenation error in memory, combined with mismatched constant pre-images used to derive `activationTypehash` and `compactTypehash`. These constants omit the mandate reference, causing a discrepancy between the typehashes computed during deposit and those used during claim validation.\nAn attacker could exploit this by crafting a permit signature based on the incorrect typestring, leading to inconsistent hash validation across protocol phases. This undermines the integrity of the permit system and may allow invalid signatures to pass or valid ones to fail.\nThe impact includes potential denial of service for legitimate users or, in edge cases, unauthorized execution of transfers if signature validation is bypassed due to hash mismatches.\n",
+            "severity": "Medium",
+            "location": [
+                "DepositViaPermit2Lib.sol::writeWitnessAndGetTypehashes#135",
+                "DepositViaPermit2Lib.sol#218",
+                "DepositViaPermit2Lib.sol#224",
+                "EIP712Types.sol#114-115",
+                "EIP712Types.sol#18-19",
+                "DepositViaPermit2Lib.sol#230-251",
+                "HashLib.sol::toMessageHashWithWitness#189"
+            ],
+            "files": [
+                "the-compact/src/lib/DepositViaPermit2Lib.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ]
+            },
+            "title": "register*For Functions Allow Replay of Past Registrations",
+            "description": "The `register*For` functions record the timestamp of a sponsor's claim authorization, which determines its validity period. However, these functions do not prevent replaying of old registrations, allowing arbitrary users to refresh the timestamp and extend expired authorizations.\nThe cause is the lack of replay protection or nonce validation in the registration logic. This allows a malicious allocator, possibly colluding with an arbiter, to reuse an old sponsor signature to re-register an expired claim.\nBy replaying a past registration, the attacker bypasses the sponsor's authorization step, effectively reducing the two-step verification (sponsor + allocator) to a single step. This enables execution of expired claims without current sponsor consent.\nThe impact includes unauthorized claim execution, loss of expected expiration guarantees, and potential fund loss if outdated compacts are reactivated without the sponsor's knowledge.\n",
+            "severity": "Medium",
+            "location": [
+                "ValidityLib.sol#146-152"
+            ],
+            "files": [
+                "the-compact/src/lib/ValidityLib.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1335"
+                ]
+            },
+            "title": "Target Address in `setNativeTokenBenchmark` Is Always the Zero Address",
+            "description": "The `setNativeTokenBenchmark` function is intended to derive a 20-byte recipient address by hashing a salt with the contract address and shifting the result right by 96 bits. However, the implementation reverses the operands of the `shr` opcode, shifting the literal `96` by the hash value instead of the hash by `96`.\nSince the shift distance exceeds 96 for nearly all hash values, the result is zero, causing the target address to always be the zero address. A pre-check that the balance of this address must be zero then causes the benchmark to revert, as the zero address holds a non-zero balance on Ethereum.\nThis prevents the benchmark from initializing, causing `ensureBenchmarkExceeded` to compare zero against `gas()`, which always passes. Attackers could exploit this to bypass intended gas checks, leading to incorrect gas benchmarking.\nThe impact includes failure of the gas benchmarking mechanism, potentially allowing inefficient or exploitable transfer paths to be used without detection.\n",
+            "severity": "Medium",
+            "location": [
+                "TransferBenchmarkLib.sol#48",
+                "TransferBenchmarkLib.sol#51",
+                "TransferBenchmarkLib.sol::ensureBenchmarkExceeded#197"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferBenchmarkLib.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Incorrect Boolean Casting in `_isConsumedBy` Nonce Check",
+            "description": "In the `_isConsumedBy` function, the result of a bitwise `and` operation is used as a boolean without explicit casting. Although the Solidity compiler currently handles this implicitly, this behavior is not guaranteed across all compiler versions and may lead to inconsistent evaluation. This could result in incorrect nonce validation, potentially allowing replay attacks or other logic flaws. Explicitly casting the result using `iszero(iszero(...))` ensures deterministic behavior and makes the intent clear, improving both security and portability of the code.\n",
+            "severity": "Medium",
+            "location": [
+                "ConsumerLib.sol::_isConsumedBy#87"
+            ],
+            "files": [
+                "the-compact/src/lib/ConsumerLib.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inaccuracies in Gas Benchmarking Logic",
+            "description": "The gas benchmarking logic in `TransferBenchmarkLib` and `TransferLib` inaccurately measures the gas cost of ERC-20 token transfers because the gas sampling includes operations before and after the actual `transfer` call, such as `mstore` and success evaluation logic. This causes the benchmarked gas values to be inflated and imprecise. The root cause is incorrect placement of gas measurement instructions in inline assembly, which fails to isolate the target `call` operation. As a result, the `ensureBenchmarkExceeded` function may accept insufficient gas for actual transfers, leading to potential transaction failures or underestimation of required gas. The impact is reduced reliability of gas enforcement mechanisms, which could result in DoS conditions or failed token transfers when actual gas usage exceeds the flawed benchmark.\n",
+            "severity": "Medium",
+            "location": [
+                "TransferBenchmarkLib.sol#L148-L169",
+                "TransferLib.sol#L121-L144"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferBenchmarkLib.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-228"
+                ],
+                "3": [
+                    "CWE-237"
+                ],
+                "4": [
+                    "CWE-240"
+                ]
+            },
+            "title": "Event Signature Mismatch During Claim",
+            "description": "The `Claim` event's signature is calculated without including the `uint256` type for the `nonce` parameter, which is present in the actual event emission in `emitClaim`. This causes a mismatch between the declared and emitted event signatures.\nThe root cause is an incomplete event signature string in `EventLib`, which omits the type annotation for `nonce`. This leads to incorrect topic hashing during event emission.\nOff-chain tools that rely on event signature matching (e.g., indexers, wallets, analytics platforms) will fail to decode the `Claim` event correctly, leading to broken event parsing and potential misinterpretation of claim data.\nThe impact is primarily on observability and integration, resulting in unreliable off-chain monitoring and user-facing interfaces that may misrepresent claim activity.\n",
+            "severity": "Low",
+            "location": [
+                "EventLib.sol#12-13",
+                "EventLib.sol::emitClaim#36"
+            ],
+            "files": [
+                "the-compact/src/lib/EventLib.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-116"
+                ],
+                "3": [
+                    "CWE-838"
+                ]
+            },
+            "title": "JSON Injection Enables Spoofing of Tokens",
+            "description": "The `toURI` function in `MetadataLib` constructs a JSON response containing token metadata such as name and symbol, but does not escape these values before concatenation. This allows a malicious token to inject arbitrary JSON content via its `name()` or `symbol()` return values.\nThe cause is direct string concatenation without sanitization or escaping, enabling context-breaking characters like quotes and commas to alter the JSON structure.\nAn attacker can craft a token whose name includes JSON escape sequences to append additional fields (e.g., a fake \"Token Address\"), misleading users or frontends into displaying incorrect metadata.\nThe impact includes spoofing of token information, potential phishing, and user confusion, especially in wallets or explorers that display token metadata without additional validation.\n",
+            "severity": "Low",
+            "location": [
+                "MetadataLib.sol::toURI#78",
+                "MetadataLib.sol#96",
+                "MetadataLib.sol#100",
+                "MetadataRenderer.sol::uri#25"
+            ],
+            "files": [
+                "the-compact/src/lib/MetadataLib.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "No Fallback Recipient in Forced Withdrawal",
+            "description": "The `forcedWithdrawal` function allows a user to withdraw locked funds to a specified `recipient`, but does not replace a zero address with `msg.sender`, unlike the deposit functions which use `usingCallerIfNull` for this purpose.\nThe root cause is inconsistent handling of zero addresses across deposit and withdrawal logic, creating a usability gap in the forced withdrawal path.\nA user who accidentally sets the recipient to zero or omits it will cause the funds to be sent to the zero address, resulting in permanent loss.\nThe impact is accidental fund loss due to lack of input normalization, reducing user safety and increasing risk during recovery procedures.\n",
+            "severity": "Low",
+            "location": [
+                "TheCompact.sol::forcedWithdrawal#236",
+                "DirectDepositLogic.sol#54",
+                "DirectDepositLogic.sol#158",
+                "DirectDepositLogic.sol#186",
+                "EfficiencyLib.sol::usingCallerIfNull#24",
+                "WithdrawalLogic.sol#112"
+            ],
+            "files": [
+                "the-compact/src/TheCompact.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Native Token Deposit Not Bounded in `batchDeposit*ViaPermit2`",
+            "description": "The `batchDepositViaPermit2` and `batchDepositAndRegisterViaPermit2` functions accept a native token deposit via `msg.value`, but this amount is not included in the sponsor-signed data. This allows an observer to frontrun the transaction with a lower or zero value.\nThe cause is the separation of signature validation from value validation, enabling reuse of the permit nonce without enforcing the expected native amount.\nAn attacker can copy the transaction, reduce `msg.value`, and broadcast it first, consuming the nonce and causing the original transaction to revert. The relayer must then refund or re-execute, incurring gas costs and operational overhead.\nThe impact includes transaction frontrunning, denial of service for legitimate deposits, and increased operational burden on relayers, though funds are not directly lost.\n",
+            "severity": "Low",
+            "location": [
+                "TheCompact.sol::batchDepositViaPermit2#57",
+                "TheCompact.sol::batchDepositAndRegisterViaPermit2#214"
+            ],
+            "files": [
+                "the-compact/src/TheCompact.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Gas Benchmarking for Native Token Transfers",
+            "description": "The `setNativeTokenBenchmark` function calls `BALANCE(target)` before performing two native token transfers, which warms the address in the EVM's access list. This causes both transfers to be treated as warm, eliminating the 2,500 gas difference between cold and warm access.\nThe root cause is the premature access via `BALANCE`, which invalidates the intended benchmark of cold vs warm transfer costs. Additionally, the benchmark fails when the account exists due to the missing 2,500 gas differential.\nThis results in an underestimated cold transfer cost, leading to incorrect gas benchmarks. Users may under-provision gas, causing transaction failures in real-world conditions.\nThe impact includes unreliable gas estimation, potential transaction reverts during withdrawals, and degraded protocol reliability under realistic network conditions.\n",
+            "severity": "Low",
+            "location": [
+                "TransferBenchmarkLib.sol::setNativeTokenBenchmark#43",
+                "TransferBenchmarkLib.sol#51",
+                "TransferBenchmarkLib.sol#76"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferBenchmarkLib.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Underflow via Token Hook Manipulation During Batch Claims",
+            "description": "During batch claims, the protocol calculates withdrawn amounts by comparing the contract's token balance before and after a transfer. However, if the token implements hooks (e.g., ERC-777), a malicious receiver can use the hook to send tokens back to the contract during withdrawal.\nThe cause is the assumption that the contract's balance will only decrease, without accounting for reentrancy-like behavior via token hooks.\nBy returning more tokens than received, the receiver can cause the post-withdrawal balance to exceed the pre-withdrawal balance, leading to an underflow in the subtraction operation.\nThis causes the entire transaction to revert, preventing other recipients from receiving their funds. The impact includes denial of service for batch claims and potential fund lockup.\n",
+            "severity": "Low",
+            "location": [
+                "TransferLib.sol#131"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferLib.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent No-Witness Registration Handling - Phase 2",
+            "description": "The `deriveClaimHashAndRegisterCompact` function always includes the witness in the claim hash calculation, even when the `typehash` is `COMPACT_TYPEHASH`, which indicates no witness should be included. In contrast, `toClaimHashFromDeposit` correctly omits the witness in such cases.\nThe root cause is inconsistent logic across registration functions, leading to hash mismatches when no witness is intended.\nThis inconsistency can cause valid claims to fail verification or allow malformed claims to pass, depending on the registration path used.\nThe impact includes potential claim rejection or validation bypass, undermining the integrity of the registration system and creating edge cases that could be exploited.\n",
+            "severity": "Low",
+            "location": [
+                "RegistrationLogic.sol::deriveClaimHashAndRegisterCompact#104",
+                "HashLib.sol::toClaimHashFromDeposit#625"
+            ],
+            "files": [
+                "the-compact/src/lib/RegistrationLogic.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Potential Bit Overlap in `toLockTag`",
+            "description": "The `toLockTag` function combines a 96-bit allocator ID with scope and reset period bits into a `bytes12` value. However, it does not clear the upper 4 bits of the allocator ID before combining, which could lead to unintended bit overlap if the allocator ID uses more than the expected lower 92 bits. This issue arises because the function assumes the allocator ID is properly masked but does not enforce it. An attacker could potentially manipulate the allocator ID to set bits in the reserved region, leading to incorrect locktag generation. While currently not exploitable due to internal usage constraints, this creates a latent risk if the function is reused in other contexts without proper input sanitization.\n",
+            "severity": null,
+            "location": [
+                "IdLib.sol::toLockTag#220"
+            ],
+            "files": [
+                "the-compact/src/lib/IdLib.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The codebase contains numerous instances of unused imports, using statements, and functions that are not referenced anywhere in the project. These include imports of interfaces like `IAllocator`, `IEmissary`, and `ResetPeriod`, as well as utility functions such as `toBatchMessageHash` and `toCompactFlag`. The presence of unused code increases the attack surface and complicates audits by making it harder to distinguish relevant from irrelevant code. While not directly exploitable, it reduces code clarity and maintainability. An attacker could potentially exploit confusion caused by dead code to hide malicious logic in future updates. Removing unused elements would improve security posture and reduce deployment costs.\n",
+            "severity": "Informational",
+            "location": [
+                "AllocatorLib.sol::IAllocator#4",
+                "ClaimHashLib.sol::ResetPeriod#14",
+                "ClaimHashLib.sol::Scope#15",
+                "ClaimProcessorLogic.sol::ValidityLib#16",
+                "ComponentLib.sol::TransferComponent#8",
+                "ConstructorLogic.sol::Lock#4",
+                "ConstructorLogic.sol::ResetPeriod#5",
+                "ConstructorLogic.sol::Scope#6",
+                "DepositViaPermit2Logic.sol::Scope#6",
+                "DirectDepositLogic.sol::ResetPeriod#4",
+                "DirectDepositLogic.sol::Scope#5",
+                "EmissaryLib.sol::Scope#6",
+                "EmissaryLib.sol::IEmissary#9",
+                "EmissaryLogic.sol::IAllocator#6",
+                "EmissaryLogic.sol::ResetPeriod#7",
+                "EmissaryLogic.sol::Scope#8",
+                "EmissaryStatus.sol::ResetPeriod#4",
+                "HashLib.sol::TransferComponent#6",
+                "HashLib.sol::TransferFunctionCastLib#28",
+                "IdLib.sol::CompactCategory#9",
+                "RegistrationLogic.sol::ResetPeriod#7",
+                "TheCompact.sol::Lock#9",
+                "TransferBenchmarkLib.sol::ConstructorLogic#4",
+                "TransferBenchmarkLib.sol::IdLib#5",
+                "TransferBenchmarkLib.sol::BenchmarkERC20#9",
+                "TransferFunctionCastLib.sol::TransferComponent, ComponentsById#6",
+                "TransferLib.sol::ConstructorLogic#4",
+                "TransferLogic.sol::TransferComponent#6",
+                "TransferLogic.sol::using ValidityLib for bytes32#37",
+                "ValidityLib.sol::using IdLib for ResetPeriod#27",
+                "ValidityLib.sol::using EfficiencyLib for uint256#30",
+                "ValidityLib.sol::using EfficiencyLib for ResetPeriod#31",
+                "ValidityLib.sol::using ValidityLib for uint256#33",
+                "ValidityLib.sol::using FixedPointMathLib for uint256#36",
+                "ClaimProcessorLogic.sol::using ClaimProcessorLib for uint256#34",
+                "ClaimProcessorLogic.sol::using ClaimProcessorFunctionCastLib for functions#37-41",
+                "ClaimProcessorLogic.sol::using HashLib for uint256#43",
+                "HashLib.sol::toBatchMessageHash#272",
+                "IdLib.sol::toAllocatorIdIfRegistered#131",
+                "IdLib.sol::toCompactFlag#320",
+                "IdLib.sol::toId#455",
+                "MetadataLib.sol::readDecimalsWithDefaultValue#181"
+            ],
+            "files": [
+                "the-compact/src/lib/AllocatorLib.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "The smart contracts do not include a dedicated security contact, such as an email or ENS name, in NatSpec comments using the `@custom:security-contact` tag. This omission makes it difficult for security researchers and third-party developers to report vulnerabilities responsibly. Without a clear disclosure channel, critical issues might be reported through insecure means or go unreported altogether. This increases the risk of undiscovered vulnerabilities persisting in the system. Establishing a well-defined reporting mechanism improves overall security hygiene and ensures timely responses to potential threats.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-547"
+                ]
+            },
+            "title": "Magic Numbers",
+            "description": "The codebase uses numerous raw numeric values for calldata and memory offsets without explanatory constants or comments, making it difficult to understand the structure and layout of data being processed. Examples include hardcoded offsets in `ClaimProcessorLogic.sol`, `DepositViaPermit2Logic.sol`, and `RegistrationLogic.sol`. This lack of documentation increases the risk of errors during maintenance or upgrades, as developers must infer the meaning of each number. It also complicates security reviews, as incorrect offsets could lead to data corruption or unintended behavior. Documenting these values with named constants would improve code readability and reduce the likelihood of bugs.\n",
+            "severity": "Informational",
+            "location": [
+                "ClaimProcessorLogic.sol#53",
+                "ClaimProcessorLogic.sol#67",
+                "ClaimProcessorLogic.sol#82",
+                "ClaimProcessorLogic.sol#100",
+                "DepositViaPermit2Logic.sol#70",
+                "DepositViaPermit2Logic.sol#81",
+                "DepositViaPermit2Logic.sol#86",
+                "DepositViaPermit2Logic.sol#137",
+                "DepositViaPermit2Logic.sol#146",
+                "DepositViaPermit2Logic.sol#156",
+                "DepositViaPermit2Logic.sol#203",
+                "DepositViaPermit2Logic.sol#219",
+                "DepositViaPermit2Logic.sol#223",
+                "DepositViaPermit2Logic.sol#300",
+                "DepositViaPermit2Logic.sol#322",
+                "RegistrationLogic.sol#66",
+                "RegistrationLogic.sol#80",
+                "RegistrationLogic.sol#100",
+                "HashLib.sol#537-538"
+            ],
+            "files": [
+                "the-compact/src/lib/ClaimProcessorLogic.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Custom Errors in `require` Statements",
+            "description": "The codebase uses `if-revert` patterns in several locations instead of the more gas-efficient and concise `require` statements with custom errors, despite Solidity 0.8.27 supporting this feature. Examples include checks in `BenchmarkERC20.sol` and `ComponentLib.sol`. This results in higher gas costs and less readable code. Using `require` with custom errors would reduce bytecode size and improve user experience by providing clearer error messages. While not a direct security vulnerability, it represents a missed optimization opportunity that affects both cost and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "BenchmarkERC20.sol#55-57",
+                "ComponentLib.sol#221-223",
+                "ComponentLib.sol#328-330",
+                "EmissaryLib.sol#146-148",
+                "EmissaryLib.sol#168-170",
+                "EmissaryLib.sol#187-189"
+            ],
+            "files": [
+                "the-compact/src/lib/BenchmarkERC20.sol",
+                "the-compact/src/lib/ComponentLib.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "Some functions use string-based revert messages, such as `revert(\"Unknown reset period\")` and `revert(\"Unknown scope\")`, which are more expensive in terms of gas and less efficient than custom errors. String literals are included in the deployed bytecode, increasing its size and the cost of reverts. Custom errors, introduced in Solidity 0.8.4, provide a more gas-efficient alternative by encoding error types with minimal data. Replacing these string reverts with custom errors would reduce gas costs and improve the scalability of the system. This is a best practice for modern Solidity development.\n",
+            "severity": "Informational",
+            "location": [
+                "MetadataLib.sol#53",
+                "MetadataLib.sol#68"
+            ],
+            "files": [
+                "the-compact/src/lib/MetadataLib.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Function Visibility Not Always Properly Defined",
+            "description": "Several internal functions are marked as `internal` even though they are only used within the same contract or library, such as `_validateSponsor` and `_validateAllocator` in `ClaimProcessorLib.sol`. While this does not introduce a direct security risk, it reduces code clarity and may mislead developers about the intended scope of these functions. Correcting the visibility to `private` where appropriate improves encapsulation and signals that the functions are not meant to be overridden or accessed externally. This enhances code maintainability and reduces the risk of misuse in future development.\n",
+            "severity": "Informational",
+            "location": [
+                "ClaimProcessorLib.sol::_validateSponsor#99",
+                "ClaimProcessorLib.sol::_validateAllocator#122",
+                "ClaimProcessorLib.sol::_validateAllocator#135",
+                "ComponentLib.sol::_buildIdsAndAmounts#215",
+                "ComponentLib.sol::verifyAndProcessComponents#269",
+                "HashLib.sol::toBatchTransferMessageHashUsingIdsAndAmountsHash#240",
+                "IdLib.sol::toCompactFlag#378",
+                "MetadataLib.sol::toString#35",
+                "MetadataLib.sol::toString#62",
+                "MetadataLib.sol::toAttributeString#208",
+                "ValidityLib.sol::isValidECDSASignatureCalldata#244",
+                "ValidityLib.sol::isValidERC1271SignatureNowCalldataHalfGas#297"
+            ],
+            "files": [
+                "the-compact/src/lib/ClaimProcessorLib.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "State Variable Visibility Not Explicitly Declared",
+            "description": "The `NOT_SCHEDULED` constant in `EmissaryLib.sol` does not explicitly declare its visibility, relying on Solidity's default `internal` visibility. While functionally correct, this practice reduces code clarity and may lead to confusion for auditors or developers unfamiliar with Solidity defaults. Explicitly declaring visibility (e.g., `internal constant`) improves readability and ensures consistency across the codebase. This is a minor issue but aligns with best practices for secure and maintainable smart contract development.\n",
+            "severity": "Informational",
+            "location": [
+                "EmissaryLib.sol::NOT_SCHEDULED#49"
+            ],
+            "files": [
+                "the-compact/src/lib/EmissaryLib.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Gas-Optimization Opportunities",
+            "description": "The codebase contains multiple opportunities for gas optimization, including redundant masking operations, inefficient bitwise expressions, duplicated computations, and suboptimal control flow. For example, `shl(160, shr(160, ...))` can be simplified, and `keccak256` computations duplicate work already done. Additionally, indexed event parameters like `assignableAt` add unnecessary gas costs. These inefficiencies increase transaction fees and deployment costs. While not security vulnerabilities per se, they impact the economic viability and scalability of the system. Addressing these issues would reduce gas consumption and improve overall efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositViaPermit2Logic.sol::_setReentrancyLockAndStartPreparingPermit2Call#445",
+                "DepositViaPermit2Logic.sol::_preprocessAndPerformInitialNativeDeposit#374",
+                "DepositViaPermit2Logic.sol::_depositBatchAndRegisterViaPermit2#279",
+                "TransferBenchmarkLib.sol::setNativeTokenBenchmark#51",
+                "TransferBenchmarkLib.sol::setNativeTokenBenchmark#76",
+                "TransferBenchmarkLib.sol::setERC20TokenBenchmark#114-146",
+                "TransferLib.sol::withdraw#108",
+                "DepositViaPermit2Lib.sol::beginPreparingBatchDepositPermit2Calldata#63",
+                "ComponentLib.sol::verifyAndProcessComponents#269",
+                "EmissaryLib.sol::assignEmissary#94",
+                "EmissaryLib.sol::EmissaryAssignmentScheduled#47",
+                "AllocatorLib.sol::callAuthorizeClaim#99"
+            ],
+            "files": [
+                "the-compact/src/lib/DepositViaPermit2Logic.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect or Incomplete Documentation",
+            "description": "Multiple instances of incorrect or missing documentation were found throughout the codebase. Examples include outdated comments, mismatched Natspec descriptions, incorrect function purity annotations (e.g., labeling `view` functions as `pure`), and undocumented parameters. These inaccuracies arise from stale or careless documentation updates during development. Misleading documentation can cause developers, auditors, or integrators to misunderstand the intended behavior of functions, leading to incorrect usage or assumptions. The impact includes increased risk of integration errors, security vulnerabilities due to misunderstood preconditions, and reduced maintainability of the codebase.\n",
+            "severity": "Low",
+            "location": [
+                "EIP712Types.sol#L131",
+                "TransferBenchmarkLib.sol#L52",
+                "TransferBenchmarkLib.sol#L77",
+                "TransferBenchmarkLib.sol#L104",
+                "TransferBenchmarkLib.sol#L143",
+                "TransferBenchmarkLib.sol#L162",
+                "TransferBenchmarkLib.sol#L182",
+                "EmissaryLogic.sol::_scheduleEmissaryAssignment#54",
+                "EmissaryLogic.sol::_assignEmissary#74",
+                "DepositViaPermit2Logic.sol::_prepareIdsAndGetBalances#580",
+                "ITheCompact.sol#L157",
+                "ITheCompact.sol#L482",
+                "DepositViaPermit2Lib.sol::deriveAndWriteWitnessHash#287",
+                "ITheCompact.sol::DOMAIN_SEPARATOR#656",
+                "ClaimHashFunctionCastLib.sol::usingMultichainClaimWithWitness#106",
+                "ClaimHashFunctionCastLib.sol::usingExogenousMultichainClaimWithWitness#128",
+                "ClaimHashFunctionCastLib.sol::usingExogenousMultichainClaimWithWitness#166",
+                "ITheCompact.sol::assignEmissary#532",
+                "ITheCompact.sol::depositERC20ViaPermit2#131",
+                "ITheCompact.sol::batchDepositAndRegisterFor#413",
+                "ITheCompact.sol::depositNativeAndRegisterFor#303-L304",
+                "EmissaryLib.sol#L142"
+            ],
+            "files": [
+                "the-compact/src/types/EIP712Types.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Unfinished Implementation Notes in Codebase",
+            "description": "The codebase contains several inline comments suggesting potential improvements or alternative implementations (e.g., using `TSTORE`, refactoring loops, bypassing `SLOAD`) that were never acted upon. These notes were left in the code and may confuse auditors or maintainers about whether the current implementation is final. The cause is incomplete cleanup of developer notes during code finalization. These ambiguous comments could lead to incorrect assumptions about the design rationale or intent, increasing the risk of misinterpretation during audits or future development. The impact is reduced code clarity and maintainability, potentially leading to unnecessary changes or missed optimizations.\n",
+            "severity": "Low",
+            "location": [
+                "TransferBenchmarkLib.sol#L109",
+                "AllocatorLogic.sol#L36",
+                "HashLib.sol#L451-L452",
+                "IdLib.sol#L163",
+                "DepositViaPermit2Logic.sol#L469-L471"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferBenchmarkLib.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1116"
+                ]
+            },
+            "title": "Typographical Errors",
+            "description": "Multiple typographical errors were found in the codebase, such as \"idiosyncracies\" instead of \"idiosyncrasies\", \"dirtieed\" instead of \"dirtied\", duplicated words like \"by the by the\", and incorrect phrases like \"Ensure sure initial\". These errors occur in comments and string literals. While they do not affect runtime behavior, they reduce code professionalism and readability. The root cause is lack of proofreading during code review. The impact is minimal from a security standpoint but may affect developer experience and trust in code quality.\n",
+            "severity": "Informational",
+            "location": [
+                "TransferBenchmarkLib.sol#L15",
+                "EmissaryLib.sol#L236",
+                "AllocatorLib.sol#L48",
+                "DepositViaPermit2Logic.sol#L54-L55",
+                "AllocatorLib.sol#L83"
+            ],
+            "files": [
+                "the-compact/src/lib/TransferBenchmarkLib.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Naming Suggestions",
+            "description": "Several functions have misleading or inconsistent names. For example, `performBatchTransfer` should be renamed to `processBatchTransfer` for consistency with `processTransfer`, and `_buildIdsAndAmounts` should reflect its additional validation logic in its name. These issues stem from inconsistent naming conventions and lack of semantic clarity. Poor naming reduces code readability and increases the cognitive load on developers, making it harder to understand function behavior. The impact is reduced maintainability and increased risk of misuse or bugs during future development.\n",
+            "severity": "Low",
+            "location": [
+                "ComponentLib.sol::performBatchTransfer#69",
+                "ComponentLib.sol::_buildIdsAndAmounts#215"
+            ],
+            "files": [
+                "the-compact/src/lib/ComponentLib.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ]
+            },
+            "title": "Code Simplifications",
+            "description": "Several opportunities for code simplification were identified, such as removing redundant function calls (`hasConsumedAllocatorNonce` going through unused intermediaries), inlining one-time-use functions like `_revertWithInvalidBatchAllocationIfError`, merging duplicate `_validateAllocator` functions, and eliminating redundant abstractions like `toRegisteredAllocatorWithConsumed`. These inefficiencies arise from over-engineering or incomplete refactoring. The resulting code has unnecessary complexity, longer call paths, and increased gas overhead. The impact includes higher maintenance burden, reduced readability, and slightly increased execution cost.\n",
+            "severity": "Low",
+            "location": [
+                "TheCompact.sol::hasConsumedAllocatorNonce#299",
+                "ConsumerLib.sol::isConsumedByAllocator#33",
+                "AllocatorLogic.sol::_hasConsumedAllocatorNonce#90",
+                "ValidityLib.sol::hasConsumedAllocatorNonce#188",
+                "ClaimHashLib.sol::toMessageHashes#74",
+                "ClaimHashLib.sol::toMessageHashes#92",
+                "ComponentLib.sol::_revertWithInvalidBatchAllocationIfError#361",
+                "ComponentLib.sol::_buildIdsAndAmounts#255",
+                "ClaimProcessorLib.sol::_validateAllocator#122",
+                "ClaimProcessorLib.sol::_validateAllocator#135",
+                "ValidityLib.sol::toRegisteredAllocatorWithConsumed#63-L66",
+                "ValidityLib.sol::fromRegisteredAllocatorIdWithConsumed#48-L54"
+            ],
+            "files": [
+                "the-compact/src/TheCompact.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Inconsistent Argument Value Usage in `processBatchClaimWithSponsorDomain`",
+            "description": "The `processBatchClaimWithSponsorDomain` function passes the literal value `0x140` directly to `processClaimWithBatchComponents`, while other functions in the codebase use `uint256(0x140).asStubborn()` for the same purpose. This inconsistency suggests a lack of uniformity in how constants are handled. The cause is either oversight or missing abstraction for commonly used values. While not directly exploitable, this reduces code consistency and may confuse developers about the intended usage pattern. The impact is minor, limited to code style and maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "ClaimProcessorLib.sol::processBatchClaimWithSponsorDomain#236"
+            ],
+            "files": [
+                "the-compact/src/lib/ClaimProcessorLib.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,79 @@
+{
+    "path": "dataset-curated/reports/TrailofBits/2025-10-vechain-vechainthorhayabusaupgrade-securityreview.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/vechain/thor"
+        ],
+        "commit_id": [
+            "180c5ba3553f41b0b815079cd818bb9292e86767"
+        ],
+        "address": [],
+        "chain": "vechain",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-09",
+        "project_path": {
+            "thor": "dataset-curated/contracts/2025-10-vechain-vechainthorhayabusaupgrade-securityreview.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-348"
+                ]
+            },
+            "title": "Staker contract balance invariant can be broken using SELFDESTRUCT",
+            "description": "The VeChain DPoS system relies on a Staker contract to manage validator stakes and delegations, and one of its critical invariants is that the total staked VET must match the Staker contract's actual balance. However, while the contract blocks regular transfers of VET, it cannot prevent funds from being sent via the SELFDESTRUCT opcode, which forcibly sends ether (or VET) to a contract without invoking its fallback or receive functions. This allows an attacker to artificially inflate the contract's balance, breaking the invariant. The root cause is the reliance on contract balance as a source of truth for system-critical invariants, despite the known manipulability of balances through forced sends. An attacker can deploy a contract that self-destructs into the Staker contract with a non-zero balance, thereby altering its balance without going through legitimate staking operations. This breaks the assumption that all VET in the contract comes from valid staking actions and can cause the ContractBalanceCheck to fail. Since this check is performed during housekeeping, staking operations, and block validation, a successful exploit can prevent the PoA-to-DPoS transition from completing or halt block production entirely by making blocks invalid, resulting in a complete denial of service (DoS) to the network.\n\nThis vulnerability has been resolved by introducing a separate state variable to track deposited VET, which is only updated on legitimate deposit/withdrawal actions, and by changing the invariant check to a non-strict inequality.\n",
+            "severity": "High",
+            "location": [
+                "builtin/staker/housekeep.go::ContractBalanceCheck#262-324",
+                "Staker contract"
+            ],
+            "files": [
+                "thor/builtin/staker/housekeep.go",
+                "thor/builtin/staker/staker.go"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "DPoS is vulnerable to significant centralization risk",
+            "description": "The migration from proof of authority (PoA) to delegated proof of stake (DPoS) introduces significant centralization risks due to the economic incentives inherent in the DPoS model. The system allows validators with the largest total stakes to have a higher probability of being selected as block proposers, which naturally incentivizes delegators to bond their stake to these top validators to maximize their reward chances. Furthermore, large validators can offer external kickbacks or bribes to attract more delegations, leading to a positive feedback loop that concentrates stake among a small number of validators. Over time, this creates a plutocratic structure where a few validators control the majority of the network's voting power. The FIFO activation queue is ineffective against such centralization because smaller validators are economically pressured to exit when they cannot earn rewards, allowing large validators to spin up new identities (Sybil attack) and capture more slots. The root cause is the configuration of the DPoS mechanism without sufficient anti-cartel or stake-limiting measures. An attacker (or coalition of large validators) could exploit this by accumulating stake up to the 600M VET cap and creating multiple identities to dominate proposer selection. This undermines the decentralization goals of the network and increases the risk of collusion, censorship, or coordinated attacks, ultimately reducing the system's resilience and trustworthiness.\n\nWhile the VeChain team has implemented some measures such as transparent governance and community participation, the fundamental architectural risk remains unaddressed. This issue requires a strategic, long-term migration away from DPoS and thus cannot be fully evaluated in a short-term fix review.\n",
+            "severity": "High",
+            "location": [],
+            "files": [
+                "thor/builtin/staker/staker.go",
+                "thor/builtin/staker/globalstats/service.go",
+                "thor/builtin/staker/validation/service.go"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Short cooldown and short staking cycles increase validator churn",
+            "description": "The current configuration of a 24-hour cooldown period and short staking cycles (e.g., seven days) enables low-friction validator churn, which undermines network liveness and economic stickiness. The root cause is the system's configuration, which allows validators to exit and re-enter the active set with minimal delay and cost. With epochs lasting only 30 minutes, a validator can exit and become eligible to re-enter after approximately 48 epochs (about 24 hours), making timing predictable and churn easy to automate. Because exits are processed at epoch boundaries and there is a one-exit-per-epoch cap, the network may not be able to backfill fast enough, leading to an active validator set that remains below target for extended periods. This increases missed block slots and elongates time-to-finality, degrading performance. Additionally, short staking cycles encourage opportunistic behavior where validators stake briefly to collect rewards and exit before penalties or adverse conditions arise, then re-enter after the cooldown. This reduces long-term economic commitment to the network's security. The impact is a more volatile validator set, increased operational burden for maintaining liveness, and weakened deterrence against poor uptime, ultimately harming the stability and reliability of the consensus mechanism.\n\nAlthough VeChain acknowledges the issue and plans to assess staking behaviors for future parameter adjustments, no concrete fixes have been implemented, leaving the issue unresolved.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "thor/thor/config.go",
+                "thor/builtin/staker/staker.go",
+                "thor/builtin/staker/housekeep.go"
+            ]
+        }
+    ]
+}

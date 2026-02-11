@@ -1,0 +1,935 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Jovay Sequencer System Contracts Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/jovaynetwork/jovay-contracts"
+        ],
+        "commit_id": [
+            "24f525f379558eed27441f7233e5921591e0063d"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-10",
+        "project_path": {
+            "jovay-contracts": "dataset-curated/contracts/Jovay Sequencer System Contracts Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "Incorrect Return Value in `getWithdrawEffectiveWindow`",
+            "description": "The `getWithdrawEffectiveWindow` function in the `DPoSValidatorManager` contract returns an incorrect value due to two issues. First, it parses a configuration string into a `uint256` using `Strings.parseUint` but then casts the result to `uint8`, which risks truncation if the value exceeds 255. Second, when the requested configuration key does not exist, `SysChainCfg.getChainCfg` returns an empty string, which `parseUint` interprets as 0, causing the function to silently return 0 instead of reverting. The root cause is improper input validation and unsafe type casting. An attacker or misconfiguration could exploit this by setting a high withdrawal window value that gets truncated, or by relying on the silent failure to force a zero value. This could lead to incorrect withdrawal timing logic, potentially allowing premature withdrawals or blocking legitimate ones, undermining the intended security of the staking mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::getWithdrawEffectiveWindow#2644-2648"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "_transferTo Silently Ignores Failure",
+            "description": "The `_transferTo` function in the `DPoSValidatorManager` contract handles transfer failures by emitting an `ErrorOccurred` event but does not revert or return a success status. This means that calling functions cannot detect whether a transfer succeeded or failed, leading to potential state inconsistency. The root cause is the lack of proper error propagation\u2014instead of using `require` or returning a boolean, the function continues execution silently after a failed transfer. An attacker could trigger a transfer to a contract that reverts (e.g., via a malicious fallback) or to an address with insufficient balance, causing funds to be marked as transferred in the system state while no actual transfer occurs. The impact is a loss of funds or incorrect accounting, as the contract assumes the transfer succeeded when it did not.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::_transferTo#2518-2552"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "`view` Functions Return Future-Dated Chain Configuration",
+            "description": "The `get_config` and `get_configs` functions in the `ChainCfg` contract return the latest configuration checkpoint without verifying whether it is effective at the current block. Since `set_config` sets `effectiveBlockNum` to `block.number + 1`, the new configuration should only take effect in the next block. However, the getter functions do not enforce this delay and return the new configuration immediately, allowing it to be used in the same block it was set. The root cause is the absence of a check in the getter functions to ensure `effectiveBlockNum <= block.number`. An attacker or front-running bot could exploit this by reading the new configuration in the same block and acting on it before the intended delay, potentially causing inconsistent behavior across system components that rely on the one-block deferral. This undermines the integrity of the configuration update mechanism and could lead to race conditions or incorrect system state.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::get_config#40",
+                "sys_chaincfg.sol::get_configs#52",
+                "sys_chaincfg.sol::set_config#74"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Native Tokens Can Become Stuck in `DPoSValidatorManager`",
+            "description": "The `DPoSValidatorManager` contract has a `receive` function that allows it to accept native token payments, but it lacks any mechanism to withdraw those funds. As a result, any native tokens sent to the contract become permanently locked. The root cause is the presence of a payable `receive` function without corresponding withdrawal logic. An attacker could exploit this by sending small amounts of native tokens to clog the contract or, more critically, users might accidentally send funds that are then irretrievable. The impact is permanent loss of funds and reduced trust in the system, especially if the contract accumulates significant balances over time.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::receive#2657-2665"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ]
+            },
+            "title": "Metahash Filter Not Implemented in Rule-Existence Check",
+            "description": "The `checkExist` function in the `rule_mng.sol` contract checks for rule existence based only on contract address and selector, ignoring the `metahash` parameter. Although `metahash` is documented as a filter in the `InferRule` struct, it is not used in the existence check, meaning two rules with the same address and selector but different `metahash` values are considered duplicates. The root cause is incomplete logic in `checkExist`, which only validates that `metahash` is non-zero but does not include it in the comparison. An attacker (or legitimate user) cannot create multiple rules differing only by `metahash`, limiting the intended flexibility of the rule system. This contradicts the design specification and reduces the utility of the `metahash` field, potentially leading to confusion and integration errors.\n",
+            "severity": "Medium",
+            "location": [
+                "rule_mng.sol::checkExist#50",
+                "rule_mng.sol::InferRule#15",
+                "rule_mng.sol::addRule#130"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Missing Rule Manager Epoch Advance",
+            "description": "The `advanceEpoch` function in the `DPoSValidatorManager` contract does not call the corresponding `advanceEpoch` function in the `InferRuleManager` contract. This breaks synchronization between validator epochs and rule state transitions, as the `InferRuleManager` relies on its own `advanceEpoch` call to move rules from `INIT`/`UPDATED` to `IN_PROVING` and from `PROVING_SUCCESS` to `IN_USE`. The root cause is the omission of a required cross-contract call. If rule and validator epochs are meant to be aligned, this desynchronization could delay or prevent rule activation, leading to incorrect inference behavior. An attacker could exploit timing gaps to submit transactions that bypass intended rule checks, reducing system security and predictability.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::advanceEpoch#2585",
+                "rule_mng.sol::advanceEpoch#318"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol",
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ]
+            },
+            "title": "Unreadable Historical Checkpoints",
+            "description": "The `ChainCfg` contract stores configuration checkpoints in the private `configCps` array but only exposes the latest checkpoint via `get_config` and `get_configs`. This makes historical configurations inaccessible, rendering the checkpoint mechanism partially useless for auditing or state recovery. The root cause is the lack of public functions to query past checkpoints. While the data is stored, its inaccessibility defeats the purpose of maintaining a history. This limits the ability to verify past configurations or debug issues, reducing transparency and auditability. The impact is a weakened governance and monitoring system, as stakeholders cannot verify how configurations have evolved over time.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::get_config#40",
+                "sys_chaincfg.sol::get_configs#52",
+                "sys_chaincfg.sol::configCps"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "`updateValidator` Calls Will Fail",
+            "description": "The `updateValidator` function in the `DPoSValidatorManager` contract is public but cannot succeed because there is no way to add validators in the first place\u2014the `validators` mapping remains empty. The function attempts to update a validator that cannot exist, leading to a self-inflicted denial of service. The root cause is missing validator registration logic, likely due to incomplete implementation or removal of staking functionality. An attacker could spam calls to this function, wasting gas, or integrators might\u8befuse it under false assumptions. The impact is confusion, wasted resources, and reduced code clarity, as the function appears functional but is guaranteed to fail.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::updateValidator#2554-2577"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Grantees Can Approve or Deny Any Rules in Proving",
+            "description": "The `updateProvingResult` function in the `InferRuleManager` contract uses `checkAdminPermission`, which allows both administrators and grantees to approve or reject rule proofs. This enables grantees to bypass the proving process by marking their own rules as `PROVING_SUCCESS` or to grief others by marking their rules as `PROVING_FAILURE`. The root cause is overly permissive access control\u2014the function should only be callable by a trusted administrator or off-chain oracle, not by grantees. An attacker with grantee privileges could exploit this to push malicious rules into production without proper validation, undermining the entire rule verification system and potentially compromising transaction inference integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "rule_mng.sol::updateProvingResult#283-310",
+                "rule_mng.sol::checkAdminPermission#89-95"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Metahash Parameter Not Used in Permission Check",
+            "description": "The `checkPermission(_metahash)` function in `rule_mng.sol` does not use the `_metahash` parameter for any meaningful authorization logic. It returns `true` if the caller has admin permissions, and otherwise only checks that `_metahash` is non-zero before returning `false`. The root cause is incomplete or abandoned logic\u2014there is no actual metahash-based access control implemented. This suggests the function was intended for future use but was never completed. The impact is confusion and potential misuse, as developers might assume metahash-based permissions are enforced when they are not. It also increases code complexity without benefit.\n",
+            "severity": "Medium",
+            "location": [
+                "rule_mng.sol::checkPermission#97"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "`DPoSValidatorManager` Contains Unnecessary Logic",
+            "description": "The `DPoSValidatorManager` contract contains numerous unused functions, state variables, events, and parameters that were left behind after staking functionality was removed. Examples include `hexStringToBytes`, `_transferTo`, `validators`, `MIN_VALIDATOR_STAKE`, and several events. The root cause is incomplete code cleanup after feature removal. This bloats the contract, increases deployment cost, complicates audits, and confuses integrators about the contract\u2019s purpose. While not directly exploitable, it increases maintenance burden and the risk of accidental misuse. The impact is reduced code clarity, higher gas costs, and potential for bugs during future upgrades due to confusion over unused components.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::hexStringToBytes#2442-2465",
+                "sys_staking.sol::sliceBytes#2467-2477",
+                "sys_staking.sol::fromHexChar#2479-2490",
+                "sys_staking.sol::_transferTo#2518-2552",
+                "sys_staking.sol::getWithdrawEffectiveWindow#2644-2648",
+                "sys_staking.sol::getChainCfg#2650-2655",
+                "sys_staking.sol::validators#2353",
+                "sys_staking.sol::MIN_VALIDATOR_STAKE#2358",
+                "sys_staking.sol::MIN_DELEGATOR_STAKE#2359",
+                "sys_staking.sol::MIN_POOL_STAKE#2360",
+                "sys_staking.sol::MAX_POOL_STAKE#2361",
+                "sys_staking.sol::EPOCH_DURATION#2362",
+                "sys_staking.sol::DomainUpdate#2372-2380",
+                "sys_staking.sol::ValidatorReward#2390-2398",
+                "sys_staking.sol::ValidatorWithdrawStake#2400-2407",
+                "sys_staking.sol::StakeAdded#2408-2412",
+                "sys_staking.sol::ValidatorRegistered#2413-2416",
+                "sys_staking.sol::ValidatorExitRequested#2418",
+                "sys_staking.sol::ErrorOcurred#2420-2425",
+                "sys_staking.sol::ReentrancyGuard#2336",
+                "sys_staking.sol::advanceEpoch#2586-2587",
+                "sys_staking.sol::pendingAddPoolIds#2355",
+                "sys_staking.sol::pendingExitPoolIds#2356",
+                "sys_staking.sol::activePoolIds#2354"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Incomplete Test Suite",
+            "description": "The repository lacks a test suite for the sequencer contracts, meaning there are no automated tests to verify correctness or detect regressions. The root cause is the absence of testing infrastructure and test cases. Without tests, developers cannot confidently modify the code, and bugs may go undetected until deployment. An attacker could exploit unknown vulnerabilities that would have been caught by proper testing. The impact is increased risk of undetected bugs, reduced development velocity, and lower overall code quality and reliability.\n",
+            "severity": "Low",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Non-Standard Development Practices",
+            "description": "The project uses flattened files, lacks a standard development framework (e.g., Foundry or Hardhat), and uses non-conventional naming (e.g., `sys_staking.sol` instead of `SysStaking.sol`). The root cause is deviation from community best practices. This makes the code harder to audit, maintain, and integrate with standard tooling. The impact is reduced developer productivity, increased likelihood of errors, and difficulty in onboarding new developers or using automated analysis tools.\n",
+            "severity": "Low",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Insufficient Documentation and Comments",
+            "description": "The codebase lacks NatSpec documentation and has minimal inline comments, especially in complex contracts like `DPoSValidatorManager`. The root cause is insufficient documentation effort. This makes it difficult to understand the intended behavior of functions and state variables, increasing the risk of misinterpretation during audits or upgrades. The impact is higher chance of bugs being introduced or missed, longer review times, and reduced maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "sys_staking.sol::DPoSValidatorManager#2336"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Code Duplication in `InferRuleManager`",
+            "description": "The `InferRuleManager` contract duplicates all functions and events from the `PermissionControl` contract instead of inheriting or importing it, leading to redundant and harder-to-maintain code.\nThe root cause is poor code design and lack of reuse through inheritance or composition.\nThis increases the risk of inconsistencies and bugs if changes are made in one contract but not the other.\nThe impact includes increased maintenance burden, larger contract size, and potential for logic divergence and security inconsistencies.\n",
+            "severity": "Low",
+            "location": [
+                "rule_mng.sol::InferRuleManager"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "Multiple contracts use floating pragma directives (e.g., ^0.8.20, ^0.8.0), which can lead to compilation with untested Solidity versions and introduce unexpected behavior or vulnerabilities.\nThe cause is the use of version ranges instead of fixed versions in the pragma statement.\nAn attacker could potentially exploit compiler-specific bugs in a newer minor version if the contract is recompiled without review.\nThe impact includes potential introduction of compiler-level vulnerabilities or inconsistent bytecode output across compilations.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol",
+                "rule_mng.sol",
+                "sys_chaincfg.sol",
+                "sys_staking.sol"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/permission_control.sol",
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_staking.sol",
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Zero-Address Checks",
+            "description": "Several functions that accept address parameters do not validate that the input is not the zero address, which could lead to accidental loss of control or ownership.\nThe cause is the omission of require checks for address non-zero before assignment.\nAn attacker or user could set critical roles or ownership to address(0), effectively burning access and making recovery impossible.\nThe impact includes permanent loss of administrative control or misrouting of privileges.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol::_new_admin#49",
+                "permission_control.sol::_addr#70",
+                "rule_mng.sol::_new_admin#367",
+                "rule_mng.sol::_addr#388"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "Empty Constructors",
+            "description": "The `DPoSValidatorManager` and `ChainCfg` contracts contain empty constructors that perform no initialization.\nThis is likely an oversight or incomplete implementation, especially in `ChainCfg` where `rootSys` remains uninitialized.\nWhile not directly exploitable, it may indicate missing setup logic that could be required for correct operation.\nThe impact includes potential for uninitialized state variables and confusion about contract initialization flow.\n",
+            "severity": "Low",
+            "location": [
+                "sys_staking.sol::DPoSValidatorManager",
+                "sys_chaincfg.sol::ChainCfg"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_staking.sol",
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-393"
+                ]
+            },
+            "title": "Wrong Revert Message in `updateValidator`",
+            "description": "The `updateValidator` function uses the same error message \"Validator does not exist\" for both existence and ownership checks, which is misleading.\nThe cause is incorrect labeling of the require statement that checks ownership.\nThis could mislead users or frontends into thinking a validator doesn't exist when in fact the caller lacks permission.\nThe impact is degraded user experience and potential misdiagnosis during debugging or incident response.\n",
+            "severity": "Low",
+            "location": [
+                "sys_staking.sol::updateValidator#2563"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "TODO/Fixme Comments in Code",
+            "description": "The codebase contains TODO comments in `permission_control.sol` and `sys_staking.sol`, which may indicate unfinished work or known issues.\nThese comments are not tracked in an external issue system and could be forgotten before deployment.\nIf they represent unresolved security concerns, they could lead to vulnerabilities in production.\nThe impact is potential exposure of known but unaddressed issues in live contracts.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol#7",
+                "sys_staking.sol#2570"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/permission_control.sol",
+                "jovay-contracts/sequencer_contracts/aldaba-ng/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Incorrect `AdminRevoked` Event Parameter",
+            "description": "The `AdminRevoked` event declares a parameter `revoker` but emits the `revoked` address instead of the `msg.sender`.\nThis mismatch causes incorrect off-chain interpretation of who performed the revocation.\nThe cause is a logical error in event emission within the `revokeAdmin` function.\nThe impact includes inaccurate audit trails and potential confusion in monitoring or governance systems.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol::AdminRevoked",
+                "permission_control.sol::revokeAdmin#88"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Old Library Version",
+            "description": "The `DPoSValidatorManager` contract uses OpenZeppelin version 5.1.0, while 5.4.0 is available with improvements.\nAlthough the `Strings` library was updated, `ReentrancyGuard` was not due to storage compatibility concerns.\nUsing outdated libraries may miss security patches or features.\nThe impact is potential missed gas optimizations or lack of access to improved functionality, though no direct security flaw is introduced.\n",
+            "severity": "Low",
+            "location": [
+                "sys_staking.sol::DPoSValidatorManager"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Linear Complexity Creates DoS Vectors",
+            "description": "Multiple contracts use unbounded arrays with linear search operations (e.g., `ChainCfg.set_config`, `InferRuleManager.checkExist`, `DPoSValidatorManager.isArrayContains`), leading to increasing gas costs.\nAs data grows, these operations may exceed block gas limits, preventing further execution.\nThe cause is the use of arrays instead of mappings or sets for large datasets.\nThe impact is a denial-of-service condition where critical functions become unusable, especially in `ChainCfg` which has quadratic complexity on config updates.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::set_config#60",
+                "sys_chaincfg.sol::get_config#40",
+                "rule_mng.sol::checkExist#55",
+                "rule_mng.sol::delRule#204",
+                "rule_mng.sol::updateRule#169",
+                "rule_mng.sol::advanceEpoch#322",
+                "sys_staking.sol::isArrayContains#2492",
+                "permission_control.sol::checkGrantPermission#31",
+                "permission_control.sol::revokeAdmin#80"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Variable Could Be `immutable`",
+            "description": "The `prove_threshold_` variable in `rule_mng.sol` is set in the constructor and never changed, but is not declared `immutable`.\nThis misses an opportunity for gas savings and clearer code intent.\nThe cause is failure to apply the `immutable` keyword where appropriate.\nThe impact is slightly higher deployment cost and reduced code clarity regarding variable mutability.\n",
+            "severity": "Low",
+            "location": [
+                "rule_mng.sol::prove_threshold_#39"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Enum",
+            "description": "The `CreateMethod` enum in `rule_mng.sol` is defined but not used anywhere in the codebase.\nUnused code elements reduce readability and increase confusion.\nThis may indicate incomplete refactoring or abandoned features.\nThe impact is code bloat and potential misunderstanding of contract functionality.\n",
+            "severity": "Low",
+            "location": [
+                "rule_mng.sol::CreateMethod#7"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The codebase uses string literals in `require` statements instead of custom errors, which are more gas-efficient and cleaner since Solidity 0.8.4.\nThe cause is outdated error handling patterns.\nThis increases gas costs for failed transactions and reduces clarity in revert reasons.\nThe impact includes higher transaction costs and less efficient error reporting for users and tools.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol",
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol",
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Function With `internal` or `private` Visibility",
+            "description": "The `checkAdminPermission` function in `permission_control.sol` is defined but not called anywhere.\nUnused functions increase contract size and attack surface without benefit.\nThis may be dead code from prior development phases.\nThe impact includes unnecessary gas costs on deployment and potential confusion during audits.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol::checkAdminPermission#22-28"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Lack of Indexed Event Parameters",
+            "description": "Multiple events such as `SuperTransferred`, `AdminGranted`, and `RuleAdded` do not have any indexed parameters, making them difficult to query off-chain.\nThe cause is failure to use the `indexed` keyword on important event fields.\nThis hinders event filtering and monitoring by external services like indexers or frontends.\nThe impact is degraded observability and increased cost for event-based applications.\n",
+            "severity": "Low",
+            "location": [
+                "permission_control.sol::SuperTransferred",
+                "permission_control.sol::AdminGranted",
+                "permission_control.sol::AdminRevoked",
+                "rule_mng.sol::RuleAdded",
+                "rule_mng.sol::RuleUpdated",
+                "rule_mng.sol::RuleDeleted",
+                "rule_mng.sol::ProvingResultUpdated",
+                "rule_mng.sol::SuperTransferred",
+                "rule_mng.sol::AdminGranted",
+                "rule_mng.sol::AdminRevoked"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "State Variable Visibility Not Explicitly Declared",
+            "description": "The `configCps` state variable in `sys_chaincfg.sol` does not explicitly declare its visibility.\nWhile Solidity defaults to private for state variables, explicit declaration improves code clarity.\nThe cause is omission of the visibility keyword.\nThe impact is reduced readability and potential confusion about access control.\n",
+            "severity": "Low",
+            "location": [
+                "sys_chaincfg.sol::configCps#17"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Use of `uint/int` Instead of `uint256/int256`",
+            "description": "Multiple instances of `uint` are used instead of the explicit `uint256`, which is the full form and recommended for clarity.\nAlthough functionally equivalent, this reduces consistency and readability.\nThe cause is use of type aliases instead of explicit types.\nThe impact is minor, but it may confuse developers unfamiliar with the aliasing behavior in Solidity.\n",
+            "severity": "Low",
+            "location": [
+                "rule_mng.sol#204",
+                "rule_mng.sol#224",
+                "sys_staking.sol#2423",
+                "sys_staking.sol#2456",
+                "sys_staking.sol#2469",
+                "sys_staking.sol#2470",
+                "sys_staking.sol#2473",
+                "sys_staking.sol#2496",
+                "sys_staking.sol#2518",
+                "sys_staking.sol#2520",
+                "sys_staking.sol#2538"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Several functions across multiple contracts are declared with more permissive visibility than necessary, which could potentially allow unintended access from derived contracts or external callers. The root cause is the use of `internal` or `public` visibility when `private` or `external` would be sufficient based on the function's intended use. For instance, utility functions like `_fromHexChar` and `sliceBytes` are marked `internal` but are only used within their defining contract, making them candidates for `private`. Similarly, getter functions like `getSuperAdmin` are `public` but could be `external` to save gas. While this does not directly lead to fund loss, it increases the attack surface and reduces code clarity. An attacker could potentially exploit overly public functions if future code changes introduce vulnerabilities in those entry points. The impact is primarily on code maintainability, gas efficiency, and security hygiene.\n",
+            "severity": "Medium",
+            "location": [
+                "permission_control.sol::checkSuperPermission#14-20",
+                "permission_control.sol::checkAdminPermission#22-28",
+                "permission_control.sol::checkGrantPermission#30-38",
+                "permission_control.sol::getSuperAdmin#54-56",
+                "permission_control.sol::getGranteeAdmin#59-61",
+                "rule_mng.sol::addRule#128-144",
+                "rule_mng.sol::updateRule#158-190",
+                "rule_mng.sol::delRule#196-242",
+                "rule_mng.sol::getAllRules#245-259",
+                "rule_mng.sol::getNextId#262-264",
+                "rule_mng.sol::getContractRules#267-275",
+                "rule_mng.sol::updateProvingResult#283-310",
+                "rule_mng.sol::getSuperAdmin#372-374",
+                "rule_mng.sol::getGranteeAdmin#377-379",
+                "sys_chaincfg.sol::changeSys#33-38",
+                "sys_chaincfg.sol::get_config#40-50",
+                "sys_chaincfg.sol::get_configs#52-58",
+                "sys_staking.sol::hexStringToBytes#2442-2465",
+                "sys_staking.sol::sliceBytes#2467-2477",
+                "sys_staking.sol::_fromHexChar#2479-2490",
+                "sys_staking.sol::isArrayContains#2492-2502",
+                "sys_staking.sol::isValidatorPendingExit#2512-2516",
+                "sys_staking.sol::_transferTo#2518-2552",
+                "sys_staking.sol::advanceEpoch#2579-2583",
+                "sys_staking.sol::setChainEpochBlock#2606-2622",
+                "sys_staking.sol::getWithdrawEffectiveWindow#2644-2648",
+                "sys_staking.sol::getChainCfg#2650-2655"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1115"
+                ]
+            },
+            "title": "Lack of SPDX License Identifier",
+            "description": "The file `rule_mng.sol` does not contain an SPDX license identifier, which is a comment specifying the license under which the smart contract code is released. The absence of such an identifier creates legal ambiguity regarding the usage and distribution of the code. The root cause is simply the omission of the SPDX comment at the top of the file. While this does not pose a direct security risk to the functionality of the contract, it can lead to compliance and licensing issues for developers or organizations wishing to use or audit the code. The impact is primarily legal and reputational, as open-source best practices recommend clear licensing. This issue was resolved by removing the file.\n",
+            "severity": "Informational",
+            "location": [
+                "rule_mng.sol#1"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/rule_mng.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Missing Security Contact",
+            "description": "None of the sequencer contracts include a security contact, such as an email or ENS name, via a NatSpec `@custom:security-contact` tag. This omission makes it difficult for security researchers or auditors to responsibly disclose potential vulnerabilities. The root cause is the lack of standardized security disclosure practices in the codebase. Without a clear channel, critical issues might go unreported or be disclosed publicly without coordination, increasing the risk of exploitation. The impact is on the project's ability to respond to future security issues in a timely and coordinated manner. This is a best practice issue that affects the long-term security posture of the project.\n",
+            "severity": "Informational",
+            "location": [
+                "permission_control.sol",
+                "rule_mng.sol",
+                "sys_chaincfg.sol",
+                "sys_staking.sol"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inconsistent Order Within Contracts",
+            "description": "The contracts in the codebase do not follow the recommended function ordering as defined in the Solidity Style Guide, which suggests a specific layout (e.g., constructor, fallback, external, public, internal, private). The root cause is inconsistent development practices across the team or lack of code review enforcement. This reduces code readability and maintainability, making it harder for auditors and developers to understand the control flow and identify potential issues. While this does not introduce a direct security vulnerability, it increases the cognitive load during audits and raises the risk of missing subtle bugs. The impact is on code quality and long-term maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "permission_control.sol",
+                "rule_mng.sol",
+                "sys_chaincfg.sol",
+                "sys_staking.sol"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Constants Not Using UPPER_CASE Format",
+            "description": "Several constant variables in the codebase are not named using the recommended `UPPER_CASE_WITH_UNDERSCORES` convention, such as `sysStaking` and `intrinsicSys`. The root cause is deviation from the Solidity Style Guide, which recommends uppercase naming for constants to distinguish them from regular variables. This inconsistency reduces code readability and can lead to confusion about which variables are intended to be immutable. While this has no direct security impact, it affects code clarity and professionalism. The impact is primarily on maintainability and adherence to community standards.\n",
+            "severity": "Informational",
+            "location": [
+                "sys_chaincfg.sol#22",
+                "sys_chaincfg.sol#23",
+                "sys_staking.sol#2367",
+                "sys_staking.sol#2369"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use calldata Instead of memory",
+            "description": "Parameters of external functions in `sys_chaincfg.sol` and `sys_staking.sol` are declared with `memory` data location when they should use `calldata`. Since `calldata` is a read-only and non-modifiable area that directly references transaction data, using it for external function parameters avoids the cost of copying data to memory. The root cause is inefficient coding practice. This leads to unnecessary gas consumption during function calls, increasing transaction costs for users. An attacker cannot exploit this for direct harm, but it represents an economic inefficiency. The impact is increased gas fees for legitimate users, reducing the cost-effectiveness of interacting with the contracts.\n",
+            "severity": "Low",
+            "location": [
+                "sys_chaincfg.sol::keys#60",
+                "sys_chaincfg.sol::values#60",
+                "sys_staking.sol::_description#2556",
+                "sys_staking.sol::_endpoint#2557"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol",
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "updateValidator Requires Redundant Inputs",
+            "description": "The `updateValidator` function in `sys_staking.sol` requires all parameters to be provided even if only one field is being updated, forcing callers to supply existing values for unchanged fields. The root cause is poor function design that does not support partial updates. This increases the risk of accidental modification, especially since `_description` and `_endpoint` lack validation (e.g., non-empty checks). A user might unintentionally overwrite a field with an empty value. While `_new_owner` is checked against `address(0)`, the other fields are not, increasing the chance of misuse. The impact is potential unintended state changes due to user error, though no direct fund loss is implied. This issue was resolved by removing the function.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_staking.sol::updateValidator#2554-2559"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_staking.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1116"
+                ]
+            },
+            "title": "Typographical Errors",
+            "description": "The codebase contains typographical errors that can mislead developers and auditors. The `getGranteeAdmin` function has a comment stating it returns \"administrator_\" when it actually returns `grantees_`, which is misleading. Additionally, the word \"selector\" is misspelled as \"selctor\" in the `InferRule` struct and the `addRuleEvent` event. The root cause is lack of proofreading or automated linting. These errors reduce code clarity and can cause confusion during development or auditing. While they do not introduce functional bugs, they affect the professionalism and reliability of the codebase. The impact is on code readability and maintainability, potentially leading to misunderstandings.\n",
+            "severity": "Informational",
+            "location": [
+                "permission_control.sol::getGranteeAdmin#58",
+                "rule_mng.sol::InferRule#12",
+                "rule_mng.sol::addRuleEvent#123"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
+            ]
+        }
+    ]
+}

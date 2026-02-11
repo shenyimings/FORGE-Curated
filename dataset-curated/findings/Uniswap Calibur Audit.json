@@ -1,0 +1,482 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Uniswap Calibur Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Uniswap/calibur",
+            "https://github.com/Uniswap/minimal-delegation"
+        ],
+        "commit_id": [
+            "732a20a8d82f034573c6c7e44160f1860233a946",
+            "732a20a8d82f034573c6c7e44160f1860233a946"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-21",
+        "project_path": {
+            "Uniswap Calibur Audit.md-source": "dataset-curated/contracts/Uniswap Calibur Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "The `from` Address in ETH_CALL Can Be Non-Zero",
+            "description": "The `isValidSignature` function in the `MinimalDelegation` contract incorrectly assumes that off-chain calls via `ETH_CALL` RPC will always originate from `address(0)`. However, the `ETH_CALL` method allows arbitrary `from` addresses to be specified, which can cause the function to enter unintended execution branches. The root cause is a flawed assumption about RPC caller behavior, deviating from the ERC-7739 standard's recommended workflow deduction. An attacker could exploit this by specifying a non-zero `from` address to bypass proper signature validation logic, potentially leading to signature reuse across different wallets if the `erc1271CallerIsSafe` branch is triggered. This could result in unauthorized transaction execution or signature replay attacks, undermining the integrity of the wallet's signature verification mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature#153",
+                "MinimalDelegation.sol::isValidSignature#159"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Hooks Do Not Receive All Relevant Data",
+            "description": "The hook system in the contract, designed to allow fine-grained validation logic, fails to pass critical execution data to certain hook functions. Specifically, the `handleAfterValidateUserOp` function does not receive the `validationData` parameter, which contains `validAfter`, `validUntil`, and `success` flags, and `handleAfterExecute` does not receive the call result or success status. This omission is caused by incomplete interface design in the hook contracts. An attacker or malicious relayer could exploit this lack of visibility by crafting transactions that pass validation but violate intended business logic that the hook cannot enforce due to missing data. The impact is reduced effectiveness of hook-based security controls, potentially allowing time-locked or conditional access rules to be bypassed, weakening the overall security model.\n",
+            "severity": "Medium",
+            "location": [
+                "IValidationHook.sol::handleAfterValidateUserOp",
+                "MinimalDelegation.sol::validateUserOp#122",
+                "MinimalDelegation.sol::handleAfterExecute#195"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/interfaces/IValidationHook.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "ERC-7739 Signature Verification Workflow Deviation",
+            "description": "The `isValidSignature` function deviates from the ERC-7739 standard by not correctly deducing the signature workflow based on the signature structure. According to ERC-7739, the contract must first attempt to interpret the signature as `TypedDataSign` and fall back to `PersonalSign` only if that fails. However, the current implementation prioritizes other checks and may misinterpret a valid nested typed data signature as a `NestedPersonalSign`, causing validation to fail. This is caused by incorrect ordering of signature parsing logic. An attacker could exploit this by crafting a valid ERC-7739-compliant signature that is rejected due to improper workflow deduction, leading to denial of service for legitimate users. The impact is reduced interoperability and reliability of signature verification, potentially locking users out of their wallets.\n",
+            "severity": "Medium",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "`requireUV` Flag Should Not Be Hardcoded to `false`",
+            "description": "The `requireUV` flag in `KeyLib.sol` is hardcoded to `false`, meaning the contract does not enforce user verification (e.g., biometrics or PIN) during WebAuthn authentication. This creates a security gap where a registered passkey could be used without confirming the user's presence, increasing the risk of unauthorized access if the device is compromised. The root cause is a design decision to delegate user verification enforcement to the client, but this shifts responsibility away from the on-chain security model. An attacker with physical or remote access to an unlocked device could exploit this by triggering a transaction without user interaction. The impact is a weakened authentication mechanism, potentially allowing unauthorized transaction signing if the device is left unattended or compromised.\n",
+            "severity": "Medium",
+            "location": [
+                "KeyLib.sol::requireUV#68"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/KeyLib.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ]
+            },
+            "title": "Domain Separator Does Not Include Delegate Address",
+            "description": "The EIP-712 domain separator in the `EIP712.sol` contract does not include the delegate contract address, relying only on `address(this)` which refers to the EOA. This means that if an EOA re-delegates to a different implementation contract with the same domain name and version, the domain separator remains unchanged. The cause is an incomplete domain construction that omits the implementation address. An attacker could exploit this by replaying old signatures from a previous delegation context if nonces or deadlines are not properly managed. The impact is potential signature replay attacks across different wallet implementations, leading to unauthorized execution of outdated or invalid transactions.\n",
+            "severity": "Low",
+            "location": [
+                "EIP712.sol::domainSeparator#73"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/EIP712.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Missing Zero-Address Checks",
+            "description": "The contract lacks zero-address validation in two critical functions: approving native tokens to the zero address and transferring native tokens to the zero address. While approving to zero is mostly harmless, transferring to the zero address results in permanent loss of funds. The root cause is missing input validation in the `ERC7914.sol` implementation. An attacker or user error could trigger a transfer to `address(0)`, either accidentally or through a malicious relayer manipulating calldata. The impact is irreversible loss of native tokens, reducing user funds and trust in the system.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7914.sol#15",
+                "ERC7914.sol#30"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC7914.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Unrestricted Admin Keys",
+            "description": "Admin keys can register new keys and update any key's settings, including their own, allowing them to remove expiration dates or grant admin privileges to others. This creates a trust escalation issue where any admin can become permanent and grant further privileges, effectively making the wallet a 1-of-n multisig with no limits. The cause is overly permissive access control in `KeyManagement.sol`. An attacker who compromises an admin key could exploit this to grant themselves permanent access and bypass time-based restrictions. The impact is a weakened security model where the compromise of a single admin key can lead to full and permanent control of the wallet.\n",
+            "severity": "Low",
+            "location": [
+                "KeyManagement.sol::update#32"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Standard P-256 Signing Algorithms May Not Be Compatible With keccak256 Hashing Scheme",
+            "description": "The contract expects P-256 signatures to be made over `keccak256` hashes, but standard implementations (e.g., ES256) use `sha256`. This incompatibility means users must manually sign raw 32-byte digests, increasing the risk of blind signing or phishing. The root cause is a deviation from standard cryptographic practices in the signature verification logic. An attacker could exploit this by presenting a malicious digest that appears legitimate but leads to unintended transactions. The impact is increased user risk during signing, potentially leading to fund loss due to poor integration with standard passkey systems.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::verify#209"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Different Pragma Directives Are Used",
+            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4337Account.sol#2",
+                "ERC7739Utils.sol#2"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing Event Emissions",
+            "description": "Several state-changing functions, including `setERC1271CallerIsSafe`, `update`, and `_useNonce`, do not emit events, making it difficult to track changes off-chain. The root cause is the omission of event declarations in these functions. An attacker or malicious relayer could exploit the lack of transparency to perform stealthy changes that are hard to monitor. The impact is reduced observability, complicating wallet tracking, auditing, and debugging, which harms user trust and system transparency.\n",
+            "severity": "Low",
+            "location": [
+                "ERC1271.sol::setERC1271CallerIsSafe#20",
+                "KeyManagement.sol::update#32",
+                "NonceManager.sol::_useNonce#37"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC1271.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "`revertOnFailure` Does Not Consider Hooks Revert",
+            "description": "The `beforeExecutionHook` function reverts when execution fails, even if `revertOnFailure` is set to `false`, which contradicts the expected behavior where failed calls should not revert. The cause is a logic inconsistency between the hook behavior and the batch execution mode. An attacker could exploit this by crafting a transaction with `revertOnFailure=false` but triggering a hook revert, causing the entire transaction to fail unexpectedly. The impact is incorrect error handling and potential denial of service, reducing the reliability of batched transaction execution.\n",
+            "severity": "Low",
+            "location": [
+                "HooksLib.sol::beforeExecutionHook#74",
+                "MinimalDelegation.sol#191"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/HooksLib.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Docstring",
+            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
+            "severity": "Low",
+            "location": [
+                "IERC4337Account.sol#18"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "A Newly Registered Key Has No Expiration Date",
+            "description": "Keys registered via the `register` function are created without an expiration date because no entry is made in the `keySettings` mapping, which defaults to no expiry. This violates the principle of least privilege. The cause is incomplete initialization logic in `KeyManagement.sol`. An attacker who gains access to a forgotten admin key could exploit this to maintain long-term access. The impact is prolonged exposure from orphaned or forgotten keys, increasing the attack surface over time.\n",
+            "severity": "Low",
+            "location": [
+                "KeyManagement.sol::register#21",
+                "SettingsLib.sol#52"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "`keyhash` and `hookdata` Should Be Part of the Signed Hash",
+            "description": "The `keyHash` and `hookData` parameters are appended to the signature without being included in the signed hash, allowing relayers to manipulate them post-signature. This is especially problematic in `validateUserOp` and `isValidSignature`. The root cause is insecure signature composition that excludes critical context data. An attacker could exploit this by altering `hookData` to bypass hook logic or cause incorrect state changes. The impact is potential logic manipulation and DoS via malicious relayers, undermining the integrity of delegated execution.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::validateUserOp#110",
+                "MinimalDelegation.sol::_handleVerifySignature#204",
+                "MinimalDelegation.sol::isValidSignature#143"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Deviation from ERC-7821",
+            "description": "The implementation only supports Mode 1 of ERC-7821 and omits the mandatory Mode 2 (enhanced single batch with optional data), while also introducing a non-standard mode. This reduces interoperability with other systems expecting full ERC-7821 compliance. The cause is incomplete standard implementation. An attacker could exploit this by crafting transactions that fail unexpectedly due to unsupported modes, leading to denial of service. The impact is reduced compatibility and potential integration issues with third-party tools and wallets.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7821.sol#14",
+                "ModeDecoder.sol#14"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC7821.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "ERC-7914 Implementation Deviates from Spec",
+            "description": "The implementation of ERC-7914 in the audited contract deviates from the current draft specification in multiple ways. The `supportsInterface` function is missing, which is a standard requirement for ERC-165 compatibility. The `transferFromNative` function reverts on failure instead of returning false as required by the spec, and returns true for zero amounts, contrary to the reference implementation. Additionally, functions like `transferFromNativeTransient`, `allowance`, and `transientAllowance` are implemented but not defined in the ERC, creating ambiguity. These deviations increase the risk of interoperability issues and unexpected behavior if the ERC is finalized or adopted by other systems. The root cause is premature implementation of an unstable and unpublished ERC. An attacker or malicious integrator could exploit the behavioral differences to cause failed transactions, incorrect state assumptions, or front-running. The impact includes reduced reliability, integration failures, and potential fund loss in dependent systems.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC7914.sol::supportsInterface",
+                "ERC7914.sol::transferFromNative#28-33",
+                "ERC7914.sol::transferFromNativeTransient#36-41",
+                "ERC7914.sol::allowance#11",
+                "ERC7914.sol::transientAllowance#44-46"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC7914.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-357"
+                ]
+            },
+            "title": "Risk of Blind Signing With WebAuthn",
+            "description": "The wallet integrates WebAuthn for authentication, where the challenge signed by the user's authenticator may represent blockchain transaction data. However, most WebAuthn authenticators do not display the structured blockchain data (e.g., EIP-712 typed data) on-device, leading to a risk of blind signing. Users may unknowingly approve transactions that move funds or change permissions because the relying party (website) is responsible for displaying the digest, which may be misleading or compromised. The root cause is the mismatch between WebAuthn's web2 security model and the high-stakes nature of blockchain transactions. An attacker could exploit this by phishing or compromising the frontend to present a benign-looking message while the actual signed digest authorizes a malicious transaction. The impact includes unauthorized fund transfers, account takeover, and loss of user assets, as demonstrated by real-world incidents like the 2025 Bybit hack.\n",
+            "severity": "High",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature#129",
+                "MinimalDelegation.sol::batched calls#206"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Potential Malformed Calldata",
+            "description": "The `removeSelector` function in `CalldataDecoder.sol` performs an unchecked subtraction of 4 from `data.length` in inline assembly without verifying that the input calldata is at least 4 bytes long. If a shorter input is provided, this operation will underflow, resulting in a large, invalid length value, which could lead to undefined behavior or memory corruption in the assembly block. The root cause is the lack of input validation before arithmetic operations in low-level code. An attacker could craft a malicious UserOperation with less than 4 bytes of calldata to trigger this underflow, potentially causing the contract to read garbage data or revert unpredictably. The impact includes denial of service, unexpected reverts in legitimate transactions, or potential exploitation in combination with other vulnerabilities.\n",
+            "severity": "High",
+            "location": [
+                "CalldataDecoder.sol::removeSelector#10",
+                "MinimalDelegation.sol::execution data#93"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/CalldataDecoder.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Missing ERC-7739 Recommended contentsName Validation",
+            "description": "The implementation does not fully comply with the recommended security checks in ERC-7739 for validating the `contentsName` field in typed data signatures. Specifically, it does not reject signatures where `contentsName` is empty, starts with lowercase letters (a-z), or contains disallowed characters like commas, parentheses, or null bytes. The root cause is the omission of these validation steps in the `ERC7739Utils.sol` library. An attacker could exploit this by crafting a malicious typed data structure with a deceptive `contentsName` that appears legitimate to the user but is processed differently by the contract. The impact includes user deception, signature misuse, and potential authorization of unintended actions due to ambiguous or malformed content names.\n",
+            "severity": "Low",
+            "location": [
+                "ERC7739Utils.sol::contentsName validation#93-95"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/ERC7739Utils.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Missing Signature Deadlines",
+            "description": "The signature validation logic only checks whether the associated key has expired, based on the key's settings, but does not enforce per-signature deadlines. This means a valid signature can be replayed at any time before the key expires, deviating from best practices that include time-limited signatures. The root cause is the lack of a deadline parameter in the signature verification flow. An attacker could capture a valid signature (e.g., via a compromised frontend or phishing) and replay it at a later time to execute unauthorized transactions. The impact includes replay attacks, loss of fine-grained control over permissions, and increased window of exposure for stolen signatures.\n",
+            "severity": "Medium",
+            "location": [
+                "KeyManagement.sol::settings expiry check#77"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+            ]
+        }
+    ]
+}

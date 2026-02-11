@@ -1,0 +1,69 @@
+---
+name: CI
+run-name: CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  # --- Determine which files have changed ---
+  changes:
+    uses: ./.github/workflows/_detect-changes.yml
+    secrets: inherit
+
+  # --- Fast: Build + Lint only (required by can_proceed) ---
+  fast:
+    uses: ./.github/workflows/_fast.yml
+    secrets: inherit
+
+  # --- Run Arbitrator tests (not required by can_proceed) ---
+  arbitrator:
+    needs: changes
+    if: needs.changes.outputs.arbitrator_changed == 'true'
+    uses: ./.github/workflows/_arbitrator.yml
+    secrets: inherit
+
+  # --- Run Bold Legacy challenge tests (not required by can_proceed) ---
+  bold-legacy:
+    needs: changes
+    if: needs.changes.outputs.bold_legacy_changed == 'true'
+    uses: ./.github/workflows/_bold-legacy.yml
+    secrets: inherit
+
+  # --- Full GO tests (not required by can_proceed) ---
+  go-tests:
+    uses: ./.github/workflows/_standard-go-test-suite.yml
+    secrets: inherit
+
+  # --- Summarize test results (not required by can_proceed) ---
+  codecov:
+    needs: [go-tests, arbitrator]
+    if: always()
+    uses: ./.github/workflows/_codecov.yml
+    secrets: inherit
+    permissions:
+      pull-requests: write
+    with:
+      post_comment: true
+      upload_report: false
+
+  can_proceed:
+    name: can_proceed
+    runs-on: ubuntu-4
+    needs: [fast]
+    steps:
+      - name: OK
+        run: exit 0
+
+  can_see_status:
+    # This job is just to make sure that the "can_proceed" job's status is visible
+    # on the pull request page, even if it is skipped due to all its dependencies being
+    # skipped. It does not depend on any other jobs, so it always runs.
+    runs-on: ubuntu-4
+    steps:
+      - run: true

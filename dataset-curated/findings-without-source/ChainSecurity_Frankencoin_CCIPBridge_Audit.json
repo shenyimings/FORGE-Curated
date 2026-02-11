@@ -1,0 +1,116 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_Frankencoin_CCIPBridge_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/frankencoin/ccip-bridge"
+        ],
+        "commit_id": [
+            "7aa8e90193a44f9cd4bd24639a3ca6c50ac68aaa"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-04",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Initialization Frontrunning",
+            "description": "The vulnerability arises because certain contracts, such as BridgedFrankencoin, have initialize() functions that lack access control, even though they are not upgradeable via proxies. This design allows malicious actors to potentially frontrun the initialization call after contract deployment, leading to a denial-of-service (DoS) condition where the legitimate deployer cannot initialize the contract. The root cause is the absence of a mechanism to atomically deploy and initialize the contract, which opens a window for exploitation. An attacker could monitor the mempool for deployment transactions and submit a competing transaction to call initialize() first, rendering the contract unusable. The impact is limited to deployment disruption, not fund loss or direct control over funds, but it could delay or complicate deployment operations.\n",
+            "severity": "Low",
+            "location": [
+                "BridgedFrankencoin.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Missing Zero-Rate Check",
+            "description": "The issue stems from the removal of a safety check in the AbstractSavings.save() function that previously prevented deposits when the lead rate was set to zero, even if the rate change had not yet taken effect. The original check ensured that no new funds could be deposited during a disabled interest rate state, preventing potential inconsistencies or unintended behavior. The cause is the assumption that since withdrawals are no longer delayed, the check is unnecessary. However, this removes a safeguard that could prevent deposits into a potentially inactive or transitioning module. An attacker could exploit timing windows during rate changes to deposit funds when the system is in a transitional state, although no direct financial loss is implied. The impact is a deviation from expected correctness and potential confusion in system behavior during rate updates.\n",
+            "severity": "Low",
+            "location": [
+                "AbstractSavings.sol::save"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Vote De-Synchronization",
+            "description": "This vulnerability allows a user to manipulate the perceived voting power on sidechains by syncing votes before reducing them on mainnet. The root cause is the asynchronous and unidirectional nature of vote synchronization from mainnet to sidechains, combined with the ability to use the kamikaze() function to zero out other users' voting power. An attacker can sync their own voting power, reduce others' power via kamikaze(), then sync the outdated (zeroed) power of the victims, creating a temporary state where the attacker holds disproportionate influence on the sidechain. This enables the attacker to pass proposals without opposition, even if they would not have sufficient support under accurate synchronization. The exploitation requires precise timing but is feasible. The impact is a temporary distortion of governance quorums on sidechains, potentially allowing malicious proposals to pass, though the issue can be corrected by re-syncing accurate vote data.\n",
+            "severity": "Low",
+            "location": [
+                "BridgedGovernance.sol::syncVotes",
+                "GovernanceSender.sol::syncVotes"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Wrong Assertion",
+            "description": "The vulnerability is located in the BridgeAccounting._ccipReceive() function, which contains an assertion that assumes the contract's ZCHF balance is zero after processing a message. This assertion fails when losses are greater than zero because a malicious actor could donate ZCHF tokens to the contract before message execution, causing the assertion to revert. The root cause is an incorrect assumption about the contract's state, failing to account for external token donations. An attacker could exploit this by donating tokens, preventing the processing of legitimate loss-handling messages. If the message is not re-executed within the CCIP time window (typically one hour), the system becomes inconsistent and cannot recover without bridging profits first. The impact is a potential halt in loss synchronization, leading to operational disruption and requiring manual intervention to restore consistency.\n",
+            "severity": "Medium",
+            "location": [
+                "BridgeAccounting.sol::_ccipReceive"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Ambiguous Naming",
+            "description": "The issue is a lack of consistent naming across message-sending and fee-calculation functions, which reduces code clarity and increases the risk of developer error. For example, lead rate synchronization uses pushLeadrate() while vote synchronization uses syncVotes(), and their respective fee functions are getCCIPFee() and getSyncFee(). The cause is inconsistent naming conventions across similar functionalities. While this does not directly lead to security vulnerabilities, it can lead to confusion during development, auditing, or integration, potentially resulting in incorrect function calls or missed logic. The impact is reduced maintainability and increased cognitive load, which could indirectly contribute to future bugs. This was acknowledged and corrected by renaming syncVotes() to pushVotes() and getSyncFee() to getCCIPFee() for consistency.\n",
+            "severity": "Informational",
+            "location": [
+                "GovernanceSender.sol::syncVotes",
+                "GovernanceSender.sol::getSyncFee",
+                "LeadrateSender.sol::pushLeadrate",
+                "LeadrateSender.sol::getCCIPFee"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Typographical Errors",
+            "description": "The contract code and variable names contain several typographical errors, such as \"briding\" instead of \"bridging\", \"combition\" instead of \"combination\", \"helpes\" instead of \"helps\", and \"_accuredLoss\" instead of \"_accruedLoss\". These errors are present in comments and variable names across multiple files. The root cause is human error during development. While these do not affect the functionality of the code, they reduce code readability and professionalism, potentially leading to confusion during audits or maintenance. The impact is purely informational and aesthetic, but correcting them improves code quality and maintainability. These were acknowledged and corrected during the audit.\n",
+            "severity": "Informational",
+            "location": [
+                "CCIPAdmin.sol::L12",
+                "CCIPSender.sol::L50",
+                "Governance.sol::L71",
+                "BridgedFrankencoin.sol::_accuredLoss"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Wrong Comment in Cross-Chain transfer() NatSpec Comments",
+            "description": "The NatSpec comments for the CrossChainERC20.transfer() function incorrectly state that users must approve the token contract itself before transferring. However, the function uses internal _transfer(), which does not require prior approval. The root cause is outdated or incorrect documentation. This could mislead developers or users into believing an unnecessary approval step is required, potentially leading to confusion or redundant transactions. The impact is minimal, as it does not affect functionality, but it could cause user experience issues or integration errors. The comment was corrected to clarify that approval is only needed for the fee token (LINK) if not using the native token for fees.\n",
+            "severity": "Informational",
+            "location": [
+                "CrossChainERC20.sol::transfer"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "BridgeAccounting Contract Does Not Check Whether Source Chain Is Supported",
+            "description": "The _validateSender() function in the BridgeAccounting contract uses TokenPool.getRemoteToken() to verify the source address but does not check whether the returned address is valid or whether the chain is supported. Since getRemoteToken() returns an empty bytes array for unsupported chains, a malicious actor on a hypothetical chain with the ability to send from the zero address could spoof the sender and trigger arbitrary profit or loss handling. The root cause is the lack of a validation check for supported chains. This could allow unauthorized message processing if such a chain were integrated with CCIP. The impact includes potential manipulation of the accounting system, leading to incorrect profit/loss recording. The issue was corrected by adding a check to ensure the remote token address is not empty.\n",
+            "severity": "Informational",
+            "location": [
+                "BridgeAccounting.sol::_validateSender",
+                "TokenPool.sol::getRemoteToken"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,211 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_optimism_nov2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/ethereum-optimism/optimism"
+        ],
+        "commit_id": [
+            "1f888ede"
+        ],
+        "address": [
+            "0x4200000000000000000000000000000000000026",
+            "0x4200000000000000000000000000000000000027",
+            "0x4200000000000000000000000000000000000029",
+            "0x420000000000000000000000000000000000002a",
+            "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000"
+        ],
+        "chain": "evm/optimism",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-02",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Missing CGT predeploy mirrors",
+            "description": "The Go code mirrors for predeployed contract addresses (in op-service/predeploys/addresses.go and devnet-sdk/contracts/constants/constants.go) were not updated to include new Custom Gas Token (CGT) and superchain predeploys. As a result, downstream tooling relying on these packages cannot discover or label the new contracts, rendering CGT-related functionality unusable despite the Solidity predeploys existing on-chain.\n\nThe root cause is the omission of four new predeploy addresses\u2014OptimismSuperchainERC20Factory, OptimismSuperchainERC20Beacon, NativeAssetLiquidity, and LiquidityController\u2014from both Go files, and the failure to insert them into the Predeploys map. This breaks tooling such as state dumps, metadata handlers, and transaction intent builders.\n\nAn attacker cannot directly exploit this, but the inconsistency leads to operational failures in tooling and integrations that depend on accurate address resolution. The impact is degraded functionality and potential misconfiguration in development and deployment environments, violating the expected consistency between on-chain and off-chain representations.\n\nThis issue was fixed in commit fd6865e9 and verified by Cantina.\n",
+            "severity": "Low",
+            "location": [
+                "op-service/predeploys/addresses.go#L5-L47",
+                "devnet-sdk/contracts/constants/constants.go"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "CGT mode strands donateETH funds",
+            "description": "When Custom Gas Token (CGT) mode is enabled, the OptimismPortal2 contract continues to accept ETH donations via the donateETH() function, even though the finalization logic reverts any withdrawal transaction with nonzero ETH value. This creates a situation where ETH can be sent to the portal but cannot be withdrawn, effectively stranding the funds permanently.\n\nThe cause is a missing validation in the donateETH() function that should revert when CGT mode is active and msg.value > 0, as required by the CGT specification. The function is currently empty and does not enforce this rule.\n\nAn attacker or user can exploit this by sending ETH to donateETH() when CGT mode is active, resulting in irreversible loss of funds. The impact is permanent loss of user funds and inflation of the portal's balance without a withdrawal mechanism.\n\nThis issue was fixed in commit abad267 and verified by Cantina.\n",
+            "severity": "Low",
+            "location": [
+                "OptimismPortal2.sol#L327-L330"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Missing zero-value validation in burn() function",
+            "description": "The burn() function in LiquidityController.sol does not validate that msg.value is greater than zero before proceeding. This allows users to call burn() with zero ETH, which contradicts the specification requiring the function to revert on zero-value burns.\n\nThe root cause is the absence of a validation check such as if (msg.value == 0) revert LiquidityController_InvalidAmount(). Without this, the function executes unnecessarily and may lead to incorrect state transitions or wasted gas.\n\nWhile not directly exploitable for financial gain, this could be used in spam attacks or to manipulate internal accounting. The impact is minor, limited to gas inefficiency and deviation from spec compliance.\n\nThis finding was acknowledged by Optimism but not fixed at the time of the report.\n",
+            "severity": "Low",
+            "location": [
+                "LiquidityController.sol#L99"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "OptimismPortal2 lacks isCustomGasToken flag",
+            "description": "The OptimismPortal2 contract does not have a native isCustomGasToken boolean storage variable or a public getter function to expose the CGT mode, as mandated by the specification. Instead, it relies on forwarding to systemConfig.isFeatureEnabled(Features.CUSTOM_GAS_TOKEN), which forces external components to infer the mode indirectly.\n\nThe cause is the absence of a dedicated bool private isCustomGasToken_; storage slot and the corresponding public isCustomGasToken() view function. This violates the spec and breaks compatibility with tooling that expects to query the portal directly for the flag.\n\nAs a result, tooling that depends on the spec-compliant interface fails to operate correctly, leading to incorrect behavior or integration failures. The impact is reduced interoperability and reliability of external systems.\n\nThis issue was fixed in commit cdc2aa0 and verified by Cantina.\n",
+            "severity": "Low",
+            "location": [
+                "OptimismPortal2.sol#L222-L250"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "NativeAssetLiquidity lacks fund() function",
+            "description": "The NativeAssetLiquidity contract does not implement the fund() function as required by the CGT specification. The spec mandates a public, payable fund() function that reverts on zero value and emits a LiquidityFunded event, allowing operators to seed the liquidity pool during deployment or migration.\n\nThe cause is the complete absence of the fund() function and the LiquidityFunded event in the contract. Only deposit() and withdraw() functions are present.\n\nWithout this function, operators cannot pre-fund the liquidity vault on-chain, making migration procedures impossible and violating the spec. The impact is operational blocking for chain initialization and reduced flexibility in liquidity management.\n\nThis issue was fixed in commit 3f85e88 and verified by Cantina.\n",
+            "severity": "Low",
+            "location": [
+                "NativeAssetLiquidity.sol#L16"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "LiquidityController events off-spec",
+            "description": "The LiquidityController contract emits non-spec-compliant events: MinterAuthorized and MinterDeauthorized without including the authorizer/deauthorizer address, and uses LiquidityMinted/LiquidityBurned instead of the required AssetsMinted/AssetsBurned.\n\nThe cause is incorrect event definitions and emissions that deviate from the CGT specification, which requires event MinterAuthorized(address indexed minter, address indexed authorizer) and event AssetsMinted/AssetsBurned for proper auditing.\n\nThis breaks tooling that relies on standardized event signatures for monitoring and governance auditing. The impact is unreliable on-chain event tracking and potential failure of compliance or monitoring systems.\n\nThis issue was fixed in commit 573fdb3 and verified by Cantina.\n",
+            "severity": "Low",
+            "location": [
+                "LiquidityController.sol#L22-L39"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Nested if-statements can be combined to save gas",
+            "description": "The functions proveWithdrawalTransaction(), depositTransaction(), and finalizeWithdrawalTransaction() in OptimismPortal2.sol use nested if-statements to check two conditions, resulting in two JUMPI opcodes and higher gas consumption.\n\nThe cause is inefficient control flow structure. Combining the conditions with a logical AND (e.g., if (_isUsingCustomGasToken() && _tx.value > 0)) would reduce bytecode size and gas cost by eliminating an unnecessary jump.\n\nWhile not a security vulnerability, this represents a gas inefficiency that increases transaction costs for users. The impact is higher operational costs and reduced efficiency.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "OptimismPortal2.sol#L353-L356",
+                "OptimismPortal2.sol#L449-L452",
+                "OptimismPortal2.sol#L576-L578"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Inefficient boolean comparison in setCustomGasToken() function",
+            "description": "The setCustomGasToken() function in L1BlockCGT.sol uses an explicit boolean comparison (require(isCustomGasToken() == false, ...)), which generates more expensive bytecode than using the negation operator (!).\n\nThe cause is suboptimal Solidity coding practice. Using require(!isCustomGasToken(), ...) is more gas-efficient as it avoids unnecessary comparison operations.\n\nThe impact is slightly higher gas consumption for the function call. While minor, this optimization improves efficiency across all calls to this function.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "L1BlockCGT.sol#L65"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Split CGT flags can cause locked funds",
+            "description": "The Custom Gas Token (CGT) mode is controlled by two separate flags: one in SystemConfig on L1 and another in L1BlockCGT on L2. These flags are updated independently, which can lead to a state mismatch where one is active while the other is not.\n\nThe cause is the lack of atomic coordination between the two flags. If the L1 flag is enabled before the L2 flag, withdrawals pass L2 but revert on L1, stranding ETH. Conversely, if the L2 flag remains active after L1 is disabled, ETH can only flow one-way to L2.\n\nThis can result in permanent loss of user funds during the transition period. The impact is high for users attempting withdrawals or deposits during flag misalignment.\n\nRecommendation includes pausing both components and enabling flags in a coordinated sequence.\n",
+            "severity": "Informational",
+            "location": [
+                "L2ToL1MessagePasserCGT.sol#L30-L36"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "CLI truncates large init bond values",
+            "description": "The op-deployer CLI parses the --initial-bond flag using cliCtx.Uint64, which casts the value to int64, causing overflow for values \u22652^63 wei (~9.22 ETH). This results in negative values that are rejected by the ABI encoder, causing migration to revert.\n\nThe cause is a narrowing conversion from uint64 to int64 during flag parsing. The flag is defined as a string but is improperly handled, limiting bond values to 63 bits.\n\nThis prevents operators from setting large initial bonds via CLI, even though on-chain governance can. The impact is operational limitation and potential failure of dispute game configurations requiring high bonds.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "migrate.go#L107"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "LegacyERC20 name lookup reverts",
+            "description": "The Predeploys.getName() function first checks if an address is in the 0x4200... predeploy namespace before comparing it to known constants. However, LEGACY_ERC20_ETH and OPTIMISM_SUPERCHAIN_ERC20 are outside this namespace, causing the function to revert before matching.\n\nThe cause is the order of checks: namespace validation precedes constant comparison. This leads to reverts when querying these specific predeploys.\n\nTooling that iterates over predeploy constants (e.g., labeling scripts, monitors) crashes when encountering these addresses. The impact is runtime failures in development and monitoring tools.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "Predeploys.sol#L146"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "CLI can\u2019t enable V2 dispute games",
+            "description": "The op-deployer CLI lacks flags to set required parameters (e.g., fault-game-max-game-depth) when the DeployV2DisputeGames feature flag is enabled. Although the code validates these fields, the CLI does not expose them, making it impossible to configure V2 dispute games.\n\nThe cause is the removal of old dispute-* flags without introducing replacements for the new fault-game-* parameters.\n\nThis results in configuration validation failure and prevents deployment of V2 dispute games via CLI. The impact is a denial of service for CLI-based deployments of advanced dispute systems.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "implementations.go#L42-L45"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Redundant indexed parameter caller in events",
+            "description": "The LiquidityDeposited and LiquidityWithdrawn events in NativeAssetLiquidity.sol include an indexed caller parameter, but both deposit() and withdraw() functions enforce that msg.sender must be the LIQUIDITY_CONTROLLER predeploy. Thus, the caller is always the same.\n\nThe cause is including a constant value as an indexed event parameter, which provides no filtering benefit and wastes gas due to log bloating.\n\nThe impact is unnecessary gas costs for every event emission without any utility. Removing the parameter would optimize gas usage.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [
+                "NativeAssetLiquidity.sol#L37",
+                "NativeAssetLiquidity.sol#L49"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "CGT override bypasses intent validation",
+            "description": "The op-deployer applies per-chain overrides after validating the chain intent. However, it does not re-validate the intent after merging overrides, allowing a JSON override to enable CGT mode even on chains that were validated as standard (ETH-native).\n\nThe cause is the lack of re-validation after override merge. A simple override like {\"useCustomGasToken\": true} can silently switch a chain to CGT mode, contradicting the reviewed intent.\n\nThis can lead to incorrect assumptions by operators and tooling, potentially stranding deposits or breaking integrations. The impact is a silent misconfiguration of the chain's economic model.\n\nThis issue was fixed in commit 2e44c5f and verified by Cantina.\n",
+            "severity": "Informational",
+            "location": [
+                "l2genesis.go#L157-L165"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Superchain Registry queries invalid CGT ABIs",
+            "description": "The Superchain Registry report generator attempts to call gasPayingToken* functions on the SystemConfig contract, which does not implement these selectors. Only L1BlockCGT and LiquidityController do.\n\nThe cause is incorrect RPC call targeting. The scanner assumes SystemConfig exposes these getters, but they are not part of its ABI.\n\nThis causes eth_call reverts, batch failures, and prevents report generation for CGT-enabled chains. The impact is broken registry publishing and lack of metadata for CGT chains.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Superchain Registry staging drops CGT metadata",
+            "description": "The Superchain Registry staging code relies on the deprecated DeployConfig.CustomGasTokenAddress to record gas-paying token info. In the new CGT architecture, this field is unused, and metadata is stored in chainIntent.CustomGasToken.\n\nThe cause is outdated staging logic that does not read the new configuration fields. As a result, CGT-enabled chains are exported as ETH-native, losing all CGT-specific metadata.\n\nDownstream systems (wallets, dashboards) display incorrect token info and may misconfigure integrations. The impact is incorrect UX and operational errors.\n\nThis finding was acknowledged by Optimism.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Unnecessary ETHLockbox deployment for custom gas token chains",
+            "description": "The OPContractsManager.deploy() function unconditionally deploys the ETHLockbox contract, even for chains using custom gas tokens, where it serves no purpose.\n\nThe cause is lack of conditional deployment logic based on the CUSTOM_GAS_TOKEN feature flag.\n\nThis results in unnecessary contract deployments and initialization, increasing deployment cost and cluttering the address space. Additionally, enabling both CUSTOM_GAS_TOKEN and OPTIMISM_PORTAL_INTEROP may lead to conflicts.\n\nRecommendation includes conditional deployment and validation of feature flag compatibility.\n",
+            "severity": "Informational",
+            "location": [
+                "OPContractsManager.sol#L1322"
+            ],
+            "files": []
+        }
+    ]
+}

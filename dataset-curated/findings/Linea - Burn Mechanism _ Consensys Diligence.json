@@ -1,0 +1,118 @@
+{
+    "path": "dataset-curated/reports/Consensys_Diligence/Linea - Burn Mechanism _ Consensys Diligence.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Consensys/linea-monorepo"
+        ],
+        "commit_id": [
+            "efe83ff992b38eda5fd5a58220acb6952c519f75"
+        ],
+        "address": [
+            "0x84a5ba2c12a15071660b0682b59e665dc2faaedb",
+            "0x30a20a3a9991c939290f4329cb52daac8e97f353",
+            "0x5Ad9369254F29b724d98F6ce98Cb7bAD729969F3"
+        ],
+        "chain": "evm/linea",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-13",
+        "project_path": {
+            "linea-monorepo": "dataset-curated/contracts/Linea - Burn Mechanism _ Consensys Diligence.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-705"
+                ],
+                "3": [
+                    "CWE-584"
+                ]
+            },
+            "title": "18_deploy_RollupRevenueVault.ts \u2013 Deployment Script Leaves Contract Uninitialized; fallback Does Not Enforce msg.value > 0",
+            "description": "The deployment script for the RollupRevenueVault contract attempts to call a non-existent zero-parameter initialize() function, which causes the call to be routed to the fallback function instead of properly initializing the contract. This occurs because the actual initialize function requires 10 parameters, and the deployment script uses an incorrect signature. As a result, the contract remains uninitialized, allowing an attacker to potentially claim ownership and take control of the contract. The fallback function also does not validate that msg.value > 0, which could allow silent zero-value calls that obscure the initialization failure. This vulnerability could lead to a complete compromise of the contract's administrative controls, enabling an attacker to manipulate critical state variables, roles, and funds.\n",
+            "severity": "Critical",
+            "location": [
+                "18_deploy_RollupRevenueVault.ts",
+                "RollupRevenueVault.sol::initialize#58-74",
+                "RollupRevenueVault.sol::fallback#282-288"
+            ],
+            "files": [
+                "linea-monorepo/contracts/deploy/18_deploy_RollupRevenueVault.ts",
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "RollupRevenueVault - Deployment and Initialization Flow",
+            "description": "The RollupRevenueVault contract implements two initialization functions: an initial 'initialize' with the 'initializer' modifier and a 'reinitializer(2)' function intended for upgrades. However, the use of a reinitializer that becomes immediately available after the first initialization creates a potential front-running window if the upgrade process does not use 'upgradeToAndCall' to invoke the reinitializer in the same transaction. If the upgrade process does not use 'upgradeToAndCall' to invoke the reinitializer in the same transaction, an attacker could front-run the reinitialization and gain control of the contract. Additionally, both initialization functions perform overlapping logic, including resetting critical state variables like lastInvoiceDate and the LINEA token address, which should remain immutable post-deployment. This could lead to state inconsistencies or accidental misconfiguration during upgrades. The reinitializer also grants roles additively without revoking previous roles, potentially leading to privilege accumulation. These issues increase the risk of ownership takeover and state corruption during contract upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "RollupRevenueVault.sol::initialize#45-83",
+                "RollupRevenueVault.sol::initializeRolesAndStorageVariables#85-123",
+                "RollupRevenueVault.sol::__RollupRevenueVault_init#125-160"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "RollupRevenueVault - Missing Validation for Future lastInvoiceDate",
+            "description": "The RollupRevenueVault contract does not validate that the lastInvoiceDate is not set to a future timestamp during initialization, invoice submission, or when updating arrears via the admin function. This allows a privileged user (such as the admin) to set lastInvoiceDate to a future time, which would block all subsequent invoice submissions because the system enforces sequential timestamps (_startTimestamp must equal lastInvoiceDate + 1). If lastInvoiceDate is set to a distant future timestamp or uint256 max, the invoice submission mechanism would be effectively disabled until that date or until manual admin intervention. This could result in a denial of service for the invoice payment system, disrupting operational expense settlements and potentially halting the burn mechanism if invoice arrears are not cleared. The impact is mitigated by the fact that only trusted roles can trigger this condition, but it still represents a significant operational risk.\n",
+            "severity": "Low",
+            "location": [
+                "RollupRevenueVault.sol::submitInvoice#162-184",
+                "RollupRevenueVault.sol::__RollupRevenueVault_init#125-152",
+                "RollupRevenueVault.sol::updateInvoiceArrears#238-252"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "RollupRevenueVault - Consider Enforcement of Minimum Swap Outputs",
+            "description": "The burnAndBridge function in RollupRevenueVault performs token swaps via a low-level call to a DEX adapter without enforcing minimum output validation within the function itself. While the current V3DexSwap adapter relies on the underlying Uniswap V3 router to enforce the amountOutMinimum parameter, the RollupRevenueVault contract does not verify the actual amount of LINEA tokens received after the swap. This design places the entire responsibility for slippage protection and output validation on the caller or external job, increasing operational risk. If a future adapter or router configuration fails to enforce proper slippage, or if the caller provides incorrect parameters, the system could receive significantly fewer tokens than expected, leading to financial loss. Although this is not a direct exploit vulnerability under current assumptions, it represents a critical dependency on external correctness and lacks defensive checks within the core burn mechanism, reducing the system's resilience to misconfiguration or malicious adapter changes.\n",
+            "severity": "Low",
+            "location": [
+                "RollupRevenueVault.sol::burnAndBridge",
+                "V3DexSwap.sol"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        }
+    ]
+}

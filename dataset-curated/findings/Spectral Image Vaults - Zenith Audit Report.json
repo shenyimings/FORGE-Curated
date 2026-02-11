@@ -1,0 +1,337 @@
+{
+    "path": "dataset-curated/reports/Zenith/Spectral Image Vaults - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Spectral-Finance/autonomous-agent-contracts"
+        ],
+        "commit_id": [
+            "a818c081e67f31b9e66207af71f812c2ae880483",
+            "0054047"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-07-21",
+        "project_path": {
+            "autonomous-agent-contracts": "dataset-curated/contracts/Spectral Image Vaults - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Refunded agent tokens should be sent back to the requester",
+            "description": "The vulnerability occurs in the `issueRefund` function of the AgentImageService contract, where refunded tokens are incorrectly sent to the caller (`msg.sender`) instead of the original requester. The root cause is the misuse of `msg.sender` in the `safeTransfer` call, which fails to reference the stored `request.user` from the `ImageRequest` struct. An attacker who is an admin or agent owner could exploit this by calling `approveRefund` and receiving the refund themselves, stealing funds from the rightful requester. This leads to loss of user funds and undermines trust in the refund mechanism.\n",
+            "severity": "High",
+            "location": [
+                "AgentImageService.sol::requestImage#L203",
+                "AgentImageService.sol::requestRefund#L263",
+                "AgentImageService.sol::approveRefund#L284",
+                "AgentImageService.sol::issueRefund#L299"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "The tax in agent tokens is causing incorrect accounting in the AgentImageService",
+            "description": "When users transfer agent tokens with a tax mechanism (e.g., via `transfer` in AgentToken.sol), a portion of the tokens is deducted as tax before reaching the recipient. However, the `requestImage` function in AgentImageService assumes the full `finalImagePrice` is received, without accounting for potential tax deductions. This causes `pendingFees` to be inflated, leading to incorrect fee tracking and potential discrepancies during fee withdrawal or distribution. The root cause is the lack of balance checks before updating state. An attacker could exploit this by using taxed tokens to underpay fees while the system records a higher amount, resulting in financial loss to the protocol.\n",
+            "severity": "High",
+            "location": [
+                "AgentToken.sol::transfer#L100",
+                "AgentImageService.sol::requestImage#L216"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentToken.sol",
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Wrong approval in fullfillImage",
+            "description": "In the `fulfillImage` function, the contract attempts to approve `spectralTreasury` to spend agent tokens, but the subsequent `swapExactTokensForSPEC` call is made through the `deployer` contract, which is the actual `msg.sender` during the transfer. Since the allowance was granted to `spectralTreasury` and not `deployer`, the transfer will fail, causing the transaction to revert. The root cause is incorrect allowance targeting. This can be exploited by an attacker (or simply occur naturally) when fulfilling images, leading to denial of service for image fulfillment, disrupting core functionality.\n",
+            "severity": "High",
+            "location": [
+                "AgentImageService.sol::fulfillImage"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Duplicate requestId values can occur",
+            "description": "The `requestId` is generated using `keccak256(abi.encodePacked(prompt, block.timestamp, msg.sender))`. If a user sends two identical requests (same prompt and sender) within the same block, they will generate the same `requestId`, overwriting the first request in the `imageRequests` mapping. Although both transactions transfer tokens, only the second request is recorded, causing the first request's funds to be effectively lost. The root cause is the lack of a uniqueness check or nonce mechanism. This can be exploited by front-running or automated bots, leading to loss of user funds.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentImageService.sol::requestImage#L191"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The requestRefund function contains an incorrect check",
+            "description": "The `requestRefund` function includes a check `block.timestamp >= request.timestamp + config.refundTimeLimit` before allowing a refund request. However, this check prevents users from requesting a refund until the time limit has passed, which contradicts the intended workflow where users can *request* a refund at any time, but only *receive* it after the time limit. The root cause is a misplaced time check. This leads to reduced user flexibility and potential confusion, as legitimate refund requests are blocked prematurely.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentImageService.sol::requestRefund#L260"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Swap deadline in fullfillImage might stall the TX",
+            "description": "The `fulfillImage` function sets a swap deadline of `block.timestamp + 20 minutes`, which is excessively long. While this reduces the chance of slippage-related failure, it increases the risk of transaction mempool congestion or delayed execution, especially during high network activity. The root cause is poor deadline configuration. This can be exploited by MEV bots or lead to operational inefficiencies, potentially stalling image fulfillment and degrading user experience.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentImageService.sol::fulfillImage"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "The configuration cannot be changed once it has been set",
+            "description": "The `configureAgent` function enforces that configuration can only be set once via the `isConfigured` flag. Once set, critical parameters like `pricePerImage` and `refundTimeLimit` cannot be updated, even by the agent owner. The root cause is the immutable design of the configuration. This reduces operational flexibility and prevents adaptation to changing market conditions or user needs, limiting the long-term usability of deployed agents.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentImageService.sol::deployImageAgent#L137",
+                "AgentImageService.sol::configureAgent#L171"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "The owner cannot set a new creator for the agent tokens",
+            "description": "The `updateAgentCreator` function in `AgentImageService` attempts to delegate to the `deployer` contract, but the `deployer`'s `updateAgentCreator` function is restricted to the current agent creator via the `onlyAgentCreator` modifier. Since `AgentImageService` is not the creator, the call reverts. The root cause is a permission mismatch between the service and deployer contracts. This prevents administrative updates to agent ownership, reducing governance flexibility and potentially locking in incorrect configurations.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentImageService.sol::updateAgentCreator#L354",
+                "AutonomousAgentDeployer.sol::updateAgentCreator#L255-L259"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol",
+                "autonomous-agent-contracts/contracts/AutonomousAgentDeployer.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "setDistributor and setSpectralStaking functions might be needed",
+            "description": "The V2 version of `AutonomousAgentDeployer` removed the `setDistributor` and `setSpectralStaking` functions, making it impossible to correct a mistakenly initialized address. The root cause is the removal of critical administrative functions for bytecode size optimization. If a wrong address is set during initialization, it cannot be fixed without a contract upgrade, leading to potential permanent misconfiguration and loss of functionality.\n",
+            "severity": "Low",
+            "location": [
+                "AutonomousAgentDeployer.sol"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AutonomousAgentDeployer.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "The fees can be transferred to the admin",
+            "description": "The `withdrawFees` function allows the admin (or agent owner) to withdraw accumulated fees to `msg.sender`. Since the admin can call this for any agent token they control, they can siphon fees that should belong to the actual agent owner. The root cause is insufficient access control and lack of fee destination validation. This can lead to unauthorized withdrawal of funds by the admin, resulting in financial loss for agent creators.\n",
+            "severity": "Low",
+            "location": [
+                "AgentImageService.sol::withdrawFees#L311"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused mapping, variable and events in V2",
+            "description": "The `AutonomousAgentDeployer` contract contains unused elements: the `agentWallets` mapping, `accumulatedTaxToSwap` variable, and the `DistributorSet` and `SpectralStakingSet` events. These increase contract size and reduce code clarity. The root cause is leftover code from previous versions. While not directly exploitable, they contribute to higher gas costs and maintenance burden, reducing code quality and auditability.\n",
+            "severity": "Informational",
+            "location": [
+                "AutonomousAgentDeployer.sol"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AutonomousAgentDeployer.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-330"
+                ],
+                "3": [
+                    "CWE-331"
+                ]
+            },
+            "title": "Recommendation for public mempool chain deployments",
+            "description": "The `deployImageAgent` function is vulnerable to MEV (Miner Extractable Value) attacks on chains with public mempools. An attacker can monitor pending transactions and frontrun the deployment to manipulate approvals or extract value. The root cause is the lack of entropy (e.g., salt using `msg.sender`) in the deployment process. This can lead to loss of funds or compromised agent tokens due to adversarial deployment interference.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentImageService.sol::deployImageAgent"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused variables",
+            "description": "The `agentRequestIds` and `requestProcessed` mappings in `AgentImageService` are declared but never used. No function writes to them, making them redundant. The root cause is incomplete implementation or leftover code. These unused variables increase storage overhead and reduce code readability, making audits and maintenance more difficult.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentImageService.sol"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "The AgentImageService should inherit from IAgentImageService",
+            "description": "The `IAgentImageService` interface contains duplicated and incorrect struct definitions (`ImageRequest` and `AgentConfig`) that are not aligned with the implementation. The `AgentImageService` contract does not inherit from this interface, leading to potential interface mismatches. The root cause is poor interface design and lack of inheritance. This reduces code consistency and increases the risk of integration errors with external systems.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentImageService.sol",
+                "IAgentImageService.sol#L5-L12"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol",
+                "autonomous-agent-contracts/contracts/interfaces/IAgentImageService.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "The previously calculated value can be reused",
+            "description": "In the `fulfillImage` function, the `treasuryCut` value is calculated but not reused in the subsequent `safeTransfer` call, which recalculates the same value. This is inefficient and wastes gas. The root cause is redundant computation. While not a security risk, it represents a missed optimization opportunity, increasing transaction costs unnecessarily.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentImageService.sol::fulfillImage#L245"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/AgentImageService.sol"
+            ]
+        }
+    ]
+}

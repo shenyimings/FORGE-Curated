@@ -1,0 +1,179 @@
+{
+    "path": "dataset-curated/reports/Zellic/SoSoValue - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/SoSoValueLabs/ssi-protocol"
+        ],
+        "commit_id": [
+            "fe3504a11063a56a337535d2ea00493269d85ac7"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "EVM",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-20",
+        "project_path": {
+            "ssi-protocol": "dataset-curated/contracts/SoSoValue - Zellic Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing duplicate-token check",
+            "description": "The function `containTokenset` is designed to verify that a larger token set contains all tokens from a smaller set with sufficient amounts. However, it does not check for duplicate tokens in the smaller set. This can lead to incorrect validation when the smaller set contains duplicate tokens with amounts that individually are less than the corresponding token in the larger set, but whose combined amount exceeds it.\n\nThe root cause is the lack of a duplicate token check within the `containTokenset` function. While other functions like `addRebalanceRequest` perform a duplicate check using `hasDuplicates`, the `addBurnFeeRequest` function calls `containTokenset` without first validating duplicates.\n\nAn attacker could exploit this by crafting a fee request with duplicated tokens in the `sellTokenset`, causing the system to accept a fee amount that exceeds the available balance in the asset. This would allow the extraction of more fees than should be permitted.\n\nThe impact is that the protocol may miscalculate fee obligations, leading to incorrect state updates and potential loss of funds from the asset pool due to over-withdrawal of fees.\n",
+            "severity": "Medium",
+            "location": [
+                "AssetFeeManager::containTokenset",
+                "AssetFeeManager::addBurnFeeRequest"
+            ],
+            "files": [
+                "ssi-protocol/src/AssetFeeManager.sol",
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect length calculation on subTokenset",
+            "description": "The `subTokenset` function subtracts one token set from another and returns the result. It calculates the length of the resulting array by decrementing a counter when a token's amount reaches zero. However, this method is flawed because it assumes no zero-balance tokens exist in the input set and does not account for multiple subtractions of zero-balance tokens.\n\nThe cause is an incorrect logic in length calculation: the initial length is set to the full input length, and only decrements when a token's amount becomes zero during subtraction. If the input already contains zero-balance tokens, or if a zero-balance token is subtracted multiple times, the final array length will be miscalculated.\n\nAn attacker could exploit this by providing token sets containing zero-amount tokens or by structuring operations that repeatedly subtract from zero-balance entries, leading to an array with uninitialized elements or missing valid tokens.\n\nThe impact is that the resulting token set may contain uninitialized data or omit valid tokens, leading to incorrect state representation and potential inconsistencies in token basket calculations.\n",
+            "severity": "High",
+            "location": [
+                "Utils::subTokenset"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Incomplete duplicate-token check",
+            "description": "The `hasDuplicates` function checks for duplicate tokens by hashing each token's fields and comparing sorted hashes. However, the `stringToAddress` function used to convert address strings does not validate that the string starts with \"0x\", allowing different strings (e.g., \"0x123\" vs \"xx123\") to produce the same address but different hashes. Additionally, case differences in hexadecimal addresses produce different hashes despite representing the same address.\n\nThe root cause is the use of raw string representation in `calcTokenHash` without normalizing the address format. This allows bypassing the duplicate check by using syntactically different but semantically identical addresses.\n\nAn attacker could exploit this by submitting token sets with duplicated tokens that differ only in the prefix or case of the address string, thereby evading the duplicate detection mechanism.\n\nThe impact includes the ability to introduce duplicate tokens into critical operations like rebalancing, which could lead to incorrect basket updates and potential manipulation of token amounts. It also breaks whitelist checks that rely on exact string matching.\n",
+            "severity": "Medium",
+            "location": [
+                "Utils::hasDuplicates",
+                "Utils::stringToAddress",
+                "Utils::calcTokenHash"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ],
+                "3": [
+                    "CWE-187"
+                ]
+            },
+            "title": "Incomplete chain comparison",
+            "description": "The `checkTokenset` function compares chain strings by casting them to `bytes32`, which truncates any string longer than 32 bytes. This means only the first 32 bytes are compared, and any differences beyond that are ignored.\n\nThe cause is the use of `bytes32(bytes(chain))` for comparison, which silently truncates longer strings. This is used in multiple functions including `addMintRequest`, `rejectMintRequest`, and `addBurnFeeRequest`.\n\nAn attacker could exploit this by creating tokens with chain identifiers that share the same 32-byte prefix but differ beyond it, causing the system to treat them as the same chain when they are not.\n\nThe impact is that tokens from different chains could be incorrectly accepted as valid, leading to potential cross-chain confusion, incorrect token validation, and possible loss of funds due to misrouted operations.\n",
+            "severity": "Low",
+            "location": [
+                "Swap::checkTokenset",
+                "AssetIssuer::addMintRequest",
+                "AssetFeeManager::addBurnFeeRequest"
+            ],
+            "files": [
+                "ssi-protocol/src/Swap.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Incorrect token comparison",
+            "description": "The `isSameToken` function relies on `calcTokenHash`, which uses `abi.encodePacked` to hash token fields. Because `abi.encodePacked` does not pad dynamic types, different combinations of `chain` and `symbol` can produce the same encoded output (e.g., \"BTC\"+\"2200\" vs \"BTC2\"+\"200\"), leading to hash collisions.\n\nThe root cause is the use of `abi.encodePacked` on multiple dynamic strings without separators, which creates ambiguous encodings. This allows two different tokens to be considered identical.\n\nWhile exploitation is difficult due to address validation, the collision could still lead to logical errors in token comparison, especially in edge cases involving crafted strings.\n\nThe impact is potential confusion and incorrect behavior in token validation logic, which could result in unintended token substitutions or failed validations, undermining the integrity of token set operations.\n",
+            "severity": "Low",
+            "location": [
+                "Utils::calcTokenHash",
+                "Utils::isSameToken"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "The getOrderHashs function returns the array growing indefinitely",
+            "description": "The `getOrderHashs` function in the USSI contract returns all stored order hashes by creating an array of the current length and copying each entry. Since the list of order hashes grows with each new order and never expires, the function will eventually consume excessive gas and may revert due to block gas limits.\n\nThe cause is the lack of any pruning mechanism or pagination in the order hash storage. The function attempts to return the entire list in one call, which becomes increasingly expensive over time.\n\nAn attacker could exploit this by flooding the system with orders, forcing the order hash list to grow until the function becomes unusable.\n\nThe impact is that off-chain systems relying on `getOrderHashs` may fail to retrieve data in the future, disrupting monitoring or indexing services. While it does not directly affect on-chain logic, it degrades system usability and reliability.\n",
+            "severity": "Low",
+            "location": [
+                "USSI::getOrderHashs"
+            ],
+            "files": [
+                "ssi-protocol/src/USSI.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Lack of domain separation allows signature replay",
+            "description": "The `checkOrderInfo` function in the Swap contract verifies order signatures using `SignatureChecker.isValidSignatureNow` but does not include the contract address or any domain separator in the hash. This means a valid signature for one Swap contract can be replayed on another.\n\nThe root cause is the absence of EIP-712-style domain separation. The order hash is computed solely from the order data, making it portable across contracts.\n\nAn attacker could replay a valid order signature from one asset's Swap contract to another, potentially triggering unauthorized mint, redeem, or fee-burn operations if the order parameters align.\n\nThe impact includes cross-contract order replay, allowing manipulation of multiple assets with a single signature. Although structures differ between Swap and USSI, preventing direct cross-contract replay, the lack of domain separation remains a security anti-pattern that increases risk.\n",
+            "severity": "Medium",
+            "location": [
+                "Swap::checkOrderInfo",
+                "USSI::checkHedgeOrder"
+            ],
+            "files": [
+                "ssi-protocol/src/Swap.sol"
+            ]
+        }
+    ]
+}

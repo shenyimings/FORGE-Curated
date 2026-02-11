@@ -1,0 +1,275 @@
+{
+    "path": "dataset-curated/reports/Zellic/Mitosis - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/mitosis-org/protocol",
+            "https://github.com/mitosis-org/chain"
+        ],
+        "commit_id": [
+            "f18b1965c3d5816e422edb206efe598f0fb39899",
+            "070481b91d51c8da3e5520cd3c7c32a5fc2ec999",
+            "f8d4e514",
+            "63a2b268",
+            "7ef4c62e",
+            "0fd1608f"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-31",
+        "project_path": {
+            "Mitosis - Zellic Audit Report.pdf-source": "dataset-curated/contracts/Mitosis - Zellic Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Missing unstake-amount validation",
+            "description": "The _requestUnstake function in the ValidatorStaking contract does not validate that the unstaking amount is less than or equal to the user's staked balance, only checking that it meets a minimum threshold. This is a critical coding mistake because the underlying checkpointing system uses unchecked arithmetic, which allows underflows. An attacker can exploit this by attempting to unstake more than their balance, causing an underflow in the _opSub function due to the unchecked block. This would result in an artificially inflated balance being subtracted, effectively allowing the attacker to withdraw far more tokens than they should be entitled to. The impact is severe, as it could allow malicious users to drain the entire vault, affecting all users' funds.\n",
+            "severity": "Critical",
+            "location": [
+                "protocol/src/hub/staking/ValidatorStaking.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/validator/ValidatorStaking.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Slashing bypass through unbonding mechanism",
+            "description": "When a validator is removed from the active set, their Bonded field is set to false, which causes the IsUnbonded function to return true. The handleEquivocationEvidence function in the Cosmos SDK skips slashing if the validator is unbonded. This creates a vulnerability where a malicious validator can perform double-signing and then deliberately exit the validator set before the evidence is processed, thereby avoiding slashing penalties. The root cause is the reliance on the IsUnbonded check in the slashing logic, which fails to account for past misconduct. An attacker could exploit this by timing their double-signing just before being unbonded, leading to a successful attack without penalty. The impact is high, as it undermines the security and integrity of the consensus mechanism by allowing validators to act maliciously without consequences.\n",
+            "severity": "High",
+            "location": [
+                "x/evmvalidator"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "First depositor inflation attack via missing _decimalsOffset() override in ERC-4626 vault",
+            "description": "The ERC-4626 vault implementation in EOLVault.sol and MatrixVault.sol does not override the _decimalsOffset() function, leaving it at the default value of 0. This exposes the vault to a first-depositor inflation attack, where an attacker deposits a minimal amount (e.g., 1 wei), then donates a large amount of assets to the vault. Due to the virtual share mechanism and the lack of offset, subsequent depositors receive zero shares because the share-to-asset ratio is skewed. The cause is the absence of a non-zero _decimalsOffset, which is a standard mitigation in ERC-4626 implementations. An attacker who controls block production (e.g., a proposer) can exploit this by batching their deposit and donation before others' deposits in the same block. The impact is high, as it allows the attacker to steal value from other depositors, as demonstrated by a PoC where the attacker gained 104 ETH from victims' deposits.\n",
+            "severity": "High",
+            "location": [
+                "protocol/src/hub/EOLVault.sol",
+                "protocol/src/hub/MatrixVault.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/eol/EOLVault.sol",
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/matrix/MatrixVault.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect cap reset in setCap function",
+            "description": "The _setCap function in MitosisVault.sol resets the availableCap to the new cap value without subtracting the amount already deposited, which breaks the cap enforcement logic. The root cause is the failure to account for the current balance when updating the cap. This allows an attacker or admin to reset the cap and then deposit additional funds up to the new cap, effectively bypassing the intended maximum limit. For example, after depositing 50 tokens under a 100 cap, resetting the cap to 500 sets availableCap to 500, allowing another 500 deposits, resulting in a total of 550 tokens\u2014exceeding the intended cap. The impact is medium, as it could lead to over-collateralization, violate economic assumptions, and affect dependent systems that rely on accurate cap enforcement.\n",
+            "severity": "Medium",
+            "location": [
+                "protocol/src/hub/vault/MitosisVault.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/branch/MitosisVault.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Missing availableCap update in withdraw function",
+            "description": "The withdraw function in MitosisVault.sol does not increase the availableCap when users withdraw funds, while the _deposit function correctly decreases it. This inconsistency causes the availableCap to become increasingly inaccurate over time, as it only decreases and never recovers on withdrawals. The root cause is the omission of a line to increment availableCap in the withdraw function. Although not immediately exploitable, this leads to a gradual erosion of available deposit capacity, potentially blocking future deposits even when the vault has sufficient headroom. An attacker could exacerbate this by making repeated deposit-withdraw cycles to deplete availableCap. The impact is low, as it primarily affects usability and efficiency rather than leading to direct fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "protocol/src/branch/MitosisVault.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/branch/MitosisVault.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Missing instance index update in migration function",
+            "description": "The migrate function in EOLVaultFactory.sol adds a vault instance to the destination type's instances array but fails to update the instanceIndex mapping for that instance. This causes a mismatch between the array and the index, which is used for efficient lookups and removals. The root cause is the missing assignment of the new index after pushing to the array. While the instance is stored, future operations that rely on the index (e.g., removal) may fail or behave incorrectly. This is not directly exploitable by external attackers but could lead to administrative errors or state inconsistencies during vault management. The impact is informational, as it is a code quality issue with limited functional consequences.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/hub/eol/EOLVaultFactory.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/eol/EOLVaultFactory.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-770"
+                ]
+            },
+            "title": "Uncapped withdrawals-processing configuration",
+            "description": "The MaxWithdrawalsPerBlock parameter in the app configuration is set to 0, which causes the system to process all eligible withdrawals in a single block without limit. This differs from the original Omni-chain implementation, which caps it at 32. The root cause is the lack of a defined limit in the configuration. While this could theoretically lead to performance issues or denial-of-service under extreme conditions, the actual risk is mitigated by existing validation logic in the contract layer (e.g., in ValidatorManager.sol). The impact is purely informational, as no security vulnerability is present\u2014this is a deviation from best practices but does not introduce exploitable risk under normal operation.\n",
+            "severity": "Informational",
+            "location": [
+                "chain/src/app/app_config.go"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/chain/app/app_config.go"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Missing public-key validation",
+            "description": "The LibSecp256k1.sol library lacks proper validation of secp256k1 public keys before use. The root cause is the absence of checks for invalid or malformed public key points, which could lead to incorrect cryptographic operations. While the EVM's built-in ecverify function may handle some edge cases, failing to validate inputs at the contract level increases the risk of unexpected behavior or potential malleability issues. This could be exploited in edge cases involving malformed signatures or keys, though no direct exploit path is demonstrated. The impact is informational, as the risk is low and likely mitigated by lower-level checks, but it represents a deviation from secure coding practices for cryptographic libraries.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/lib/LibSecp256k1.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Curve Validation in Public-Key Decompression",
+            "description": "The LibSecp256k1 library's uncompressPubkey function fails to verify that the decompressed (x, y) coordinates lie on the Secp256k1 elliptic curve. This is caused by the absence of a validation step after deriving the y-coordinate using EllipticCurve.deriveY. An attacker could provide a compressed public key that decompresses to a point not on the curve, which may lead to cryptographic inconsistencies or potential vulnerabilities in systems relying on valid elliptic curve points. Although this function is not currently used in the main product, its presence in the codebase poses a latent risk if it is ever invoked in a security-critical context. The impact includes potential weakening of authentication or signature verification mechanisms if the function were to be used in the future.\n",
+            "severity": "Informational",
+            "location": [
+                "LibSecp256k1.sol::uncompressPubkey"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "Uninitialized return value in addStage function",
+            "description": "The addStage function in MerkleRewardDistributor.sol declares a named return variable merkleStage of type uint256 but does not assign it any value before returning. This is caused by a coding oversight where the developer intended to return a meaningful stage identifier but omitted the assignment. As a result, Solidity initializes merkleStage to its default value of 0. An attacker cannot exploit this for direct financial gain, but external callers may misinterpret the return value as a valid stage identifier, leading to incorrect state assumptions. The impact is limited to confusion and potential logic errors in client applications or integrations relying on the return value, with no direct security breach or fund loss.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/hub/reward/MerkleRewardDistributor.sol::addStage"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/reward/MerkleRewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Redelegation cooldown calculation issue",
+            "description": "The _checkRedelegationCooldown function in ValidatorStaking.sol calculates the error parameter (lasttime + cooldown) - now_ inside a require statement, even when the condition now_ >= lasttime + cooldown is true. This is caused by evaluating the error data unconditionally before the check, which leads to an arithmetic underflow when the cooldown has already passed. An attacker could trigger this underflow, causing the transaction to revert with an unexpected error, potentially disrupting legitimate operations or creating denial-of-service conditions. The impact is a minor code-quality issue that could lead to avoidable reverts, though the core functionality remains intact due to the fix using an if-revert pattern.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/hub/staking/ValidatorStaking.sol::_checkRedelegationCooldown"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/validator/ValidatorStaking.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Temporary high vote power when claiming in native token",
+            "description": "In ValidatorStakingGovMITO.sol, the _claimUnstake function transfers ETH to the user before burning the corresponding voting units. This is caused by an incorrect order of operations in the overridden function, where safeTransferETH is called prior to _moveDelegateVotes. A malicious user can exploit this by implementing a fallback function that immediately restakes the received ETH, thereby temporarily doubling their voting power during the reentrancy window. This could allow an attacker to influence time-sensitive governance votes beyond their actual stake. The impact is a temporary inflation of voting power, which undermines the fairness and integrity of the governance system, though the final state corrects itself after the burn.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/hub/staking/ValidatorStakingGovMITO.sol::_claimUnstake"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/validator/ValidatorStakingGovMITO.sol"
+            ]
+        }
+    ]
+}

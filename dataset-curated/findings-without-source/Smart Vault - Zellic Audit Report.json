@@ -1,0 +1,116 @@
+{
+    "path": "dataset-curated/reports/Zellic/Smart Vault - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Satoshi-Protocol/satoshi-smart-vault"
+        ],
+        "commit_id": [
+            "51cc1c0c3942b28ea1b269d2ba0bee8f26bec316"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-28",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Missing reward-configuration check",
+            "description": "The RewardConfig struct contains three fields\u2014rewardRate, rewardStartTime, and rewardEndTime\u2014but there is no validation function to ensure their correctness. While VaultConfig fields are validated in _checkVaultConfig, no equivalent function exists for RewardConfig. This lack of validation means that rewardRate could exceed the precision basis (e.g., 1e18), and rewardEndTime could be set before rewardStartTime, leading to nonsensical or exploitable reward schedules. An attacker or misconfigured admin could set invalid parameters, which would disrupt reward calculations. This could result in overpayment of rewards or cause downstream functions to revert unexpectedly when processing invalid time ranges or rates, undermining the reliability of the reward system.\n",
+            "severity": "Low",
+            "location": [
+                "SmartVault.sol::updateRewardConfig"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Insufficient test coverage",
+            "description": "The project lacks comprehensive unit test coverage, particularly for edge cases and internal functions. While scenario-based tests exist for core flows like deposit, withdraw, and claim, many functions\u2014especially those related to removeAllocation and internal state transitions\u2014are not adequately tested. The absence of negative testing (e.g., testing reverts in all expected cases) and invariant checks increases the risk of undetected bugs. Without full coverage, it is difficult to verify that all code paths behave as intended under both normal and adversarial conditions. This lack of testing reduces confidence in the code's correctness and increases the likelihood of undiscovered vulnerabilities being deployed, especially during future upgrades or refactors.\n",
+            "severity": "Medium",
+            "location": [
+                "Project-wide"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Deposit-cap bypass",
+            "description": "The _beforeDeposit function checks if the depositor is whitelisted and if the deposit amount exceeds the per-user cap, but it does not validate the receiver address against the whitelist. This allows a user to deposit funds to multiple different receiver addresses, effectively bypassing the depositCapPerUser limit. Additionally, functions like _update, claim, and withdraw do not revalidate whitelist status after the initial deposit, enabling a user to transfer their shares to a non-whitelisted account and still interact with the vault. This flaw undermines the intended access control and deposit capping mechanism, allowing malicious actors to accumulate large positions undetected. The impact includes potential reward farming abuse and disproportionate influence over vault operations by unauthorized users.\n",
+            "severity": "Low",
+            "location": [
+                "SmartVault.sol::_beforeDeposit"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "User rewards can be lost",
+            "description": "The updateRewardTokenList function deletes the entire _rewardTokenList and replaces it with a new list provided by the manager. However, if a reward token is removed while users still have unclaimed rewards, those rewards become permanently inaccessible because the claim function iterates only over the current _rewardTokenList. There is no mechanism to prevent the removal of active reward tokens or to allow users to claim rewards from deprecated tokens. This creates a risk that users will lose their earned rewards due to administrative action, even if unintentional. The impact is a direct loss of user funds, which could damage trust in the protocol and lead to user dissatisfaction or financial loss.\n",
+            "severity": "Low",
+            "location": [
+                "SmartVault.sol::updateRewardTokenList"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Incorrect tracking of staking amount",
+            "description": "The _stakingAmount variable is used to track the amount of tokens staked in the staking vault, but it is not updated when the manager calls withdrawFromStakingVault. Since the actual staked balance is managed via a debt token mechanism, the on-chain balance may diverge from the recorded _stakingAmount. This discrepancy leads to inaccurate accounting within the contract, even though it does not directly enable fund loss. The inconsistency could affect calculations that rely on accurate staking totals, such as reward distribution or risk assessments. While not an immediate security risk, it reduces the reliability of internal state and could lead to incorrect decisions based on stale or false data.\n",
+            "severity": "Low",
+            "location": [
+                "SmartVault.sol::withdrawFromStakingVault"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Gas optimization",
+            "description": "In the executeStrategy function, the contract first sets the strategy's allowance to type(uint256).max, then calls the strategy's execute function, and finally queries the current allowance before decreasing it. However, when an ERC20 allowance is set to max, it is not decreased by transferFrom operations, so the allowance remains at max after execution. Therefore, the external call to query the allowance is redundant and wastes gas. The contract could instead directly decrease the allowance by type(uint256).max without querying, saving approximately 1,500\u20132,000 gas per call. While this does not pose a security risk, it increases transaction costs unnecessarily, which affects user experience and economic efficiency, especially in high-frequency operations.\n",
+            "severity": "Informational",
+            "location": [
+                "SmartVault.sol::executeStrategy"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Missing vault check",
+            "description": "Several functions in the SmartVaultManager.sol contract\u2014such as pauseSmartVault, resumeSmartVault, updateVaultConfig, and others\u2014do not validate whether the provided vault address is a valid, registered vault. While some functions perform this check via _checkVaultIsValid, these specific functions omit it. This could allow callers to interact with invalid or unregistered vault addresses, potentially leading to unexpected behavior or wasted transactions. Although the impact is limited due to access control (onlyManager), the absence of validation reduces code consistency and increases the risk of operational errors. Adding _checkVaultIsValid to all vault-related functions would improve robustness and prevent misuse.\n",
+            "severity": "Informational",
+            "location": [
+                "SmartVaultManager.sol::pauseSmartVault",
+                "SmartVaultManager.sol::resumeSmartVault",
+                "SmartVaultManager.sol::updateVaultConfig",
+                "SmartVaultManager.sol::updateStakingVault",
+                "SmartVaultManager.sol::setStrategy",
+                "SmartVaultManager.sol::setWhitelistMode",
+                "SmartVaultManager.sol::updateStakingFactor",
+                "SmartVaultManager.sol::updateStakingEnabled",
+                "SmartVaultManager.sol::updateRewardConfig",
+                "SmartVaultManager.sol::addTokenToRewardList",
+                "SmartVaultManager.sol::updateRewardTokenList"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Reward-token duplication",
+            "description": "The addTokenToRewardList function appends a new reward token to the _rewardTokenList array without checking for duplicates. This allows the same token to be added multiple times, which causes the claim function to iterate over the same token repeatedly during reward distribution. Each duplicate entry increases the gas cost of claiming rewards linearly, potentially making the function uncallable if the list becomes too large. While this does not lead to fund loss, it creates a denial-of-service vector where an attacker (or accidental admin action) could bloat the list and prevent users from claiming rewards. Adding a deduplication check would prevent this inefficiency and ensure predictable gas costs.\n",
+            "severity": "Informational",
+            "location": [
+                "SmartVault.sol::addTokenToRewardList"
+            ],
+            "files": []
+        }
+    ]
+}

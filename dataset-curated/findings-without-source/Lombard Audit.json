@@ -1,0 +1,394 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Lombard Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/lombard-finance/ledger",
+            "https://github.com/lombard-finance/smart-contracts"
+        ],
+        "commit_id": [
+            "282b48457845ed337f1830460dc869033b254836",
+            "562290415ab990bfc142c69e8c15f943dba3fa86"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-11-04",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Lack of Proper Checks for Sanctioned Addresses",
+            "description": "The protocol requires validators to ensure that only non-sanctioned addresses interact with its system to comply with legal requirements. However, in the deposit bridge strategy, only the recipient EVM address is checked for sanctions, while the Bitcoin input addresses are not verified. Additionally, in the unstake strategy, no sanction checks are performed at all. This omission stems from incomplete validation logic in the respective verifier strategies. An attacker using a sanctioned address could exploit this by initiating cross-chain bridge deposits or unstaking operations without being blocked. This could lead to regulatory non-compliance, potential legal penalties, and reputational damage for the protocol.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/verifier/deposit_bridge_strategy.go#70",
+                "notaryd/verifier/unstakes_strategy.go#28-58"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "User Unstakes Multiple Times But Is Only Paid Once",
+            "description": "When a user submits multiple unstake requests for the same amount to the same Bitcoin ScriptPubKey, the system allows a single Bitcoin transaction to satisfy all unstake execution payloads. This occurs because the `Verify` function in the unstake execution strategy does not check whether the Bitcoin transaction has already been used to fulfill a previous unstake. The root cause is the lack of persistent tracking for used transaction IDs and output indexes. An attacker can monitor the chain for duplicate unstake payloads and submit an execution using one payment transaction for multiple claims, causing users to lose funds equivalent to the difference. The impact is direct financial loss for users who expect full BTC redemption, undermining trust in the protocol's reliability.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/verifier/unstake_execution_strategy.go#30-77"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Unbounded Subscriber Buffers May Lead to Denial of Service",
+            "description": "The `Bus` implementation in the `pubsub` package uses unbounded channels via `chanx.NewUnboundedChan`, which can grow indefinitely if messages are produced faster than they are consumed. This design flaw arises from the absence of buffer limits or backpressure mechanisms. A malicious actor could exploit this by registering slow or unresponsive subscribers, causing unbounded memory growth. Over time, this could exhaust system resources, leading to node crashes or a complete denial of service. The impact includes degraded system performance, potential downtime, and reduced resilience against targeted resource exhaustion attacks.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/events/pubsub/bus.go#76"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Event Errors Are Silently Ignored",
+            "description": "Errors received from the `eventErrs` channel in the `events` package are assigned to the blank identifier `_`, meaning they are neither handled nor logged. This behavior prevents proper error handling for critical issues such as websocket disconnections, malformed events, or network timeouts. The root cause is the lack of error propagation or logging mechanisms. As a result, operators and developers remain unaware of failures, making it difficult to diagnose problems or respond to incidents. This could lead to undetected system instability, degraded performance, and prolonged outages due to unmonitored failures.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/events/source.go#373"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Locked Mutex During Subscriber Sends May Cause Deadlocks",
+            "description": "The `run` function in the `pubsub` package holds a mutex (`b.subMutex`) while sending messages to subscriber channels. Since channel sends are blocking operations, a slow or unresponsive subscriber can hold the mutex indefinitely. This prevents other subscribers from receiving events and blocks operations like adding or removing subscribers. The root cause is improper synchronization design that couples non-blocking coordination with potentially blocking I/O. This can lead to deadlocks or severe performance bottlenecks, especially under high load or with misbehaving subscribers. The impact includes system freezes, reduced throughput, and poor scalability.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/events/pubsub/bus.go#95"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Unrestricted Creation of Notary Sessions Can Allow for Voting on Expired Sessions",
+            "description": "While the system limits the processing of expired notary sessions to 200 per block, there is no cap on how many new notary sessions can be created in a single block. This imbalance allows a malicious actor to flood the system with more than 200 sessions, creating a backlog where expired sessions are not timely processed. Because session expiration is only checked against current state, outdated sessions remain valid for voting via `SubmitSignature`. The root cause is the lack of rate limiting on session creation. This could allow attackers to manipulate consensus by submitting signatures on stale sessions, potentially leading to inconsistent or invalid state transitions.\n",
+            "severity": "High",
+            "location": [
+                "x/notary/keeper/abci.go#13",
+                "x/notary/keeper/msg_server_submit_signature.go#17"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Topic Mismatch Between Smart Contract and Node",
+            "description": "The `DepositToBridge` event emitted by `Bridge.sol` has a topic derived from `keccak256(DepositToBridge(address,bytes32,bytes32,bytes))`, which results in the topic `0x3dd5691d...`. However, the `notaryd` nodes expect the topic to be `0xf42846b1...`, as defined in the `fetcher.go` file. This mismatch causes the node to reject valid deposit transactions because the event topic does not match the expected value. The root cause is a hardcoded incorrect topic in the verifier logic. As a result, bridge deposits fail to be notarized, preventing cross-chain transfers and locking user funds. This breaks core functionality of the bridging mechanism.\n",
+            "severity": "High",
+            "location": [
+                "Bridge.sol#503",
+                "notaryd/verifier/evm/fetcher.go#76",
+                "notaryd/verifier/evm/fetcher.go#18"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Events Only Read from One Smart Contract Address",
+            "description": "The system validates events for bridge deposits and unstake requests by querying only a single contract address specified in `LbtcAddresses`. However, the `DepositToBridge` event is emitted by `Bridge.sol`, while the `UnstakeRequest` event is emitted by `LBTC.sol`, each behind different proxy addresses. Since the validation logic only checks one address, it fails to recognize events from the other contract. The root cause is the use of a single-address parameter where multiple addresses are needed. This leads to failed notarizations for one of the two operations, disrupting either bridging or unstaking functionality depending on which contract is not queried.\n",
+            "severity": "High",
+            "location": [
+                "notaryd/verifier/deposit_bridge_strategy.go#56",
+                "notaryd/verifier/unstakes_strategy.go#39",
+                "x/deposit/types/params.pb.go#30-34"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Potential Selector Clash in the Future",
+            "description": "Function selectors for payloads are generated using `keccak256(\"payload(...)\")` where the parameter types determine uniqueness. If two different payload types are introduced in the future with identical parameter types, they would produce the same selector, causing a clash. The root cause is the reliance on generic naming (\"payload\") instead of distinct names per function. This could lead to ambiguity in payload routing, where a message intended for one function is incorrectly handled by another. The impact includes incorrect state transitions, failed operations, or potential exploitation if an attacker crafts payloads that trigger unintended logic.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/exported/selector.go#18-41"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Lack of Parameter Validation in `UpdateParams` Allows Setting Invalid Values",
+            "description": "The `UpdateParams` function in the `x/notary` module accepts new parameter values without validating their correctness or acceptable ranges. It only verifies the sender's authority before applying changes. This lack of input validation means critical parameters like `NotaryThreshold` or `NotaryDepositPeriod` could be set to invalid or harmful values. The root cause is missing validation logic in the message handler. This could result in protocol instability, consensus failures, or denial of service if parameters are set to extreme or nonsensical values.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/keeper/msg_update_params.go#12",
+                "x/notary/keeper/msg_update_params.go#18"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Inability to Remove Compromised Proxy Due to Missing Message Handler",
+            "description": "Although the `RemoveProxiedNotary` function exists in the `x/notary` module, there is no exposed message handler to invoke it. This means that if a proxy's private key is compromised, there is no way to revoke it without unregistering the entire validator. The root cause is the absence of a public-facing message route for proxy removal. This creates a security risk where a compromised proxy can continue to sign malicious payloads until the validator exits the network, reducing operational security and incident response capabilities.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/keeper/proxied_notary.go#81"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "RegisterNotary Allows Registration of Non-Validators",
+            "description": "The `RegisterNotary` function does not verify that the `Creator` address belongs to an active validator. It allows any user to register a proxy as a notary, even if they are not part of the validator set. The root cause is the missing validator membership check in the registration logic. This could allow unauthorized entities to participate in notarization, potentially leading to fraudulent payload approvals or consensus manipulation if exploited before economic incentives are implemented.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/keeper/msg_server_register_notary.go#16"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Deprecated `ValidateBasic` Function Prevents Unauthorized Validator Set Updates",
+            "description": "The `ValidateBasic` function currently restricts unauthorized `UpdateValSetSelector` payloads, but this method is deprecated in Cosmos SDK 0.50. Future SDK versions may stop calling it, removing this protection. Since the `Verify` function for validator set updates is a no-op, malicious payloads with fake validator sets could be signed by honest nodes and submitted to the `Consortium.sol` contract, which only checks signature validity. The root cause is reliance on a deprecated validation hook. This could allow an attacker to take over the validator set, enabling arbitrary actions like minting LBTC and fully compromising the system.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/types/message_submit_payload.go#19",
+                "notaryd/verifier/update_val_set_strategy.go#19-21",
+                "Consortium.sol#87",
+                "Consortium.sol#103"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Abuse of Notation for Public Key",
+            "description": "The `SignPubKey` function is incorrectly used to sign a validator address, even though it expects a public key. This works only because both types are byte arrays, making it an abuse of type semantics. The root cause is poor API design and type confusion. While it currently functions, it introduces fragility: if either type changes in the future, it could break silently or cause runtime errors. It also reduces code clarity and increases the risk of developer misunderstanding, potentially leading to security flaws in future modifications.\n",
+            "severity": "Low",
+            "location": [
+                "notaryd/notary/registration.go#75",
+                "notaryd/signer/sign.go#9-11",
+                "x/notary/exported/types.go#16"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "SubmitSignature Accepts New Signatures for Completed Sessions",
+            "description": "The SubmitSignature function allows new signatures to be submitted for sessions that are already in the 'completed' state, in addition to those in the 'pending' state. This occurs because the function only checks that the session state is not invalid, rather than strictly enforcing that only pending sessions can receive signatures. The root cause is insufficient state validation logic. An attacker or misbehaving notary could submit additional signatures for a completed session, potentially leading to inconsistent session state tracking or bloating the system with redundant data. While the team acknowledged the behavior, they consider it acceptable for redundancy, but it still introduces ambiguity in session lifecycle management and could be exploited to manipulate session metadata or cause denial-of-service through spam.\n",
+            "severity": "Medium",
+            "location": [
+                "x/notary/keeper/msg_server_submit_signature.go::SubmitSignature#17"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Improper Use Of Context Inheritance",
+            "description": "Multiple instances in the codebase create new contexts using context.Background() instead of inheriting from parent contexts. This breaks the propagation of cancellation signals and deadlines, which can lead to goroutines not being properly terminated when a parent operation is canceled or times out. The root cause is incorrect context handling, particularly in long-running or nested operations. This can result in resource leaks, unbounded goroutine creation, and timeout handling failures. For example, in notaryd/events/source.go and x/deposit/module/module.go, using background contexts prevents proper shutdown coordination and could leave connections or listeners open indefinitely, increasing system instability and attack surface.\n",
+            "severity": "Low",
+            "location": [
+                "x/deposit/module/module.go#85",
+                "notaryd/events/source.go#117",
+                "notaryd/events/source.go#126",
+                "notaryd/events/source.go#226",
+                "notaryd/events/source.go#239"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Mismatched Validator and Proxy Address Returns Notary",
+            "description": "The GetNotary function returns a notary based solely on the validator address if provided, even when a mismatched proxy address is also included in the request. This behavior is error-prone because it ignores the inconsistency between the two fields, potentially returning incorrect or misleading data to the caller. The root cause is the lack of validation when both fields are present. An attacker could exploit this by crafting a query with a valid validator address and an incorrect proxy address to confuse frontend applications or off-chain services that rely on consistent validator-proxy mappings. This could lead to incorrect notary identification and compromise the integrity of notary-related operations.\n",
+            "severity": "Low",
+            "location": [
+                "x/notary/keeper/query_get_notary.go::GetNotary#16"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Disallow Chain ID of 0",
+            "description": "The DeriveAddress function checks if chainId.Sign() equals -1 to reject negative chain IDs but does not reject a chain ID of 0. A chain ID of 0 is typically reserved or invalid in many blockchain contexts and should not be allowed for address derivation. The root cause is an incomplete validation check. If chain ID 0 is accepted, it could lead to the generation of invalid or ambiguous addresses, potentially causing transaction failures or confusion in cross-chain operations. This could be exploited in environments where chain ID is used for routing or validation, leading to incorrect processing of deposit or withdrawal requests.\n",
+            "severity": "Low",
+            "location": [
+                "x/deposit/keeper/query_derive_address.go#34"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Length of Payload Body Checked Against Wrong Max Payload Length",
+            "description": "The ValidateBasic function in MsgSubmitPayload checks the length of the payload body against exported.MaxPayloadLength, which already includes the 4-byte selector length. This results in the body being allowed up to MaxPayloadLength bytes, making the total payload size exceed the intended limit by 4 bytes. The root cause is a logic error in size validation. An attacker could craft a payload that is 4 bytes larger than permitted, potentially leading to buffer overflows, parsing errors, or denial-of-service conditions in systems that expect strict size limits. This undermines the integrity of payload size enforcement and could be used to disrupt notarization sessions.\n",
+            "severity": "Low",
+            "location": [
+                "x/notary/types/message_submit_payload.go::ValidateBasic#28"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Inconsistency in Name and Symbol",
+            "description": "The LBTC.sol contract defines its own name and symbol storage variables while also inheriting from ERC20Upgradeable, which has its own _name and _symbol fields. These fields are initialized to different values: \"LBTC\" in the parent and \"Lombard Staked Bitcoin\" in the child. This creates two separate storage slots with conflicting values, leading to confusion about which name and symbol are authoritative. The root cause is redundant state variable declaration. Since the contract's getters use the local variables, the parent's values are effectively shadowed but still consume storage. This inconsistency can mislead users, indexers, and explorers, potentially affecting token listings and user trust.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/LBTC/LBTC.sol#34",
+                "contracts/LBTC/LBTC.sol#82",
+                "contracts/LBTC/LBTC.sol#90"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Misleading Documentation",
+            "description": "Multiple comments in the codebase are inaccurate or outdated, such as referring to \"LBTC address\" when the code handles public keys, or describing function parameters incorrectly (e.g., _proof containing \"validators, weights, signatures\" when it only contains signatures). The root cause is lack of documentation maintenance during code evolution. These misleading comments can mislead auditors, developers, and reviewers, increasing the risk of incorrect assumptions and bugs during development or integration. For example, a developer relying on the comment about _proof might incorrectly parse the data, leading to security vulnerabilities or integration failures.\n",
+            "severity": "Low",
+            "location": [
+                "x/deposit/exported/public_key.go",
+                "x/notary/exported/types.go#123",
+                "contracts/consortium/Consortium.sol#159",
+                "contracts/bridge/oft/EfficientRateLimiter.sol#34"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Function Selector Not Aligned with Data Type",
+            "description": "The DEPOSIT_BRIDGE_ACTION function selector in Actions.sol specifies a uint256 parameter, but in Bridge.sol, it is used with a bytes32 value. Although the team resolved this by changing the type to uint256, the original inconsistency could have led to incorrect payload encoding and decoding. The root cause is a mismatch between declared and used types in cross-contract interactions. If not caught, this could result in silent failures or incorrect data interpretation during bridge operations, potentially leading to lost deposits or incorrect state transitions.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/libs/Actions.sol#82",
+                "contracts/bridge/Bridge.sol#478"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Definition of MAX_COMMISSION in More Than One Location",
+            "description": "The constant MAX_COMMISSION is defined in both Bridge.sol and FeeUtils.sol, creating a risk of inconsistency if one is updated and the other is not. The root cause is lack of centralized constant management. If the values diverge, the validation in FeeUtils.sol may allow a commission higher than intended, enabling a malicious owner to set excessive fees. This could lead to economic exploitation and loss of user funds. Centralizing the constant would prevent such mismatches and improve maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/bridge/Bridge.sol#52",
+                "contracts/libs/FeeUtils.sol#7"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "ValidateBasic Does Not Perform Validation on Metadata",
+            "description": "The ValidateBasic method for NotarySession calls s.Metadata.ValidateBasic, but this method is a no-op, meaning metadata is not validated. Since metadata influences notary decisions, unvalidated metadata could be malformed or malicious. The root cause is missing validation logic. This could allow attackers to inject arbitrary or oversized metadata, potentially causing parsing errors or logic bugs in notaryd. Additionally, ValidateBasic is deprecated in Cosmos SDK 0.50, so relying on it is not future-proof.\n",
+            "severity": "Low",
+            "location": [
+                "x/notary/types/notary_session.go::ValidateBasic#38"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Mismatch Between SubmitPayload Method Arguments and Usage String",
+            "description": "The SubmitPayload command's usage string lists three arguments (payload, type, metadata), but the implementation only accepts two (payload, metadata), omitting 'type'. The root cause is outdated CLI documentation. This mismatch misleads users and automation scripts, causing command invocation errors. It reduces usability and increases support burden, especially for integrators relying on correct CLI behavior.\n",
+            "severity": "Low",
+            "location": [
+                "x/notary/module/autocli.go#73"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Inefficient Retry Mechanism in queryNotarySessionWithRetry",
+            "description": "The queryNotarySessionWithRetry function uses exponential backoff, which is suboptimal for blockchain state queries that are tied to block intervals. The root cause is inappropriate retry strategy selection. Exponential backoff can lead to unnecessarily long delays, increasing latency and resource usage. A block-based retry mechanism would be more efficient and predictable. Although the team acknowledged the issue, they argue the backoff is resilient to Cosmos SDK state update timing issues, but this remains a performance concern.\n",
+            "severity": "Low",
+            "location": [
+                "notaryd/notary/notarization.go::queryNotarySessionWithRetry#53"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "Inconsistency in Metadata Usage",
+            "description": "The deposit_bridge_strategy.go uses metadata to store TxHash and EventIndex, while unstakes_strategy.go embeds these fields in the message payload. This inconsistency makes the API confusing and complicates verification logic. The root cause is divergent design choices across similar components. This could lead to incorrect implementation by developers and integration errors. For consistency, unstakes_strategy.go should be updated to use metadata for these fields.\n",
+            "severity": "Low",
+            "location": [
+                "notaryd/verifier/deposit_bridge_strategy.go#40",
+                "notaryd/verifier/unstakes_strategy.go#28"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Unnecessary Unchecked Loop Increment",
+            "description": "The `_checkProof` function in `Consortium.sol` and the `_setRateLimits` function in `EfficientRateLimiter.sol` use unchecked blocks to manually increment loop counters instead of using the standard for-loop increment syntax. This pattern was likely introduced for gas optimization, but it increases code complexity and introduces risk of arithmetic overflows or underflows, especially during future refactoring. Since the codebase uses Solidity 0.8.22 or higher, which includes an optimization for safe loop counter increments, this manual approach is unnecessary. The exploitation vector is low, but the presence of such patterns can lead to bugs if modified incorrectly. The impact would be potential arithmetic overflows leading to infinite loops or incorrect state changes.\n",
+            "severity": "Low",
+            "location": [
+                "Consortium.sol::#L180",
+                "Consortium.sol::#L229-L231",
+                "EfficientRateLimiter.sol::#L125-L143"
+            ],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Unused Function",
+            "description": "The internal function `_calcRelativeFee` in `Bridge.sol` is defined but never used anywhere in the codebase. Unused code increases the attack surface and maintenance burden without providing any functionality. While it does not pose a direct security risk, it reduces code clarity and could confuse developers. An attacker cannot exploit this directly, but it reflects poor code hygiene. The impact is limited to increased complexity and potential confusion during future development or audits.\n",
+            "severity": "Low",
+            "location": [
+                "Bridge.sol::#L526-L532"
+            ],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "Unnecessary Use Of `this` Prefix In Internal Function Call",
+            "description": "The `checkProof` function in `Consortium.sol` is called using the `this` prefix, which forces an external call instead of an internal one. Since `checkProof` is a public function, calling it via `this` incurs additional gas costs due to the external call overhead and resets the execution context (e.g., `msg.sender` changes to the contract itself). The root cause is a misunderstanding of Solidity's calling conventions. An attacker could potentially exploit this pattern if it were used in a context where `msg.sender` validation is critical, but in this case, the main impact is increased gas consumption and reduced efficiency. The correct approach is to call the function directly without `this` to enable internal calls.\n",
+            "severity": "Low",
+            "location": [
+                "Consortium.sol::#L103"
+            ],
+            "files": []
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "Code Duplication",
+            "description": "Significant code duplication exists between `EfficientRateLimiter.sol` and `RateLimits.sol`, including nearly identical structs (`RateLimit`/`Data`, `RateLimitConfig`/`Config`), a shared error type (`RateLimitExceeded`), and functionally similar logic in `_calculateDecay` and `availableAmountToSend`. This violates the DRY (Don't Repeat Yourself) principle, increasing maintenance difficulty and the risk of inconsistent updates. If a bug is fixed in one file but not the other, it could lead to divergent behavior. While not directly exploitable, this redundancy increases the likelihood of future vulnerabilities due to inconsistent logic or missed patches. The impact is long-term code maintainability and potential for logic errors.\n",
+            "severity": "Low",
+            "location": [
+                "EfficientRateLimiter.sol::#L20-L25",
+                "RateLimits.sol::#L5-L10",
+                "EfficientRateLimiter.sol::#L38-L42",
+                "RateLimits.sol::#L12-L16",
+                "EfficientRateLimiter.sol::#L66",
+                "RateLimits.sol::#L18",
+                "EfficientRateLimiter.sol::#L157-L180",
+                "RateLimits.sol::#L45-L68"
+            ],
+            "files": []
+        }
+    ]
+}

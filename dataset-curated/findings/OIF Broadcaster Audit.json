@@ -1,0 +1,245 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/OIF Broadcaster Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/openintentsframework/broadcaster",
+            "https://github.com/OpenZeppelin/openzeppelin-contracts",
+            "https://github.com/openintentsframework/oif-contracts"
+        ],
+        "commit_id": [
+            "3522b4c7c958ce254497b879cc1f6106131c7e3e",
+            "d9f966fc3f7c4eec7f565c2442cc64481e7fb499",
+            "acc7f9ca32ccd9e133f00c644251d7ff976edb24"
+        ],
+        "address": [
+            null,
+            null,
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-27",
+        "project_path": {
+            "OIF Broadcaster Audit.md-source": "dataset-curated/contracts/OIF Broadcaster Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ],
+                "4": [
+                    "CWE-940"
+                ]
+            },
+            "title": "Potential for Arbitrary Application in Message Verification",
+            "description": "This vulnerability allows an attacker to manipulate the application identifier during message verification. The issue arises because the broadcast message does not include the application address in its hash, despite the `source` field in the proof referencing it. As a result, when a user verifies a message on a destination chain, they can supply an arbitrary application address in the `messageData`, which is then stored in the `_attestations` mapping without validation against the original message. This could lead to message spoofing, where a malicious actor makes it appear as if a message originated from a trusted application. The impact includes loss of message authenticity, potential for unauthorized actions, and compromise of cross-chain trust assumptions.\n",
+            "severity": "Critical",
+            "location": [
+                "BroadcasterOracle.sol::submit#108",
+                "BroadcasterOracle.sol::verify#144-152",
+                "BroadcasterOracle.sol::verify#82-83",
+                "BroadcasterOracle.sol::verify#96"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/src/integrations/oracles/broadcaster/BroadcasterOracle.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Prover Copies Cannot Be Updated",
+            "description": "The `updateBlockHashProverCopy` function in the `Receiver` contract fails to update prover copies due to a revert when attempting to read the version from the zero address. This occurs because the `_blockHashProverCopies` mapping is initialized to address(0), and the function calls the `version()` getter on the old address before performing the update. Since calling a function on the zero address reverts, the update mechanism is effectively broken. This prevents the system from upgrading prover implementations for remote chains, which is necessary when chains undergo upgrades or route changes. The impact is a denial of service for message verification across affected chains, undermining the system's adaptability and long-term reliability.\n",
+            "severity": "High",
+            "location": [
+                "Receiver.sol::updateBlockHashProverCopy#43-66"
+            ],
+            "files": [
+                "3522b4c7c958ce254497b879cc1f6106131c7e3e/broadcaster/src/contracts/Receiver.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing Version Validation",
+            "description": "The `BlockHashProverPointer` contract does not validate the `version` function on the initial implementation when setting it for the first time. While subsequent updates require the new version to be greater than the old one, the first set operation skips this check. If the initial implementation does not implement the `version` function, any future attempt to update the implementation will fail when the contract tries to call `version()` on the old (non-conforming) implementation. This creates a permanent lockout scenario where the pointer cannot be upgraded, leading to a loss of upgradeability and potential system obsolescence if the initial prover becomes insecure or incompatible.\n",
+            "severity": "Low",
+            "location": [
+                "BlockHashProverPointer.sol::setImplementationAddress#34-35",
+                "BlockHashProverPointer.sol::setImplementationAddress#28-33"
+            ],
+            "files": [
+                "3522b4c7c958ce254497b879cc1f6106131c7e3e/broadcaster/src/contracts/BlockHashProverPointer.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lack of Validation for Payload Length",
+            "description": "The `BroadcasterOracle` contract does not limit the number of payloads that can be submitted in a single transaction. However, during message verification, the payload count is read using only 2 bytes, which limits the maximum representable number to 65535. If more than 65535 payloads are submitted, the length will overflow or be truncated during decoding, making the message unverifiable on the destination chain. This could be exploited to cause a denial of service by submitting an oversized payload array, rendering the oracle unable to process legitimate messages. The impact is a potential disruption of cross-chain communication and message finality.\n",
+            "severity": "Low",
+            "location": [
+                "BroadcasterOracle.sol::submit#107-116",
+                "BroadcasterOracle.sol::verify#82-83",
+                "MessageEncodingLib.sol::decodePayloadLength#61"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/src/integrations/oracles/broadcaster/BroadcasterOracle.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-358"
+                ]
+            },
+            "title": "RLP Address Encoding Allows Leading Zero Bytes",
+            "description": "The `RLP` library encodes addresses as 20-byte arrays, which may include leading zero bytes. However, the Ethereum Yellow Paper specifies that RLP-encoded scalars with leading zeros are non-canonical and should be rejected. Since an address is semantically a scalar (a 160-bit unsigned integer), encoding it with leading zeros may cause interoperability issues with other systems that strictly enforce canonical RLP. This could lead to failed decoding or inconsistent behavior when the encoded data is processed by external tools or contracts, undermining data integrity and cross-system compatibility.\n",
+            "severity": "Low",
+            "location": [
+                "RLP.sol::encode#123-130"
+            ],
+            "files": [
+                "d9f966fc3f7c4eec7f565c2442cc64481e7fb499/openzeppelin-contracts/contracts/utils/RLP.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "RLP Address Decoding Allows Only Fixed Address Lengths",
+            "description": "The `RLP` library's address decoding function only accepts encoded addresses of exactly 1 or 21 bytes, rejecting any other lengths. This strictness conflicts with the treatment of addresses as scalars in RLP, where leading zeros may be omitted, resulting in variable-length encodings. As a result, the decoder may fail to process valid RLP encodings produced by other implementations that treat addresses as scalars. This reduces interoperability and may cause message verification failures when integrating with systems that use canonical scalar encoding, limiting the library's utility in heterogeneous environments.\n",
+            "severity": "Low",
+            "location": [
+                "RLP.sol::decode#address"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/lib/@eth-optimism/contracts/libraries/rlp/Lib_RLPReader.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Stuck Oracle Verifications for Migrated Chains",
+            "description": "The `BroadcasterOracle` contract allows the owner to set the `broadcasterId` for a chain, but this setting is immutable once set. If a layer-2 chain changes its settlement layer (e.g., from Ethereum to a new gateway), the route to verify messages changes, and the `broadcasterId` accumulator will no longer match the stored value. Because the ID cannot be updated, oracle verifications for that chain become permanently stuck. This design choice prioritizes immutability over adaptability, but it risks long-term disruption of cross-chain communication in the event of chain migrations, which, while rare, are not impossible.\n",
+            "severity": "Low",
+            "location": [
+                "ChainMap.sol::setBroadcasterId#39-59"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/src/oracles/ChainMap.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Non-Canonical Long-string Decoding Acceptance",
+            "description": "The RLP library's decoding function for long strings accepts length specifications that include leading zero bytes, which are considered non-canonical in standard RLP encoding. This behavior deviates from canonical implementations such as Go-ethereum (geth), which reject such encodings. The root cause is a lack of validation for canonical form during decoding. An attacker could exploit this by crafting inputs with non-canonical encodings that are accepted by this library but rejected by other Ethereum clients, leading to interoperability failures. The impact includes potential message rejection or inconsistent state across different systems, undermining cross-chain reliability.\n",
+            "severity": "Low",
+            "location": [
+                "RLP.sol"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/lib/@eth-optimism/contracts/libraries/rlp/Lib_RLPReader.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-547"
+                ]
+            },
+            "title": "Inconsistent Integer Base in Inline Assembly When Setting RLP Prefixes",
+            "description": "In the RLP.sol library, inline assembly code uses inconsistent integer bases when setting RLP prefixes\u2014mixing hexadecimal and decimal notations. This inconsistency, while not directly exploitable, reduces code clarity and increases the risk of human error during maintenance or review. The root cause is the lack of a standardized coding convention within the assembly blocks. An attacker could potentially exploit confusion caused by this inconsistency if it leads to incorrect prefix assignment in future modifications. The impact is primarily on code maintainability and auditability, increasing the likelihood of introducing security flaws in subsequent development.\n",
+            "severity": "Low",
+            "location": [
+                "RLP.sol::mstore(result, 0x01)#116",
+                "RLP.sol::mstore(result, 0x15)#126"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/lib/@eth-optimism/contracts/libraries/rlp/Lib_RLPReader.sol"
+            ]
+        }
+    ]
+}

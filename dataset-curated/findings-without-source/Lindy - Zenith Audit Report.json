@@ -1,0 +1,190 @@
+{
+    "path": "dataset-curated/reports/Zenith/Lindy - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/lindy-labs/audit-mono"
+        ],
+        "commit_id": [
+            "415c65cc64d08e2799965896ab2df7ee0a7c7f91"
+        ],
+        "address": [],
+        "chain": "evm/mainnet",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-24",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Claimers can steal more sandy tokens due to incorrect calculation",
+            "description": "1. **Description:** In the `SandyLockDrop.sol` contract, users claiming Sandy rewards have their rewards miscalculated due to an incorrect denominator in the `calculateSandyReward` function. Specifically, contributions made via vaulted tokens (e.g., scUSDCv2) are not properly accounted for in the total asset value, leading to inaccurate reward distribution.\n\n2. **Cause:** The root cause is that `lockedAmountsAdjusted` tracks vault token amounts under the vault address key instead of the underlying asset (e.g., USDC). When calculating the total asset value, only direct USDC and WETH contributions are summed, excluding vault-mediated deposits.\n\n3. **Exploitation:** An attacker can deposit assets through a vault (e.g., scUSDCv2) after others have deposited directly, then frontrun the reward claim. Because their contribution appears as 100% of the tracked asset value, they receive a disproportionately large reward.\n\n4. **Impact:** The attacker drains more Sandy tokens than entitled, potentially exhausting the contract's balance and causing subsequent legitimate claims (e.g., from Alice) to revert due to insufficient funds, resulting in loss of access to rightful rewards.\n",
+            "severity": "Critical",
+            "location": [
+                "SandyLockDrop.sol-L232",
+                "SandyLockDrop.sol-L294"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Users may avoid locking WETH in SandyLockDrop due to the fixed price",
+            "description": "1. **Description:** The `SandyLockDrop` contract uses a hardcoded `WETH_USD_PRICE` of 1800e18 to value WETH contributions, while the actual market price may differ significantly (e.g., ~2400 USDC at time of reporting). This discrepancy makes WETH staking less attractive compared to USDC.\n\n2. **Cause:** The fixed price is not updated via an oracle or dynamic mechanism, leading to misvaluation of WETH relative to its true market value.\n\n3. **Exploitation:** Users are economically incentivized to avoid locking WETH and instead lock USDC to maximize their reward share, as WETH contributors are undercompensated.\n\n4. **Impact:** Reduced participation in WETH staking, undermining the intended balance of asset contributions and potentially skewing the reward distribution model. This could affect the project's capital efficiency and user engagement.\n",
+            "severity": "High",
+            "location": [
+                "SandyLockDrop.sol#L225"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "eLoop repay and supply process incorrect amounts of assets and debt.",
+            "description": "1. **Description:** In `eLoop.sol`, the `repay` and `supply` functions incorrectly handle conversions between debt and collateral amounts. During `repay`, the underlying asset amount is passed directly to `asset.transfer`, bypassing proper share conversion. In `supply`, the amount passed to `toDebt` is not converted from shares to underlying assets.\n\n2. **Cause:** The functions fail to use `convertToShares` or `convertToAssets` when transferring or calculating values, leading to incorrect accounting of vault shares and debt.\n\n3. **Exploitation:** Users can receive more collateral than they should during `repay`, or borrow incorrect debt amounts during `supply`, distorting the leverage mechanism.\n\n4. **Impact:** Incorrect asset and debt tracking can lead to financial loss for the vault, unfair profit for users, and potential insolvency or imbalance in the leveraged position.\n",
+            "severity": "High",
+            "location": [
+                "eLoop.sol#L65",
+                "eLoop.sol#L71"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Lack of position threshold in aLoop and eLoop could lead to liquidation.",
+            "description": "1. **Description:** The `aLoop` and `eLoop` contracts allow users to freely call `supply` and `repay` without enforcing a minimum health factor or position threshold beyond Aave\u2019s native checks. This enables users to withdraw collateral close to the liquidation point.\n\n2. **Cause:** No internal safeguard exists to maintain a safety margin from the liquidation threshold, relying solely on Aave\u2019s health factor.\n\n3. **Exploitation:** Users can gradually withdraw collateral until their position is highly vulnerable to price fluctuations, increasing the risk of liquidation during market volatility.\n\n4. **Impact:** Increased likelihood of liquidations, leading to user losses and reduced confidence in the vault\u2019s stability. This could result in systemic risk during volatile market conditions.\n",
+            "severity": "High",
+            "location": [
+                "aLoop.sol#L65-L81",
+                "eLoop.sol#L58-L73"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Users can avoid the aLoop/eLoop performance fee",
+            "description": "1. **Description:** The `beforeWithdraw` function, which mints performance fees, is called after `previewRedeem` in the `redeem` function. This means the redeeming user receives assets based on pre-fee total assets, effectively avoiding the fee.\n\n2. **Cause:** The order of operations allows the asset calculation to occur before the performance fee is minted and deducted, enabling front-running or strategic withdrawal to bypass fee accrual.\n\n3. **Exploitation:** A user can redeem their shares immediately after profit is realized but before the fee is applied, capturing the full profit. If they are the sole depositor, the fee is effectively zero.\n\n4. **Impact:** Loss of revenue for the protocol, unfair distribution of profits, and potential exploitation by large depositors to avoid fees repeatedly.\n",
+            "severity": "High",
+            "location": [
+                "aLoop.sol#L53-L62",
+                "eLoop.sol#L46-L55"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "aLoop's EMode is misconfigured for Mainnet",
+            "description": "1. **Description:** The `aLoop` contract hardcodes the EMode category ID to 2 in its constructor, which corresponds to sUSDe Stablecoins on Aave V3 Mainnet, not ETH-correlated assets.\n\n2. **Cause:** The EMode category is not configurable and is set to a value valid only for Arbitrum, not Mainnet.\n\n3. **Exploitation:** On Mainnet, any `supply` operation reverts with the error code 100 (`NOT_BORROWABLE_IN_EMODE`), preventing users from using the vault.\n\n4. **Impact:** Complete loss of functionality on Mainnet, rendering the vault unusable and blocking user deposits and leveraged operations.\n",
+            "severity": "High",
+            "location": [
+                "aLoop.sol#L35"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "eLoop and aLoop repay and supply do not accrue a performance fee",
+            "description": "1. **Description:** The `repay` and `supply` functions in `aLoop` and `eLoop` modify the vault\u2019s leverage and asset position but do not trigger performance fee accrual, even when profit exists.\n\n2. **Cause:** The `beforeWithdraw` hook, which collects fees, is only called on withdrawal, not on leverage-changing operations.\n\n3. **Exploitation:** Users can perform `supply` or `repay` during a profitable period without triggering fee collection, potentially allowing profit to be locked in without fee deduction.\n\n4. **Impact:** Missed revenue opportunities for the protocol and misalignment between vault performance and fee collection, reducing economic sustainability.\n",
+            "severity": "Medium",
+            "location": [
+                "aLoop.sol#L65-L81",
+                "eLoop.sol#L58-L73"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "aLoop and eLoop performance fee share calculation is incorrect",
+            "description": "1. **Description:** The performance fee is calculated using `convertToShares`, which includes the fee amount in the total assets, leading to fewer shares being minted than the intended fee value.\n\n2. **Cause:** The formula `convertToShares(profit.mulWadDown(performanceFee))` uses the post-fee total assets, diluting the value of the minted shares.\n\n3. **Exploitation:** The protocol receives fewer effective rewards because the shares minted are worth less than the calculated fee.\n\n4. **Impact:** Under-collection of performance fees, leading to revenue loss and misaligned incentives between the protocol and depositors.\n",
+            "severity": "Medium",
+            "location": [
+                "eLoop.sol#L49-L50",
+                "aLoop.sol#L56-L57"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Consider encoding chainid in the hash if distributor is used in multiple chains",
+            "description": "1. **Description:** The `SandyDistributor.sol` contract uses a Merkle proof system for claims but does not include `chainId` in the leaf hash, making it vulnerable to cross-chain replay attacks.\n\n2. **Cause:** The leaf is computed as `keccak256(abi.encodePacked(msg.sender, _amount))`, without chain context.\n\n3. **Exploitation:** A valid proof on one chain could be reused on another if the same contract is deployed, allowing unauthorized claims.\n\n4. **Impact:** Users may be unable to claim on the correct chain, or attackers could drain funds via replay, especially in multi-chain deployments.\n",
+            "severity": "Low",
+            "location": [
+                "SandyDistributor.sol-L91"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "hasClaimed check inside claimSandy could prevents multiple valid claims",
+            "description": "1. **Description:** The `hasClaimed` mapping uses `msg.sender` as the key, preventing a user from claiming multiple allocations even if they have multiple valid Merkle leaves.\n\n2. **Cause:** The flag is set per address, not per claim, blocking subsequent claims after the first.\n\n3. **Exploitation:** A user with multiple entitlements (e.g., from different campaigns) cannot claim all rewards, losing access to legitimate funds.\n\n4. **Impact:** Loss of user funds and reduced flexibility in reward distribution strategies.\n",
+            "severity": "Low",
+            "location": [
+                "SandyDistributor.sol#L88-L97"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Sandy token rewards claiming does not account for usdc depeg senario",
+            "description": "1. **Description:** The `calculateSandyReward` function assumes USDC is always worth $1, using `user.lockedAssets * 1e12` without considering potential depegging.\n\n2. **Cause:** No price oracle or dynamic adjustment is used for USDC valuation.\n\n3. **Exploitation:** During a USDC depeg event, users who deposited USDC are over-rewarded relative to WETH depositors, whose value is correctly priced.\n\n4. **Impact:** Unfair reward distribution, shortchanging WETH contributors and distorting the intended incentive model.\n",
+            "severity": "Low",
+            "location": [
+                "SandyLockDrop.sol-L226"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Hardcoded Aave V3 pool address may cause issue in future upgrade",
+            "description": "1. **Description:** The `aLoop` contract hardcodes the Aave V3 pool address instead of querying it from the `PoolAddressProvider`, which is the recommended practice.\n\n2. **Cause:** The pool address is set once in the constructor and cannot be updated.\n\n3. **Exploitation:** If Aave upgrades the pool contract, the `aLoop` vault will point to a deprecated or inactive pool, breaking functionality.\n\n4. **Impact:** Loss of interaction with Aave, inability to supply/borrow, and potential fund lockup.\n",
+            "severity": "Low",
+            "location": [
+                "aLoop.sol#L23"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Missing claim for Aave incentives leads to unclaimed rewards",
+            "description": "1. **Description:** The `aLoop` contract does not implement functionality to claim Aave incentive tokens (e.g., AAVE rewards) from supplied assets.\n\n2. **Cause:** No integration with Aave\u2019s `RewardsController` or claim mechanism.\n\n3. **Exploitation:** Incentive tokens accumulate but remain unclaimed, representing lost yield for the vault and its users.\n\n4. **Impact:** Suboptimal returns for depositors and missed opportunity to enhance vault performance through additional revenue streams.\n",
+            "severity": "Low",
+            "location": [
+                "aLoop.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Lack of slippage protection for aLoop/eLoop repay and supply operations",
+            "description": "1. **Description:** The `repay` and `supply` functions in `aLoop` and `eLoop` do not include slippage protection, meaning users receive collateral or debt based on real-time oracle prices without minimum/maximum bounds.\n\n2. **Cause:** No `minAmountOut` or `maxSlippage` parameter is enforced during asset conversion.\n\n3. **Exploitation:** Users may receive less collateral than expected during `repay` or borrow less than intended during `supply` due to price volatility or oracle manipulation.\n\n4. **Impact:** Unpredictable user experience, potential financial loss, and increased vulnerability to MEV or oracle attacks.\n",
+            "severity": "Low",
+            "location": [
+                "eLoop.sol#L58-L73",
+                "aLoop.sol#L65-L81"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Denominator should be rounded up for consistency",
+            "description": "1. **Description:** In `SandyLockDrop.sol`, the `totalAssetValue` denominator is calculated using `mulWadDown`, which rounds down. This contradicts the protocol\u2019s intent to conservatively round down the final reward, as rounding down the denominator can inflate the result.\n\n2. **Cause:** Inconsistent rounding behavior: the numerator is rounded down, but the denominator should be rounded up to ensure the overall result is conservative.\n\n3. **Exploitation:** Users may receive slightly more rewards than intended in edge cases due to the denominator being smaller than it should be.\n\n4. **Impact:** Minor over-distribution of rewards, potentially exhausting the reward pool faster than expected.\n",
+            "severity": "Informational",
+            "location": [
+                "SandyLockDrop.sol-L232"
+            ],
+            "files": []
+        }
+    ]
+}

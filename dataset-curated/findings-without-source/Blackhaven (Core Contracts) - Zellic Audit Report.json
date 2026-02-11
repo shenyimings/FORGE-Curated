@@ -1,0 +1,145 @@
+{
+    "path": "dataset-curated/reports/Zellic/Blackhaven (Core Contracts) - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/blackhaven-xyz/blackhaven-factory"
+        ],
+        "commit_id": [
+            "5730ca6560ca203f90e3012e225a744c5ef42535"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2026-01-07",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Bond uses global vestingTerm instead of per-bond vesting",
+            "description": "The redeem, redeemEarly, and getBondInfo functions in the Bond contract use a global vestingTerm value from the terms struct for all bonds, rather than using a per-bond vesting duration stored in the Bond struct. This creates a vulnerability because the owner can update the global vestingTerm via setBondTerms, which retroactively affects the maturity time and early redemption calculations for all existing bonds. An attacker with owner privileges could manipulate the vesting period to cause users to redeem earlier or later than expected, or receive incorrect vested amounts during early redemption. This undermines user expectations and the integrity of bond terms, leading to potential financial loss or unfair advantage depending on how the parameter is changed.\n",
+            "severity": "Medium",
+            "location": [
+                "Bond.sol::redeem#",
+                "Bond.sol::redeemEarly#",
+                "Bond.sol::getBondInfo#"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Missing oracle staleness validation",
+            "description": "The singleNAV and FDV functions in BackingCalculator.sol consume oracle prices via IOracle.getPrice() without performing any staleness checks or timestamp validation. This means the contract will accept potentially outdated or frozen price data if an oracle becomes unresponsive or compromised. Since these values are used in critical calculations such as NAV, mNAV, bond pricing floors, and premium capture mechanisms, stale prices could allow bonds to be sold below intrinsic value or cause incorrect premium collection. An attacker could exploit a delayed oracle feed to manipulate the system into accepting invalid prices, leading to economic loss for users or the protocol. The impact is mitigated by low likelihood due to assumed oracle reliability, but the risk remains significant under failure conditions.\n",
+            "severity": "High",
+            "location": [
+                "BackingCalculator.sol::singleNAV#",
+                "BackingCalculator.sol::FDV#"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Oracle implementations must normalize to 1e18 decimals",
+            "description": "The BackingCalculator assumes all oracle implementations return prices scaled to 1e18 decimals, but does not enforce this requirement. External price feeds like Redstone may return prices with different precision (e.g., 8 decimals for USDC/USD), and backing tokens may not have 18 decimals. If an oracle returns a price with incorrect scaling, the NAV calculation will be off by orders of magnitude, leading to drastically incorrect bond pricing floors. Similarly, if a non-18-decimal token is added as backing, its balance will be miscalculated. This could allow attackers to mint bonds at extremely low prices or manipulate premium capture. The root cause is the lack of input validation and normalization, making the system fragile to integration errors.\n",
+            "severity": "High",
+            "location": [
+                "BackingCalculator.sol::singleNAV#",
+                "BackingCalculator.sol::FDV#"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "BAM's collectPremium may fail due to insufficient liquidity",
+            "description": "The collectPremium function in BAM.sol performs a swap via Uniswap V3 with a fixed slippage tolerance (default 5%). If the pool lacks sufficient liquidity to execute the swap within this tolerance, the transaction reverts, and premium capture fails entirely. This ties the protocol's ability to strengthen backing to external liquidity conditions, which are outside its control. While the risk is limited because swap sizes are capped by maxSupplyPercentBps and slippage can be adjusted, prolonged low liquidity could prevent the protocol from accumulating backing during high mNAV periods. The vulnerability stems from a lack of adaptive mechanisms to handle dynamic market conditions, making the system brittle under stress.\n",
+            "severity": "Low",
+            "location": [
+                "BAM.sol::_swapToUSDM#"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "BAM's collectPremium vulnerable to sandwich attacks",
+            "description": "The collectPremium function in BAM.sol uses a slippage-based protection mechanism derived from an oracle price, but it remains vulnerable to sandwich attacks. An attacker can front-run the swap by buying RBT to push up the price, let the BAM swap execute at a worse rate within the allowed slippage, then back-run by selling to profit from the price impact. With a default 5% slippage tolerance, attackers can extract up to 5% of the swap value. Although swap sizes are limited by maxSupplyPercentBps and the oracle helps set a reference price, the design still exposes the protocol to MEV leakage. This reduces the efficiency of premium capture and allows value extraction by bots, harming protocol economics over time.\n",
+            "severity": "Low",
+            "location": [
+                "BAM.sol::_swapToUSDM#"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "LiquidityManager missing onERC721Received callback",
+            "description": "The LiquidityManager contract is designed to hold Uniswap V3 LP position NFTs but does not implement the onERC721Received function required by the ERC-721 standard for receiving tokens via safeTransferFrom. As a result, any attempt to transfer an LP NFT to this contract using the safe transfer method will fail. This forces reliance on the less secure transferFrom method, which bypasses receiver-side validation. While there is no direct security vulnerability, this violates ERC-721 best practices and may cause integration issues with other systems that default to safe transfers. The root cause is a missing interface implementation, reducing interoperability and robustness.\n",
+            "severity": "Informational",
+            "location": [
+                "LiquidityManager.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "RBTNote dust deposits can result in zero yield",
+            "description": "The calculateYield function in RBTNote.sol uses integer division without a minimum threshold check, which can result in zero yield for very small deposits due to truncation. For example, with a two-week term and 78 basis points yield, deposits below ~129 WEI produce no yield. This creates notes where users lock funds but receive nothing at maturity, violating user expectations and creating accounting inconsistencies. While the economic impact is negligible due to the tiny amounts involved, it represents a flaw in design that could confuse users or auditors. The issue arises from naive arithmetic without safeguards for edge cases.\n",
+            "severity": "Informational",
+            "location": [
+                "RBTNote.sol::calculateYield#"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "RBTNote's calculateSlash precision loss allows penalty-free early exit near maturity",
+            "description": "The calculateSlash function in RBTNote.sol suffers from precision loss due to integer division, which can result in a zero penalty when timeRemaining * BPS_DENOM < note.termDuration. This allows users to exit very close to maturity (e.g., ~2 minutes early for a two-week term) without paying the early redemption slash. Although economically irrational\u2014since all yield is forfeited\u2014the behavior bypasses the intended penalty mechanism. The root cause is the lack of a minimum floor for the slashBps calculation, allowing rounding down to zero. While the economic impact is negligible, it reflects unintended behavior that could be exploited for edge-case manipulation or undermine confidence in the penalty system.\n",
+            "severity": "Informational",
+            "location": [
+                "RBTNote.sol::calculateSlash#"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Unused lastBacking variable in BackingCalculator",
+            "description": "The addBacking function in BackingCalculator.sol writes to the lastBacking field in the BackingTokenDetails struct, but this value is never read or used anywhere in the codebase. Functions like backingPerToken and singleNAV directly query the token balance via balanceOf(backingStorage). This results in unnecessary gas costs for storage writes and reduces code clarity, as developers may assume the field has a purpose. There is no security or functional impact, but it indicates poor code hygiene and potential confusion for future maintainers. The issue stems from dead code that was likely intended for future use but never implemented.\n",
+            "severity": "Informational",
+            "location": [
+                "BackingCalculator.sol::addBacking#"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Inconsistent decimal handling across codebase",
+            "description": "The codebase inconsistently handles RBT decimals: some parts hardcode 1e18 while others dynamically read decimals via IERC20Metadata. For example, Bond.sol uses both hardcoded values and dynamic lookups in different functions. While functionally equivalent since RBT uses 18 decimals, this inconsistency reduces readability and increases the risk of bugs if a different token is introduced or assumptions change. A developer might copy one pattern assuming it's standard, leading to miscalculations in edge cases. The root cause is a lack of standardized practices across the codebase, which harms maintainability and long-term reliability.\n",
+            "severity": "Informational",
+            "location": [
+                "Bond.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "No mechanism to remove backing tokens",
+            "description": "The BackingCalculator contract allows adding backing tokens via addBackingToken but provides no way to remove them or update their oracle addresses. Once a token is added, disabling it requires setting isBackingToken to false through a future function or redeploying the entire contract stack. This limits upgradability and creates operational friction if a token needs to be deprecated. While the impact is low because the team plans to support only USDM and MEGA, the design lacks flexibility. Removing a token currently requires deploying a new BackingCalculator, which cascades to redeploying Bond and updating BAM. This increases complexity and risk during upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "BackingCalculator.sol::addBackingToken#"
+            ],
+            "files": []
+        }
+    ]
+}

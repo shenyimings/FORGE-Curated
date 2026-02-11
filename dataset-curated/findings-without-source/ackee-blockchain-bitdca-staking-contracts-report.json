@@ -1,0 +1,502 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-bitdca-staking-contracts-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Ackee-Blockchain/wake"
+        ],
+        "commit_id": [
+            "c62d3dda6db241dd4be5088d410971b23db43c5e",
+            "522ad9645069128cd6fc55258f46478586a40262",
+            "c05674ce62418572d1fb393efd7fcfe205c93259"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-23",
+        "project_path": {
+            "wake": "dataset-curated/contracts/ackee-blockchain-bitdca-staking-contracts-report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Inverted logic in NFT transfer hook",
+            "description": "The _beforeTokenTransfer hook in StakingNFT.sol incorrectly sets the _lastWalletOwners mapping when the receiver has contract code, which contradicts the intended logic of tracking only EOA owners. The currentRealOwner function relies on this mapping to return the last EOA owner if the current owner is a contract, but due to the inverted logic, it ends up returning the contract address instead. This flaw causes staking rewards to be sent to the contract (e.g., a marketplace) rather than the original EOA owner. As a result, users who temporarily transfer their NFTs to contracts lose access to their rewards, undermining the fairness and functionality of the staking mechanism.\n",
+            "severity": "High",
+            "location": [
+                "StakingNFT.sol::148-150",
+                "StakingNFT.sol::92-105"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The distributeRewards function is flawed",
+            "description": "The distributeRewards function in Staking.sol suffers from multiple critical logic flaws. First, it operates over arbitrary ranges of NFT IDs, which can lead to gas exhaustion and denial of service if the range is too large. Second, it calculates the total USDT share once at the beginning and distributes rewards based on that static value, even as the contract balance decreases during the loop, leading to miscalculated and unfair distributions. Third, the total staked amount includes expired NFT locks, which dilutes the reward pool without contributing to staking. These issues combined can result in loss of rewards, unfair distribution, and high operational costs for the distributor, rendering the function unreliable and unsafe for production use.\n",
+            "severity": "High",
+            "location": [
+                "Staking.sol::409-430"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "The project is not compatible with smart accounts",
+            "description": "The reward distribution mechanism uses the currentRealOwner function, which relies on extcodesize to differentiate between EOAs and contracts. If a smart account (contract) owns an NFT from the beginning, _lastWalletOwners is never set, and currentRealOwner may return the zero address when the condition (size > 0) is true. This causes rewards to be sent to the zero address, resulting in permanent loss of funds for users employing smart wallets. This issue highlights a fundamental incompatibility with modern wallet infrastructure, especially post-EIP-7702, where the distinction between EOAs and contracts is being phased out.\n",
+            "severity": "High",
+            "location": [
+                "StakingNFT.sol::92-105",
+                "Staking.sol::411-413"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Hardcoded Decimal Assumptions",
+            "description": "The Staking.sol contract assumes both BDCA and USDT tokens have 18 decimal places without performing any validation or conversion. While this holds true on BSC, it fails on other chains like Ethereum, where USDT uses 6 decimals. This hardcoded assumption leads to incorrect arithmetic in reward calculations, potentially causing massive over- or under-distribution of rewards. The vulnerability arises from a lack of decimal normalization, making the contract fragile and unsafe for cross-chain deployment without modification.\n",
+            "severity": "Medium",
+            "location": [
+                "Staking.sol::408-421"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Stake amount restriction can be bypassed",
+            "description": "The stakeBonusAmount function in Staking.sol lacks the same stake amount restrictions enforced by other staking functions, allowing users to bypass maximum and minimum stake limits. The root cause is the absence of validation checks on the _amount parameter within this function, unlike other staking functions that enforce minStake and maxStake constraints. An attacker can exploit this by calling stakeBonusAmount through a CCIP relayer with an amount below the minimum or above the maximum allowed stake. This could result in the total staked amount exceeding the intended maxStake limit by up to 30% or more depending on bonus tiers, or enable spamming of NFT emissions with minimal stake amounts, potentially disrupting reward distribution.\n",
+            "severity": "Medium",
+            "location": [
+                "Staking.sol::stakeBonusAmount#287-299"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Unsafe ERC20 Operations",
+            "description": "The contract uses direct transferFrom and transfer calls on ERC20 tokens instead of consistently using the SafeERC20 library, which includes proper error handling. The root cause is the inconsistent use of low-level ERC20 calls, particularly in cases where non-standard tokens (like USDT) may not return a boolean value or may return false without reverting. An attacker or admin could trigger a token rescue operation using rescueToken with a non-compliant ERC20 token, leading to a silent failure where the transfer does not execute but the transaction does not revert, giving a false impression of success. This could result in loss of funds as tokens remain trapped in the contract without any on-chain indication of failure.\n",
+            "severity": "Low",
+            "location": [
+                "Staking.sol::bdcaToken.transferFrom#358",
+                "Staking.sol::IERC20Metadata(_token).transfer#451-453"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Inconsistent Access Control",
+            "description": "The StakingNFT contract implements both a custom ownership model (owner and transferOwnership) and OpenZeppelin's AccessControl with DEFAULT_ADMIN_ROLE, creating two parallel permission systems. The root cause is the redundant and conflicting access control mechanisms, where transferOwnership updates a custom _owner variable but does not transfer DEFAULT_ADMIN_ROLE, leading to inconsistent privilege management. An attacker or misinformed admin could transfer ownership via transferOwnership, believing full control has been handed over, while the original admin retains DEFAULT_ADMIN_ROLE privileges. This could result in privilege escalation or access control bypass, as critical functions may still be controlled by the old admin through role-based permissions.\n",
+            "severity": "Low",
+            "location": [
+                "StakingNFT.sol::owner#83-85",
+                "StakingNFT.sol::transferOwnership#87-89"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Max stake amount can be exceeded",
+            "description": "The maxStake validation in the stake function checks against _amount, but the totalStaked variable includes stakingAmountWithBonus (principal plus bonus), allowing the actual total to exceed the maxStake limit. The root cause is a logic error in the validation condition: require(totalStaked + _amount <= maxStake) fails to account for the bonus amount that will be added. An attacker can deposit an amount that appears within the limit but, when bonus is applied, pushes totalStaked beyond maxStake\u2014up to 30% over in current configurations. This undermines the intended economic cap on total staked tokens and could lead to over-allocation of rewards or resource exhaustion.\n",
+            "severity": "Low",
+            "location": [
+                "Staking.sol::stake#314-378"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing Events for Critical State Changes",
+            "description": "Several administrative functions in Staking.sol and StakingNFT.sol do not emit events when critical state variables are modified, reducing transparency and hindering off-chain monitoring. The root cause is the absence of event emissions in functions like pause, setMinStake, updateBaseURI, and transferOwnership. An admin could pause the contract or change key parameters without emitting a log, making it difficult for users and monitoring tools to detect changes in real time. This lack of observability increases the risk of malicious or erroneous changes going unnoticed, potentially leading to user funds being frozen or misrouted without alert.\n",
+            "severity": "Low",
+            "location": [
+                "Staking.sol::pause",
+                "Staking.sol::unpause",
+                "Staking.sol::setMinStake",
+                "Staking.sol::setVaultAddress",
+                "Staking.sol::updatePresaleAddress",
+                "Staking.sol::updateStakingNftAddress",
+                "Staking.sol::updateBDCATokenAddress",
+                "Staking.sol::updateUSDTTokenAddress",
+                "Staking.sol::updateTier",
+                "Staking.sol::updateRevenueLanchingStatus",
+                "Staking.sol::rescueToken",
+                "StakingNFT.sol::updateStakingAddress",
+                "StakingNFT.sol::updateBaseURI",
+                "StakingNFT.sol::transferOwnership"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing Pause Modifier on Reward Distribution",
+            "description": "The distributeRewards function in Staking.sol is not protected by the notPaused modifier, allowing rewards to be distributed even when the protocol is paused. The root cause is the omission of the pause check in this function, despite the presence of a global paused state. An off-chain bot or admin could trigger reward distribution during a paused state, leading to unintended fund flows. This violates the expected behavior of a pause mechanism, which should halt all economic activity, and could result in financial loss or inconsistent state if rewards are distributed while deposits and withdrawals are blocked.\n",
+            "severity": "Low",
+            "location": [
+                "Staking.sol::distributeRewards"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Mint function is performing safe mint",
+            "description": "The mint function in StakingNFT.sol behaves like a safeMint by calling onERC721Received, which is not standard for a basic mint function. The root cause is the implementation of ERC721Receiver hooks in a function not intended to perform safe transfers. If a contract receiver does not implement onERC721Received, the mint call will revert, which may be unexpected if the function is assumed to be a standard mint. This could lead to failed mints when integrating with other contracts, reducing interoperability and potentially blocking legitimate staking actions that depend on NFT minting.\n",
+            "severity": "Low",
+            "location": [
+                "StakingNFT.sol::mint"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Affiliate program integration",
+            "description": "The stake function integrates with an out-of-scope Presale contract to grant affiliate bonuses, introducing external dependency and complexity. The root cause is the direct call to multiple functions in the Presale contract (addressToAffiliateId, isFounder, affiliateIdToParentAffiliateId, etc.) without proper error handling or fallback logic. Any revert in the Presale contract will cause the entire staking transaction to revert, potentially blocking legitimate staking for all users. This creates an availability risk and tight coupling with an unverified external component, undermining the reliability of the staking mechanism.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::stake#339-356"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Insufficient Data Validation",
+            "description": "Admin setter functions in Staking.sol lack sufficient input validation, allowing potentially harmful or incorrect parameter values to be set. The root cause is the absence of bounds checking or sanity checks on critical parameters like minStake, tier configurations, or address inputs. An admin could accidentally set an extremely high bonus percentage or a zero vault address, leading to economic imbalances or contract lockups. This increases operational risk and weakens trust in the protocol's resilience against misconfiguration.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-410"
+                ]
+            },
+            "title": "Potential lack of funds",
+            "description": "The contract may face liquidity issues during unstake operations if BDCA token reserves are not replenished after reward distribution. The root cause is the lack of a mechanism to ensure sufficient BDCA tokens are available to cover unstaking requests after bonuses are distributed from the vault. Continuous staking and unstaking may deplete reserves, especially if revenue inflows (in USDT) are not effectively converted back to BDCA. This could result in users being unable to unstake their tokens, leading to loss of funds or trust in the protocol.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Potential reentrancy due to NFT hook",
+            "description": "The staking contract triggers onERC721Received during NFT minting, which could enable reentrancy attacks if not properly guarded. While the main stake function uses a nonReentrant modifier, other stake functions may lack this protection. The root cause is the combination of external call (to receiver contract) and state changes during minting. A malicious contract could reenter the staking function during onERC721Received, potentially manipulating balances or claiming rewards multiple times. This poses a critical risk if new stake functions are added without reentrancy guards.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "Uninitialized variables and roles",
+            "description": "Several critical roles (MINTER, BURNER, PAUSER) and variables (Vault address) are not initialized during deployment, risking partial functionality or complete failure. The root cause is missing initialization calls in the constructor or setup process. A user may be able to stake but not unstake if the BURNER role is missing, or staking may revert if the Vault address is not set. This could lead to permanent lockup of user funds and loss of protocol credibility if not addressed before mainnet deployment.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol",
+                "StakingNFT.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Unknown swap conditions",
+            "description": "The ustdToBDCA function relies on the Presale contract's price oracle without slippage protection or validation, making swaps potentially unfair. The root cause is the direct use of an external, unverified price feed without minimum output guarantees. A malicious actor could manipulate the Presale contract's state or exploit stale prices to receive more BDCA than fair market value. This introduces financial risk during token conversions and undermines the integrity of reward calculations.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::ustdToBDCA#498-499"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Code duplication",
+            "description": "Multiple stake functions duplicate common logic for NFT minting, state updates, and event emission. The root cause is the lack of shared helper functions, leading to code bloat and increased risk of inconsistent updates. If a bug is fixed in one stake function but not others, it could result in divergent behavior. This reduces code maintainability and increases the attack surface due to redundant logic paths.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::_stake logic duplication#367-377"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-369"
+                ]
+            },
+            "title": "Division by Zero in Reward Calculation",
+            "description": "The reward calculation in Staking.sol performs division by _totalStakedBalance without validating it is non-zero, which will cause a revert without a descriptive error message. The root cause is missing input validation before arithmetic operations. If no tokens are staked, the function will revert silently, potentially blocking reward distribution or staking initialization. This could confuse users and admins, making debugging difficult.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::calculateBonuses#485"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Ambiguous error messages",
+            "description": "The notPaused and isPaused modifiers use error messages referencing \"Presale\" instead of \"Staking\", which is misleading. The root cause is copy-paste from a presale contract without updating comments and revert strings. This could confuse developers and users during debugging, as error messages suggest the wrong contract is paused, leading to incorrect troubleshooting steps and delayed resolution of actual issues.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::notPaused#74-77",
+                "Staking.sol::isPaused#83-86"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Use of magic numbers",
+            "description": "The code uses hard-coded values like 1000 ether without named constants, reducing readability and increasing maintenance risk. The root cause is the direct use of literal values instead of constants with descriptive names. For example, 1000 ether is used to determine affiliate bonuses but does not clarify its business meaning. This could lead to errors during updates if the value needs to be changed in multiple places, increasing the likelihood of inconsistencies.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::if(_amount >= 1000 ether)#338"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing documentation",
+            "description": "The codebase lacks NatSpec comments and function documentation, reducing code clarity and onboarding efficiency. The root cause is the absence of inline documentation for functions, parameters, and return values. This makes it difficult for auditors, developers, and users to understand the intended behavior of functions, increasing the risk of misuse or incorrect integration.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol",
+                "StakingNFT.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Typos",
+            "description": "The code contains spelling errors such as \"ustdToBDCA\" (should be \"usdtToBDCA\") and \"tierBonusPersentages\" (should be \"Percentages\"). The root cause is typographical mistakes in function and variable names. While these do not affect functionality due to consistent usage, they reduce code professionalism and can cause confusion during development or integration, especially if corrected later and breaking changes are introduced.\n",
+            "severity": "Informational",
+            "location": [
+                "Staking.sol::ustdToBDCA#498",
+                "Staking.sol::tierBonusPersentages#54",
+                "Staking.sol::tierAffiliateBonusPersentages#56"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused variables",
+            "description": "The tokenURI function in StakingNFT.sol declares and retrieves tier and lockExpire variables but does not use them in the returned URI string. The root cause is unnecessary state reads that consume gas without providing value. This leads to inefficient gas usage and reduces code clarity, as developers may assume these values are part of the URI logic when they are not.\n",
+            "severity": "Informational",
+            "location": [
+                "StakingNFT.sol::tokenURI#111-117"
+            ],
+            "files": []
+        }
+    ]
+}

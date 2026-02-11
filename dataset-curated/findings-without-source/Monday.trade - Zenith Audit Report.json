@@ -1,0 +1,185 @@
+{
+    "path": "dataset-curated/reports/Zenith/Monday.trade - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/SynFutures/MondayTrade-Spot"
+        ],
+        "commit_id": [
+            "6bcd55688c65452bb74c7493c6c677d38ccac192"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-17",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Unvalidated size sign in cancel function leads to misapplied fees and attacker profitability",
+            "description": "The cancel function in OrderHandler.sol does not validate that the sign of the user-provided size parameter matches the actual stored order direction (totalPlaceSize). This allows an attacker to pass a size with an incorrect sign, which influences the isToken0 flag used later in fee accounting. Although the size value is corrected to match the stored amount, the isToken0 flag remains based on the original (malicious) sign. As a result, when _updateProtocolFees is called, the fee is applied to the wrong token (amount0 vs amount1). This misapplication can be exploited to minimize fees paid or maximize rebates, depending on whether the maker fee is positive or negative. The impact is significant when partial fills occur and the two token amounts differ, allowing the attacker to profit at the protocol's expense.\n",
+            "severity": "High",
+            "location": [
+                "OrderHandler.sol::cancel#151"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "The innerSize is incorrectly reset during nonce synchronization in the place function",
+            "description": "In the place function of Broker.sol, the innerSize and partialFilledSize are unconditionally reset to 0 during nonce synchronization with neighboring range ticks, regardless of whether the current order is for token0 or token1. This occurs even if the current tick already has a valid order. An attacker can exploit this by placing an order, allowing a price movement that triggers nonce updates, and then placing another order, which resets the innerSize and effectively destroys the previous order's accumulated size. This breaks core order accounting, leading to incorrect matching behavior and potential loss of funds, as the system no longer tracks the full order size correctly.\n",
+            "severity": "High",
+            "location": [
+                "Broker.sol::place#203"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "The totalTaken can be manipulated to zero or reduced, enabling protocol loss",
+            "description": "The totalTaken value for range-tick orders is updated using a round-down calculation during placement and cancellation. A malicious user can exploit this by placing many small orders (micro-orders) and then canceling them in large batches, slightly under-canceling the total size. Due to cumulative rounding down, the totalTaken value can be reduced to zero even when a non-zero totalSize remains. During a subsequent swap, the system uses totalTaken (0) to calculate the input amount, meaning the attacker can receive output tokens (based on totalSize) without providing any input. This allows the attacker to extract tokens for free, resulting in direct financial loss to liquidity providers and the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "Broker.sol::_placeSingleTickOrder#43",
+                "Broker.sol::_updateRangeTick#141"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Users can lose funds in inner order fill when amountIn is 0",
+            "description": "In SwapHandler.sol, when filling an order tick with an extremely small innerSize (e.g., 1 wei), the calculated amountIn can become 0 due to rounding. The code contains a special-case branch that, when amountIn is not zero and exactInput is true, sets the feeAmount to the entire remaining swap amount. However, this logic is flawed and can result in the entire remaining input being recorded as fee, even though the actual filled amount is negligible. This leads to users receiving far less output than expected while the protocol incorrectly records excessive fees. The root cause is improper handling of edge cases with minimal order sizes, leading to significant user fund loss in rare scenarios.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapHandler.sol#430"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "The swapCrossRange can skip feeGrowth and liquidity updates",
+            "description": "In the _swapCrossRange function of SwapHandler.sol, when the current tick is a range tick with pending orders and the swap direction is token1 to token0, the tickNext is reset to the current tick to ensure it is processed. However, the step.initialized flag is not updated to true in this case. As a result, even though the tick has valid orders and liquidity, the tick transition logic (which updates feeGrowth and liquidity) is skipped because it only executes when step.initialized is true. This leads to incorrect state tracking, missing fee accruals, and potential inconsistencies in liquidity accounting, undermining the integrity of the pool's financial records.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapHandler.sol::_swapCrossRange#206"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "The overflow innerBitmap can happen in the flipTickWithBitmap when tickSpacing is 256",
+            "description": "The flipTickWithBitmap function in TickBitmap.sol calculates the bit position for a tick within a range using the difference between the order tick and the interval range tick. When tickSpacing is set to 256 and the order tick is a multiple of 256, the difference (diff) becomes 256. This value is cast to uint24 for bit shifting, resulting in a bit position of 256. However, a uint256 bitmap only supports bit positions 0 to 255. Shifting 1 << 256 causes an overflow, making it impossible to set or flip the correct bit. This breaks tick tracking for orders at 256-interval boundaries, preventing proper order placement and management.\n",
+            "severity": "Medium",
+            "location": [
+                "MondayFactory.sol::enableFeeAmount#96",
+                "TickBitmap.sol::flipTickWithBitmap#56"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Using Rounding-Up taker fee per order causes protocol fee over-accounting",
+            "description": "The vulnerability arises in the `_updateProtocolFees` function where the taker fee is calculated using `mulDivRoundingUp`. While this is correct for a single order at a tick, it causes over-accounting when multiple orders exist at the same tick. The root cause is the use of rounding-up arithmetic (`mulDivRoundingUp`) when calculating taker fees per individual maker order. When multiple orders are filled in a single swap, each order's fee is rounded up independently, leading to a sum that exceeds the actual taker fee paid. An attacker could exploit this by placing or manipulating multiple small orders at the same tick and triggering a large swap that fills them all. The protocol would then account for more fees than were actually paid, creating a discrepancy. The impact is a mismatch between the actual token balance in the contract and the internally recorded protocol fee accounting. This could lead to incorrect fee distribution, potential loss of funds for the protocol, or inconsistencies in financial reporting.\n",
+            "severity": "Medium",
+            "location": [
+                "OrderHandler.sol::#L315"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Changing config allows altering fee parameters, causing inconsistent accounting for previously filled orders",
+            "description": "The `setNewConfig` function in `MondayFactory.sol` allows the owner to change the config contract, which contains fee parameters like `orderTakerFee`. Changing these parameters after orders have been filled can lead to inconsistent fee accounting. The cause is the mutable nature of the config contract reference. Since previously filled orders are accounted for using the old fee rates, but withdrawals or distributions may use the new rates, a mismatch occurs. A malicious or misconfigured owner could change the config to alter fee parameters after trades have occurred, leading to incorrect fee calculations during withdrawals. The impact is inconsistent accounting for protocol and maker fees, potentially leading to over- or under-payment of fees and loss of trust in the system's financial integrity.\n",
+            "severity": "Low",
+            "location": [
+                "MondayFactory.sol::#L115"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Fee parameter change causes incorrect accounting for existing orders",
+            "description": "The `resetOrderFee` function in `Config.sol` allows the owner to modify `orderTakerFee` and `orderMakerFee` at any time. If these are changed after taker fees have been paid but before maker/protocol fees are distributed, it results in incorrect accounting. The root cause is the mutability of fee parameters without any mechanism to lock or snapshot fees at the time of order execution or fee accrual. The owner could change the fee rates after a swap has occurred but before fees are distributed, leading to distribution based on new rates rather than the rates in effect at the time of the trade. This leads to inconsistent and potentially unfair fee distribution, undermining the predictability and correctness of the protocol's financial model.\n",
+            "severity": "Low",
+            "location": [
+                "Config.sol::#L77"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Unused parameter (initialized) in the _stepToNextTick function",
+            "description": "The `_stepToNextTick` function in `SwapHandler.sol` accepts a parameter `initialized` which is assigned to a local struct but never used. The parameter is redundant and has no effect on the function's logic or output. This cannot be exploited maliciously but represents wasted gas and code bloat. The impact is minor, consisting of unnecessary gas costs during function calls and potential confusion for developers maintaining the code.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapHandler.sol::#L514"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Unused variable assignment",
+            "description": "In the `_swapCrossRange` function, the variable `step.sqrtPriceStartX96` is assigned but never used. The assignment is redundant and serves no purpose in the function's execution. No security risk, but results in avoidable gas consumption. The impact is slight increase in gas usage and reduced code clarity, which could confuse future developers.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapHandler.sol::#L198"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Mismatch between comment and code in enableFeeAmount",
+            "description": "The comment in `enableFeeAmount` claims that `tickSpacing` is capped at 16384, but the actual code enforces a cap of 256. The comment is outdated or incorrect, leading to a discrepancy between documentation and implementation. This could mislead developers or auditors into believing a larger tick spacing is allowed, potentially causing integration errors. The impact is confusion during code review or integration, reducing code maintainability and auditability.\n",
+            "severity": "Informational",
+            "location": [
+                "MondayFactory.sol::#L93"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Tick.initialized comment is inaccurate - should include limit orders",
+            "description": "The comment for the `initialized` flag in `Tick.sol` states it is true only if `liquidityGross /= 0`, but it is also set when there are active limit orders (`orderRecord.totalSize /= 0`). The comment fails to reflect the full logic of tick initialization, which includes both liquidity and limit orders. This could mislead developers into making incorrect assumptions about tick state. The impact is potential logic errors in dependent code due to misunderstanding of when a tick is considered initialized.\n",
+            "severity": "Informational",
+            "location": [
+                "Tick.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "SwapRouter does not support batchPlace",
+            "description": "The `SwapRouter` contract lacks support for the `batchPlace` function, forcing users to call it directly and implement their own callback logic. The router only implements the single-order flow and corresponding callback. Users cannot efficiently place multiple orders through the router, reducing usability. The impact is reduced functionality and user experience, requiring more complex integrations for batch operations.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapRouter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Redundant condition in crossRangeTickOrder",
+            "description": "In `LibOrder.sol`, the condition `ticks[tick].orderRecord.totalSize /= 0` is checked after `totalSize` has already been reset to 0 at the start of the function. The check is redundant because `totalSize` is unconditionally set to 0 before the condition is evaluated. No security risk, but wastes gas and adds unnecessary complexity. The impact is minor gas inefficiency and reduced code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "LibOrder.sol::#L321"
+            ],
+            "files": []
+        }
+    ]
+}

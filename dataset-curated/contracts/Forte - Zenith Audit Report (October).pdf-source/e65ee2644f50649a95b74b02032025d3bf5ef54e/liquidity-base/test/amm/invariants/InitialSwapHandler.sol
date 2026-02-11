@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.24;
+
+import {PoolBase} from "src/amm/base/PoolBase.sol";
+import {TestCommon} from "test/util/TestCommon.sol";
+
+/**
+ * @title Handler for the testing the invariant defined for the initial swap mechanics.
+ * @author @oscarsernarosero @mpetersoCode55 @cirsteve
+ */
+contract InitialSwapHandler is TestCommon {
+    PoolBase public poolUnderTest;
+    uint256 public trackedAmountOutX;
+    uint256 public trackedAmountOutY;
+
+    constructor(PoolBase _poolUnderTest) {
+        poolUnderTest = _poolUnderTest;
+    }
+
+    function swap(uint256 _amountIn) external returns (uint256 amountOut, uint256 feeAmount) {
+        vm.startPrank(admin);
+        (uint256 expectedAmountOut, , ) = poolUnderTest.simSwap(poolUnderTest.xToken(), _amountIn);
+        (amountOut, feeAmount, ) = poolUnderTest.swap(
+            poolUnderTest.xToken(),
+            _amountIn,
+            expectedAmountOut,
+            msg.sender,
+            getValidExpiration()
+        );
+        trackedAmountOutX = amountOut;
+    }
+}

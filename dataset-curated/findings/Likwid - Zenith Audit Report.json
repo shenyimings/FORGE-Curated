@@ -1,0 +1,1353 @@
+{
+    "path": "dataset-curated/reports/Zenith/Likwid - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": "https://github.com/likwid-fi/likwid-margin",
+        "commit_id": "47650fbae9e82df1ba7c9f16d7abc2c90c038a31",
+        "address": "n/a",
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-13",
+        "project_path": {
+            "likwid-margin": "dataset-curated/contracts/Likwid - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Missing access control on unlockCallback()",
+            "description": "The unlockCallback() functions in LikwidLendPosition.sol, LikwidMarginPosition.sol, and LikwidPairPosition.sol lack access control, allowing any external caller to invoke them with arbitrary data. This occurs because the contracts do not inherit from Uniswap v4's SafeCallback.sol, which is designed to restrict callback execution to the pool manager only. An attacker can exploit this by calling unlockCallback() directly through a malicious contract, bypassing ownership checks and potentially stealing lender positions. This could lead to unauthorized fund transfers and complete loss of user funds deposited in lending positions.\n",
+            "severity": "Critical",
+            "location": [
+                "LikwidLendPosition.sol::unlockCallback",
+                "LikwidMarginPosition.sol::unlockCallback",
+                "LikwidPairPosition.sol::unlockCallback"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidLendPosition.sol",
+                "likwid-margin/src/LikwidMarginPosition.sol",
+                "likwid-margin/src/LikwidPairPosition.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The implementation of setStageLeavePart is incorrect",
+            "description": "The setStageLeavePart function in MarginState.sol is intended to clear a 24-bit field in a packed storage variable before inserting a new value. However, the masking operation uses incorrect constants (STAGE_SIZE and STAGE_LEAVE_PART) instead of the proper bitmask (MASK_24_BITS), resulting in failure to zero out the target bits. This leads to corrupted state storage where old bits remain, potentially altering other packed variables like StageSize. An attacker could manipulate the state by crafting inputs that exploit the bit overlap, leading to undefined behavior, incorrect protocol logic, and potential loss of funds due to miscalculated margins or fees.\n",
+            "severity": "High",
+            "location": [
+                "MarginState.sol#L174"
+            ],
+            "files": [
+                "likwid-margin/src/types/MarginState.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Protocol fees extracted from interests are not accounted for",
+            "description": "In InterestMath.sol, the updateInterestForOne() function calculates protocol fees from accrued interest using ProtocolFeeLibrary.splitFee(), but fails to store or return these fees. Although the fees are subtracted from the user's interest, they are not added to the protocol's accrued fee balance. This results in the permanent loss of protocol revenue. The impact is a direct financial loss to the protocol, reducing its sustainability and governance-controlled treasury income. Since the fees are computed but not recorded, this is a silent accounting error that accumulates over time with each interest accrual.\n",
+            "severity": "High",
+            "location": [
+                "InterestMath.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/InterestMath.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Default protocol settings are not persisted",
+            "description": "The setDefaultProtocolFee() function in ProtocolFees.sol computes a new fee value using the setProtocolFee() method but fails to write it back to the defaultProtocolFee storage variable. This makes the function a no-op\u2014despite emitting an event that suggests the update was successful. As a result, the protocol cannot update its default fee configuration, leading to potential governance or operational failures. This could prevent necessary risk adjustments or fee optimizations, undermining protocol flexibility and responsiveness to market conditions.\n",
+            "severity": "High",
+            "location": [
+                "ProtocolFees.sol"
+            ],
+            "files": [
+                "likwid-margin/src/base/ProtocolFees.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Truncated reserves bypass price safety mechanism when no interest accrues",
+            "description": "The price safety mechanism in PriceMath.sol uses truncatedReserves to limit rapid price changes by gradually converging toward actual reserves. However, both updateInterests() and getCurrentState() bypass this mechanism when no interest accrual occurs, directly setting truncatedReserves to actual pair reserves. An attacker can exploit this by performing a large swap and then triggering a state update when no interest is accrued, causing an instantaneous price update. This bypasses the intended rate-limiting protection, enabling price manipulation that affects dynamic fees and margin health checks, potentially leading to unfair liquidations or protocol losses.\n",
+            "severity": "High",
+            "location": [
+                "PriceMath.sol",
+                "Pool.sol",
+                "StateLibrary.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/PriceMath.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "There is a incorrect marginTotal reduction on liquidation",
+            "description": "During liquidation in MarginPosition.sol, the close() function reduces positionValue by rewardAmount before calculating releaseAmount. However, the subsequent marginTotal reduction logic assumes releaseAmount represents the full proportional share of the position, not accounting for the prior subtraction. This causes marginTotal to be under-decreased by rewardAmount, leaving a residual balance. If the position ID is reused, this leftover marginTotal could cause incorrect accounting, leading to inflated collateral values or denial of service in future operations due to state inconsistency.\n",
+            "severity": "High",
+            "location": [
+                "MarginPosition.sol#L174-L175",
+                "MarginPosition.sol#L195"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "There is a incorrect reserve accounting in liquidateBurn function",
+            "description": "In LikwidMarginPosition.sol, liquidateBurn() uses releaseAmount from the close() function to update reserve deltas, but close() already reduces releaseAmount by rewardAmount. The true amount withdrawn from lending reserves is releaseAmount + rewardAmount, but the delta is constructed using only releaseAmount. This results in under-decreasing the lending reserve and misrepresenting pair reserve changes. Over time, this accounting error causes reserve desynchronization, potentially leading to insolvency as the protocol's internal balances diverge from actual holdings.\n",
+            "severity": "High",
+            "location": [
+                "LikwidMarginPosition.sol#L504",
+                "MarginPosition.sol#L174-L175"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Unused setMarginFee function causes margin fee to remain hardcoded",
+            "description": "The setMarginFee() function in Pool.sol is defined but never called, causing the protocol to rely on a hardcoded defaultMarginFee value. This renders the margin fee immutable after deployment, preventing dynamic adjustments based on governance, market conditions, or risk parameters. The impact is reduced protocol flexibility and inability to respond to changing economic conditions, potentially leading to suboptimal fee revenue or increased risk exposure during volatile markets.\n",
+            "severity": "High",
+            "location": [
+                "Pool.sol#L108"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Checkpointed state used in LikwidMarginPosition differs from the core implementation",
+            "description": "The StateLibrary.getCurrentState() function used in LikwidMarginPosition diverges from the core Pool.updateInterests() logic, particularly in how protocol fees are loaded. StateLibrary.getSlot0() retrieves fees directly from Slot0 without applying defaults, potentially leading to incorrect fee calculations. Additionally, state.lastUpdated is not set to block.timestamp, causing time-based calculations to use stale data. This inconsistency can result in divergent state views between different parts of the system, leading to incorrect margin levels, unfair liquidations, or incorrect fee distributions.\n",
+            "severity": "High",
+            "location": [
+                "StateLibrary.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/StateLibrary.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Unused borrowAmountMax parameter allows excessive borrowing beyond user\u2019s expected limit",
+            "description": "The borrowAmountMax parameter in the CreateParams struct is intended to cap the maximum borrow amount during leveraged position creation, serving as a slippage protection mechanism. However, this parameter is never enforced in the _margin() function. The actual borrow amount is calculated based on pool reserves and dynamic fees without validation against borrowAmountMax. This allows users to borrow more than intended, especially during high volatility or fee spikes, increasing their liquidation risk and potentially leading to unexpected losses due to over-leveraging.\n",
+            "severity": "High",
+            "location": [
+                "IMarginPositionManager.sol#L200",
+                "LikwidMarginPosition.sol#L209"
+            ],
+            "files": [
+                "likwid-margin/src/interfaces/IMarginPositionManager.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Protocol fees are included in the reserves",
+            "description": "During swaps in Pool.sol, protocol fees are split from LP fees and included in the amount added to reserves. However, protocol fees should be tracked separately in protocolFeesAccrued and not contribute to liquidity reserves. Including them in reserves inflates the available liquidity and distorts price calculations, health checks, and fee accruals. This misaccounting can lead to incorrect margin levels, unfair liquidations, and long-term reserve imbalances, undermining the economic model and potentially causing insolvency.\n",
+            "severity": "High",
+            "location": [
+                "Pool.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Health check inconsistency between position creation and liquidation",
+            "description": "The checkLiquidate() function uses truncated reserves (lagging prices) for health checks, while position creation functions (_executeAddLeverage and _executeAddCollateralAndBorrow) use current pair reserves. This creates a discrepancy where positions can be opened at favorable prices but immediately become liquidatable due to lagging truncated prices. Conversely, healthy positions may be unfairly liquidated. Attackers can exploit this by timing swaps to manipulate the gap between current and truncated reserves, leading to unfair advantages or user losses.\n",
+            "severity": "High",
+            "location": [
+                "LikwidMarginPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-128"
+                ]
+            },
+            "title": "Potential overflow when applying delta to Reserves",
+            "description": "In Reserves.sol, the applyDelta() function performs unchecked additions when delta values are negative (i.e., adding liquidity). Specifically, lines 104 and 118 add uint128(-d0) and uint128(-d1) without overflow checks, which can wrap around due to the unchecked block. This could result in underflow-like behavior where large negative deltas cause the reserve values to wrap to near-zero, corrupting the reserve state. This could be exploited to manipulate prices, drain funds, or cause denial of service in critical operations.\n",
+            "severity": "Medium",
+            "location": [
+                "Reserves.sol#L104",
+                "Reserves.sol#L118"
+            ],
+            "files": [
+                "likwid-margin/src/types/Reserves.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Slippage is not checked when result amounts are zero",
+            "description": "The _processDelta() function in BasePositionManager.sol fails to enforce slippage checks when delta.amount0() or delta.amount1() is exactly zero. This occurs because the slippage validation logic is only triggered when the delta is strictly less than or greater than zero, skipping the case when the resulting amount is zero. The root cause is the absence of a slippage check for zero delta values, even when amount0Min or amount1Min are set to positive values. An attacker could exploit this by executing a swap where the output amount is zero, bypassing the user's minimum output requirement. This could lead to users receiving no tokens despite expecting a minimum amount, resulting in loss of funds or unexpected behavior. The same issue exists in the handleSwap() function of the LikwidLendPosition contract, increasing the attack surface.\n",
+            "severity": "Medium",
+            "location": [
+                "BasePositionManager.sol::delta.amount0#71-83",
+                "LikwidLendPosition.sol::handleSwap"
+            ],
+            "files": [
+                "likwid-margin/src/base/BasePositionManager.sol",
+                "likwid-margin/src/LikwidLendPosition.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Inconsistent update of interest state",
+            "description": "The updateInterests() function in Pool.sol conditionally updates state variables based on the 'changed' flag returned by updateInterestForOne(). While most state variables like mirrorReserve0 and pairReserve0 are updated only if result0.changed is true, borrow0CumulativeLast is assigned unconditionally. However, borrow0CumulativeLast is derived from getBorrowRateCumulativeLast() and may not reflect the latest interest accrual if not properly synchronized. The root cause is the inconsistent update logic\u2014some fields depend on the 'changed' flag while others do not. Additionally, newInterestReserve may be updated even when changed is false, but this update is ignored in the main function. This can lead to a state inconsistency where the cumulative borrow rate is updated but the corresponding reserve values are not, resulting in incorrect interest calculations and potential discrepancies in debt tracking. The impact includes inaccurate financial accounting and potential loss of funds during liquidation or withdrawal.\n",
+            "severity": "Medium",
+            "location": [
+                "Pool.sol::updateInterests#390-398"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The old pairReserves is used for margin level checks in the margin",
+            "description": "In the _margin() function of LikwidMarginPosition.sol, the _checkMinLevel() function is called using the pre-swap value of poolState.pairReserves, even after _executeAddLeverage() modifies the reserves through a leveraged swap. The root cause is the incorrect ordering of operations\u2014margin level validation occurs before the updated pool state is retrieved. Since _executeAddLeverage() changes the effective reserves due to borrowing and swapping, using stale reserves for validation leads to an inaccurate margin level calculation. An attacker could exploit this by adding leverage in a way that artificially inflates the margin level based on outdated reserves, potentially bypassing liquidation thresholds or minimum margin requirements. This could allow undercollateralized positions to persist, increasing systemic risk and potentially leading to losses for liquidity providers.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::_margin#227",
+                "LikwidMarginPosition.sol::_executeAddLeverage#303"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The borrow level check blocks positive margin adjustments in the modify function",
+            "description": "The modify() function in LikwidMarginPosition.sol enforces a _checkMinLevel() using minBorrowLevel() regardless of whether the user is adding or removing margin. The root cause is the unconditional application of the stricter borrow level check, even when the user is increasing their margin (positive changeAmount). This prevents users from improving their position's health by adding more collateral if their current borrow level is below the threshold, even though doing so would reduce risk. For example, a user close to liquidation who wants to add margin but cannot meet the borrow level requirement will be blocked from doing so, potentially leading to forced liquidation despite having additional funds available. This creates a poor user experience and undermines the purpose of allowing margin adjustments to avoid liquidation, resulting in avoidable losses.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::modify#650"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "The deadline check is missing in the increaseLiquidity and removeLiquidity functions",
+            "description": "The increaseLiquidity() and removeLiquidity() functions in LikwidPairPosition.sol do not include a deadline parameter or validation, unlike the swap functions. The root cause is the absence of time-based transaction validity enforcement for liquidity operations. Without a deadline, transactions can remain pending in the mempool indefinitely and be executed at a later time when market conditions have changed significantly. An attacker could exploit this by front-running or delaying transactions to force execution at unfavorable prices, leading to significant slippage or reduced token amounts received. This exposes users to price manipulation and market volatility risks, potentially resulting in financial loss. The impact is particularly severe for large liquidity providers who expect predictable execution outcomes.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidPairPosition.sol::increaseLiquidity#91",
+                "LikwidPairPosition.sol::removeLiquidity#102"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidPairPosition.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Ignored closeAmount in the liquidateBurn function causes user funds loss during liquidation",
+            "description": "In the liquidateBurn() function of LikwidMarginPosition.sol, the closeAmount returned by position.close() is not accounted for, even though it represents residual value from the liquidation swap. The root cause is the failure to transfer this amount back to the user. In cases where the swap during liquidation yields a surplus (closeAmount > 0), this value is effectively lost because it is neither credited to the user nor captured by the protocol. For example, a position with a margin level below the liquidation threshold may still generate a small positive closeAmount due to rounding or price differences, but this amount is silently discarded. As a result, users lose part of their remaining margin during liquidation, leading to unfair outcomes and reduced trust in the protocol's liquidation mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::liquidateBurn#504"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Inconsistent level check when modifying margin position",
+            "description": "The modify() function in LikwidMarginPosition.sol uses _marginLevels.minBorrowLevel() for validation, even when modifying leveraged positions that should be subject to minMarginLevel(). The root cause is the use of an incorrect threshold for margin level checks. Since modify() can be used to adjust leveraged positions, it should enforce the minimum margin level rather than the borrow level. Using minBorrowLevel() imposes a stricter requirement that may not align with the risk profile of leveraged positions. While the protocol acknowledges this as intentional to protect LPs during margin reductions, it creates inconsistency in how margin requirements are applied. This can confuse users and lead to unexpected reverts when attempting to modify positions, especially when the minBorrowLevel is significantly higher than minMarginLevel.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::modify#650"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-1188"
+                ],
+                "5": [
+                    "CWE-453"
+                ]
+            },
+            "title": "Zero truncated reserves on first liquidity addition enables dynamic fee bypass",
+            "description": "When a pool is initialized, truncated reserves are set to zero and remain unchanged during the first liquidity addition within the same block. The root cause is the failure to update truncated reserves immediately after liquidity is added. Because updateInterests() and getCurrentState() return early when no time has passed, truncated reserves stay at zero, causing the dynamic fee calculation in swaps to yield a zero degree value. This results in users paying only the base fee instead of the intended dynamic fee, effectively bypassing the fee mechanism. An attacker could exploit this by adding liquidity and immediately executing large swaps at reduced fees, leading to loss of fee revenue for the protocol and unfair advantages during the initial phase of a pool's lifecycle.\n",
+            "severity": "Medium",
+            "location": [
+                "Pool.sol",
+                "LikwidPairPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-770"
+                ]
+            },
+            "title": "The lack of restriction when margin with leverage = 0 can cause DoS of operations",
+            "description": "The _executeAddCollateralAndBorrow() function restricts borrow amounts to 20% of real reserves per transaction but does not enforce a cumulative limit. The root cause is the absence of a global check on mirrorReserve growth relative to realReserve. A user can repeatedly open margin positions with leverage = 0 to gradually drain real reserves while increasing mirror reserves. Over time, this imbalance causes realReserves to deplete while pairReserve remains unchanged, leading to failures in swaps, liquidity removal, or withdrawals due to insufficient real liquidity. This constitutes a denial-of-service (DoS) attack on normal operations, as the pool becomes unusable despite appearing healthy based on pairReserves. The impact is severe for liquidity providers and traders relying on the pool's functionality.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::_executeAddCollateralAndBorrow#313"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "User can close position even when below liquidation level",
+            "description": "The close() function in LikwidMarginPosition.sol allows users to fully close their margin positions without verifying whether the position is above the liquidation threshold. The root cause is the lack of a liquidation state check before allowing closure. The function only validates that lostAmount > 0 or closeAmount meets minimum requirements, but does not prevent closure when the margin level is below the liquidation threshold. This allows users to avoid liquidation penalties by manually closing their position just before liquidation would occur. As a result, the liquidation mechanism is undermined, reducing its effectiveness in protecting the protocol from bad debt. This creates an incentive for users to monitor and close positions proactively, weakening the automated risk management system.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::close#426"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Truncated reserves calculated with stale pair reserves",
+            "description": "The updateInterests() function in Pool.sol calculates new truncatedReserves using outdated _pairReserves instead of the updated pairReserve0 and pairReserve1 values returned by updateInterestForOne(). The root cause is the use of stale data in the PriceMath.transferReserves() call. When result0.changed or result1.changed is true, the function should use the freshly computed pairReserve values to ensure accuracy. Using stale reserves results in truncated reserves being slightly smaller than they should be, which affects dynamic fee calculations and price estimations. Over time, this discrepancy can accumulate, leading to incorrect fee levels and potential losses for liquidity providers. The impact is subtle but persistent, affecting the economic integrity of the pool.\n",
+            "severity": "Medium",
+            "location": [
+                "Pool.sol::updateInterests"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent margin level calculation allows unfair manipulation",
+            "description": "The marginLevel() function in MarginPosition.sol uses different formulas depending on whether leverage is zero or greater than zero. For leverage = 0, it uses liquidity-based valuation, while for leverage > 0, it uses spot price to estimate position value. The root cause is the asymmetric logic that makes leverage > 0 positions appear safer (higher margin level) even with the same economic exposure. A malicious user can exploit this by opening a leverage = 0 position and then adding a minimal leverage > 0 margin, triggering the more favorable calculation method. This inflates the perceived margin level, allowing the user to bypass liquidation thresholds or maintain risky positions. The impact is a manipulation vector that undermines the fairness and reliability of the margin system.\n",
+            "severity": "Medium",
+            "location": [
+                "MarginPosition.sol::marginLevel#63"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/MarginPosition.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The mirrorReserve is not updated by total interest, causing cumulative debt mismatch and reserve discrepancy",
+            "description": "In InterestMath.sol, the updateInterestForOne() function updates mirrorReserve using only the net interest after deducting the protocol fee. The root cause is the incorrect accounting of interest distribution: while borrower debt grows based on total accrued interest (including protocol fee), mirrorReserve only reflects the remaining portion after fee deduction. This creates a growing mismatch between cumulative debt and recorded reserves. Over time, debtAmount becomes larger than what is backed by mirrorReserve, leading to a reserve shortfall. Additionally, since the protocol fee is not subtracted from realReserve, the internal accounting diverges from actual balances. This discrepancy can cause failures during liquidation or withdrawal, resulting in unrecoverable losses and undermining the solvency of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "InterestMath.sol::updateInterestForOne#105"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/InterestMath.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect mirror reserve restriction during leveraged margin addition can cause DoS of operations",
+            "description": "The _executeAddLeverage() function in LikwidMarginPosition.sol checks mirror reserve limits using the condition Math.mulDiv(borrowMirrorReserves, 100, borrowRealReserves + borrowMirrorReserves) > 90. The root cause is a flawed mathematical expression that allows mirrorReserves to be up to 9 times larger than realReserves (since 900 / (900 + 100) = 0.9). This permissive check enables users to push the pool into a state where real liquidity is critically low (e.g., 10% of total). As a result, operations requiring real reserves\u2014such as swaps, liquidity removal, or withdrawals\u2014will fail due to insufficient funds, causing a denial-of-service (DoS) for legitimate users and LPs. The intended safety mechanism is effectively bypassed due to incorrect ratio calculation.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::_executeAddLeverage#250"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing maximum leverage validation in _margin function can cause liquidity risk",
+            "description": "The _margin() function in LikwidMarginPosition.sol uses params.leverage directly without validating it against the protocol's maximum leverage limit (max_leverage = 5). The root cause is the absence of an explicit bounds check on the leverage parameter. Although marginLevel is checked later, a user could still input an arbitrarily high leverage value, potentially leading to excessive borrowing and liquidity strain. This creates a liquidity risk where the system may become over-leveraged, increasing the likelihood of cascading liquidations during market volatility. The impact is systemic risk to the protocol's stability, especially if multiple users open high-leverage positions simultaneously.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidMarginPosition.sol::_margin#219-221"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Wrong use of mulDiv during debt updates",
+            "description": "The update() function in MarginPosition.sol uses Math.mulDiv to scale debtAmount and margin amounts based on cumulative interest indices. The root cause is the use of integer division with truncation (rounding down), which introduces small rounding losses (dust) in each position's debt calculation. Over time, these rounding errors accumulate across many users, leading to a growing discrepancy between the total accounted debt and the actual interest accrued in the pool. Eventually, this can cause the last user attempting to repay or withdraw to face a revert due to insufficient token balance, as the system's accounting shows slightly less debt than what is truly owed. The impact is unfair treatment of users and potential fund lock-up.\n",
+            "severity": "Medium",
+            "location": [
+                "MarginPosition.sol::update#92"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/MarginPosition.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing validation between poolId and tokenId allows mismatched pool assignments leading to permanent locked lend position",
+            "description": "The exactInput() and exactOutput() functions in LikwidLendPosition.sol accept both poolId and tokenId as user inputs but do not validate that the provided poolId corresponds to the tokenId. Since the contract maintains a mapping from tokenId to poolId, each tokenId is inherently tied to a specific pool. Without validation, a user could provide a mismatched poolId, causing the resulting lend position to be created in the wrong pool. This would make it impossible for the user to withdraw their funds, effectively locking them permanently. The root cause is the lack of input validation between two related parameters. An attacker could exploit this by intentionally providing a mismatched poolId to manipulate the pool assignment. The impact is permanent loss of user funds due to inability to withdraw from the incorrect pool.\n",
+            "severity": "Medium",
+            "location": [
+                "LikwidLendPosition.sol#L140-L143"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidLendPosition.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect revert offset in LiquidityMath.sol",
+            "description": "The LiquidityMath library contains assembly code in the addDelta() and addInvestment() functions that reverts with an empty error message. These functions use mstore to store error codes at memory offset 0x1c (28 bytes), but the revert instruction uses revert(0, 4), which reads from offset 0 instead of 0x1c. As a result, the error message is not correctly retrieved, and an empty revert is triggered. The root cause is incorrect memory offset usage in low-level EVM assembly. An attacker or user cannot directly exploit this, but it reduces transparency during failures by hiding meaningful error messages. The impact is reduced debuggability and user experience due to missing error details, though functionality remains intact.\n",
+            "severity": "Low",
+            "location": [
+                "LiquidityMath.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/LiquidityMath.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing fee validation during pool initialization",
+            "description": "The initialize() function in LikwidVault.sol does not validate whether the LP fee is within the valid range (i.e., not exceeding 1,000,000, which represents 100%). This allows potentially invalid or malicious fee values to be set during pool creation. The root cause is the absence of input validation for a critical parameter. An attacker could exploit this by initializing a pool with an excessively high fee, leading to unexpected economic behavior or denial of service. The impact includes potential protocol instability or loss of user trust due to unreasonable fee settings.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidVault.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidVault.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Protocol fees are lost when LP fees are zero",
+            "description": "In the swap() function of LikwidVault.sol, the update to protocol fees is skipped if feeAmount is zero, even if amountToProtocol is greater than zero. This means that protocol fees are not collected in cases where LP fees are zero, resulting in lost revenue. The root cause is a flawed conditional check that ties protocol fee updates to LP fee amounts rather than protocol fee amounts. An attacker cannot directly exploit this, but it leads to economic inefficiency. The impact is loss of potential protocol revenue when LP fees are set to zero.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidVault.sol#L151-157"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidVault.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Unsafe cast in MarginPosition.update()",
+            "description": "The update() function in MarginPosition.sol performs an unnecessary and unsafe downcast of realRepayAmount when adjusting the debt. The line `debtAmount -= uint128(realRepayAmount);` forces a cast from uint256 to uint128, which could lead to truncation if the value exceeds the uint128 range. The root cause is improper type handling despite both variables being uint256. An attacker could exploit this by crafting a repayment amount that overflows upon cast, potentially leading to incorrect debt accounting. The impact is potential incorrect state updates and financial discrepancies.\n",
+            "severity": "Low",
+            "location": [
+                "MarginPosition.sol#L102"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Mint dead shares to prevent precision issues",
+            "description": "When initializing a pool with the first liquidity deposit, there is no mechanism to reserve a small number of shares, which can lead to precision issues in future calculations involving reserves and shares. The root cause is the lack of an initial share minting to a null address to avoid division-by-zero or rounding errors. While not directly exploitable, this can lead to edge-case miscalculations in share pricing. The impact is potential loss of precision in liquidity calculations, affecting user deposits and withdrawals in low-liquidity scenarios.\n",
+            "severity": "Low",
+            "location": [
+                "Pool.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/Pool.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant getAmountIn() call in swap fee calculation",
+            "description": "The getAmountIn() function in SwapMath.sol calls itself redundantly when calculating approxAmountIn for getPriceDegree(), which is then used for dynamic fee calculation. However, getPriceDegree() only uses approxAmountIn and ignores the provided amountOut, making the initial getAmountIn() call unnecessary. The root cause is inefficient code design. This leads to wasted gas and introduces unnecessary rounding errors. The impact is increased transaction costs and potential inaccuracies in fee calculations, reducing economic efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "SwapMath.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/SwapMath.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "Health check returns infinity when LP reserve is empty",
+            "description": "The marginLevel() function in MarginPosition.sol returns type(uint256).max when either debt is zero or pair reserves are not both positive. This means a position with non-zero debt could pass health checks if reserves are zero, falsely indicating solvency. The root cause is improper validation of reserve states before computing health. An attacker could exploit this by manipulating or draining reserves to bypass liquidation checks. The impact is potential bad debt accumulation and protocol losses due to failure to liquidate insolvent positions.\n",
+            "severity": "Low",
+            "location": [
+                "MarginPosition.sol#L37-45"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/MarginPosition.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Repay amount calculations round down",
+            "description": "The repayAmount calculation in LikwidMarginPosition.liquidateCall() and MarginPosition.close() uses Math.mulDiv with default rounding down. This can result in slightly lower repayment amounts than expected, disadvantaging the borrower. The root cause is the use of floor division without upward rounding. While not directly exploitable, it introduces a consistent bias against borrowers. The impact is unfair repayment terms and potential user dissatisfaction in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidMarginPosition.sol",
+                "MarginPosition.sol#L575"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Protocol fees are not collected for swaps in margin operations",
+            "description": "During margin operations such as margin(), close(), and liquidateBurn(), swap fees are logged but protocol fees are not collected from swapFeeAmount. The feeAmount and amountToProtocol variables only reflect margin fees, while swapFeeAmount is only used for event emission. The root cause is missing protocol fee accounting logic for swap fees in margin contexts. An attacker cannot exploit this directly, but it results in lost revenue. The impact is missed protocol income from swap activities within margin operations.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidVault.sol#L200-216"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidVault.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Total investments are backwards with respect to liquidity",
+            "description": "In PairPosition.sol, the totalInvestment is updated using LiquidityMath.addInvestment with delta.amount0() and delta.amount1(), but deltas are positive when removing liquidity and negative when adding. This causes totalInvestment to become negative when a user has an active position. The root cause is incorrect sign handling in investment tracking. This leads to incorrect state representation. The impact is inaccurate accounting of user investments, potentially affecting UIs and downstream systems.\n",
+            "severity": "Low",
+            "location": [
+                "PairPosition.sol#L57-58"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/PairPosition.sol"
+            ]
+        },
+        {
+            "id": 40,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Using spot price for margin level calculation can cause liquidation misjudgment and inevitable protocol losses",
+            "description": "The marginLevel() function uses spot price from reserves to estimate repayment amounts, but does not account for slippage during actual swap execution. For large positions, this can result in a position appearing healthy (above liquidation threshold) when it is actually insolvent upon execution. The root cause is reliance on spot price instead of execution price for risk assessment. An attacker could exploit this by opening large positions near thresholds and forcing liquidations with guaranteed bad debt. The impact is protocol losses due to uncollectible debt and reduced system solvency.\n",
+            "severity": "Low",
+            "location": [
+                "MarginPosition.sol#L63"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 41,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Missing mirror reserve threshold check in _executeAddCollateralAndBorrow()",
+            "description": "The _executeAddCollateralAndBorrow() function lacks the 90% mirror reserve threshold check present in _executeAddLeverage(). This allows users to borrow without leverage and potentially exceed the mirror reserve limit, bypassing a key safety mechanism. The root cause is inconsistent validation across similar functions. An attacker could exploit this to unbalance the mirror reserve ratio, increasing protocol risk. The impact is potential instability in reserve ratios and increased exposure to imbalance-related risks.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidMarginPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 42,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing deadline parameter in liquidation functions",
+            "description": "The liquidation functions in LikwidMarginPosition.sol do not include a deadline parameter, preventing liquidators from setting time limits on their transactions. The root cause is missing time-bound protection. This exposes liquidators to MEV and frontrunning risks. The impact is reduced security and fairness in liquidation processes, potentially deterring liquidators and harming protocol health.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidMarginPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 43,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Dead code in handleSwap() swap direction handling",
+            "description": "The handleSwap() function contains unreachable conditions due to deterministic delta signs based on zeroForOne. Conditions like `else if (delta.amount0() > 0)` within the `if (params.zeroForOne)` block can never be true. The root cause is redundant logic from incorrect assumptions about delta behavior. While not exploitable, it increases code complexity and maintenance burden. The impact is reduced code readability and increased risk of future bugs due to confusion.\n",
+            "severity": "Low",
+            "location": [
+                "LikwidLendPosition.sol",
+                "Pool.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidLendPosition.sol"
+            ]
+        },
+        {
+            "id": 44,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ]
+            },
+            "title": "Potential stale position in LikwidLendPosition/:getPositionState()",
+            "description": "The getPositionState() function uses stored cumulative values that may be outdated if interest distribution is pending. This can result in stale position data being returned. The root cause is lack of real-time state update. Users may make decisions based on incorrect data. The impact is potential financial loss or incorrect user actions due to outdated position information.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidLendPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidLendPosition.sol"
+            ]
+        },
+        {
+            "id": 45,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Facilitate max withdrawal of a lending position",
+            "description": "The withdrawal function requires users to specify an exact amount, which may be suboptimal if interest has accrued since transaction submission. The root cause is lack of support for full withdrawal semantics. Users may withdraw less than their full balance. The impact is poor user experience and potential confusion about available balances.\n",
+            "severity": "Informational",
+            "location": [
+                "LendPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/LendPosition.sol"
+            ]
+        },
+        {
+            "id": 46,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Assembly in PositionLibrary could use scratch space",
+            "description": "The PositionLibrary functions use free memory pointer for hashing data, but the data size fits within EVM scratch space (0x00\u20130x3f). The root cause is suboptimal memory usage. This leads to higher gas costs. The impact is increased transaction fees due to inefficient memory management.\n",
+            "severity": "Informational",
+            "location": [
+                "PositionLibrary.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/PositionLibrary.sol"
+            ]
+        },
+        {
+            "id": 47,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Unnecessary sign extension in marginFee()",
+            "description": "The marginFee() function uses signextend() when extracting a uint24 value from packed storage, which is unnecessary for unsigned integers. The root cause is redundant operation. This has no functional impact but reduces code clarity. The impact is minor gas inefficiency and reduced readability.\n",
+            "severity": "Informational",
+            "location": [
+                "Slot0Library.sol"
+            ],
+            "files": [
+                "likwid-margin/src/types/Slot0.sol"
+            ]
+        },
+        {
+            "id": 48,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "In the _executeAddLeverage, mirror reserve check uses old values",
+            "description": "The mirror reserve check in _executeAddLeverage() uses pre-update reserve values, allowing post-update thresholds to be exceeded. The root cause is premature validation before state changes. This creates a race condition where the check passes but the final state violates the constraint. The impact is potential violation of safety invariants and increased protocol risk.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidMarginPosition.sol#L261"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 49,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The swapFeeAmount calculation is incorrect during position close",
+            "description": "During position close, swapFeeAmount is calculated based on the full releaseAmount, but only the costAmount portion is actually swapped. The remaining closeAmount is directly released, so including it in fee calculation overestimates the fee. The root cause is incorrect fee attribution. This leads to inaccurate accounting. The impact is overstated fee metrics and potential confusion in financial reporting.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginPosition.sol#L178"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/MarginPosition.sol"
+            ]
+        },
+        {
+            "id": 50,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The to parameter in swap function is ignored",
+            "description": "The to field in SwapInputParams is intended to specify the recipient of swap output, but it is ignored in exactInput() and exactOutput(), with tokens always sent to msg.sender. The root cause is missing recipient handling. This limits functionality and reduces composability. The impact is reduced flexibility for integrators and potential user confusion.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidPairPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidPairPosition.sol"
+            ]
+        },
+        {
+            "id": 51,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unnecessary bit masking in StageMath functions",
+            "description": "The StageMath functions apply a bit mask to uint128 values that are already properly decoded, making the masking redundant. The root cause is unnecessary operation. This wastes gas and reduces code clarity. The impact is increased gas costs and maintenance burden.\n",
+            "severity": "Informational",
+            "location": [
+                "StageMathsol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/StageMath.sol"
+            ]
+        },
+        {
+            "id": 52,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "FixedPoint128 libarary never used",
+            "description": "The FixedPoint128 library is included in the codebase but never referenced. The root cause is dead code. This increases deployment size and maintenance overhead. The impact is wasted bytecode space and potential confusion for auditors.\n",
+            "severity": "Informational",
+            "location": [
+                "FixedPoint128.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/FixedPoint128.sol"
+            ]
+        },
+        {
+            "id": 53,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Parameter name mismatch between interface and implementation in close()",
+            "description": "The close() function parameter is named closeAmountMin in implementation but profitAmountMin in the interface, creating inconsistency. The root cause is naming divergence. This can confuse developers and integrators. The impact is reduced code clarity and potential integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "IMarginPositionManager.sol",
+                "MarginPositionManager.sol"
+            ],
+            "files": [
+                "likwid-margin/src/interfaces/IMarginPositionManager.sol"
+            ]
+        },
+        {
+            "id": 54,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused field in MarginBalanceDelta struct",
+            "description": "The realDelta field in MarginBalanceDelta struct is declared but never used. The root cause is dead code. This increases storage size and reduces clarity. The impact is unnecessary gas costs and maintenance burden.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginBalanceDelta.sol"
+            ],
+            "files": [
+                "likwid-margin/src/types/MarginBalanceDelta.sol"
+            ]
+        },
+        {
+            "id": 55,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use type(uint256).max for maximum borrow intent",
+            "description": "The _executeAddCollateralAndBorrow() function uses zero as a sentinel for maximum borrow, but type(uint256).max is a more standard and safer approach. The root cause is non-standard UX pattern. This can lead to confusion or errors if zero is a valid borrow amount. The impact is reduced safety and clarity in user intent signaling.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidMarginPosition.sol.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 56,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Liquidate actions don't validate that the token exists",
+            "description": "The liquidateBurn() and liquidateCall() functions assume tokenId corresponds to an existing position without validating ownership. The root cause is missing existence check. This could lead to reverts or undefined behavior. The impact is reduced robustness and potential errors during liquidation.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidMarginPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 57,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Check pool is initialized before checkpointing state",
+            "description": "The _getAndUpdatePool() function updates pool state before validating initialization. The root cause is incorrect order of operations. While likely a no-op, it violates defensive programming principles. The impact is potential edge-case issues if uninitialized pools are accessed.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidVault.sol#L82-83"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidVault.sol"
+            ]
+        },
+        {
+            "id": 58,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-224"
+                ]
+            },
+            "title": "Incorrect argument in Margin event",
+            "description": "The Margin event emits the sender instead of tokenOwner, failing to reflect cases where the recipient differs from the caller. The root cause is incorrect event parameter usage. This leads to inaccurate event data. The impact is misleading off-chain indexing and reduced transparency.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidMarginPosition.sol#L232-240"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidMarginPosition.sol"
+            ]
+        },
+        {
+            "id": 59,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing validation for callerProfit and protocolProfit in setMarginLevel()",
+            "description": "The setMarginLevel() function does not validate that callerProfit and protocolProfit are \u2264 1e6, allowing potentially invalid values above 100%. The root cause is incomplete input validation. This could lead to DoS if profits exceed 100%. The impact is potential protocol instability due to invalid configuration.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginLevels.sol#L18"
+            ],
+            "files": [
+                "likwid-margin/src/types/MarginLevels.sol"
+            ]
+        },
+        {
+            "id": 60,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "setMarginState updates rate-related parameters without first updating all pools\u2019 interests",
+            "description": "Changing marginState affects interest calculations, but existing pool interests are not updated with old parameters before applying the new state. The root cause is incorrect state transition order. This could lead to interest miscalculations. The impact is potential accounting inaccuracies during state updates.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginBase.solMarginBase.sol#L179"
+            ],
+            "files": [
+                "likwid-margin/src/base/MarginBase.sol"
+            ]
+        },
+        {
+            "id": 61,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent ownership behavior between positions",
+            "description": "The addLiquidity function in LikwidPairPosition.sol always mints a position for msg.sender, while the addLending function in LikwidLendPosition.sol allows minting a position for a specified recipient. This creates an inconsistent design pattern across similar functionalities. The root cause is the lack of a recipient parameter in addLiquidity, unlike in addLending. Although this does not lead to a direct security exploit, it may confuse developers and users, leading to potential misuse or incorrect integrations. The impact is limited to code maintainability and consistency, with no direct financial or operational risk.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidPairPosition.sol::addLiquidity#60",
+                "LikwidLendPosition.sol::addLending#69"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidPairPosition.sol"
+            ]
+        },
+        {
+            "id": 62,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Inconsistent internal function naming convention",
+            "description": "The function handleModifyLiquidity in LikwidPairPosition.sol is marked as internal but does not follow the Solidity convention of starting with an underscore (_). This violates widely adopted naming standards, making it harder to distinguish internal functions from external ones at a glance. The cause is a deviation from community best practices during development. While this does not introduce a security vulnerability, it reduces code readability and increases the risk of misuse by developers. The impact is limited to code quality and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "LikwidPairPosition.sol::handleModifyLiquidity#134"
+            ],
+            "files": [
+                "likwid-margin/src/LikwidPairPosition.sol"
+            ]
+        },
+        {
+            "id": 63,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing recipient address validation in collectProtocolFees may lead to fund loss",
+            "description": "The collectProtocolFees function in ProtocolFees.sol does not validate that the recipient address is non-zero before transferring funds. If the protocolFeeController mistakenly sets the recipient to address(0), the protocol fees will be sent to the zero address and permanently lost. The root cause is the absence of a require check or revert condition for recipient != address(0). An attacker cannot directly exploit this, but a mistaken call by an authorized caller could result in irreversible loss of funds. The impact is potential permanent loss of collected protocol fees due to human or integration error.\n",
+            "severity": "Informational",
+            "location": [
+                "ProtocolFees.sol::collectProtocolFees#72"
+            ],
+            "files": [
+                "likwid-margin/src/base/ProtocolFees.sol"
+            ]
+        },
+        {
+            "id": 64,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused diff() function in BalanceDeltaLibrary()",
+            "description": "The diff() function in BalanceDelta.sol is defined but never used anywhere in the codebase. This increases code bloat and maintenance overhead without providing any functionality. The cause is likely leftover code from a fork of Uniswap v4 that was not cleaned up. While this does not pose a security risk, it reduces code clarity and may confuse auditors or developers. The impact is limited to code quality and gas efficiency (minimal, if any).\n",
+            "severity": "Informational",
+            "location": [
+                "BalanceDelta.sol::diff"
+            ],
+            "files": [
+                "likwid-margin/src/types/BalanceDelta.sol"
+            ]
+        }
+    ]
+}

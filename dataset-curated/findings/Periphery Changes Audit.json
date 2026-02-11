@@ -1,0 +1,215 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Periphery Changes Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts"
+        ],
+        "commit_id": [
+            "b84dbfae35030e0f2caa5509b632c10106a32330"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-15",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Periphery Changes Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Incorrect Nonce Passed to the `Permit2.permit` Function",
+            "description": "The `performSwap` function in the `SwapProxy` contract uses a single global nonce when calling the `Permit2.permit` function, despite the fact that the Permit2 contract maintains nonces on a per (owner, token, spender) basis. This discrepancy causes a nonce mismatch when different token-spender pairs are used across multiple calls, leading to transaction reverts. The root cause is the incorrect assumption that a single nonce can be reused across different token and spender combinations. An attacker could exploit this by forcing a prior valid call with one token-spender pair, then preventing subsequent valid calls with different pairs due to nonce misalignment. The impact is a denial of service for users attempting to perform swaps using different tokens or exchanges via Permit2, effectively blocking functionality in the `SpokePoolPeriphery` contract.\n",
+            "severity": "High",
+            "location": [
+                "SpokePoolPeriphery.sol::performSwap#86-101",
+                "SwapProxy.sol::performSwap#67"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Possible Replay Attacks on `SpokePoolPeriphery`",
+            "description": "The `SpokePoolPeriphery` contract allows users to deposit or swap-and-deposit tokens using signature-based authorization methods such as ERC-2612 `permit` and ERC-3009 `receiveWithAuthorization`. However, the signed data structures (`DepositData` and `SwapAndDepositData`) do not include a nonce, making the signatures replayable within the `depositQuoteTimeBuffer` window. The root cause is the absence of a unique, incrementing identifier in the signed message to prevent reuse. An attacker can replay a victim's signature after the victim has approved a larger token amount, causing an unintended deposit or swap of fewer tokens than intended. This leads to loss of user control over transaction execution, potential misrouting of funds, and temporary blocking of further permit-based deposits until re-approval. The impact includes user fund mismanagement and degraded trust in the protocol's security.\n",
+            "severity": "Medium",
+            "location": [
+                "SpokePoolPeriphery.sol::swapAndBridgeWithPermit#249",
+                "SpokePoolPeriphery.sol::depositWithPermit#357",
+                "SpokePoolPeripheryInterface.sol::SwapAndDepositData#70-105",
+                "SpokePoolPeripheryInterface.sol::DepositData#70-105"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Possible DoS Attack on Swapping via `Permit2`",
+            "description": "The `performSwap` function in the `SwapProxy` contract allows arbitrary calls to any address, including the `Permit2` contract. This enables an attacker to call the `invalidateNonces` function on `Permit2` with a high nonce value for a specific (token, spender) pair. The root cause is the lack of validation on the `exchange` parameter, allowing malicious targets. Once a nonce is invalidated, any future attempt to use the next sequential nonce in `performSwap` will fail due to a mismatch in the Permit2 contract. This results in a permanent denial of service for swapping that specific token with that spender, affecting all related functions in `SpokePoolPeriphery`. The impact is a complete blockage of swap functionality for affected token-exchange combinations, undermining the core utility of the contract.\n",
+            "severity": "Medium",
+            "location": [
+                "SpokePoolPeriphery.sol::performSwap#108",
+                "SwapProxy.sol::performSwap#67"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Incorrect EIP-712 Encoding",
+            "description": "The `PeripherySigningLib` library defines the EIP-712 typehash for `SwapAndDepositData` using an enum (`TransferType`), which is not supported by the EIP-712 standard. The root cause is the direct use of an enum in the type definition, which should instead be encoded as `uint8`. This leads to incorrect hashing of signed messages, potentially causing signature verification failures or mismatches between off-chain and on-chain hash computation. An attacker could exploit this by crafting a malicious signature that appears valid but decodes incorrectly, or users may face transaction reverts due to hash mismatches. The impact is reduced reliability of signature-based functions and potential disruption of deposit and swap operations.\n",
+            "severity": "Medium",
+            "location": [
+                "PeripherySigningLib.sol::SwapAndDepositData#12-13",
+                "PeripherySigningLib.sol#6"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "`deposit` Will Not Work for Non-EVM Target Chains",
+            "description": "The `deposit` function in `SpokePoolPeriphery` accepts `recipient` and `exclusiveRelayer` as `address` types and casts them to `bytes32`, which pads the address with zeros. This design assumes EVM-compatible addresses (20 bytes), making it incompatible with non-EVM blockchains that use different address formats. The root cause is the use of `address` type for cross-chain identifiers without support for variable-length or alternative-format addresses. As a result, users cannot bridge native assets to non-EVM chains, limiting the protocol's cross-chain interoperability. The impact is a functional limitation that prevents the protocol from supporting a broader range of blockchains, reducing its utility in a multi-chain ecosystem.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePoolPeriphery.sol::deposit#189",
+                "SpokePoolPeriphery.sol#209-215"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Integer Overflow in `_swapAndBridge`",
+            "description": "In the `_swapAndBridge` function, the adjusted output amount is calculated as `depositData.outputAmount * returnAmount / minExpectedInputTokenAmount`. The multiplication occurs first, which can result in an intermediate integer overflow if the product exceeds 2^256-1, causing the transaction to revert without a descriptive error message. The root cause is the lack of overflow-safe arithmetic in the calculation. An attacker could exploit this by crafting a swap with large output values that trigger the overflow, leading to a failed transaction that appears as a generic revert to the user. The impact is a poor user experience and potential loss of gas fees due to undiagnosable transaction failures, even when the final result would have been within valid bounds.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePoolPeriphery.sol::_swapAndBridge#575",
+                "SpokePoolPeriphery.sol#604-606"
+            ],
+            "files": [
+                "contracts/contracts/SpokePoolPeriphery.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Inflexible Fee Recipient Field Blocks Open Relaying",
+            "description": "The `DepositData` and `SwapAndDepositData` structs require a hard-coded fee recipient address, which must be honored by the contract upon successful deposit. This design prevents dynamic relayer selection or fallback mechanisms, as the fee is always sent to the specified address. The root cause is the lack of a default or dynamic payee option. This inflexibility discourages open relayer competition and reduces system resilience if the designated relayer is unavailable or underperforming. The impact is reduced decentralization and reliability of the relayer network, potentially leading to failed or delayed deposits if the chosen relayer is not operational.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePoolPeripheryInterface.sol::DepositData#72",
+                "SpokePoolPeripheryInterface.sol::SwapAndDepositData#72"
+            ],
+            "files": [
+                "contracts/contracts/interfaces/SpokePoolPeripheryInterface.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The codebase contains several instances of unused code elements, such as an unused error definition and an unused import statement. These elements do not serve any functional purpose in the current implementation. The presence of unused code increases code complexity and reduces readability, making audits and future maintenance more difficult. There is no direct exploitation path, but it can lead to confusion or accidental reintroduction of deprecated logic. The impact is limited to maintainability and code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "SpokePoolPeriphery.sol::InvalidSignatureLength#165",
+                "SpokePoolPeripheryInterface.sol#6"
+            ],
+            "files": [
+                "contracts/contracts/SpokePoolPeriphery.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Documentation",
+            "description": "Multiple instances of misleading or outdated documentation were found in the codebase. For example, certain functions are documented to fail under specific conditions (e.g., missing permit support), but the actual implementation uses try/catch blocks to silently handle such failures. Additionally, some comments reference non-existent or incorrect function names, and others contain outdated explanations about immutability. This discrepancy between documentation and implementation can mislead developers and auditors, potentially leading to incorrect assumptions about security behavior. The root cause is lack of synchronization between code changes and documentation updates. While there is no direct financial impact, the risk of incorrect integration or misinterpretation is elevated. The impact is primarily on code clarity and developer trust.\n",
+            "severity": "Informational",
+            "location": [
+                "SpokePoolPeriphery.sol::swapAndBridgeWithPermit#267",
+                "SpokePoolPeriphery.sol::depositWithPermit#375",
+                "SpokePoolPeripheryInterface.sol#154",
+                "SpokePoolPeriphery.sol#325",
+                "SpokePoolPeriphery.sol#140",
+                "SpokePoolPeripheryInterface.sol#16",
+                "SpokePoolPeriphery.sol#136-L137"
+            ],
+            "files": [
+                "contracts/contracts/SpokePoolPeriphery.sol"
+            ]
+        }
+    ]
+}

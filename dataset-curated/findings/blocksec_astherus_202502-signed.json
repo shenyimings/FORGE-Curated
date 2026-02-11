@@ -1,0 +1,254 @@
+{
+    "path": "dataset-curated/reports/BlockSec/blocksec_astherus_202502-signed.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/astherus-contract/ass-bnb-earn-contract",
+            "https://github.com/astherus-contract/astherus-earn-contract/blob/audit/contracts/oft/asBTC.sol",
+            "https://github.com/astherus-contract/ass-cake-earn-contract"
+        ],
+        "commit_id": [
+            "61fc9f5610914cf94dddc3ab83e21ca22d388e92",
+            "b3bd39d38dac0e1671514c8e600dfee7d0fdf148",
+            "5eb634c4ca7e1597e943c8c46e91683d76ac3ba9"
+        ],
+        "address": [
+            "0xdB57a53C428a9faFcbFefFB6dd80d0f427543695",
+            "0x917AF46B3C3c6e1Bb7286B9F59637Fb7C65851Fb"
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-10",
+        "project_path": {
+            "blocksec_astherus_202502-signed.pdf-source": "dataset-curated/contracts/blocksec_astherus_202502-signed.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Lack of invoking function reDelegateTokens() after mpcWallet update",
+            "description": "The YieldProxy contract delegates minted clisBNB tokens to an mpcWallet to earn rewards. However, when the MANAGER role updates the mpcWallet via setMPCWallet(), it does not automatically invoke reDelegateTokens(). The SlisBNBProvider only allows delegation to one target at a time, so failure to redelegate after the update causes the delegation to remain with the old mpcWallet. This results in a denial of service where users cannot mint asBNB. The root cause is the separation of wallet update and redelegation into two independent functions without an automated linkage. An attacker or malicious actor with the MANAGER role could exploit this by updating the wallet and not triggering redelegation, disrupting service. The impact is a temporary DoS affecting user deposits and minting functionality.\n",
+            "severity": "Low",
+            "location": [
+                "YieldProxy.sol::setMPCWallet#338",
+                "YieldProxy.sol::reDelegateTokens#304"
+            ],
+            "files": [
+                "61fc9f5610914cf94dddc3ab83e21ca22d388e92/ass-bnb-earn-contract/src/YieldProxy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Lack of refunding mechanism for excessive cross-chain fees",
+            "description": "The mintAsBnbToChain() function in AsBnbMinter.sol accepts a msg.value for cross-chain fees but only requires that it is greater than or equal to the required fee. If a user sends more than the required amount, the excess is not refunded. This is due to the lack of a refund mechanism after the fee validation. The root cause is improper handling of excess Ether sent by users. An attacker cannot directly exploit this for gain, but users are at risk of losing excess funds due to honest overpayment or front-running. The impact is financial loss for users who overpay fees, reducing trust and usability of the system.\n",
+            "severity": "Low",
+            "location": [
+                "AsBnbMinter.sol::mintAsBnbToChain#243"
+            ],
+            "files": [
+                "61fc9f5610914cf94dddc3ab83e21ca22d388e92/ass-bnb-earn-contract/src/AsBnbMinter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Potential reward loss due to COMPOUNDER role change",
+            "description": "In the ass-cake-earn protocol, the RewardDistributionScheduler contract holds the COMPOUNDER role and is responsible for compounding CAKE rewards. If the role is changed before executing pending reward schedules, any unprocessed rewards will remain locked in the contract because only the COMPOUNDER can call compoundRewards(). The root cause is the lack of a pre-role-change check to ensure all rewards are processed. An attacker with role management privileges could maliciously change the role without settling pending rewards, leading to permanent loss of CAKE tokens. The impact is financial loss of undistributed rewards, affecting protocol incentives and user returns.\n",
+            "severity": "Low",
+            "location": [
+                "RewardDistributionScheduler.sol::executeRewardSchedules#136"
+            ],
+            "files": [
+                "5eb634c4ca7e1597e943c8c46e91683d76ac3ba9/ass-cake-earn-contract/src/RewardDistributionScheduler.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Precision loss in reward distribution results in permanently locked dust tokens",
+            "description": "The RewardDistributionScheduler contract uses integer division to distribute rewards across epochs, which results in leftover token amounts (dust) due to truncation. The contract does not have a mechanism to handle or withdraw this dust, so it remains permanently locked. The root cause is the use of imprecise arithmetic without a remainder distribution strategy. An attacker cannot directly exploit this, but repeated operations accumulate locked funds over time. The impact is gradual loss of reward funds, reducing the efficiency and fairness of the reward system.\n",
+            "severity": "Low",
+            "location": [
+                "RewardDistributionScheduler.sol::addRewardsSchedule"
+            ],
+            "files": [
+                "5eb634c4ca7e1597e943c8c46e91683d76ac3ba9/ass-cake-earn-contract/src/RewardDistributionScheduler.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of non-zero check for key parameters",
+            "description": "The initialize() function in AsBnbOFT.sol grants roles to addresses without validating that they are non-zero. This could allow critical roles to be assigned to the zero address, rendering the contract unusable or insecure. The root cause is missing input validation for critical parameters during initialization. An attacker could exploit this if they influence deployment parameters, leading to loss of control. The impact is potential permanent lockout of administrative functions or misrouting of privileges.\n",
+            "severity": "Medium",
+            "location": [
+                "AsBnbOFT.sol::initialize"
+            ],
+            "files": [
+                "61fc9f5610914cf94dddc3ab83e21ca22d388e92/ass-bnb-earn-contract/src/oft/AsBnbOFT.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lack of range check in function updateMaxRewardPercent()",
+            "description": "The updateMaxRewardPercent() function in asUSDFEarn.sol does not validate that the newValue is within the acceptable range (0 to 1e18). If set to 0, rewards are disabled; if set above 1e18, it could allow excessive reward distribution beyond total supply. The root cause is missing bounds checking on a critical parameter. An attacker with ADMIN_ROLE could set an invalid value to disrupt reward distribution. The impact includes incorrect reward calculations, potential inflation, or freezing of reward mechanisms.\n",
+            "severity": "High",
+            "location": [
+                "asUSDFEarn.sol::updateMaxRewardPercent#106"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Inconsistent validation of revenueSharingPools variable",
+            "description": "The initialize() function in UniversalProxy.sol requires the revenueSharingPools array to be non-empty, but the setRevenuePoolIds() function allows it to be updated to an empty array. This inconsistency can lead to unexpected behavior or bypass of intended validation. The root cause is mismatched validation logic between initialization and update functions. An attacker with MANAGER role could clear the array, potentially disrupting revenue sharing. The impact is functional inconsistency and possible loss of revenue distribution integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "UniversalProxy.sol::initialize",
+                "UniversalProxy.sol::setRevenuePoolIds"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Add non-zero checks in add1InchRouterWhitelist() and addSwapSrcTokenWhitelist() functions",
+            "description": "The add1InchRouterWhitelist() and addSwapSrcTokenWhitelist() functions in the Buyback contract do not check if the provided addresses are non-zero. This allows the zero address to be added to the whitelist, which could lead to unintended behavior or failed transactions. The root cause is missing input validation for critical parameters. An attacker could exploit this by adding invalid addresses, potentially disrupting swap operations. The impact is reduced reliability and potential failure of whitelisted operations.\n",
+            "severity": "Low",
+            "location": [
+                "Buyback.sol::add1InchRouterWhitelist",
+                "Buyback.sol::addSwapSrcTokenWhitelist#243"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant event definitions in IWithdrawVault contract",
+            "description": "The IWithdrawVault contract defines several events that are never emitted, making them redundant. While this does not pose a direct security risk, it increases contract size and reduces code clarity. The root cause is poor code hygiene and lack of cleanup. This cannot be exploited by an attacker but reflects suboptimal development practices. The impact is increased gas costs and reduced maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "IWithdrawVault.sol"
+            ],
+            "files": [
+                "audit/astherus-earn-contract/contracts/interface/IWithdrawVault.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-705"
+                ],
+                "3": [
+                    "CWE-455"
+                ]
+            },
+            "title": "Grant the BOT role in function initialize() of Buyback contract",
+            "description": "The Buyback contract uses the onlyRole(BOT) modifier in the buyback() function, but the BOT role is not granted during initialization. This requires manual post-deployment setup, increasing operational complexity and risk of misconfiguration. The root cause is incomplete initialization logic. An attacker cannot directly exploit this, but failure to grant the role could halt critical functionality. The impact is operational fragility and potential service disruption.\n",
+            "severity": "Medium",
+            "location": [
+                "Buyback.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect comment in function _smartMint()",
+            "description": "The _smartMint() function in the Minter contract contains a comment stating \u201cswap to asCAKE by pancakeSwap\u201d, which is inaccurate as the function does not perform a swap but mints tokens. The root cause is outdated or incorrect documentation. This does not introduce a security vulnerability but can mislead developers and auditors. The impact is confusion during maintenance or auditing, potentially leading to logic errors.\n",
+            "severity": "Informational",
+            "location": [
+                "Minter.sol::_smartMint"
+            ],
+            "files": [
+                "5eb634c4ca7e1597e943c8c46e91683d76ac3ba9/ass-cake-earn-contract/src/Minter.sol"
+            ]
+        }
+    ]
+}

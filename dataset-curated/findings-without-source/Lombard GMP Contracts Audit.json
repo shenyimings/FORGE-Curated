@@ -1,0 +1,120 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Lombard GMP Contracts Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/lombard-finance/smart-contracts"
+        ],
+        "commit_id": [
+            "9e5c6b10e2fb8d06aed0dfa4fe6a34ca73b4721d"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-23",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Missing Lower Bound on User-Specified Fees in Minting",
+            "description": "The CLAIMER_ROLE can mint NativeLBTC or StakedLBTC by calling mintV1WithFee or batchMintV1WithFee, which accept a user-specified fee in a signed payload. The actual fee applied is the minimum of the user-provided fee and the maximumFee set by the owner. Although the user fee is required to be non-zero, it can be set to an arbitrarily small value (e.g., 1 wei), which undermines the fee mechanism's purpose of preventing denial-of-service (DoS) attacks. The lack of a minimum fee threshold allows attackers to submit mint requests with negligible fees, potentially overwhelming the system with low-cost operations. This renders the fee mechanism ineffective as a DoS deterrent, especially since the claimer may be disincentivized to process such low-fee transactions, leading to service degradation.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLBTC.sol::mintV1WithFee#289-296",
+                "NativeLBTC.sol::batchMintV1WithFee#305-330",
+                "NativeLBTC.sol::#426",
+                "Actions.sol::#382-384"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "AssetRouter setRoute function doesn't use fromChainId parameter",
+            "description": "The setRoute function in AssetRouter uses fromToken and toChainId to generate a route key, but the fromChainId parameter is not used in the key derivation. This creates a potential storage collision if the same token address exists on multiple chains, as CREATE2 makes identical addresses across EVM chains common. If two routes are set with the same fromToken and toChainId but different fromChainId values, the second call will overwrite the first, causing the router to malfunction. This could lead to incorrect routing behavior or loss of route configuration. The issue stems from either an unnecessary parameter or an incomplete key construction, both of which compromise the integrity of the routing logic.\n",
+            "severity": "Medium",
+            "location": [
+                "AssetRouter.sol::setRoute#115"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Insufficient Input Validation When Updating the Ratio",
+            "description": "The StakedLBTCOracle's publishNewRatio function lacks proper input validation, leading to several risks. First, upon initialization, prevRatio is set to zero, causing ratio() to return zero until switchTime is reached, which can trigger division-by-zero errors in functions like getRate(). Second, the function does not validate that switchTime is in the future, allowing past timestamps to be set. Third, multiple payloads with the same switchTime but different ratios can be submitted, creating race conditions and fluctuating ratio values. Finally, prevRatio is not reliably updated, potentially causing outdated ratios to persist. These issues can result in incorrect exchange rate calculations, system instability, and inconsistent state across dependent contracts.\n",
+            "severity": "Medium",
+            "location": [
+                "StakedLBTCOracle.sol::publishNewRatio#109-114",
+                "StakedLBTCOracle.sol::_publishNewRatio#129-145",
+                "StakedLBTCOracle.sol#81",
+                "StakedLBTCOracle.sol#149-151",
+                "StakedLBTCOracle.sol#157-163",
+                "StakedLBTCOracle.sol#125-127"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Incorrect Selector Value",
+            "description": "In the Assets library, the REDEEM_FROM_NATIVE_TOKEN_SELECTOR is computed using keccak256(\"redeemForBTC(bytes32,bytes,uint64)\"), but the actual amount parameter in encodeRedeemNativeRequest is of type uint256, not uint64. This mismatch causes incorrect selector computation and payload encoding, which can lead to failed or misrouted external calls. The root cause is a type inconsistency in the function signature used for selector generation. If a contract relies on this selector to decode or validate incoming data, it may fail to recognize valid calls or incorrectly interpret the payload, resulting in functional disruption or silent failures in redemption flows.\n",
+            "severity": "Low",
+            "location": [
+                "Assets.sol::REDEEM_FROM_NATIVE_TOKEN_SELECTOR#40-41",
+                "Assets.sol::encodeRedeemNativeRequest#118"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing check that Redemption Fee is Less than Amount",
+            "description": "In AssetRouter::calcUnstakeRequestAmount, the redemption fee is subtracted from the amount without first verifying that the fee is less than the amount. While Solidity's arithmetic safety will revert on underflow, this function is a view function intended to provide users with a preview of post-fee amounts. Reverting in a view call due to arithmetic underflow provides a poor user experience and lacks clarity. The absence of an explicit validation check means users receive a generic revert instead of a meaningful error message. This reduces usability and transparency, as users cannot distinguish between different failure modes when estimating redemption proceeds.\n",
+            "severity": "Low",
+            "location": [
+                "AssetRouter.sol::calcUnstakeRequestAmount#394-418",
+                "AssetRouter.sol#405"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Incorrect Enforcement of Total Gas Limit in batchStakeAndBake",
+            "description": "The setGasLimit function's comment states that gasLimit represents the total maximum gas for a batchStakeAndBake operation, but in practice, the limit is applied individually to each internal call within the batch, not cumulatively. This discrepancy between documentation and implementation can mislead developers and operators about the actual gas constraints. If the limit is intended to cap total batch gas, it is currently ineffective. If per-call limiting is intended, the comment is misleading and the standalone stakeAndBake function should also enforce the same limit. This inconsistency increases the risk of unexpected gas behavior, potentially leading to failed transactions or inefficient execution.\n",
+            "severity": "Low",
+            "location": [
+                "StakeAndBake.sol::setGasLimit#130",
+                "StakeAndBake.sol::batchStakeAndBake#157-180",
+                "StakeAndBake.sol#169",
+                "StakeAndBake.sol::stakeAndBake#198-209"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Insufficient Error Handling",
+            "description": "The batchStakeAndBake function uses try/catch to isolate failures in individual stakeAndBakeInternal calls, but only catches errors from revert or require statements. It does not handle Panic conditions or custom errors (e.g., from ERC20PermitUpgradeable signature failures), which can still cause the entire batch to revert. This undermines the batch processing resilience, as certain error types bypass the error isolation mechanism. The root cause is an incomplete error handling pattern. As a result, the function may fail unexpectedly when encountering low-level or custom exceptions, reducing reliability and availability of the batch operation.\n",
+            "severity": "Low",
+            "location": [
+                "StakeAndBake.sol::batchStakeAndBake#169-175"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Potential Conflict with isNative Routes When Changing the Native Token in AssetRouter",
+            "description": "When the nativeToken in AssetRouter is updated via changeNativeToken, existing routes involving the old nativeToken are not automatically removed. This creates a temporary state where two different native tokens are considered valid for the local chain, violating the intended uniqueness constraint. Although the old route must be manually removed, the window between token update and route cleanup introduces risk of inconsistent routing behavior. The issue arises from incomplete state management during configuration changes. This could lead to incorrect token handling or routing decisions until manual intervention occurs, especially in emergency scenarios where oversight is more likely.\n",
+            "severity": "Low",
+            "location": [
+                "AssetRouter.sol::setRoute#115-140",
+                "AssetRouter.sol::changeNativeToken#300-304"
+            ],
+            "files": []
+        }
+    ]
+}

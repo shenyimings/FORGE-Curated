@@ -1,0 +1,371 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/OpenZeppelin Uniswap Hooks v1.1.0 RC 1 Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/OpenZeppelin/uniswap-hooks"
+        ],
+        "commit_id": [
+            "087974776fb7285ec844ca090eab860bd8430a11"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-25",
+        "project_path": {
+            "uniswap-hooks": "dataset-curated/contracts/OpenZeppelin Uniswap Hooks v1.1.0 RC 1 Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "JIT Liquidity Penalty Can Be Bypassed",
+            "description": "The `LiquidityPenaltyHook` contract is designed to penalize Just-In-Time (JIT) liquidity provision by donating a portion of earned fees back to the pool when liquidity is added and removed within a short timeframe defined by `blockNumberOffset`. This mechanism aims to prevent attackers from extracting fees without bearing market risk by rapidly adding and removing liquidity around large swaps.\n\nThe root cause of the vulnerability lies in the fact that the penalty is calculated based on `feeDelta` during the `_afterRemoveLiquidity` hook, which only considers uncollected fees at the time of removal. However, Uniswap V4 automatically collects all accrued fees when `increaseLiquidity` is called on an existing position, resetting `feesOwed` to zero. This behavior is not accounted for in the penalty logic.\n\nAn attacker can exploit this by first adding a liquidity position, waiting for a target swap to generate fees, then calling `increaseLiquidity` with a minimal amount (e.g., 1 wei) to collect all accrued fees. This action triggers the `_afterAddLiquidity` hook, which only records the block number but does not apply penalties. Since the fees are now collected and `feesOwed` is reset to zero, when the attacker removes the liquidity, the `feeDelta` is zero, resulting in no penalty being applied.\n\nThe impact is critical: the entire economic deterrent of the `LiquidityPenaltyHook` is neutralized. Attackers can perform JIT liquidity attacks with zero cost, extracting value from honest traders and undermining the fairness and security of the pool. This completely defeats the purpose of the contract.\n",
+            "severity": "Critical",
+            "location": [
+                "LiquidityPenaltyHook.sol::afterRemoveLiquidity#105",
+                "LiquidityPenaltyHook.sol::afterAddLiquidity#92",
+                "LiquidityPenaltyHook.sol#61"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ]
+            },
+            "title": "Asymmetric First In-Block Swap Initialization Leads to Stale State",
+            "description": "The `AntiSandwichHook` contract aims to prevent sandwich attacks by enforcing that swaps adhere to prices from the beginning of the block. It uses a checkpoint stored in `_lastCheckpoints` to simulate expected outputs. However, the initialization of the full state (including `ticks`, `liquidity`, and `slot0`) is asymmetrically handled between `_beforeSwap` and `_afterSwap`.\n\nThe vulnerability arises because only `slot0` is updated in `_beforeSwap` at the start of a new block, while the full `_lastCheckpoints[poolId].state` (including `ticks`) is populated in `_afterSwap` after the first swap. The loop that populates `ticks` runs only if the tick after the first swap (`tickAfter`) is strictly greater than the initial tick. If the first swap does not advance the tick (or moves it backward), the loop does not execute, leaving `state.ticks` uninitialized or stale.\n\nDespite this, `_lastCheckpoint.blockNumber` is updated to the current block, preventing any subsequent `_afterSwap` calls in the same block from reinitializing the state. As a result, subsequent swaps in the block use stale or incorrect tick data when calculating `targetOutput` in `_getTargetOutput`, potentially allowing sandwich attacks to succeed.\n\nThe impact is critical: the core anti-sandwich protection can be completely bypassed in blocks where the first swap does not advance the tick. This allows attackers to execute profitable sandwich attacks under common market conditions, negating the security guarantee of the hook.\n",
+            "severity": "Critical",
+            "location": [
+                "AntiSandwichHook.sol::_beforeSwap#88",
+                "AntiSandwichHook.sol::_afterSwap#106",
+                "AntiSandwichHook.sol#131",
+                "AntiSandwichHook.sol#119"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Integer Underflow in `_getTargetOutput` Due to Improper Type Casting",
+            "description": "In the `_getTargetOutput` function of `AntiSandwichHook`, a negative `int128` value is directly cast to `uint128` without sign correction, causing an integer underflow. This results in `targetOutput` being set to a very large value (e.g., 2^128 - 1). The root cause is improper type casting when handling the `target` value derived from `targetDelta.amount0()` or `amount1()`, depending on swap direction. An attacker can exploit this by executing a final swap in a block with a positive `amountSpecified` in a `zeroForOne` direction, causing the unspecified input (negative) to be misinterpreted as an extremely high output. This breaks the anti-sandwich mechanism, allowing the attacker to extract profits without penalty. The impact is a complete bypass of the anti-sandwich protection, enabling profitable sandwich attacks.\n",
+            "severity": "Critical",
+            "location": [
+                "AntiSandwichHook.sol::_getTargetOutput#196"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Limit Orders Can Be Incorrectly Filled",
+            "description": "The `LimitOrderHook` contract marks limit orders as filled when the tick crosses into the order's tick range. It uses `_getCrossedTicks` to determine which ticks were crossed during a swap and processes any orders within that range. However, the logic does not require that both boundaries of a tick range be crossed to consider an order fully filled.\n\nThe root cause is that the `_afterSwap` function processes any tick within the crossed range as a full fill, even if the price only partially traverses the order's range. This is especially problematic when the tick moves into a range and then back out, causing the same tick boundary to be crossed multiple times in opposite directions.\n\nAn attacker can exploit this by triggering a sequence where a swap moves the tick into a limit order range (e.g., from -200 to 5, crossing tick 0), and a subsequent swap moves it back (e.g., from 5 to -5, crossing tick 0 again). The `_getCrossedTicks` function returns a range that includes tick 0, causing the loop in `_afterSwap` to mark the order at [0,10] as filled, even though the upper boundary (tick 10) was never reached.\n\nThe impact is high: users' limit orders can be prematurely and incorrectly marked as filled, resulting in unintended execution at potentially unfavorable prices. This undermines trust in the limit order system and can lead to financial loss for users who expect their orders to execute only when fully crossed.\n",
+            "severity": "High",
+            "location": [
+                "LimitOrderHook.sol::_afterSwap#209",
+                "LimitOrderHook.sol::_getCrossedTicks#613",
+                "LimitOrderHook.sol#563"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LimitOrderHook.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Accrued Limit Order Fees Can Be Stolen",
+            "description": "The `LimitOrderHook` contract distributes all accrued fees from a limit order proportionally among liquidity providers at the time the order is filled, regardless of when they joined. This creates an incentive for attackers to join a limit order position just before it is filled and capture a disproportionate share of fees that were accrued over a long period by earlier providers.\n\nThe cause is the lack of time-based or snapshot-based fee accounting. Fees are not tracked per-user or per-timeframe; instead, they are distributed based solely on current liquidity share at fill time. This allows a malicious actor to provide a large amount of liquidity (e.g., 90%) immediately before a fill event and claim 90% of all accrued fees, even if they were only active for a single block.\n\nThe exploitation involves three steps: (1) wait for a limit order to accumulate significant fees over time, (2) add a large amount of liquidity just before a swap crosses the tick range, and (3) immediately withdraw after the fill to capture the majority of fees. This can be done in a single block.\n\nThe impact is high: long-term liquidity providers are disincentivized as their rewards can be stolen by JIT attackers. This distorts the economic model, reduces trust in the system, and could lead to reduced liquidity provision overall.\n",
+            "severity": "High",
+            "location": [
+                "LimitOrderHook.sol::withdraw#362",
+                "LimitOrderHook.sol::fillOrder#569",
+                "LimitOrderHook.sol#305"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LimitOrderHook.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Liquidity Penalty Can Be Circumvented Using Secondary Accounts",
+            "description": "The `LiquidityPenaltyHook` donates fees to in-range liquidity providers when a position is removed within the penalty window. However, this donation mechanism can be exploited by using two coordinated accounts to redirect the donated fees to a secondary account that was not involved in the original fee generation.\n\nThe vulnerability stems from the fact that the hook does not verify the continuity or intent of liquidity provision. An attacker can use Account A to add liquidity, earn fees from a victim's swap, and then remove liquidity (incurring the penalty). Simultaneously, Account B can position itself in an out-of-range tick, and when A moves the price into B's range during removal, B becomes the sole in-range provider and receives the donated fees.\n\nThe attack sequence is: (1) B adds liquidity in an out-of-range tick, (2) A adds liquidity and earns fees, (3) A swaps to move price into B's range, (4) A removes liquidity (fees donated), (5) B removes liquidity and collects donated fees, (6) A swaps back. This allows A and B to coordinate and fully bypass the penalty.\n\nThe impact is high: the penalty mechanism is effectively nullified through coordination. Attackers can extract full fees from JIT liquidity without penalty, undermining the economic security of the pool and enabling repeated exploitation.\n",
+            "severity": "High",
+            "location": [
+                "LiquidityPenaltyHook.sol::afterRemoveLiquidity#121",
+                "LiquidityPenaltyHook.sol#61",
+                "LimitOrderHook.sol::withdraw#342"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Incorrect Unspecified Amount Handling Breaks Anti-Sandwich Logic",
+            "description": "The `AntiSandwichHook` incorrectly assumes that the \"unspecified amount\" in a swap always refers to the output amount the user will receive. However, in Uniswap V4, the unspecified amount can also represent the input amount the user is willing to pay. This flawed assumption breaks the anti-sandwich protection in certain swap directions.\n\nThe root cause is in the `_getTargetOutput` function, which compares the unspecified amount directly to `targetOutput` without distinguishing whether it represents input or output. When the unspecified amount is an input (e.g., in a `zeroForOne = false` swap), the logic incorrectly caps `targetOutput` if it exceeds the unspecified amount, allowing the swap to proceed even when it should be restricted.\n\nAn attacker can exploit this by executing a sandwich attack where the closing leg uses an unspecified input amount. For example: (1) attacker swaps token0 to token1 (specifying input), (2) victim swaps, (3) attacker swaps token1 back to token0, specifying only how much token0 they want to receive (unspecified amount is input of token1). The hook calculates `targetOutput` based on initial state (e.g., 12,000 token0), but since unspecified amount is 10,000 token1, and `targetOutput > unspecified amount`, it caps `targetOutput` to 10,000, allowing the profitable swap.\n\nThe impact is high: attackers can successfully execute sandwich attacks that bypass the hook's protection, extracting value from victims. This undermines the core security guarantee of the contract and exposes users to front-running.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::_getTargetOutput#167",
+                "AntiSandwichHook.sol#198"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Handling of `unspecifiedAmount` Leads to Overcharging",
+            "description": "The `AntiSandwichHook` contract incorrectly assumes that `unspecifiedAmount` in a swap always represents the output amount a user will receive. However, `unspecifiedAmount` can also represent the input amount the user must pay. When it represents input and exceeds `_targetOutput`, the code calculates the difference as a fee, mints additional tokens, and overcharges the user. The root cause is the lack of distinction between input and output cases in the fee calculation logic. For example, if a user intends to pay 15,000 token\u2081 to receive 10,000 token\u2080, but `_targetOutput` is capped at 9,000 due to a prior swap, the system calculates a fee of 6,000 and charges 21,000 instead of 15,000. An attacker could manipulate block state to trigger this overcharge condition. The impact is that users may be overcharged significantly, leading to loss of funds and incorrect token minting, undermining trust in the swap mechanism.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::_afterSwap#167-198",
+                "AntiSandwichHook.sol::_getTargetOutput#196"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Missing Liquidity Total Update in `withdraw`",
+            "description": "In the `LimitOrderHook` contract, the `withdraw` function fails to update `orderInfo.liquidityTotal` when a user withdraws liquidity from a filled order. While the individual user's liquidity is deleted, the total counter remains unchanged. The root cause is the omission of a subtraction operation for `liquidityTotal`. This leads to an inflated denominator in proportional token distribution calculations (`FullMath.mulDiv(orderInfo.currency0Total, liquidity, liquidityTotal)`). As a result, subsequent withdrawers receive less than their fair share. The impact grows with each withdrawal, potentially leaving final users with significantly reduced payouts and causing some tokens to remain locked in the contract due to imprecise division. This results in loss of user funds and incorrect accounting.\n",
+            "severity": "High",
+            "location": [
+                "LimitOrderHook.sol::withdraw#342",
+                "LimitOrderHook.sol::withdraw#359",
+                "LimitOrderHook.sol::withdraw#362"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LimitOrderHook.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Timing of `removingAllLiquidity` Flag Calculation in `cancelOrder`",
+            "description": "The `cancelOrder` function in `LimitOrderHook` calculates the `removingAllLiquidity` flag after decrementing the user's liquidity from `orderInfo.liquidityTotal`. Because the total is reduced before the comparison, the flag is always `false`, even when the user is the last LP. The root cause is incorrect execution order: the flag should be computed before modifying the total. This affects fee distribution in `_handleCancelCallback`, where fees that should go to the last LP are instead left in the contract. Additionally, the `orderId` in the `orders` mapping is not reset, allowing an attacker to reuse the same order key to refill and steal the stuck fees. The impact includes misallocated fees, potential fund theft, and indefinite locking of assets.\n",
+            "severity": "High",
+            "location": [
+                "LimitOrderHook.sol::cancelOrder#281",
+                "LimitOrderHook.sol::cancelOrder#313",
+                "LimitOrderHook.sol::_handleCancelCallback#466"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LimitOrderHook.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Sandwich Attack Possible via JIT Attack in `AntiSandwichHook`",
+            "description": "The `AntiSandwichHook` contract attempts to prevent sandwich attacks by enforcing that swaps do not execute at prices better than those available at the beginning of the block, using a penalty fee redistributed to liquidity providers (LPs). However, this mechanism can be circumvented through Just-In-Time (JIT) liquidity manipulation. An attacker can initiate a swap to set a favorable price checkpoint, wait for a victim swap, then add concentrated liquidity at the resulting tick before triggering the fee donation. Due to the proportional distribution of the penalty to LPs at the final tick, the attacker receives most of the donated fee back. The root cause is the permissionless and costless nature of liquidity provision within the same block, combined with the redistribution logic that does not account for transient liquidity positions. An attacker can exploit this by timing liquidity additions and removals around victim swaps. The impact is that the anti-sandwich protection is effectively neutralized, allowing profitable sandwich attacks despite the intended penalty mechanism.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::deposit#138",
+                "AntiSandwichHook.sol::_afterSwapHandler#167",
+                "AntiSandwichHook.sol::donate#206"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Block Number Dependency",
+            "description": "The `AntiSandwichHook` and `LiquidityPenaltyHook` contracts rely on `block.number` to enforce time-sensitive logic, such as price anchoring and JIT liquidity penalties. However, on L2 chains like Arbitrum, `block.number` reflects the L1 block number, meaning multiple L2 blocks can share the same `block.number`. This causes the hooks' one-block constraints to persist across several L2 blocks, making them over-constrained. The root cause is the assumption that `block.number` increments per block on all chains, which does not hold on rollups. An attacker could exploit timing windows across L2 blocks, or legitimate users may face unexpected restrictions. The impact is degraded user experience, reduced liquidity efficiency, and potential failure of the intended economic incentives.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol#118",
+                "LiquidityPenaltyHook.sol#115"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol",
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Usage of Returned Balance Delta",
+            "description": "In `_handlePlaceCallback` of `LimitOrderHook`, the contract uses the raw `delta` from `modifyLiquidity` to determine if a limit order is placed out of range. However, `delta` includes both principal and accrued fees. If fees exceed the principal, the sign of `delta` can flip, causing an incorrect revert when converting to a negative value. The root cause is the failure to separate fee and principal components in the delta. An attacker could manipulate fee accumulation in a tick to prevent legitimate order placement. The impact is denial of service for limit order placement in fee-rich positions, reducing usability and reliability of the hook.\n",
+            "severity": "Medium",
+            "location": [
+                "LimitOrderHook.sol::_handlePlaceCallback#425",
+                "LimitOrderHook.sol::_handlePlaceCallback#430",
+                "LimitOrderHook.sol::_handlePlaceCallback#442-458"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LimitOrderHook.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Anti-Sandwich Mechanism Also Breaks Price Reliability at the Start of a Block",
+            "description": "The `AntiSandwichHook` assumes that the price at the start of a block is fair, as it would be in a standard Uniswap pool due to arbitrage. However, the hook's own mechanism prevents arbitrage within the block by redistributing excess gains to LPs, removing the incentive for arbitrageurs to correct manipulated prices. The root cause is a flawed assumption about market efficiency under the hook's influence. An attacker can manipulate the price at the end of a prior block, and since no arbitrage occurs, the manipulated price becomes the anchor for the next block. The impact is that users are forced to trade against an inaccurate, potentially adversarially set price, leading to unfair execution and loss of funds.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol#47",
+                "AntiSandwichHook.sol#118"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Incorrect `slot0` Persistence on `!zeroForOne` Swaps Causes Inconsistent Pricing Logic",
+            "description": "In `_getTargetOutput`, when handling a `!zeroForOne` swap, the contract persistently overwrites `_lastCheckpoint.state.slot0` with a stale value. This modified state is not reset, so subsequent `zeroForOne` swaps use an outdated price instead of the current pool state. The root cause is improper state management where a temporary price lock affects future unrelated swaps. For example, after a `token1 \u2192 token0` swap locks a stale price, the next `token0 \u2192 token1` swap uses that stale price for calculations. The impact is inconsistent and incorrect pricing logic, leading to miscalculated outputs and potential financial loss for users depending on swap direction.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol::_getTargetOutput#176-178"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstrings",
+            "description": "Multiple events and functions across the codebase lack complete documentation. For example, parameters in `HookSwap`, `HookFee`, `Place`, `Cancel`, and `Withdraw` events are not explained. Similarly, function parameters and return values in public APIs are undocumented. The root cause is insufficient use of NatSpec comments. This reduces code readability and increases the risk of misinterpretation by developers and auditors. While not directly exploitable, the impact is reduced maintainability, higher chance of bugs during future development, and difficulty in auditing or integrating the contracts.\n",
+            "severity": "Low",
+            "location": [
+                "IHookEvents.sol::HookSwap#15-22",
+                "IHookEvents.sol::HookFee#27",
+                "IHookEvents.sol::HookModifyLiquidity#32",
+                "IHookEvents.sol::HookBonus#37",
+                "LimitOrderHook.sol::Place#154-161",
+                "LimitOrderHook.sol::Fill#164",
+                "LimitOrderHook.sol::Cancel#167-174",
+                "LimitOrderHook.sol::Withdraw#177"
+            ],
+            "files": [
+                "src/interfaces/IHookEvents.sol",
+                "src/general/LimitOrderHook.sol"
+            ]
+        }
+    ]
+}

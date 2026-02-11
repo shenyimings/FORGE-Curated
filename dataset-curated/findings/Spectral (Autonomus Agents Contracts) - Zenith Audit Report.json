@@ -1,0 +1,178 @@
+{
+    "path": "dataset-curated/reports/Zenith/Spectral (Autonomus Agents Contracts) - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Spectral-Finance/autonomous-agent-contracts"
+        ],
+        "commit_id": [
+            "be2130f1279345e2e829bb0d92e3bc11fba3e8ef"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-17",
+        "project_path": {
+            "autonomous-agent-contracts": "dataset-curated/contracts/Spectral (Autonomus Agents Contracts) - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-348"
+                ]
+            },
+            "title": "Incorrect Token Symbol Check Leads to Bypassing Special Distribution Logic",
+            "description": "The transferTradingRewards function in OctoDistributor.sol checks for the token symbol \"SPECTRA\" using a keccak256 hash comparison to determine whether to apply special distribution logic. However, the actual Spectral token (0x96419929d7949D6A801A6909c145C8EEf6A40431) uses the symbol \"SPEC\", causing the condition to always fail. This results in the fallback to generic distribution logic (20% treasury, 80% creator) instead of the intended special logic (20% treasury, 20% spectra wallet, 60% employees). The root cause is the incorrect assumption about the token symbol rather than using a secure address-based check. An attacker could exploit this by deploying a malicious token with the symbol \"SPECTRA\" to trigger the special distribution rules illegitimately. The impact includes incorrect fund allocation and potential manipulation of the reward distribution mechanism, leading to financial loss or unfair advantages.\n",
+            "severity": "High",
+            "location": [
+                "OctoDistributor.sol::transferTradingRewards"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "The bonus amount of Agent tokens is not calculated correctly",
+            "description": "When transferring Agent tokens to the AgenticCompany contract, a fee-on-transfer mechanism is applied, meaning the actual received amount is less than the requested transfer amount due to a tax. However, the _depositHiringBonuses function in AgenticCompany.sol increases the hiringBonusAgentToken by the full agentTokenAmount without accounting for this tax. This discrepancy leads to an overstatement of available tokens for distribution. Similarly, the transferHiringDistributions function in OctoDistributor.sol assumes the full amount is received, but it does not verify the actual balance change after transfer. The root cause is the lack of post-transfer balance validation when handling fee-on-transfer tokens. An attacker or user could exploit this by triggering distributions where the contract lacks sufficient tokens to fulfill obligations, resulting in failed transactions or shortfalls during bonus payouts. The impact is operational disruption and potential loss of user trust due to failed or incorrect bonus distributions.\n",
+            "severity": "High",
+            "location": [
+                "AgenticCompany.sol::_depositHiringBonuses#553-556",
+                "OctoDistributor.sol::transferHiringDistributions#325"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "The OctoDistributor doesn't work when the agent token is set to address(0)",
+            "description": "The OctoDistributor contract reverts when the agentToken parameter is address(0) due to a require statement in the transferHiringDistributions function. However, the AgenticCompany contract allows agentToken to be address(0) in certain cases, such as during company creation or dissolution, and handles it with conditional logic. This inconsistency causes a compatibility issue where valid states in one contract lead to reverts in another. The root cause is the strict validation in OctoDistributor without considering design compatibility with AgenticCompany's behavior. An attacker cannot directly exploit this, but legitimate operations may fail unexpectedly when interacting with companies that use address(0) as a valid agent token placeholder. The impact is reduced functionality and potential blocking of valid business logic flows, especially during company lifecycle events.\n",
+            "severity": "Medium",
+            "location": [
+                "OctoDistributor.sol::transferHiringDistributions#322",
+                "AgenticCompany.sol::_dissolveCompany#606"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The withdrawAllAgentTokens function works incorrectly in OctoDistributor",
+            "description": "The withdrawAllAgentTokens function removes tokens from the user's list during iteration using _removeAgentToken, which modifies the array by replacing the removed element with the last one and then popping it. When withdrawing a range of tokens starting from a middle index, this shifting causes subsequent indices to become invalid, leading to out-of-bounds errors. For example, removing token C at index 2 shifts D into its place, but the loop continues to index 3, which is now out of bounds. The root cause is modifying the array while iterating over it without adjusting the indices or deferring removal. An attacker cannot directly profit, but users attempting to withdraw multiple tokens in a single call may face transaction failures without clear error messages. The impact is degraded user experience and potential lock-up of funds until corrected via alternative withdrawal methods.\n",
+            "severity": "Medium",
+            "location": [
+                "OctoDistributor.sol::withdrawAllAgentTokens#223",
+                "OctoDistributor.sol::_removeAgentToken#308"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "An additional check is needed in the setParameters function of the OctoDistributor",
+            "description": "The setParameters function allows the owner to update various percentage-based parameters without enforcing their sum constraints. For instance, the trading rewards cuts (treasury, creator, spectra, employees) should collectively adhere to predefined totals (e.g., treasury + creator = 10000 basis points), but no validation ensures this. The root cause is the absence of invariant checks after parameter updates. Although only the owner can call this function, a mistaken configuration could break downstream logic, such as incorrect fund distribution in transferTradingRewards. There is no direct exploitation path, but operational risk exists due to potential misconfiguration. The impact is incorrect token transfers or distribution failures, undermining system reliability and economic model integrity.\n",
+            "severity": "Low",
+            "location": [
+                "OctoDistributor.sol::setParameters#210"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing ANS Node Address Validation Can Lead to Permanent Loss of User Funds",
+            "description": "The OctoDistributor contract uses ANS node resolution to determine recipient addresses during hiring and trading reward distributions but does not validate that the resolved address is non-zero. If a recipient has not set their address in the ANS resolver, funds are credited to address(0), making them permanently inaccessible. This occurs in both transferHiringDistributions and transferTradingRewards functions. The root cause is the lack of input validation on resolved addresses, unlike the AgenticCompany contract which includes a check in _getAnsAddress. An attacker cannot actively exploit this, but users who fail to configure their ANS records properly risk irreversible loss of funds. The impact is permanent loss of user assets, which undermines trust and usability of the system.\n",
+            "severity": "Informational",
+            "location": [
+                "OctoDistributor.sol::transferHiringDistributions#331",
+                "OctoDistributor.sol::transferTradingRewards#262"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "There could be some dust amounts in the transferTradingRewards function",
+            "description": "In the transferTradingRewards function, USDC amounts are distributed based on percentage cuts using integer division, which can leave small remainder amounts (\"dust\") unallocated. These leftovers remain in the contract because the final distribution does not account for the difference between the total received and the sum of distributed amounts. The root cause is the lack of a catch-all transfer to ensure all funds are disbursed. While the amount is typically negligible, repeated operations could accumulate significant dust. There is no direct exploitation risk, but it represents inefficient fund management. The impact is suboptimal capital utilization and potential confusion over missing fractions of tokens, though no user funds are at direct risk.\n",
+            "severity": "Informational",
+            "location": [
+                "OctoDistributor.sol::transferTradingRewards"
+            ],
+            "files": [
+                "autonomous-agent-contracts/contracts/octoDistributor/OctoDistributor.sol"
+            ]
+        }
+    ]
+}

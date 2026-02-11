@@ -1,0 +1,425 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_eco_pr28_pr38_aug2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/eco/permit3",
+            "https://github.com/eco/permit3"
+        ],
+        "commit_id": [
+            "833b84f8",
+            "70649332"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-23",
+        "project_path": {
+            "cantina_eco_pr28_pr38_aug2025.pdf-source": "dataset-curated/contracts/cantina_eco_pr28_pr38_aug2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Signature validation incorrectly handles contract and short signatures",
+            "description": "The _verifySignature() function in the NonceManager contract attempts to support 65-byte, 64-byte (ERC-2098), and ERC-1271 contract signatures but fails due to incorrect logic. First, 64-byte signatures are passed directly to ECDSA.recover(), which only accepts 65-byte signatures, causing valid 64-byte signatures to always fail. Second, when the owner is a contract, the function first attempts EOA-based recovery before checking ERC-1271, meaning contract signatures are never validated if they are 64 or 65 bytes long. This creates a critical flaw where valid signatures from both EOAs (64-byte) and contracts are rejected. The impact is that users relying on these signature schemes are locked out of their functionality, breaking core features of the permit system.\n",
+            "severity": "High",
+            "location": [
+                "NonceManager.sol#L216-L233"
+            ],
+            "files": [
+                "833b84f8/permit3/src/NonceManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Transfer permits bypass lockdown functionality",
+            "description": "The lockdown() function is designed to prevent transfers in case of account or contract compromise, but it is not enforced for transfer permits. This means that even if an account is locked down, an attacker with a valid transfer permit can still execute transfers, completely bypassing the intended security mechanism. The cause is the absence of a call to _validateLockStatus() before executing permit-based transfers. An attacker who obtains a valid signature or permit can exploit this to drain funds despite the lockdown being active. The impact is a significant reduction in the effectiveness of the lockdown feature, potentially allowing theft of assets even after a user has attempted to secure their account.\n",
+            "severity": "High",
+            "location": [
+                "Permit3.sol#L347"
+            ],
+            "files": [
+                "833b84f8/permit3/src/Permit3.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Collection-wide lockdown can be bypassed by specific token approvals",
+            "description": "The lockdown() function in the PermitBase contract is intended as an emergency mechanism to revoke all permissions for a spender on a given token contract by setting a collection-wide lock. However, this lock can be bypassed if the spender has a specific tokenId approval. The cause is the flawed order of checks in the transferFrom() functions in the MultiTokenPermit contract, which check for a specific tokenId approval before verifying whether a collection-wide lock is in place. This allows the transfer to proceed if a specific approval exists, ignoring the lockdown. An attacker who has been granted approval for a specific tokenId can continue to transfer that token even after the token owner has invoked the lockdown() function to revoke all permissions. The impact is that the emergency lockdown mechanism becomes ineffective in scenarios where specific approvals exist, undermining the security guarantee and potentially allowing unauthorized asset transfers despite the lock.\n",
+            "severity": "High",
+            "location": [
+                "MultiTokenPermit.sol::transferFrom#L93-L96",
+                "MultiTokenPermit.sol::transferFrom#L128-L131",
+                "PermitBase.sol::allowances#L140-L165"
+            ],
+            "files": [
+                "833b84f8/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Allowance timestamp can not be decreased",
+            "description": "The allowance timestamp in the Permit3 contract cannot be decreased once set. If a timestamp is mistakenly set to a very high value (e.g., type(uint48).max), it cannot be corrected, effectively freezing the allowance until that distant time. This occurs because there is no validation or mechanism to lower the timestamp, treating it like a monotonic nonce rather than a time-bound parameter. An attacker or user error could set an excessively high timestamp, rendering the allowance unusable for practical purposes. The impact is loss of functionality for legitimate users who cannot update or correct their allowance settings, leading to potential fund lockup or usability issues.\n",
+            "severity": "Medium",
+            "location": [
+                "Permit3.sol#L496-L501"
+            ],
+            "files": [
+                "833b84f8/permit3/src/Permit3.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Transferring with Permit3 contract are not possible for ERC721/ERC1155 with tokenId of uint256.max",
+            "description": "The _getTokenKey() function uses type(uint256).max as a reserved tokenId to indicate a collection-wide approval. This causes a collision when attempting to transfer an actual ERC721 or ERC1155 token with tokenId equal to type(uint256).max. The cause is the function's assumption that type(uint256).max is not a valid tokenId, but ERC721 and ERC1155 standards allow any uint256 value as a tokenId. Projects like Wrapped Number Board use this value, making it a valid and existing tokenId. Any attempt to transfer a token with tokenId == type(uint256).max will be interpreted as a request for a collection-wide approval, leading to a failed transfer. The impact is that users holding a token with tokenId equal to type(uint256).max are unable to transfer it using the Permit3 contract, resulting in a loss of functionality and potential lock-up of assets.\n",
+            "severity": "Medium",
+            "location": [
+                "MultiTokenPermit.sol::_getTokenKey#L23-L31",
+                "MultiTokenPermit.sol::transferFrom#L104-L108",
+                "MultiTokenPermit.sol::transferFrom#L140-L143"
+            ],
+            "files": [
+                "833b84f8/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Anyone can issue approvals for ERC7702 delegatee",
+            "description": "The ERC7702TokenApprover module allows anyone to call the approve() function on behalf of a delegatee after they have set code via EIP-7702. This is because the function does not restrict who can invoke it once delegation is active. As a result, any third party can trigger approvals for arbitrary tokens on behalf of the delegatee, potentially granting the Permit3 contract access to tokens the user did not intend to approve. The root cause is the lack of access control in the approve() function, combined with the persistent nature of EIP-7702 delegation. The impact is unauthorized token approvals, increasing the risk of asset loss if the Permit3 contract is compromised or misused.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC7702TokenApprover.sol#L41-L56"
+            ],
+            "files": [
+                "70649332/permit3/src/modules/ERC7702TokenApprover.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "No way to reset an existing allowance",
+            "description": "The approve() function in PermitBase.sol disallows setting an allowance to zero, preventing users from revoking existing approvals through the standard method. This deviates from the common ERC20 pattern where setting allowance to zero is the first step before increasing it, used to prevent front-running. The cause is a validation that explicitly blocks zero amounts. This limitation reduces compatibility with standard wallet and dApp behaviors, potentially leading to confusion or failed transactions. The impact is reduced usability and increased risk of allowance-related attacks, as users cannot properly reset their allowances.\n",
+            "severity": "Low",
+            "location": [
+                "PermitBase.sol#L70-L71"
+            ],
+            "files": [
+                "70649332/permit3/src/PermitBase.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant zero address check for owner",
+            "description": "Several functions in the Permit3 contract (e.g., permit(), permitTransferFrom()) include explicit checks to ensure the owner is not the zero address. However, these checks are redundant because the _verifySignature() function, which is called later, relies on ECDSA.recover(), which inherently rejects signatures from address(0) and reverts. Therefore, the prior checks do not add security but only consume additional gas. The root cause is duplicated validation logic. The impact is unnecessary gas costs for all users calling these functions, reducing efficiency without any security benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "Permit3.sol#L109-L111",
+                "Permit3.sol#L160-L162",
+                "Permit3.sol#L218-L220",
+                "Permit3.sol#L280-L282"
+            ],
+            "files": [
+                "70649332/permit3/src/Permit3.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Unnecessary checks on address parameters",
+            "description": "The transferFrom() function in PermitBase.sol performs zero-address checks on 'from', 'to', and 'token' parameters, but these are redundant because the internal _transferFrom() function already includes the same validations. This results in duplicated require statements that increase deployment and runtime gas costs without adding security. The cause is lack of coordination between public interface and internal validation layers. The impact is avoidable gas overhead on every call to transferFrom(), reducing cost-efficiency for users.\n",
+            "severity": "Informational",
+            "location": [
+                "PermitBase.sol#L92-L100"
+            ],
+            "files": [
+                "70649332/permit3/src/PermitBase.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant check for empty salts array",
+            "description": "The invalidateNonces() function in NonceManager.sol checks if the salts array is empty before proceeding, but this is unnecessary because the internal _processNonceInvalidation() function will revert if the array is empty. This redundant check consumes gas without preventing any invalid state. The root cause is defensive programming without considering downstream validations. The impact is wasted gas on every call, especially in edge cases where the array might be empty.\n",
+            "severity": "Informational",
+            "location": [
+                "NonceManager.sol#L103-L105"
+            ],
+            "files": [
+                "70649332/permit3/src/NonceManager.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "NONCE_ constants can be bools",
+            "description": "The constants NONCE_NOT_USED (0) and NONCE_USED (1) in NonceManager.sol are used to mark nonce states in a mapping. These can be replaced with boolean values (false and true) to save gas, as boolean storage is more efficient and direct boolean checks eliminate comparison operations. For example, `if (usedNonces[owner][salt])` is cheaper than `if (usedNonces[owner][salt] == NONCE_USED)`. The cause is suboptimal data type selection. The impact is higher storage and computation costs than necessary, which can be reduced through simple refactoring.\n",
+            "severity": "Informational",
+            "location": [
+                "NonceManager.sol#L25-L28"
+            ],
+            "files": [
+                "70649332/permit3/src/NonceManager.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ]
+            },
+            "title": "Lockdown issues",
+            "description": "In the event of a token contract compromise, there is no mechanism to lock down all allowances for a specific token across all users. The current lockdown feature only applies per-account and does not prevent existing approvals to the Permit3 contract from being exploited. Users must manually revoke allowances on each token, which is impractical during an emergency. The root cause is the lack of a global or token-wide lockdown mechanism. The impact is increased risk during a token-level security incident, as users cannot quickly and collectively revoke permissions, potentially leading to widespread asset loss.\n",
+            "severity": "Informational",
+            "location": [
+                "PermitBase.sol#L159-L183"
+            ],
+            "files": [
+                "70649332/permit3/src/PermitBase.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Overloaded function names are confusing",
+            "description": "The MultiTokenPermit contract uses heavily overloaded function names such as transferFrom() and batchTransferFrom() to handle different token standards and batching strategies. While Solidity supports function overloading, the lack of distinct names based on functionality reduces code clarity and makes it difficult to determine the exact behavior without inspecting argument types. This is not exploitable in a security sense, but increases the risk of integration errors by developers who may misunderstand which overload is being called. The impact is reduced code readability and increased likelihood of developer mistakes during integration, potentially leading to incorrect usage and reverted transactions.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "70649332/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect NatSpec comments",
+            "description": "The NatSpec documentation in MultiTokenPermit.sol incorrectly states that tokenId = 0 is used to refer to ERC20 tokens. The comment is misleading because tokenId = 0 is not a special value reserved for ERC20s; collection-wide approvals are handled separately using type(uint256).max or address-based keys. Developers relying on documentation may misunderstand the approval mechanism, leading to incorrect assumptions about how ERC20 approvals are managed. The impact is misleading documentation that can result in integration bugs and confusion, reducing the reliability of external tooling and developer implementations.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiTokenPermit.sol::_getTokenKey#L20",
+                "MultiTokenPermit.sol::allowance#L38",
+                "MultiTokenPermit.sol::approve#L59"
+            ],
+            "files": [
+                "70649332/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Approval event for NFTs lacks tokenId",
+            "description": "The approve() function in MultiTokenPermit.sol emits the standard Approval event when approving specific ERC721 or ERC1155 tokens, but this event does not include the tokenId. The function uses the generic ERC20-style Approval event, which only includes owner, spender, and value, omitting the tokenId parameter relevant for NFTs. Off-chain services (e.g., indexers, wallets, explorers) cannot determine which specific NFT was approved, making it impossible to accurately track approvals. The impact is reduced transparency and functionality for off-chain monitoring systems, leading to incomplete or inaccurate user interfaces and analytics.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiTokenPermit.sol::approve#L80"
+            ],
+            "files": [
+                "70649332/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Ambiguous Transfer name in PermitType enum",
+            "description": "The PermitType enum contains a member named Transfer, which is ambiguous in a multi-token standard context. The name \"Transfer\" suggests it could apply to any token type, but it is only used for ERC20 transfers via _transferFrom(), creating a mismatch between name and function. Developers may incorrectly assume the Transfer type supports NFTs, leading to failed transactions when attempting to use it for ERC721 or ERC1155. The impact is increased risk of integration errors and user confusion, reducing the safety and usability of the API.\n",
+            "severity": "Informational",
+            "location": [
+                "IPermit3.sol::PermitType#L20"
+            ],
+            "files": [
+                "70649332/permit3/src/interfaces/IPermit3.sol",
+                "70649332/permit3/src/Permit3.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Non-valid addresses allowed for Transfers",
+            "description": "The Permit3 contract allows any bytes32 value to be used as a tokenKey for Transfer operations, which are then truncated to 20 bytes to form an address. The implementation does not validate that the upper 12 bytes of the bytes32 value are zero, allowing non-address values to be interpreted as addresses. Malformed or invalid tokenKeys could lead to transfers being directed to unintended or invalid addresses, increasing the risk of fund loss. The impact is reduced safety and clarity in transfer operations, potentially leading to irreversible errors due to incorrect address interpretation.\n",
+            "severity": "Informational",
+            "location": [
+                "Permit3.sol::token#L338"
+            ],
+            "files": [
+                "70649332/permit3/src/Permit3.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "The struct MultiTokenTransfer is misleadingly named",
+            "description": "The MultiTokenTransfer struct is used in batchTransferFrom() for ERC1155 transfers but implies support for multiple token types. The name suggests broader functionality than what is implemented, as it only handles transfers of a single token type (ERC1155) in a batch. Developers may assume the struct supports heterogeneous token transfers, leading to incorrect usage and integration bugs. The impact is misleading naming that increases cognitive load and risk of misuse, reducing code maintainability and developer experience.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiTokenPermit.sol::MultiTokenTransfer#L177-L179"
+            ],
+            "files": [
+                "70649332/permit3/src/interfaces/IMultiTokenPermit.sol",
+                "70649332/permit3/src/MultiTokenPermit.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Inefficiency on batch ERC1155 transfers",
+            "description": "The batchTransferFrom() function processes each ERC1155 transfer individually using safeTransferFrom() instead of aggregating them. The function iterates through each token and performs a separate external call, missing the opportunity to use the more efficient safeBatchTransferFrom() function. This inefficiency increases gas costs and execution time for batch transfers, making the function more expensive to use. The impact is higher transaction costs and reduced scalability for users performing batch transfers of ERC1155 tokens.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiTokenPermit.sol::batchTransferFrom#L207-L211"
+            ],
+            "files": [
+                "70649332/permit3/src/MultiTokenPermit.sol"
+            ]
+        }
+    ]
+}

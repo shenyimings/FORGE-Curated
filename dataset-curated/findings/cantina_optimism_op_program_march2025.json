@@ -1,0 +1,596 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_optimism_op_program_march2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/ethereum-optimism/optimism"
+        ],
+        "commit_id": [],
+        "address": [],
+        "chain": "evm/optimism",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "optimism": "dataset-curated/contracts/cantina_optimism_op_program_march2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-636"
+                ]
+            },
+            "title": "Incorrect error type when initiating message not found leads to state transition failing, unprovable new state",
+            "description": "This vulnerability occurs when the log index in an execute message log exceeds the number of logs in the block, causing the Contains check to return an untyped error. The root cause is the lack of proper error typing, which prevents the isInvalidMessageError function from correctly identifying and handling the error. As a result, the error does not trigger a block replacement, which is necessary to maintain consistency in the state transition process. An attacker could exploit this by submitting messages with invalid log indices, leading to a failed state transition that cannot be proven incorrect, thereby disrupting the system's ability to reach consensus on the correct state.\n",
+            "severity": "Critical",
+            "location": [
+                "consolidate.go#L294"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/processors/executing_message.go",
+                "optimism/op-supervisor/supervisor/backend/processors/log_processor.go"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Incorrect error type when initiating message block not found leads to state transition failing, unprovable new state",
+            "description": "This issue arises when the block number in an execute message exceeds the current chain height, resulting in an error that is not properly typed. The cause is the same as the previous finding: the error returned is generic and not recognized by isInvalidMessageError, which means it fails to trigger a block replacement. An attacker could exploit this by referencing non-existent blocks in messages, causing the state transition to fail without initiating a corrective block replacement. This could lead to a persistent invalid state that cannot be resolved through normal consensus mechanisms.\n",
+            "severity": "Critical",
+            "location": [
+                "consolidate.go#L350"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/processors/executing_message.go",
+                "optimism/op-supervisor/supervisor/backend/processors/log_processor.go"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Checking for message expiration after receipt processing prevents pruning indexes, increase resources",
+            "description": "The current implementation checks message expiration after processing block receipts, which leads to unnecessary resource consumption. The root cause is the placement of the expiration check too late in the execution flow, after expensive operations like retrieving receipts have already occurred. An attacker could exploit this by sending expired messages, forcing the system to perform full receipt processing before rejecting them. This increases computational load and prevents efficient pruning of message indexes, potentially leading to denial of service or increased operational costs.\n",
+            "severity": "High",
+            "location": [
+                "hazard_set.go#L85"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/processors/log_processor.go"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "The same message can be marked as executing multiple times without being executed",
+            "description": "The CrossL2Inbox contract allows emitting the same ExecutingMessage log multiple times, and the op-program processes each occurrence individually. The cause is the lack of deduplication logic in either the contract or the op-program. An attacker could exploit this by creating a contract that repeatedly calls validateMessage, generating thousands of identical logs. This would force the op-program to process each one, leading to excessive computation in the FPVM and potentially causing an unprovable fault due to resource exhaustion.\n",
+            "severity": "High",
+            "location": [
+                "consolidate.go#L25-L42"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/processors/executing_message.go",
+                "optimism/op-service/txintent/interop_call.go"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Quadratic resource consumption in validating existence of initiating messages",
+            "description": "The Contains function iterates through all logs in a block for each message, resulting in O(n\u00b2) complexity where n is the block size. The cause is the lack of an efficient lookup mechanism, such as indexing or proof-based verification. An attacker could exploit this by creating blocks with a large number of logs, forcing the system to perform increasingly expensive checks. Given that the consolidation process is already quadratic in the number of chains, this could compound into a system-wide performance degradation or denial of service.\n",
+            "severity": "Medium",
+            "location": [
+                "consolidate.go#L267"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/processors/log_processor.go",
+                "optimism/op-supervisor/supervisor/backend/processors/executing_message.go"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Invalid modulo check in unmarshalSuperRootV1 leads to panic",
+            "description": "The unmarshalSuperRootV1 function uses a modulo 32 check to validate input data length, but the actual structure requires modulo 64 due to the size of the ChainIDAndOutput structure. The cause is an incorrect assumption about the data layout. An attacker could exploit this by providing malformed input that passes the modulo 32 check but fails during parsing, potentially causing a panic and disrupting service. This could lead to denial of service in systems relying on this unmarshaling function.\n",
+            "severity": "Low",
+            "location": [
+                "super_root.go#L98-L101"
+            ],
+            "files": [
+                "optimism/op-service/eth/super_root.go"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Invalid SuperRootVersionV1MinLen constant",
+            "description": "The SuperRootVersionV1MinLen constant is set to 41, but it fails to account for the 32-byte ChainID field in the ChainIDAndOutput structure, making the minimum length check incorrect. The cause is a discrepancy between the documented structure and the actual expected data layout. While this may not be directly exploitable, it could lead to incorrect parsing of SuperRoot data or missed validation, potentially allowing malformed inputs to be processed, which undermines the integrity of the state transition logic.\n",
+            "severity": "Informational",
+            "location": [
+                "super_root.go#L93-L113"
+            ],
+            "files": [
+                "optimism/op-service/eth/super_root.go"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Bedrock contracts test setup fails due to incorrect Solady library mapping",
+            "description": "The ForkLive.s.sol file imports the Solady library with a path that does not account for Foundry's remapping, which includes the src directory. The cause is a mismatch between the import path and the actual project structure. This is not a security vulnerability per se, but it prevents successful compilation and testing, which could delay development and reduce confidence in the correctness of the deployed system.\n",
+            "severity": "Informational",
+            "location": [
+                "ForkLive.s.sol#L17"
+            ],
+            "files": [
+                "optimism/packages/contracts-bedrock/test/setup/ForkLive.s.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect documentation regarding number of blocks per state transition",
+            "description": "The high-level documentation incorrectly states the number of blocks processed per state transition, which could mislead developers and auditors. The cause is outdated or inaccurate documentation. While this does not introduce a direct security flaw, it can lead to misunderstandings about system behavior, potentially resulting in incorrect assumptions during development or security analysis.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L195"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Useless version check in parseAgreedState",
+            "description": "The parseAgreedState function performs a version check that is redundant because TransitionState.Version() always returns IntermediateTransitionVersion. The cause is unnecessary code that does not contribute to correctness or security. This is purely a code quality issue, but removing it would improve clarity and reduce the attack surface by eliminating dead code.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L133-L135"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Invalid pending progress length check in stateTransition",
+            "description": "The length check for PendingProgress uses >= instead of >, which causes it to fail when the length equals ConsolidateStep (127), even though 127 elements are valid (steps 0 to 126). The cause is a logical error in the comparison operator. While unlikely to occur due to chain limits, this could prevent consolidation in edge cases, leading to system stalling.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L110-L112"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Invalid unmarshalTransitionSate function name",
+            "description": "The function name unmarshalTransitionSate contains a typographical error (missing 't' in 'State'). The cause is a simple naming mistake. While this does not affect functionality, it reduces code readability and could lead to confusion during maintenance or auditing.\n",
+            "severity": "Informational",
+            "location": [
+                "roots.go#L62"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/types/roots.go"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ],
+                "3": [
+                    "CWE-1060"
+                ]
+            },
+            "title": "Dependency set is retrieved at each singleRoundConsolidation call",
+            "description": "The dependency set is fetched repeatedly inside a loop in singleRoundConsolidation, even though it is constant. The cause is inefficient code structure. This leads to unnecessary computation and could degrade performance, especially in systems with many consolidation rounds.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L111-L124"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-544"
+                ]
+            },
+            "title": "Incorrect error type when timestamp invariant is broken -- might possibly lead to state transition failing",
+            "description": "When the timestamp invariant is violated, an untyped error is returned, which may not be properly handled. The cause is lack of typed errors for critical invariants. This could prevent proper error propagation and block replacement, potentially allowing invalid states to persist.\n",
+            "severity": "Informational",
+            "location": [
+                "hazard_set.go#L180"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-397"
+                ]
+            },
+            "title": "Untyped error message in cycle detection",
+            "description": "The error message in cycle.go is untyped, making it harder to handle programmatically. The cause is inconsistent error handling practices. This could lead to missed or misclassified errors during hazard detection.\n",
+            "severity": "Informational",
+            "location": [
+                "cycle.go#L104"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/cross/cycle.go"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Optimization suggestion: block.timestamp can be checked before receipts",
+            "description": "The timestamp validation occurs after retrieving receipts, even though timestamp is a block property. The cause is suboptimal execution order. Moving the check earlier would save unnecessary computation when the timestamp is invalid.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L281"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Unbounded ConsolidateStep execution",
+            "description": "The RunConsolidation function can be called multiple times at step 127 because the step counter is not incremented after consolidation. The cause is missing state progression logic. This could lead to redundant or infinite consolidation attempts.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L107"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "HazardUnsafeFrontierChecks function call is not needed",
+            "description": "The HazardUnsafeFrontierChecks function is called under the assumption that blocks are cross-unsafe, making its checks redundant. The cause is unnecessary code under current assumptions. Removing it would simplify the logic and reduce computation.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L220-L222",
+                "consolidate.go#L302-L310",
+                "unsafe_frontier.go#L25-L62"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Bypass of consolidation step due to unbounded superRoot.Chains length",
+            "description": "There is no validation on the length of superRoot.Chains, so if it exceeds 127, the consolidation step is bypassed, potentially causing system stalling. The cause is missing input validation. This could be exploited to prevent state finalization.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L98"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "No validation of chain order in SuperRoot during state transition",
+            "description": "The stateTransition function assumes SuperRoot.Chains are ordered but does not validate this. The cause is implicit trust in input structure. An improperly ordered list could lead to inconsistent derivation results.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L137"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "Optimization suggestion: exit hazard checks loop after first block replacement",
+            "description": "The hazard checks continue even after a block replacement is triggered, wasting computation. The cause is lack of early termination. Exiting the loop early would improve efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L161"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Executing message timestamp should be checked before any further execution",
+            "description": "The timestamp check for executing messages occurs after other checks, leading to unnecessary processing. The cause is suboptimal check ordering. Moving it earlier would save resources.\n",
+            "severity": "Informational",
+            "location": [
+                "hazard_set.go#L161-L181"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/cross/cycle.go"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "New chain in the dependency set should create a block on activation time to avoid deposits-only block",
+            "description": "When a new chain is added, no block is created at activation time, which can cause execution checks to fail. The cause is missing initialization logic. This could delay message processing.\n",
+            "severity": "Informational",
+            "location": [
+                "hazard_set.go#L54-L60"
+            ],
+            "files": [
+                "optimism/op-supervisor/supervisor/backend/cross/cycle.go"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1084"
+                ]
+            },
+            "title": "Blocks are retrieved multiple times from oracle",
+            "description": "Blocks are fetched from the oracle multiple times during hazard checks because only metadata is stored. The cause is inefficient data caching. Storing full blocks would reduce oracle calls at the cost of memory.\n",
+            "severity": "Informational",
+            "location": [
+                "consolidate.go#L215-L227",
+                "cycle.go#L93-L98",
+                "hazard_set.go#L124-L131"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Improve transitionState sanity check during consolidation",
+            "description": "The current sanity check compares PendingProgress length to a fixed constant (127) rather than to superRoot.Chains length, which could lead to array bounds errors or data inconsistency. The cause is incorrect validation logic. This should be fixed to ensure array sizes match.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L110"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/consolidate.go"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-544"
+                ]
+            },
+            "title": "Error handling inconsistency in super root type validation",
+            "description": "Different error variables (ErrIncorrectOutputRootType and ErrInvalidSuperRootVersion) are used for similar validation failures, creating ambiguity. The cause is inconsistent error handling. Using a single error type would improve clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "interop.go#L142",
+                "super_root.go#L89"
+            ],
+            "files": [
+                "optimism/op-program/client/interop/interop.go"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Remove unused parameter candidate from checkChainCanInitiate function",
+            "description": "The candidate parameter in checkChainCanInitiate is declared but never used. The cause is dead code. Removing it would improve code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "hazard_set.go#L67"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,704 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-printr-protocol-report.pdf",
+    "project_info": {
+        "url": "https://github.com/Ackee-Blockchain/audit-printr-278",
+        "commit_id": "98127e5da3df1d3c3f0912ae79d539058012bcb5",
+        "address": "n/a",
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-14",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "C1: Native Token is not refunded after Uniswap trade",
+            "description": "The Printr protocol uses Uniswap for routing trades of telecoins after graduation and allows partial fills. However, when a user trades using native tokens and the trade is only partially filled, the unused portion of the native token remains in the Printr contract and is not refunded to the user. \nThe root cause lies in the lack of a refund mechanism in the PrintrTrading.buy and PrintrTrading.spend functions when handling native token payments during partial fills. \nAn attacker or malicious actor could exploit this by initiating multiple partial trades to accumulate unrefunded native tokens within the contract. \nThe impact is loss of user funds, as the unutilized native token amount is effectively locked in the contract and may be inadvertently transferred to subsequent users who initiate successful trades.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTrading.sol::buy#189-201",
+                "PrintrTrading.sol::spend#238-241"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "C2: Incorrect fee calculation for bridging via ITS",
+            "description": "During teleportation via ITS, the fee calculation incorrectly assigns the return value from PrintrTrading.estimateTokenCost. Specifically, the function assigns the first return value (availableAmount in meme tokens) to convertedFee, which is then treated as base pair currency.\nThis error occurs due to improper handling of tuple return values in the quoteTeleportFee function, where the cost in base pair currency is expected but instead the meme token amount is used.\nAs a result, users are charged exorbitant fees\u2014on the order of thousands of ETH instead of fractions\u2014because the raw large number of meme tokens is interpreted as wei.\nThe impact includes either massive overpayment of fees or transaction reversion due to insufficient funds, leading to loss of user funds and failure of legitimate teleportation requests.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol::quoteTeleportFee#567-578",
+                "PrintrTeleport.sol::quoteTeleportFee#186-202"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "C3: teleport function always fails for the ITS transactions as all fees are transferred to the Printr",
+            "description": "The teleport function in Telecoin calls quoteTeleportFee to calculate total fees for ITS teleportation, including both Printr team fees and ITS/Axelar gas fees. However, it transfers the entire calculated amount to the Printr contract without reserving funds for the actual ITS bridging operation.\nThe root cause is the lack of separation between Printr's fee and ITS gas fee in the fund transfer logic, resulting in all funds being sent to Printr.\nAn attacker cannot directly exploit this, but every legitimate user attempting ITS teleportation will have their transaction fail due to insufficient funds for the cross-chain message execution.\nThe impact is denial of service for all ITS-based teleportations, preventing users from moving tokens across chains despite paying correct fees.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol::quoteTeleportFee#186-202",
+                "Telecoin.sol::teleport#77-94"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "C4: Inverted condition for creation of PrintrTeleportingTelecoin",
+            "description": "The PrintrPrinting.print function deploys a token using a condition that checks whether only one chain is specified and the current chain index is 0 to determine if a PrintrMainTelecoin should be created. However, this logic is inverted: it creates a PrintrMainTelecoin when it should create a PrintrTeleportingTelecoin for multi-chain tokens.\nThe cause is a logical error in the deployment condition, where the flag isTeleporting is set based on a condition that incorrectly evaluates single-chain deployment instead of multi-chain.\nThis leads to the deployment of the wrong token type, which lacks teleportation capabilities.\nThe impact is that tokens intended to be teleportable across chains cannot be teleported, breaking core functionality and rendering the multi-chain feature unusable.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrPrinting.sol::print#86-88",
+                "PrintrPrinting.sol::deployToken#235-242"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "C5: Only sending to Solana peer address even for EVMs at LayerZero causes wrong receiver address",
+            "description": "The PrintrTeleport contract uses solanaLzPeer as the receiver address for all LayerZero messages, regardless of the destination chain. This means that even when sending to EVM chains, the message is directed to the Solana peer address.\nThe cause is a hardcoded use of solanaLzPeer in the receiver field without conditional logic based on the destination chain type.\nAn attacker cannot directly benefit, but any user attempting to teleport tokens to an EVM chain will have the transaction fail on the destination chain because the address is invalid.\nThe impact is loss of tokens during cross-chain transfers, as the transaction succeeds on the source chain but fails silently or with loss on the destination.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol#489"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "C6: Missing access control in witnessTeleport",
+            "description": "The witnessTeleport function in PrintrTeleport.sol is external and lacks access control, allowing any caller to trigger token transfers on behalf of a user whose tokens are approved to the Printr contract.\nThe root cause is the absence of authorization checks such as requiring the caller to be the token itself or a trusted witness contract.\nAn attacker can front-run a user's approval transaction and call witnessTeleport to drain their tokens before the intended operation.\nThe impact is unauthorized token transfer and theft of user funds, especially affecting users who approve the contract for future operations.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol::witnessTeleport#242-249"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "C7: Recipient address is left-padded during encoding and right-padded during decoding for LayerZero",
+            "description": "The _parseRecipientToBytes32 function in PrintrTeleport.sol converts a 20-byte EVM address to bytes32 by casting bytes20(address), which results in right-padding with zeros. However, the standard Address library decodes such values assuming left-padding (i.e., big-endian interpretation).\nThis mismatch in padding convention causes the reconstructed address on the destination chain to be incorrect, as the significant bytes are shifted.\nAn attacker cannot directly exploit this, but any user teleporting tokens will have them sent to a different, unintended address.\nThe impact is permanent loss of tokens due to misrouting during cross-chain transfers.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol::_parseRecipientToBytes32#694-712"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "C8: DOS when handling initial price fix due to incorrect liquidity parameter",
+            "description": "The Printr protocol deploys liquidity to external DEXes (e.g., Uniswap V3 forks like Lynex and Algebra) when a token reaches its completion threshold. Before deployment, if the current pool price differs from the expected graduation price, the protocol fixes the price by creating a temporary position, executing a swap, and then removing the temporary position. \nThe root cause of the vulnerability is in the _decreaseLiquidity function across multiple liquidity modules (LynexLiquidity, AlgebraLiquidity, UniswapV3Liquidity), where type(uint128).max is used as the liquidity parameter when calling decreaseLiquidity. However, Uniswap V3 and its forks require that the requested liquidity does not exceed the actual liquidity of the position. Since no position can have type(uint128).max liquidity, the transaction will always revert.\nAn attacker cannot directly exploit this for profit, but any user attempting to trigger token graduation when price fixing is needed will cause the entire transaction to fail. This results in a denial-of-service condition where tokens cannot graduate to external DEXes.\nThe impact is high: liquidity deployment fails whenever initial price fixing is required, preventing tokens from graduating and disrupting the core functionality of the protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "LynexLiquidity.sol::_decreaseLiquidity#236-248",
+                "AlgebraLiquidity.sol::_decreaseLiquidity#233-245",
+                "UniswapV3Liquidity.sol::_decreaseLiquidity#335-347"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "C9: CREATE2 deployment of LZChannel results in different addresses across chains due to varying lzEndpoint values",
+            "description": "The LZChannel contract is deployed using CREATE2 based on the deployer address, salt, and contract bytecode. However, the contract bytecode includes the constructor parameter lzEndpoint, which varies across different chains. As a result, the same salt produces different deployment addresses on different chains.\nThe root cause is the inclusion of a chain-specific address (lzEndpoint) in the constructor, which becomes part of the bytecode used in the CREATE2 address calculation. This breaks cross-chain compatibility because the protocol assumes the LZChannel address is deterministic across chains.\nAn attacker could exploit this by initiating a cross-chain transfer where the destination chain's LZChannel address differs from the expected one. Messages are sent to a non-existent contract address, causing tokens to be sent to an address without the proper contract logic.\nThe impact is high: users' tokens can be permanently lost during cross-chain transfers due to incorrect destination addresses, undermining the core functionality of the LayerZero integration.\n",
+            "severity": "Critical",
+            "location": [
+                "PrintrTeleport.sol::_getOrDeployLzChannel#894-904"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "C10: Removed approve consumption allows approve vulnerability",
+            "description": "The teleportFrom function in Telecoin.sol was refactored to remove the _decreaseAllowance call, which previously protected against reusing an approval. This allows an attacker to front-run a user\u2019s transaction and drain their approved tokens.\nThe root cause is the omission of approval consumption logic after a transferFrom operation, violating the expected behavior of ERC20 allowances.\nAn attacker can observe an approval transaction and call teleportFrom before the legitimate user interacts with the protocol, stealing their tokens.\nThe impact is high: users can lose funds if they approve Printr as a spender and do not act immediately, making this a critical logic flaw.\n",
+            "severity": "Critical",
+            "location": [
+                "Telecoin.sol::teleportFrom#101-115"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "H1: Loss of precision during conversion of uint256 to uint80",
+            "description": "The virtualReserve value, calculated as initialTokenReserve * initialPrice / PRECISION, is stored in a uint80 type. For large values (e.g., 10^25), this causes truncation and loss of precision.\nThe cause is the use of an insufficiently sized data type (uint80) to store a value that can exceed its range, breaking the constant product formula used in bonding curve calculations.\nAn attacker could exploit this by creating a telecoin with parameters that maximize virtualReserve, causing miscalculations in buy/sell prices and allowing profit through arbitrage.\nThe impact includes incorrect pricing, broken economic model, and potential loss of funds for liquidity providers and traders.\n",
+            "severity": "High",
+            "location": [
+                "PrintrPrinting.sol::print#151",
+                "PrintrPrinting.sol::print#158-165",
+                "PrintrPrinting.sol::_estimateTokenCost#350-351",
+                "PrintrPrinting.sol::_quoteTokenAmount#422-427"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "H2: SELF immutable address pointing to implementation contract",
+            "description": "The SELF variable in PrintrTeleport.sol is set during construction of the implementation contract, but in an upgradeable proxy pattern, it should refer to the proxy address. Since the implementation's address differs from the proxy, cross-chain message verification fails.\nThe root cause is the initialization of a constant that captures the implementation contract's address instead of the proxy, which is the actual sender on-chain.\nWhen a cross-chain message is received, the allowInitializePath function verifies the sender against SELF, which fails because the actual sender is the proxy, not the implementation.\nThe impact is failure of cross-chain operations on destination chains, leading to loss of tokens and denial of service for teleportation features.\n",
+            "severity": "High",
+            "location": [
+                "PrintrTeleport.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "H4: Overestimated base token amount required for ERC20 trades after graduation",
+            "description": "When users purchase tokens with ERC20 base tokens after token graduation, the protocol overestimates the required base token amount by using maxPrice in a simple multiplication (amount * maxPrice / PRECISION). This assumes a constant price, which is incorrect for AMMs that use dynamic pricing based on liquidity and price impact.\nThe root cause is the misuse of maxPrice, which is intended as a slippage protection limit (maximum acceptable price), not the actual execution price. The correct cost should be calculated using a simulation function like _quoteLiquidityExactOutput, which accounts for the actual AMM state.\nAn attacker cannot directly profit, but users are affected when their transactions revert due to insufficient ERC20 allowance. Even if they have enough tokens for the actual swap cost, the protocol requests an overestimated amount, leading to transfer failures.\nThe impact is medium: users experience failed transactions during trading, especially for newly graduated tokens with low liquidity, reducing usability and trust in the system.\n",
+            "severity": "High",
+            "location": [
+                "PrintrTrading.sol::buy#190-201",
+                "PrintrTrading.sol::_spendInLiquidityPool#765"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Lack of destination address verification",
+            "description": "The LayerZero teleport functionality in PrintrTeleport.sol allows token transfers to chains where Printr is not deployed. This occurs because the contract does not verify whether the destination chain is a valid and supported chain for Printr deployment. The root cause is the absence of destination address validation, unlike the official LayerZero OApp which enforces such checks. An attacker or user specifying an unsupported chain will cause the transaction to fail on the destination side, resulting in a loss of tokens during the teleportation process. The impact includes financial loss for users attempting cross-chain transfers to invalid or unsupported chains.\n",
+            "severity": "High",
+            "location": [
+                "PrintrTeleport.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "W9: Merchantmoe Liquidity Module is not implemented correctly",
+            "description": "The MerchantmoeLiquidity module attempts to call MerchantmoeFactory.createPool, a function that does not exist in the actual Merchantmoe protocol. This causes any transaction involving this module to revert.\nThe root cause is incorrect integration logic\u2014either based on outdated documentation or a misunderstanding of the Merchantmoe interface. The function call is hardcoded but incompatible with the real protocol.\nAny user or process attempting to deploy liquidity to the Merchantmoe protocol on Mantle will experience transaction reverts, preventing liquidity deployment on that chain.\nThe impact is a warning-level issue: it results in a denial of service for a specific liquidity module, limiting deployment options but not affecting other chains or modules.\n",
+            "severity": "High",
+            "location": [
+                "MerchantmoeLiquidity.sol::createPool"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "W10: Value overflow may limit realistic token configurations",
+            "description": "The curveConstant calculation in the _estimateTokenCost function is susceptible to uint256 overflow. This occurs when large token supplies (e.g., 10^32) are multiplied by high relative prices (e.g., 1000) and then by PRECISION (10^18), exceeding the uint256 limit (~10^77).\nThe root cause is arithmetic operations performed in an unsafe order, where multiplication precedes division, leading to intermediate overflows even if the final result would fit in a uint256.\nUsers attempting to configure tokens with large supplies or high prices may encounter transaction reverts during creation or trading, limiting the protocol's flexibility.\nThe impact is a warning: it restricts valid token configurations and may cause unexpected reverts, but does not lead to fund loss or direct exploitation.\n",
+            "severity": "High",
+            "location": [
+                "Printr::_estimateTokenCost"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "W11: Confusing parameter semantics in _buy function due to overloaded params.amount usage",
+            "description": "The params.amount field in the _buy function is reused to represent multiple values: initially the number of tokens to buy, then the base currency cost, and finally the number of tokens actually purchased. This overloading reduces code clarity and increases the risk of bugs during maintenance.\nThe root cause is poor variable design and lack of separation between input, intermediate, and output values. This makes the code harder to audit and understand.\nWhile not directly exploitable, this can lead to logic errors during future development or upgrades, especially when other developers interact with the function.\nThe impact is a warning: it affects code quality and maintainability but does not introduce immediate security risks.\n",
+            "severity": "High",
+            "location": [
+                "PritrTrading.sol::_buy"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "W12: HyperSwap behavior may differ from UniswapV3 due to modified source code",
+            "description": "HyperSwap uses a modified version of UniswapV3's NonfungiblePositionManager, but the source code is not open. This creates uncertainty about its behavior, especially during edge cases like token graduation.\nThe root cause is the use of a closed-source, modified fork of a known protocol, which may have altered logic or bugs not present in the original UniswapV3 implementation.\nUsers or integrators relying on standard UniswapV3 behavior may experience unexpected reverts or incorrect state changes during liquidity operations.\nThe impact is a warning: it introduces operational risk and potential denial of service during liquidity deployment, but no direct exploit path is known.\n",
+            "severity": "High",
+            "location": [
+                "PrintrTrading.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Unchecked call in _refund function",
+            "description": "The _refund function in Intent.sol fails to check the success of ETH transfers and ERC20 token transfers when refunding leftover funds to the sender after intent execution. The root cause is the lack of proper validation after external calls: the result of the low-level call for ETH is not enforced, and the try-catch block around the ERC20 transfer suppresses failures. An attacker cannot directly steal funds, but users may lose their leftover ETH and tokens if the transfer fails due to a revert in the recipient contract or other issues. The impact is loss of user funds in edge cases involving smart contract wallets or failed transfers.\n",
+            "severity": "Medium",
+            "location": [
+                "Intent.sol::_refund#425-444"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Variable priceLimit is ignored for specific cases",
+            "description": "In PrintrTrading.sol, the priceLimit parameter is incorrectly applied in the buy and sell functions, leading to trades executing at prices outside the user-specified limit. Specifically, the priceLimit check only restricts trades when the price is below the limit in buy operations and above in sell operations, but not the reverse. This logic error causes the priceLimit to be ignored when the actual price exceeds the limit in unfavorable directions. As a result, users can be frontrun or subjected to unfavorable pricing, leading to financial loss. The impact is economic harm to traders who rely on price limits for safe execution.\n",
+            "severity": "Medium",
+            "location": [
+                "PrintrTrading.sol::_estimateTokenCost#356-368",
+                "PrintrTrading.sol::_estimateTokenRefund#238-241"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "teleportFrom function does not work due to insufficient approval for TokenManager to burn tokens",
+            "description": "The teleportFrom function in Teleporting.sol fails because it assumes that approval given to the Printr contract suffices for token burning, but the InterchainTokenService requires direct approval to the TokenManager for burn operations. The root cause is a mismatch in expected approval delegation: users approve Printr, but the underlying ITS system requires approval to its own TokenManager. This leads to transaction reverts when attempting to teleport via teleportFrom. Although a workaround exists (transferring tokens first and then approving), it increases complexity and gas costs. The impact is degraded user experience and potential confusion, though funds are not lost.\n",
+            "severity": "Medium",
+            "location": [
+                "Teleporting.sol::teleportOut#50-62",
+                "InterchainTokenService.sol::transmitInterchainTransfer#592-605",
+                "TokenHandler.sol::takeToken#67"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Potential overflow on teleport amount conversion",
+            "description": "In PrintrTeleport.sol, the conversion of large teleport amounts to uint64 after division by 1e9 can result in integer overflow if the amount exceeds ~18.4 billion tokens. The root cause is the unsafe cast to uint64 without prior bounds checking. An attacker or user attempting to teleport an extremely large amount could trigger an overflow, causing the converted amount to wrap around to a much smaller value. The impact is loss of tokens, as the user receives significantly fewer tokens than intended on the destination chain.\n",
+            "severity": "Medium",
+            "location": [
+                "PrintrTeleport.sol#478-480"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "M5: All Printed tokens are sent to the liquidity pool even if they are used as basePair tokens during graduation",
+            "description": "During token graduation, the protocol sends all tokens from the Treasury to the liquidity pool using balanceOf, without accounting for tokens already used as basePair in other bonding curves.\nThe root cause is the reliance on balanceOf instead of calculating the exact amount that should be deployed, leading to over-transfer of tokens.\nThis invalidates bonding curves for tokens that use the graduated token as basePair, as insufficient liquidity remains in the system.\nThe impact is medium: it disrupts the economic model of dependent tokens and prevents trading in local bonding curves, though it does not directly cause fund loss.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseLiquidityModule.sol#104",
+                "BaseLiquidityModule.sol#197-200"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Everyone can link telecoins to other chains",
+            "description": "The linkEvmInterchainToken function in PrintrInterchain.sol is accessible to any caller, allowing arbitrary linking of telecoins to any chain regardless of whether they are officially deployed or printed there. The root cause is missing access control, as the function does not restrict callers to authorized entities. This can lead to users attempting to teleport tokens to chains where the corresponding telecoin does not exist, resulting in failed transactions and potential confusion. The impact is user experience degradation and possible loss of gas fees due to failed cross-chain operations.\n",
+            "severity": "Low",
+            "location": [
+                "PrintrInterchain.sol::linkEvmInterchainToken#87-105"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Missing refund in teleport function",
+            "description": "The teleport function in PrintrTeleport.sol does not refund excess ETH sent by the user beyond what is required for fees. The root cause is the lack of a refund mechanism after transferring the teleport fee. A user who sends more ETH than necessary will have the excess retained by the contract. While this may be intentional (as noted in team acknowledgment), it deviates from user expectations and best practices. The impact is loss of user funds due to overpayment, though the amount is typically small.\n",
+            "severity": "Low",
+            "location": [
+                "PrintrTeleport.sol::teleport#77-95"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Limited gas for ETH transfers causes withdrawal failures for smart contract wallets",
+            "description": "The Treasury.withdraw function uses a hardcoded gas stipend of 3000 for ETH transfers, which is insufficient for smart contract wallets or EOAs with fallback logic. The root cause is the fixed gas value in the low-level call, which does not account for the execution cost of recipient-side code. This can cause withdrawals to fail if the recipient requires more than 3000 gas to process the incoming ETH. The impact is denial of service for certain users, particularly those using smart wallets or advanced account abstraction patterns.\n",
+            "severity": "Low",
+            "location": [
+                "Treasury.sol#92"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "Possible overflow in print function",
+            "description": "The print function in PrintrPrinting.sol is vulnerable to arithmetic overflow when calculating completionPrice with small basePrice values. The root cause is an unsafe mathematical expression involving division and multiplication that can exceed uint256 limits under specific parameter combinations. Although Solidity's overflow checks cause the transaction to revert rather than corrupt state, this prevents valid use cases with low initial prices. The impact is denial of service for legitimate users trying to create tokens with low initial prices.\n",
+            "severity": "Low",
+            "location": [
+                "PrintrPrinting.sol#154-155"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Ambiguous error LiquidityAlreadyDeployed",
+            "description": "The custom error LiquidityAlreadyDeployed is misnamed and used in contexts unrelated to liquidity deployment status. It is thrown both when payment amount cannot be determined and when a quote call fails, leading to confusion. The root cause is poor error naming and overloading of a single error for multiple distinct failure modes. This makes debugging difficult for users and developers, as the error message does not reflect the actual issue. The impact is reduced transparency and increased difficulty in diagnosing transaction failures.\n",
+            "severity": "Low",
+            "location": [
+                "IPrintrStorage.sol",
+                "PrintrTrading.sol::buy",
+                "PrintrTrading.sol::_quoteLiquidityExactOutput"
+            ],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "L6: Treasury accepts any NFT token instead of only LP position NFTs",
+            "description": "The Treasury contract is designed to hold only LP position NFTs but does not validate the type of NFT received. It accepts any ERC721 or ERC1155 token sent to it, which can result in accidental locking of non-LP NFTs.\nThe root cause is the lack of access control or validation in the NFT receive hooks (onERC721Received, onERC1155Received), which do not check whether the incoming NFT is from an authorized LP position manager.\nA user could mistakenly send a valuable NFT to the Treasury contract, believing it to be the correct destination. Once sent, the NFT cannot be recovered because there is no mechanism to extract unauthorized NFTs.\nThe impact is medium: users may permanently lose valuable NFTs due to human error, though the likelihood is low as it requires a mistaken interaction.\n",
+            "severity": "Low",
+            "location": [
+                "Treasury.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "L7: Usage of transfer in Telecoin",
+            "description": "The _itsTeleport function uses payable(printr).transfer(protocolFee), which forwards a fixed 2300 gas stipend. If the Printr contract has complex logic in its receive or fallback function, the transfer may revert due to insufficient gas.\nThe root cause is the use of transfer instead of call, which is deprecated in modern Solidity practices due to its gas limitations.\nAny upgrade to the Printr contract that adds logic to the receive function could break the teleport functionality, leading to failed transactions.\nThe impact is low: it introduces a potential point of failure in cross-chain operations, but the likelihood is low unless the contract is upgraded.\n",
+            "severity": "Low",
+            "location": [
+                "Telecoin.sol::_itsTeleport#215"
+            ],
+            "files": []
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "L8: priceAfter is used as effectivePrice",
+            "description": "The estimateTokenCost function returns priceAfter as effectivePrice, but this value is only an approximation and can underflow when currentPrice > 2 * averagePrice. The comment incorrectly suggests it represents the final effective price.\nThe root cause is a misnamed return value and incorrect arithmetic in the priceAfter calculation: priceAfter = 2 * averagePrice - currentPrice, which can underflow.\nIntegrators relying on this value for trading decisions may suffer unexpected losses, and calls may revert due to arithmetic underflow.\nThe impact is low: it affects accuracy and reliability of a view function but does not compromise fund safety.\n",
+            "severity": "Low",
+            "location": [
+                "LiquidityPool.sol::estimateTokenCost"
+            ],
+            "files": []
+        },
+        {
+            "id": 31,
+            "category": {},
+            "title": "L9: Inconsistent refund for ERC20 and native tokens",
+            "description": "The PrintrTrading.buy and spend functions refund excess native tokens to the recipient but refund ERC20 tokens to msg.sender. This inconsistency can lead to funds being sent to the wrong party.\nThe root cause is asymmetric refund logic: native refunds use _refundNativeValue(recipient), while ERC20 refunds are sent to params.account (msg.sender).\nA relayer calling the function on behalf of a user will receive the ERC20 refund, even though the user is the intended recipient.\nThe impact is low: it can cause confusion and misrouting of funds, but the amount is small (excess tokens) and the likelihood is medium due to common use of relayers.\n",
+            "severity": "Low",
+            "location": [
+                "PrintrTrading.sol::buy#202-204",
+                "PrintrTrading.sol::_spendInLiquidityPool#787"
+            ],
+            "files": []
+        },
+        {
+            "id": 32,
+            "category": {},
+            "title": "Incorrect value of issuedSupply in _estimateTokenCost function",
+            "description": "The issuedSupply value calculated in _estimateTokenCost suffers from precision loss due to integer division in the formula. The root cause is the order of operations in the arithmetic expression, which leads to truncation errors. While this does not affect core functionality, it results in incorrect values being emitted in events, potentially misleading off-chain systems that rely on accurate supply tracking. The impact is data inconsistency and reduced reliability of emitted event data.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrPrinting.sol#390"
+            ],
+            "files": []
+        },
+        {
+            "id": 33,
+            "category": {},
+            "title": "Ignoring failure of calling decimals function of the base pair token",
+            "description": "The contract ignores potential failures when calling the decimals function on the base pair token, defaulting to 18 if the call reverts. The root cause is the lack of error propagation from the try-catch block. If the target token has a faulty decimals implementation or is malicious, the contract proceeds with incorrect assumptions, leading to miscalculated prices and token amounts. The impact is incorrect trade execution and potential financial loss for users.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrPrinting.sol#127-132"
+            ],
+            "files": []
+        },
+        {
+            "id": 34,
+            "category": {},
+            "title": "Approval for the ITS token manager is needed before teleporting",
+            "description": "Users must approve the Interchain Token Service (ITS) token manager directly to enable token burning during teleportation. The root cause is the design requiring users to grant permissions to a third-party protocol, which increases risk exposure. If the ITS contracts have vulnerabilities, approved tokens could be stolen. This goes against security best practices of least privilege and minimizing trust in external systems. The impact is increased security risk for users who must approve external managers beyond the Printr ecosystem.\n",
+            "severity": "Informational",
+            "location": [
+                "Teleporting.sol",
+                "InterchainTokenService.sol::transmitInterchainTransfer",
+                "TokenHandler.sol::takeToken",
+                "TokenHandler.sol::_burnToken"
+            ],
+            "files": []
+        },
+        {
+            "id": 35,
+            "category": {},
+            "title": "Documentation disrepency with code",
+            "description": "The project's documentation, located in the `docs` folder, contains misleading and outdated information that does not match the actual implementation in the codebase. This includes incorrect Solidity code examples, such as the Interchain Token Standard implementation, storage layout using `PRINTR_STORAGE_LOCATION`, and non-existent functions like `_adjustForDecimals`. Additionally, the documentation fails to mention the use of LayerZero for cross-chain communication and describes non-existent reentrancy protection mechanisms. The root cause is a lack of synchronization between documentation updates and code changes. This can mislead developers, auditors, and users about the system's behavior and security properties. While the impact is not directly exploitable for financial gain, it can lead to incorrect integrations, flawed security assumptions, and increased maintenance burden. The team partially addressed the issue by updating some documentation, but multiple files remain outdated.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTeleport.sol",
+                "evm/docs/architecture/storage-pattern.md",
+                "evm/docs/concepts/advanced-features.md",
+                "evm/docs/concepts/cross-chain.md",
+                "evm/docs/pancake"
+            ],
+            "files": []
+        },
+        {
+            "id": 36,
+            "category": {},
+            "title": "No verification on which chain the user teleports tokens to",
+            "description": "The `teleport` function in `Telecoin.sol` does not validate whether the destination chain is one on which the token is supposed to exist. During the token creation (`print`) process, users specify the chains where the token should be available, but this information is not enforced during teleportation. The root cause is the absence of a chain allowlist check in the `teleport` function. An attacker or mistaken user could teleport tokens to a chain where the token was not intended to exist, potentially leading to loss of funds, incorrect state assumptions, or disruption of cross-chain operations. This behavior affects all token types in the protocol, not just `PrintrTeleportingTelecoin`. The impact includes potential economic loss and protocol state inconsistency across chains.\n",
+            "severity": "Informational",
+            "location": [
+                "Telecoin.sol::teleport#77-100"
+            ],
+            "files": []
+        },
+        {
+            "id": 37,
+            "category": {},
+            "title": "Code size is too large",
+            "description": "The `TelecoinFactory` contract exceeds the Ethereum EVM's runtime bytecode size limit of 24,576 bytes, with a size of 30,913 bytes (125.8% of the limit). This makes the contract impossible to deploy on mainnet, as EVM rules strictly prohibit contracts larger than the Spurious Dragon limit. The root cause is excessive code bloat within a single contract, likely due to monolithic design. If not resolved, this would prevent mainnet deployment and render the protocol non-functional on Ethereum and EVM-compatible chains. The team fixed this issue by splitting the contract into smaller components: `TeleportingTelecoinFactory` and `TeleportingMainFactory`.\n",
+            "severity": "Informational",
+            "location": [
+                "TelecoinFactory.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 38,
+            "category": {},
+            "title": "Whitelisted addresses cannot be updated",
+            "description": "The `Intent.sol` contract inherits from a `Whitelist` contract but lacks any functionality to modify the whitelist after deployment. This immutability means that if a whitelisted address is compromised, it cannot be removed, and new legitimate addresses cannot be added. The root cause is the absence of administrative functions (e.g., `addToWhitelist`, `removeFromWhitelist`) protected by proper access control. This creates a critical security risk, as the system loses flexibility in responding to threats or evolving requirements. The impact includes permanent lockout if all whitelisted addresses become inaccessible, inability to revoke access from malicious actors, and inability to onboard new participants, potentially leading to a complete halt in protocol operations.\n",
+            "severity": "Informational",
+            "location": [
+                "Intent.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 39,
+            "category": {},
+            "title": "Amount calculation uses maxPrice for calculation, resulting in operating with smaller amount of tokens",
+            "description": "In `PrintrTeleport.sol`, the amount calculation uses `maxPrice` when specified, which can result in users operating with a smaller amount of tokens than intended. The calculation `params.amount = amount * maxPrice / PRECISION` is applied in a context where `maxPrice` acts as a cap, but its use in arithmetic can lead to reduced transaction sizes. The root cause is incorrect logic in price-based amount adjustment. This can lead to user funds being underutilized or transactions failing due to insufficient amounts. While users can still use the `spend` function to buy specific amounts, this flaw introduces confusion and inefficiency in token operations. The impact is primarily on user experience and economic efficiency rather than direct fund loss.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTeleport.sol::amount calculation#190-193"
+            ],
+            "files": []
+        },
+        {
+            "id": 40,
+            "category": {},
+            "title": "No validation for zero params.amount",
+            "description": "The `PrintrTrading.sol` contract does not validate whether `params.amount` is zero when `priceLimit` is not specified. This lack of input validation can lead to incorrect calculations and unintended protocol behavior, such as division by zero or incorrect supply calculations. The root cause is missing require statements or input checks. An attacker could potentially exploit this by submitting zero-amount transactions to manipulate state or trigger edge-case bugs. The impact includes potential state corruption, incorrect token issuance, and denial of service. The issue was fixed by adding validation to revert if `params.amount` is zero.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTrading.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 41,
+            "category": {},
+            "title": "No explanation for using specific constants for gas limit",
+            "description": "The `PrintrTeleport.sol` contract uses hardcoded gas limits (200,000 or 500,000) based on metadata length without any justification in comments or documentation. The root cause is poor code documentation. This lack of explanation makes it difficult to assess whether these values are sufficient for the intended operations, especially when handling complex metadata. If the gas limit is too low, cross-chain messages may fail, leading to user fund loss or stuck transactions. The impact is increased risk of operational failure and reduced auditability. The issue was fixed by adding explanatory comments.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTeleport.sol::executionGasLimit#651-660"
+            ],
+            "files": []
+        },
+        {
+            "id": 42,
+            "category": {},
+            "title": "Misleading information in NatSpec",
+            "description": "The NatSpec documentation for the `teleportOut` function in `Teleporting.sol` incorrectly states that it can be called by the \"token handler,\" while the actual code restricts access to only the ITS token manager or Printr. The root cause is outdated or incorrect inline documentation. This discrepancy can mislead developers and integrators about the access control model, potentially leading to insecure integrations or incorrect assumptions about who can trigger critical functions. The impact is reduced code clarity and potential security risks due to misunderstanding of authorization logic. The issue was fixed by updating the NatSpec to reflect the correct access control.\n",
+            "severity": "Informational",
+            "location": [
+                "Teleporting.sol::teleportIn#32-42"
+            ],
+            "files": []
+        },
+        {
+            "id": 43,
+            "category": {},
+            "title": "Incorrect NatSpec title in Printed.sol contract",
+            "description": "The `Printed.sol` contract contains a NatSpec `@title` tag that incorrectly names the contract as \"PrintrTelecoin\" instead of \"Printed.\" This violates documentation consistency and can confuse developers about the contract's identity. The root cause is a copy-paste error or oversight during development. This inconsistency complicates code maintenance, review, and integration efforts. The impact is reduced code readability and potential errors in tooling or documentation generators that rely on accurate NatSpec. The issue was acknowledged by the team.\n",
+            "severity": "Informational",
+            "location": [
+                "Printed.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 44,
+            "category": {},
+            "title": "Inconsistent contract names",
+            "description": "Multiple contracts violate Solidity naming conventions by not matching their filenames. Specifically, `PrintrTeleportingTelecoin.sol` and `PrintrMainTelecoin.sol` declare a contract named `PrintrTelecoin`, and `Teleporting.sol` declares `TeleportingTelecoin`. The root cause is inconsistent naming practices. This makes the codebase harder to navigate and increases the risk of errors during development and auditing. The impact includes confusion, maintenance difficulties, and potential tooling issues. The issue was acknowledged by the team.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTeleportingTelecoin.sol",
+                "PrintrMainTelecoin.sol",
+                "Teleporting.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 45,
+            "category": {},
+            "title": "Unused errors",
+            "description": "The codebase contains multiple declared errors that are never used, such as `Unauthorized`, `InvalidAuthorization`, `RefundFailed`, and others across various interfaces including `IIntent`, `IInterchainTokenFactory`, and `IPrintrTeleport`. The root cause is incomplete cleanup during development. These unused errors increase bytecode size unnecessarily and clutter the code. While not directly exploitable, they contribute to technical debt and reduce code clarity. The issue was partially fixed by removing most unused errors, but `UnauthorizedSender()` in `IPrintrTeleport` remains unused.\n",
+            "severity": "Informational",
+            "location": [
+                "src/evm/*"
+            ],
+            "files": []
+        },
+        {
+            "id": 46,
+            "category": {},
+            "title": "Unused interfaces and libraries",
+            "description": "The codebase includes unused interfaces such as `ILBFactory`, `ILBRouter`, and `ILBPair`, as well as an unused library `AddressBytes`. The root cause is leftover code from previous implementations or unused dependencies. These unused components increase deployment costs and reduce code clarity. The issue was partially resolved by removing most unused elements, but `ILBPair` remains in the codebase. The impact is bloated bytecode and maintenance overhead.\n",
+            "severity": "Informational",
+            "location": [
+                "src/evm/*"
+            ],
+            "files": []
+        },
+        {
+            "id": 47,
+            "category": {},
+            "title": "Unused events",
+            "description": "Numerous events are declared but never emitted in the codebase, including `DeployRemoteInterchainTokenApproval`, `InterchainTransfer`, `TokenMetadataRegistered`, and many others across interfaces like `IInterchainTokenService`, `IAlgebra`, `ILynex`, and `IUniswap`. The root cause is incomplete feature implementation or leftover code. These events contribute to unnecessary bytecode bloat and can mislead developers into thinking certain functionalities exist. The issue was partially addressed, but many unused events remain. The impact is increased gas costs and reduced code quality.\n",
+            "severity": "Informational",
+            "location": [
+                "src/evm/*"
+            ],
+            "files": []
+        },
+        {
+            "id": 48,
+            "category": {},
+            "title": "Unused functions",
+            "description": "The `AddressBytes` library contains unused functions `toAddress` and `toBytes`. The root cause is incomplete cleanup or unused utility code. These functions increase contract size and maintenance burden without providing value. The issue was fixed by removing the unused functions. The impact was minimal but contributed to code bloat.\n",
+            "severity": "Informational",
+            "location": [
+                "src/evm/*"
+            ],
+            "files": []
+        },
+        {
+            "id": 49,
+            "category": {},
+            "title": "Unused imports",
+            "description": "The codebase contains unused Solidity imports, such as `IERC20.sol`, `IERC20Metadata.sol`, `IERC721.sol`, `Math.sol`, and `IERC721Receiver.sol` in various files. The root cause is leftover import statements from removed functionality. While imports do not affect runtime bytecode, they can increase compilation time and reduce code clarity. The issue was partially fixed, but `IERC721Receiver.sol` in `MerchantmoeLiquidity` remains imported but unused.\n",
+            "severity": "Informational",
+            "location": [
+                "src/evm/*"
+            ],
+            "files": []
+        },
+        {
+            "id": 50,
+            "category": {},
+            "title": "I11: Missing permit invalidation mechanism",
+            "description": "The ERC20 implementation supports EIP-2612 permit for off-chain approvals but lacks a way for users to invalidate a permit signature before it expires or is used. Users must either execute the permit and revoke or wait for the deadline.\nThe root cause is the absence of a user-facing function to manually increment the nonce, which would invalidate pending signatures.\nIf a user suspects a phishing attack or key compromise, they cannot proactively cancel a signed permit, increasing their exposure window.\nThe impact is informational: it reduces user control and security hygiene but does not break the protocol\u2019s security model, as permits are still time-bound and signature-secured.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC20.sol::permit#143-167"
+            ],
+            "files": []
+        },
+        {
+            "id": 51,
+            "category": {},
+            "title": "I12: Missing events for critical operations that distinguish behavior",
+            "description": "The protocol lacks sufficient events for critical operations, such as receiving LayerZero messages in lzReceive. The existing TeleportIn event does not provide enough context for off-chain systems to track message processing.\nThe root cause is incomplete event emission design, where internal state changes are not externally observable.\nOff-chain services (e.g., monitoring tools, UIs, relayers) cannot reliably detect or react to key operations, leading to degraded user experience or operational delays.\nThe impact is informational: it affects observability and integration capabilities but does not compromise on-chain security.\n",
+            "severity": "Informational",
+            "location": [
+                "LZChannel::lzReceive",
+                "Printr"
+            ],
+            "files": []
+        },
+        {
+            "id": 52,
+            "category": {},
+            "title": "permitWitnessCall forwards msg.value instead of signed call.nativeValue",
+            "description": "The vulnerability exists in the ERC20Witness.sol contract where the `permitWitnessCall` function uses `msg.value` instead of the signed `call.nativeValue` when executing an external call. This discrepancy allows an attacker to manipulate the native token amount forwarded during the call, even though there is a check ensuring `msg.value` is at least `call.nativeValue`. The root cause is the incorrect use of `msg.value` in the `.call` value field instead of using the explicitly signed `call.nativeValue`. An attacker can front-run or observe a signed transaction and execute it with a higher `msg.value`, potentially triggering different execution paths in the target contract that were not intended by the original signer. The impact is low, as it does not directly lead to fund loss but may cause unexpected behavior in the called contract.\n",
+            "severity": "Low",
+            "location": [
+                "ERC20Witness.sol::190-193",
+                "ERC20Witness.sol::211-212"
+            ],
+            "files": []
+        },
+        {
+            "id": 53,
+            "category": {},
+            "title": "Attacker can create tokens with the same symbol on different chains to drain legitimate liquidity",
+            "description": "The Printr protocol allows the creation of tokens with identical symbols on different chains using different base tokens. A malicious actor can exploit this by creating a legitimate-looking token on one chain (e.g., paired with USDC) and a controlled token on another chain (e.g., paired with a self-mintable ATTACKER_TOKEN). By minting the malicious token, purchasing the mirrored token on the second chain, and teleporting it to the first chain, the attacker can sell it into the legitimate liquidity pool. The root cause lies in the trust model that does not verify or flag potentially malicious tokens across chains. This enables the attacker to repeatedly drain liquidity from users who provided funds under the assumption of legitimacy. The impact is significant for liquidity providers, who may lose their funds entirely due to the attacker's ability to manipulate cross-chain token supply.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrPrinting.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 54,
+            "category": {},
+            "title": "Tokens are refunded and not spent on liquidity pool",
+            "description": "During the graduation process in PrintrTrading.sol, the code incorrectly calculates the number of tokens to be swapped into the liquidity pool. The issue arises because `params.amount` is reassigned to `ctx.buyAmount` before the remaining tokens are calculated, causing `remainingTokens` to always be zero. This means no tokens are actually swapped into the liquidity pool, despite user intent. The root cause is a logic error in the order of operations and variable reassignment. Although no tokens are taken from the user, the intended functionality of allocating part of the tokens to the liquidity pool fails. The issue was partially addressed by not updating `params.amount` unless the transaction fails, but the fix is incomplete. The calculation for remaining tokens still uses `_estimateTokenCost`, which is designed for local curve calculations and can lead to a division by zero error when `tokenReserve` equals `tokenAmount`.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrTrading.sol::623",
+                "PrintrTrading.sol::671",
+                "PrintrTrading.sol::395-397"
+            ],
+            "files": []
+        },
+        {
+            "id": 55,
+            "category": {},
+            "title": "Attacker can front-run the liquidity pool creation and make graduation fail",
+            "description": "The vulnerability allows an attacker to front-run the creation of a Uniswap liquidity pool by providing one-sided liquidity using only the base token. This manipulates the price in the pool, making it expensive to trade against. During the graduation phase, the protocol attempts to sell Telecoin to stabilize the price, but the attacker's liquidity prevents effective price correction. As a result, the protocol's attempt to provide balanced liquidity fails due to the skewed price. The root cause is the lack of safeguards or checks before interacting with the Uniswap pool, allowing malicious actors to influence the market. While the attacker does not profit directly, they can disrupt the graduation process. The impact is moderate, primarily causing operational failure rather than direct financial loss.\n",
+            "severity": "Informational",
+            "location": [
+                "PrintrPrinting.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 56,
+            "category": {},
+            "title": "Withdraw forwards all gas despite 3000-gas comment",
+            "description": "In Treasury.sol, the `withdraw` function includes a comment stating that a 3000 gas limit is used for ETH transfers to prevent griefing. However, the implementation uses the low-level `.call` function, which forwards all available gas, contrary to the comment. The root cause is a discrepancy between documentation and code. This could mislead developers into believing that gas is limited, potentially leaving the system vulnerable to reentrancy or griefing attacks if the recipient is a malicious contract that consumes excessive gas. The actual impact is informational, as the behavior is safe in context, but the misleading comment reduces code clarity and auditability.\n",
+            "severity": "Informational",
+            "location": [
+                "Treasury.sol::78-88"
+            ],
+            "files": []
+        },
+        {
+            "id": 57,
+            "category": {},
+            "title": "IntentProxy constructor has payable parameter despite non-payable function",
+            "description": "In IntentProxy.sol, the constructor uses `payable(msg.sender).delegatecall(delegateData)`, marking the sender as payable. However, the constructor itself is not declared as payable, making the `payable` cast unnecessary and potentially misleading. The root cause is incorrect use of the payable modifier in a context where it has no effect. This does not introduce a security risk but reflects poor code quality. The recommendation was to remove the payable cast or make the relevant execution functions payable and forward `msg.value`. The issue was fixed by removing the payable modifier.\n",
+            "severity": "Informational",
+            "location": [
+                "IntentProxy.sol::17-20"
+            ],
+            "files": []
+        },
+        {
+            "id": 58,
+            "category": {},
+            "title": "_isTeleporting is not correctly described",
+            "description": "In Printed.sol, the constructor parameter `_isTeleporting` is documented as indicating whether the token is a main telecoin (true) or wrapped telecoin (false). However, the implementation contradicts this: the main telecoin sets `_isTeleporting` to false. This causes confusion for developers reading the code. The root cause is an inaccurate comment that does not reflect the actual logic. While this does not lead to a security vulnerability, it reduces code maintainability and increases the risk of future bugs. The issue was resolved by replacing the boolean with a `TeleportType` enum for clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "Printed.sol::49-61"
+            ],
+            "files": []
+        },
+        {
+            "id": 59,
+            "category": {},
+            "title": "Token URI is not in base64 format as mentioned in the documentation",
+            "description": "In Telecoin.sol, the `tokenURI` function claims to return a base64-encoded data URL by prepending \"data:application/json;base64,\". However, it appends raw JSON without encoding it, resulting in an invalid data URL. The root cause is the omission of actual base64 encoding. This affects NFT marketplaces and wallets that expect valid metadata URLs, potentially breaking NFT display and functionality. The impact is limited to usability and interoperability. The issue was fixed by using a Base64 library to properly encode the JSON payload.\n",
+            "severity": "Informational",
+            "location": [
+                "Telecoin.sol::73-96"
+            ],
+            "files": []
+        }
+    ]
+}

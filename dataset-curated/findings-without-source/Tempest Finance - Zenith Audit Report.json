@@ -1,0 +1,76 @@
+{
+    "path": "dataset-curated/reports/Zenith/Tempest Finance - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Tempest-Finance/tempest_smart_contract/pull/206"
+        ],
+        "commit_id": [
+            "5d5dd30c5b33e533f95c42aa421a136f0e6e320f"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-07",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Imcompatibility with Royco IAM",
+            "description": "1. **Description:** The Ambient strategy vaults lack full compatibility with the Royco Identity and Access Management (IAM) system due to missing ERC4626-compliant functions and view methods such as previewRedeem, maxDeposit, and asset. Additionally, critical functions like mint() are absent, and existing deposit/withdraw functions do not comply with ERC4626 standards.\n2. **Cause:** The vault was not initially designed with full ERC4626 compliance in mind, omitting required functions and proper integration points expected by Royco IAM. This includes lack of slippage tolerance handling and fee accounting in preview functions.\n3. **Exploitation:** Integration with Royco IAM would fail or behave unpredictably because the expected interface functions are either missing or non-compliant, potentially leading to incorrect share calculations or rejected transactions.\n4. **Impact:** Users or systems relying on Royco IAM for vault interactions may be unable to use the Tempest vaults correctly, leading to operational failures or incorrect asset conversions.\n",
+            "severity": "Medium",
+            "location": [
+                "AmbientUser.sol",
+                "AmbientInterface.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Idle deposits allow depletion of LP pool tokens",
+            "description": "1. **Description:** The depositIdle function allows users to deposit assets without immediately providing liquidity, yet still mints shares based on total assets. This enables a user to deposit and immediately withdraw, effectively extracting value from the positioned liquidity without contributing to it.\n2. **Cause:** The withdrawal logic does not distinguish between idle and positioned assets when calculating user payouts, allowing withdrawals to pull from both pools proportionally. This creates an arbitrage opportunity where users can exploit the shared asset pool.\n3. **Exploitation:** A malicious actor could repeatedly deposit idle assets, mint shares, and withdraw positioned assets, thereby draining LP tokens from the Ambient pool over time.\n4. **Impact:** This could reduce the efficiency of the liquidity strategy, decrease fee accrual for honest LPs, and necessitate manual operator intervention to rebalance the pool, increasing operational risk.\n",
+            "severity": "Medium",
+            "location": [
+                "AmbientUser.sol::depositIdle#173-214",
+                "AmbientUser.sol::_withdrawLiquidity#611"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Risk of pool manipulation to profit from depositIdle()",
+            "description": "1. **Description:** The depositIdle function is vulnerable to pool manipulation via external swaps that alter the reserve ratios in the underlying Ambient pool. If slippage checks are too permissive or disabled, an attacker can manipulate the pool price to mint more shares than fairly deserved.\n2. **Cause:** The slippage check in depositIdle uses a max/min comparison between oracle and pool prices, which may allow deposits even when the deviation exceeds acceptable thresholds. Additionally, a wide liqSlippage setting or disabled checkSlippageDepositIdle increases exposure.\n3. **Exploitation:** An attacker can perform a front-run swap to skew the pool price, deposit idle funds at an unfair rate, then back-run to revert the price, profiting from the discrepancy if gains exceed swap fees.\n4. **Impact:** The vault could suffer losses due to unfair share minting, effectively transferring value from existing LPs to the attacker.\n",
+            "severity": "Low",
+            "location": [
+                "AmbientUser.sol::depositIdle#173-214"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Unnecessary skipCheckStartedAt check for plume deployments",
+            "description": "1. **Description:** The skipCheckStartedAt flag in BridgeOracle.sol is redundant for Plume network deployments because sequencer uptime is manually managed via setIsSequencerDown(), bypassing the need to read startedAt from the oracle.\n2. **Cause:** The flag was introduced to handle Chronicle's oracle returning startedAt = 0, but since Plume deployments skip oracle-based checks entirely when sequencerUptimeOracle is zero, the flag has no functional effect.\n3. **Exploitation:** While not directly exploitable, the presence of unused logic increases code complexity and could lead to confusion or incorrect assumptions during future maintenance.\n4. **Impact:** Unnecessary code reduces clarity and maintainability. It also misses an opportunity to implement a proper grace period for sequencer recovery on Plume by updating startedAt manually.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeOracle.sol::_checkSequencerDowntime#169"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Idle deposits are slightly more profitable than regular deposits",
+            "description": "1. **Description:** Users who use depositIdle() avoid swap fees that are incurred by those using the regular deposit() function, making idle deposits slightly more profitable per unit of asset deposited.\n2. **Cause:** The deposit() function performs a swap before providing liquidity, reducing the amount of assets used for share minting due to swap fees, while depositIdle() uses the full amount without any fee deduction.\n3. **Exploitation:** Rational users will prefer depositIdle() over deposit() to maximize returns, leading to accumulation of idle funds and underutilization of automated liquidity provisioning.\n4. **Impact:** This economic misalignment may force operators to manually convert idle assets into liquidity, increasing operational burden and reducing the efficiency of the automated strategy.\n",
+            "severity": "Low",
+            "location": [
+                "AmbientUser.sol::deposit#110",
+                "AmbientUser.sol::depositIdle#213"
+            ],
+            "files": []
+        }
+    ]
+}

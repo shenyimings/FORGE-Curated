@@ -1,0 +1,592 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_MellowFinance_Multivault_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/mellow-finance/simple-lrt"
+        ],
+        "commit_id": [
+            "ca6b05bc665878c9aa059a3df7c8df6ec5194093"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-20",
+        "project_path": {
+            "simple-lrt": "dataset-curated/contracts/ChainSecurity_MellowFinance_Multivault_Audit.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-636"
+                ]
+            },
+            "title": "Bank Run on Excess Funds in Vault Prior to Slashing Event",
+            "description": "The vault holds idle liquid assets when not all funds are deposited into external protocols. These idle assets can be withdrawn immediately by converting shares to underlying assets at the current exchange rate. This creates a risk of a bank run on the excess funds just before a slashing event, as users are incentivized to withdraw early to avoid losses. Since slashing events are predictable (e.g., via VetoSlasher in Symbiotic), malicious actors can frontrun or backrun withdrawal transactions. The root cause is the lack of withdrawal delay or pro-rata distribution mechanism during pending slashing periods. This allows users to selectively withdraw from subvaults with higher-valued pending assets, leading to unfair distribution and potential loss for remaining share owners. The impact includes economic loss for remaining stakeholders and potential destabilization of the vault due to rushed withdrawals.\n",
+            "severity": "Medium",
+            "location": [
+                "Vault::convertShares#withdraw",
+                "Subvault::pendingAssets"
+            ],
+            "files": [
+                "simple-lrt/src/vaults/MultiVault.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "EigenLayer Withdrawals Attempted When Maximum Is Reached",
+            "description": "The system limits EigenLayer withdrawals to 14 (15 during shutdown), but the RatioStrategy is unaware of this limit and does not treat the withdrawal queue as paused when the limit is reached. This causes the vault to attempt withdrawals even when no new requests can be created, leading to transaction reverts. The root cause is the lack of integration between the withdrawal limit enforcement and the strategy logic. As a result, vault withdrawal operations may be temporarily denied, leading to a denial-of-service (DoS) condition. An attacker could potentially trigger this by filling the withdrawal queue, blocking legitimate user withdrawals and rebalancing operations. The impact is a temporary disruption of core vault functionality, reducing user trust and operational reliability.\n",
+            "severity": "Low",
+            "location": [
+                "RatioStrategy::calculateState",
+                "Vault::requestWithdrawal"
+            ],
+            "files": [
+                "simple-lrt/src/strategies/RatiosStrategy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Manipulateable Withdrawal Pauses for ERC-4626",
+            "description": "The protocol determines if an ERC-4626 vault is paused by checking if the vault's share balance is non-zero before considering maxRedeem(). However, this check can be manipulated by donating a minimal amount of shares to the vault, making the balance non-zero and bypassing the pause detection. This allows a malicious user to force the protocol to interact with a paused vault, potentially leading to failed transactions or incorrect state assumptions. The root cause is the reliance on a balance-based heuristic instead of directly querying the pause state via maxRedeem(0) or similar. This could result in a denial-of-service scenario where users are unable to withdraw due to unexpected reverts. The impact includes temporary loss of access to funds and reduced protocol resilience against manipulation.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::isPaused",
+                "Vault::withdraw"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Overly Sensitive Reverting in Ratios Strategy",
+            "description": "The RatiosStrategy reverts during withdrawal or rebalancing if any adapter returns true for areWithdrawalsPaused(), even if the paused subvault is not involved in the current operation. For example, a withdrawal might pull funds from an underallocated subvault with available liquidity, yet the strategy reverts due to an unrelated paused subvault. Similarly, a rebalance that deposits into a paused subvault should be allowed, but the strategy incorrectly reverts. The root cause is overly broad error handling that does not assess the actual impact of the pause on the specific operation. This leads to unnecessary transaction failures and denial-of-service conditions during routine operations. The impact is reduced system availability and user frustration due to preventable reverts, even when sufficient liquidity exists elsewhere.\n",
+            "severity": "Low",
+            "location": [
+                "RatiosStrategy::calculateState",
+                "areWithdrawalsPaused"
+            ],
+            "files": [
+                "simple-lrt/src/strategies/RatiosStrategy.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Improper ERC-4626 Valuation",
+            "description": "The previewRedeem function is used to determine share price, which considers on-chain conditions such as low liquidity and may quote a lower price for shares. While this aligns with ERC-4626's allowance for slippage, the protocol relies on convertToAssets and convertToShares for valuation, which should reflect the current exchange rate without manipulation. The issue arises because the protocol does not restrict tokens to those where previewRedeem cannot be manipulated. Although Mellow Finance accepts the risk by only using non-manipulable tokens, the design deviates from best practices. The root cause is the use of preview functions for valuation instead of more stable conversion methods. The impact is potential loss of value for depositors due to unfavorable exchange rates during redemption, especially in low-liquidity scenarios.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::previewRedeem",
+                "Vault::convertToAssets"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "ERC-4626 Violations",
+            "description": "The contract violates the ERC-4626 standard in multiple ways. First, withdrawals are not instant; users receive partial assets and the remainder as shares, which contradicts the standard's expectation of immediate redemption. Second, functions like totalAssets, convertToShares, and maxWithdraw may revert when they should not, particularly when previewRedeem reverts due to a paused vault. Additionally, maxWithdraw and maxRedeem do not return 0 when withdrawals are paused, violating the ERC-4626 requirement. The root cause is incorrect implementation of the standard's non-reverting and instant-redemption guarantees. This leads to compatibility issues with integrators expecting compliant behavior and potential transaction failures. The impact includes reduced interoperability, user confusion, and possible loss of funds due to inaccurate event emissions and state tracking.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::totalAssets",
+                "ERC4626Adapter::maxWithdraw",
+                "ERC4626Adapter::maxRedeem",
+                "Vault::withdraw"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Problems With Configurations",
+            "description": "Several configuration-related issues pose risks. Removing a subvault can create arbitrage opportunities due to artificially lowered share prices. Updating an adapter may cause inconsistencies in withdrawal queue tracking, leading to loss of pending or claimable assets. Changing the default collateral without validation risks incompatibility. Additionally, missing sanity checks\u2014such as validating addresses against factories or ensuring meaningful ratio configurations\u2014can lead to incorrect setups. The root cause is the lack of validation and safeguards during configuration changes. While some checks are partially implemented (e.g., Symbiotic adapter validates vaults), others are missing. The impact includes potential loss of funds, operational errors, and reduced system integrity, especially during migrations or upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "MultiVault::removeSubvault",
+                "MultiVault::setAdapter",
+                "MultiVault::setDefaultCollateral",
+                "RatioStrategy::setRatios"
+            ],
+            "files": [
+                "simple-lrt/test/unit/MultiVault.t.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "EigenLayer Not Ready to Be Integrated With Without Upgrades",
+            "description": "The EigenLayer contracts were initially deployed in a non-upgradeable fashion despite ongoing development, particularly around slashing logic, which is not yet finalized. This creates a risk as future changes to EigenLayer (e.g., via PR 679) could break existing integrations. The cause is the deployment of non-upgradeable contracts in an environment where the underlying protocol (EigenLayer) is still under active development and subject to breaking changes. If the integration assumptions made during the audit are invalidated by future EigenLayer upgrades, the system may fail to operate as intended, especially since the withdrawal queue is not upgradeable. This could lead to loss of funds, particularly because critical components like the withdrawal queue cannot be upgraded to adapt to changes in EigenLayer.\n",
+            "severity": "Low",
+            "location": [
+                "EigenLayerWithdrawalQueue",
+                "EigenLayerWstETHWithdrawalQueue",
+                "SymbioticWithdrawalQueue",
+                "IsolatedEigenLayerVault",
+                "IsolatedEigenLayerWstETHVault"
+            ],
+            "files": [
+                "simple-lrt/test/unit/MultiVault.t.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Implicit Minimum Deposit for EigenLayer",
+            "description": "Although EigenLayer does not enforce an explicit minimum deposit, it requires at least one share to be minted, creating an implicit minimum deposit threshold. This is not handled gracefully in isolated vaults. The `underlyingToSharesView` function can return 0 even for non-insignificant deposits due to its formula `(amountUnderlying * (totalShares + 1000)) / (_tokenBalance() + 1000)`, which may result in zero shares being minted when strategy yield is high. Users attempting small deposits may have their transactions silently reverted or ignored, especially when `_tokenBalance()` is large relative to `totalShares`. This could lead to users losing funds or being unable to deposit, violating the expectation of no hard deposit limits and leading to a poor user experience and potential fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "IsolatedEigenLayerVault",
+                "IsolatedEigenLayerWstETHVault"
+            ],
+            "files": [
+                "simple-lrt/test/unit/MultiVault.t.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Manager for Pausing Check for EigenLayer",
+            "description": "The `EigenLayerAdapter.areWithdrawalsPaused` function incorrectly checks the `StrategyManager` for pausing state instead of the `DelegationManager`, which is the correct source of truth for withdrawal pausing. This is a logic error in the adapter implementation where the wrong manager contract is queried for pausing status. If `StrategyManager` is paused but `DelegationManager` is not, the system may falsely block withdrawals, or vice versa, leading to incorrect behavior during emergency pauses. This could result in failed withdrawals during valid conditions or allow withdrawals during paused states, undermining the safety mechanisms of the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "EigenLayerAdapter.areWithdrawalsPaused"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "getOrCreate Never Gets",
+            "description": "The `getOrCreate` function in the isolated vault factory is intended to create or return an existing vault for a given (owner, operator, strategy) tuple, but it never writes to the `isolatedVaults` storage, making the \"get\" path unreachable. The cause is a missing state update in the function logic\u2014specifically, the created vault address is not stored in the `isolatedVaults` mapping. Any call to `getOrCreate` will attempt to create a new vault every time, even if one already exists, leading to redundant deployments or reverts due to duplicate creation. This results in functional failure of the vault creation mechanism and potential gas waste or deployment errors.\n",
+            "severity": "Low",
+            "location": [
+                "IsolatedEigenLayerVaultFactory.getOrCreate"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/IsolatedEigenLayerVaultFactory.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Maximum Computation in Ratios Strategy",
+            "description": "The `RatiosStrategy.calculateState()` function incorrectly computes the maximum deposit limit by including `claimable` and `pending` assets in the total, when only `staked` assets should count toward the protocol's current exposure. The logic adds `multiVault.maxDeposit(i)` to the sum of `staked`, `pending`, and `claimable` assets, overestimating the allowable deposit. After a large withdrawal increases `pending` assets, the system may attempt a deposit that exceeds the actual capacity of the external protocol, causing the transaction to revert. This leads to partial denial-of-service during rebalancing, where valid reallocations fail due to incorrect accounting.\n",
+            "severity": "Low",
+            "location": [
+                "RatiosStrategy.calculateState"
+            ],
+            "files": [
+                "simple-lrt/src/strategies/RatiosStrategy.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Incorrect Maximum Deposit Computation in Ratio Strategy",
+            "description": "The `RatioStrategy.calculateState()` function fails to handle potential overflows when computing the maximum deposit limit, as it lacks an `else` branch to set the maximum to `uint256.max` when addition would overflow. The condition `if (type(uint256).max - assets >= state[i].max)` safely avoids overflow but does not set `state[i].max` to the maximum value when the condition fails. In rare cases where `assets` is very large (e.g., near `uint256.max`), the computed maximum deposit will be incorrect, leading to suboptimal or failed allocations. Incorrect strategy calculations could result in underutilization of available deposit capacity or failed rebalances.\n",
+            "severity": "Low",
+            "location": [
+                "RatioStrategy.calculateState"
+            ],
+            "files": [
+                "simple-lrt/src/strategies/RatiosStrategy.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-628"
+                ],
+                "4": [
+                    "CWE-688"
+                ]
+            },
+            "title": "Incorrect Target for ERC-4626 Maximum Deposit Query",
+            "description": "The `ERC4626Adapter` queries `ERC4626.maxDeposit()` for the token instead of the vault, leading to incorrect deposit limit estimations. This is a misuse of the ERC-4626 interface\u2014`maxDeposit(address)` should be called with the vault address to get the correct limit, but it is called generically. The adapter may allow deposits that exceed the vault's actual capacity or block valid deposits, depending on the token-level limits. This can result in failed deposits or incorrect rebalancing decisions, reducing capital efficiency and user experience.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ]
+            },
+            "title": "Old Vault Contracts Can Not Be Migrated Easily",
+            "description": "Migrating from old vault versions to `MultiVault` is problematic due to initialization conflicts and role identifier changes (e.g., `SET_FARM_ROLE` replaced by `SET_REWARDS_DATA_ROLE`). The `initialize` function uses a modifier that prevents reinitialization, and role mappings are not backward compatible. Migration attempts may revert due to initialization guards, and farm operators may lose permissions unless roles are manually reassigned. This complicates upgrades and may lead to governance or operational failures during migration.\n",
+            "severity": "Low",
+            "location": [
+                "MultiVault.initialize",
+                "SET_FARM_ROLE"
+            ],
+            "files": [
+                "simple-lrt/src/vaults/MultiVault.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ]
+            },
+            "title": "Sending Pending Assets to Yourself Leads to Losses",
+            "description": "The `SymbioticWithdrawalQueue.transferPendingAssets` function does not handle self-transfers correctly, leading to incorrect accounting where the sender's balance is deleted after being credited. The function adds shares to the receiver (which is the same as the sender) and then deletes the sender's record, resulting in a net loss of pending assets. A user transferring pending assets to themselves could lose those assets due to flawed accounting logic. Users may suffer unexpected fund loss when attempting self-transfers of pending withdrawals.\n",
+            "severity": "Low",
+            "location": [
+                "SymbioticWithdrawalQueue.transferPendingAssets"
+            ],
+            "files": [
+                "simple-lrt/src/queues/SymbioticWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "Gas Optimizations",
+            "description": "The `EigenLayerWithdrawalQueue.transferPendingAssets` loop continues iterating even after `amount` reaches zero, missing an opportunity to exit early and save gas. The loop condition does not check for `amount == 0` and the comparison uses `<=` instead of `<`, delaying the exit. Unnecessary iterations increase gas consumption, especially in scenarios with many small withdrawals. Higher transaction costs for users and reduced efficiency in withdrawal processing.\n",
+            "severity": "Informational",
+            "location": [
+                "EigenLayerWithdrawalQueue.transferPendingAssets"
+            ],
+            "files": [
+                "simple-lrt/src/queues/EigenLayerWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-459"
+                ]
+            },
+            "title": "Incomplete Deletion of Shares",
+            "description": "When a user withdraws all shares in `EigenLayerWithdrawalQueue._handleWithdrawal`, the `sharesOf` mapping is not deleted, causing the sum of shares to potentially exceed total shares. The function deletes `_withdrawals[withdrawalIndex]` but omits `delete sharesOf[account]`. This can amplify DoS risks in withdrawal processing due to incorrect share tracking. Inaccurate accounting may lead to inconsistencies in share balances and increased vulnerability to denial-of-service attacks.\n",
+            "severity": "Informational",
+            "location": [
+                "EigenLayerWithdrawalQueue._handleWithdrawal"
+            ],
+            "files": [
+                "simple-lrt/src/queues/EigenLayerWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Inconsistent Event Argument Amount in Event Transfer",
+            "description": "The `Transfer` event in `SymbioticWithdrawalQueue.transferPendingAssets` emits `_amount` in inconsistent units\u2014sometimes in shares, sometimes in tokens. The event is emitted with different value types depending on which epoch's assets are being transferred. External systems (e.g., indexers, frontends) may misinterpret the transferred amount, leading to incorrect balance tracking. Poor integration reliability and potential user confusion due to inconsistent event data.\n",
+            "severity": "Informational",
+            "location": [
+                "SymbioticWithdrawalQueue.transferPendingAssets",
+                "event Transfer"
+            ],
+            "files": [
+                "simple-lrt/src/queues/SymbioticWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Argument Order for Key Computation",
+            "description": "The `IsolatedEigenLayerVaultFactory.key` function expects arguments in the order `(owner, strategy, operator)`, but `getOrCreate` passes them as `(owner, operator, strategy)`, leading to incorrect key derivation. This is a mismatch between the declared parameter order and the actual usage in a critical factory function. This could result in the creation of duplicate vaults or failure to find existing ones due to incorrect storage keys. Broken vault reuse logic and potential deployment of redundant contracts.\n",
+            "severity": "Informational",
+            "location": [
+                "IsolatedEigenLayerVaultFactory.key",
+                "IsolatedEigenLayerVaultFactory.getOrCreate"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/IsolatedEigenLayerVaultFactory.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Return Value Not Used",
+            "description": "The return value of `EigenLayerWithdrawalQueue._pull` is never used, indicating either dead code or a missed validation check. The function returns a value (likely success or amount), but callers ignore it. If the return value indicates failure, ignoring it could lead to incorrect state transitions. Reduced code clarity and potential for silent failures if the return value was meant to be checked.\n",
+            "severity": "Informational",
+            "location": [
+                "EigenLayerWithdrawalQueue._pull"
+            ],
+            "files": [
+                "simple-lrt/src/queues/EigenLayerWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Unreachable Adapter Code",
+            "description": "The `EigenLayerAdapter.claimWithdrawal` function is implemented but never called, as the vault does not delegatecall into it. This is dead code due to incorrect delegation routing in the vault contract. The function is inaccessible to users, rendering it useless. Code bloat and maintenance burden without functional benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "EigenLayerAdapter.claimWithdrawal"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-250"
+                ]
+            },
+            "title": "Giving Potentially Unnecessary Approvals",
+            "description": "The system grants token approvals to subvaults before deposits, even when the protocol does not require pulling funds (e.g., expects balance delta). This is a one-size-fits-all approval pattern that does not consider integration-specific requirements. Unnecessary approvals increase risk if the recipient contract is compromised. Increased attack surface and potential for fund loss if approvals are misused.\n",
+            "severity": "Informational",
+            "location": [
+                "Adapter approvals"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Implementation Contract Can Be Initialized",
+            "description": "The `MultiVault` implementation contract does not disable initializers, allowing anyone to initialize it and potentially corrupt its state. Missing `_disableInitializers()` call in the constructor. On chains supporting `selfdestruct`, an attacker could set a malicious module and self-destruct the implementation. Potential destruction of the implementation contract, breaking upgrades and affecting all proxies.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiVault constructor"
+            ],
+            "files": [
+                "simple-lrt/src/vaults/MultiVault.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Lack of Events",
+            "description": "Several important state changes (e.g., `transferPendingAssets`, `setRatio`) do not emit events, making it difficult for off-chain systems to track activity. Missing event emissions in key functions. Frontends and indexers cannot reliably monitor user actions or protocol state changes. Poor observability and degraded user experience due to lack of real-time updates.\n",
+            "severity": "Informational",
+            "location": [
+                "SymbioticWithdrawalQueue.transferPendingAssets",
+                "RatioStrategy.setRatio"
+            ],
+            "files": [
+                "simple-lrt/src/queues/SymbioticWithdrawalQueue.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Misleading Names of Functions and Variables",
+            "description": "Functions like `maxWithdraw` do not return the maximum withdrawable amount but the total staked assets, which is misleading. This is inconsistent naming that contradicts standard conventions (e.g., ERC-4626). Developers may\u8befuse functions based on their names, leading to incorrect assumptions. Increased risk of integration errors and reduced code readability.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiVault.maxWithdraw",
+                "ISubVault.maxWithdraw",
+                "RatiosStrategy.calculateWithdrawalAmounts",
+                "RatiosStrategy.calculateRebalanceAmounts"
+            ],
+            "files": [
+                "src/vaults/ERC4626Vault.sol"
+            ]
+        }
+    ]
+}

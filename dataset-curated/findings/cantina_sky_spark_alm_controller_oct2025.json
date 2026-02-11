@@ -1,0 +1,198 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_sky_spark_alm_controller_oct2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/sparkdotfi/spark-alm-controller"
+        ],
+        "commit_id": [
+            "3144c91369a853bd0df86b57ab6a1ccc87fcbfbf",
+            "7be959378fe48117f7a06796f94e240345428982"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-20",
+        "project_path": {
+            "spark-alm-controller": "dataset-curated/contracts/cantina_sky_spark_alm_controller_oct2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "ETH received from exchange in OTCBuffer will be lost",
+            "description": "1. **Description:** The OTCBuffer contract contains a payable receive() function, allowing it to accept ETH from an OTC exchange as part of a swap. However, there is no mechanism in the contract to withdraw or transfer this ETH to another address, such as the ALM Proxy.\n2. **Cause:** The contract was designed to handle stablecoin outputs from OTC swaps, not ETH. The presence of the receive() function without corresponding withdrawal logic creates a situation where ETH can be irreversibly locked.\n3. **Exploitation:** An OTC exchange could return ETH instead of a stablecoin during a swap, either by error or malicious intent, leading to the permanent loss of those funds.\n4. **Impact:** The ETH sent to the contract would be permanently lost, reducing the protocol's assets and potentially affecting financial operations. While the likelihood is low (as ETH should not be a valid output), the impact is limited to the amount received.\n",
+            "severity": "Low",
+            "location": [
+                "OTCBuffer.sol#L34"
+            ],
+            "files": [
+                "spark-alm-controller/src/OTCBuffer.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "WSTETH_WITHDRAW_QUEUE withdrawals limits affect the requestWithdrawFromWstETH",
+            "description": "1. **Description:** The requestWithdrawFromWstETH function in MainnetController submits withdrawal requests to Lido's WSTETH_WITHDRAW_QUEUE, which enforces per-request limits (minimum 100 stETH, maximum 1000 stETH). The current implementation sends only one request per call, limiting large withdrawals to the maximum per-request amount.\n2. **Cause:** The function does not split large withdrawal amounts into multiple requests, relying instead on external relayers to make multiple calls.\n3. **Exploitation:** While not directly exploitable, this design increases operational complexity and gas costs for large withdrawals, as multiple transactions are required.\n4. **Impact:** Users or relayers must make multiple calls to withdraw large amounts, increasing latency and gas overhead. There is no direct security risk, but it affects usability and efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L370-L400"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Hardcode the spender to ALM Proxy in OTCBuffer",
+            "description": "1. **Description:** The OTCBuffer contract allows the DEFAULT_ADMIN_ROLE to approve any spender for asset withdrawals via the approve() function. However, the only intended spender is the ALM Proxy.\n2. **Cause:** The approve() function accepts an arbitrary spender address, introducing unnecessary trust in the admin to set the correct spender.\n3. **Exploitation:** A malicious or compromised DEFAULT_ADMIN could approve a rogue address, allowing it to claim OTC swap proceeds. While the admin is expected to be secure, this increases the attack surface.\n4. **Impact:** If the admin is compromised, funds from OTC swaps could be diverted. Hardcoding the spender would reduce trust assumptions and improve security by design.\n",
+            "severity": "Informational",
+            "location": [
+                "OTCBuffer.sol#L24"
+            ],
+            "files": [
+                "spark-alm-controller/src/OTCBuffer.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1110"
+                ]
+            },
+            "title": "Quantifying the max loss for an OTC exchange",
+            "description": "1. **Description:** OTC exchanges are trusted entities that receive ETH and return stablecoins asynchronously. Two rate limits (global rate limit and net swap limit with recharge) are in place to cap exposure.\n2. **Cause:** The maximum potential loss per exchange is determined by the interplay of LIMIT_OTC_SWAP, rechargeRate, maxSlippage, and time elapsed, but this formula is not formally documented.\n3. **Exploitation:** If an exchange is malicious or compromised, it could fail to return funds up to the net exposure limit. Without clear quantification, risk assessment is less precise.\n4. **Impact:** Lack of documented risk quantification makes it harder for stakeholders to assess the financial risk associated with each OTC partner. No direct exploit, but improves transparency.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L957"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing OTC check in setOTCWhitelistedAsset",
+            "description": "1. **Description:** The setOTCWhitelistedAsset function allows setting a whitelisted asset for an OTC exchange even if the OTC entry (buffer) for that exchange has not been initialized.\n2. **Cause:** The function does not validate whether the OTC configuration exists before allowing asset whitelisting.\n3. **Exploitation:** This could lead to configuration inconsistencies where assets are whitelisted for non-existent or inactive exchanges. While not currently exploitable (otcSend fails if buffer is missing), it could cause confusion or future bugs.\n4. **Impact:** Risk of misconfiguration and reduced code clarity. Adding a sanity check would improve robustness and prevent potential future issues.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L278-L286"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-1271"
+                ]
+            },
+            "title": "The ForeignControllerInit missing maxSlippage set",
+            "description": "1. **Description:** The ForeignControllerInit contract does not initialize the maxSlippage parameter during deployment or upgrades, unlike MainnetControllerInit which properly configures it.\n2. **Cause:** Inconsistent initialization logic between the two controller init contracts.\n3. **Exploitation:** If maxSlippage is not set on the foreign controller, it may use a default or outdated value, potentially leading to unexpected behavior during cross-chain operations.\n4. **Impact:** Could result in suboptimal or risky slippage settings on the foreign chain, increasing the chance of failed or unfavorable transactions. A minor but avoidable inconsistency.\n",
+            "severity": "Informational",
+            "location": [
+                "ForeignControllerInit.sol#L163-L165",
+                "MainnetControllerInit.sol#L183-L185"
+            ],
+            "files": [
+                "spark-alm-controller/deploy/ForeignControllerInit.sol",
+                "spark-alm-controller/deploy/MainnetControllerInit.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "The setOTCBuffer and setOTCRechargeRate could be combined into one function",
+            "description": "1. **Description:** Two separate admin functions, setOTCBuffer and setOTCRechargeRate, update fields within the same OTC struct. This leads to redundant function calls and increased contract size.\n2. **Cause:** The functions were implemented separately, possibly for operational flexibility (e.g., frequent updates to rechargeRate).\n3. **Exploitation:** No direct exploit, but inefficient design. Combining them could reduce gas costs for deployments and upgrades.\n4. **Impact:** Slightly higher gas usage and more complex admin operations. The trade-off is that combining them would require specifying both parameters even when only one is being updated.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L255-L276"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Documentation & minor issues",
+            "description": "1. **Description:** Several minor documentation and labeling issues were identified across the codebase, including ambiguous variable names (e.g., 'buffer'), missing precision warnings for high-decimal tokens, and potentially incorrect error messages.\n2. **Cause:** Insufficient inline documentation and attention to detail during development.\n3. **Exploitation:** These do not represent security vulnerabilities but could lead to misunderstandings during audits or maintenance, increasing the risk of future bugs.\n4. **Impact:** Reduced code readability and maintainability. Clearer documentation would improve auditability and reduce the chance of human error during future development.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L182",
+                "MainnetController.sol#L949",
+                "MainnetController.sol#L161",
+                "MainnetController.sol#L1074"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        }
+    ]
+}

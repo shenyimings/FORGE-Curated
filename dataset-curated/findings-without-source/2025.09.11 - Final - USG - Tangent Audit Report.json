@@ -1,0 +1,211 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.09.11 - Final - USG - Tangent Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Tangent-labs/tangent-contracts",
+            "https://github.com/sherlock-audit/2025-08-usg-tangent"
+        ],
+        "commit_id": [
+            "d0fe823accbfed7adc27eb18824dd2d401741ba5",
+            null
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-28",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Expired PT doesn't always redeems 1:1 for underlying token",
+            "description": "The OraclePendlePT contract assumes that after a Pendle Principal Token (PT) expires, it can always be redeemed 1:1 for the underlying asset via the SY token mechanism. However, in practice, redemption often occurs through external DEX swaps that are subject to MEV, slippage, and low liquidity, especially during volatile market conditions. This assumption fails to account for real-world market dynamics, leading to potential discrepancies in the actual redemption value.\n\nThe root cause is that the contract does not validate the market conditions or slippage along the redemption path. It hardcodes the assumption of a guaranteed 1:1 redemption post-expiry without verifying the actual exchange rate or execution path.\n\nAn attacker or adverse market condition could exploit this by manipulating DEX prices or creating high slippage scenarios during PT redemption, especially in illiquid markets. This would allow them to extract value from the protocol by borrowing against overvalued PT collateral.\n\nThe impact is that the oracle will overvalue expired PTs, leading to incorrect collateral valuation in borrowing positions. This mispricing can result in under-collateralized loans, failed liquidations, and ultimately financial loss to the protocol due to bad debt.\n",
+            "severity": "High",
+            "location": [
+                "OraclePendlePT.sol#41-43"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Caller supplied ControlTower lets anyone be the migrator",
+            "description": "The migration and reentrancy functions in the MarketCore contract use a caller-supplied IControlTower parameter to verify if the sender is a valid migrator via _verifySenderMigrator. This design flaw allows an attacker to pass a maliciously crafted ControlTower contract that always returns true for isPositionMigrator, bypassing access control checks.\n\nThe root cause is that the contract delegates authority checks to an external, untrusted _controlTower parameter instead of using the trusted controlTower stored in the contract's state. This breaks the principle of least privilege and trust boundaries.\n\nAn attacker can deploy a fake ControlTower that returns true for any address, then call migrateFrom to drain a victim's collateral to an attacker-controlled receiver. They can also use migrateTo to push debt onto other users, potentially forcing liquidations, and toggle the reentrancy lock to disrupt normal operations.\n\nThe impact is severe: attackers can drain user collateral, manipulate debt positions, and cause denial-of-service by flipping the reentrancy lock. This compromises the integrity of user positions and poses a systemic risk to the protocol's solvency.\n",
+            "severity": "High",
+            "location": [
+                "MarketCore.sol::isPositionMigrator#594-596"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Incorrect assumption of fixed 1e18 scaling in Pendle PT Oracle Rate",
+            "description": "The OraclePendlePT contract assumes that the getPtToSyRate() function from Pendle's oracle always returns a value scaled to 1e18. However, some Pendle markets return rates with higher decimal precision (e.g., 27 decimals), which the contract fails to normalize.\n\nThe root cause is the lack of decimal normalization in the oracle logic. The contract directly uses the raw rate from getPtToSyRate without checking or adjusting for varying decimal representations across different Pendle markets.\n\nAn attacker could exploit this by targeting markets where the PT/SY rate has higher precision, causing the oracle to miscalculate the PT price. This mispricing would allow over-collateralized borrowing or prevent correct liquidation of under-collateralized positions.\n\nThe impact is incorrect pricing of PT tokens, which affects collateral valuation and liquidation mechanics. This can lead to protocol insolvency as users borrow more than they should and avoid liquidation due to inflated collateral values.\n",
+            "severity": "Medium",
+            "location": [
+                "OraclePendlePT.sol#45"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Incorrect assumption that one (1) Pendle SY token equals one (1) Yield Token in oracle pricing",
+            "description": "The OraclePendlePT contract assumes that 1 Pendle Standard Yield (SY) token is always equivalent to 1 unit of the underlying Yield Token. This assumption is hardcoded into the pricing formula, which multiplies the PT/SY rate by the underlying price without validating the actual market value of the SY token.\n\nThe root cause is the absence of a market-based price check for the SY token. The contract relies on an invalid economic assumption that SY maintains a perfect 1:1 peg with the underlying yield-bearing asset, ignoring slippage, market depth, and accrued yield dynamics.\n\nAn attacker could exploit periods of SY depegging (due to low liquidity or high redemption pressure) to manipulate the oracle price. By supplying PT as collateral during such events, they could overstate its value and borrow excessively.\n\nThe impact is an inflated oracle price for PT tokens, leading to incorrect liquidation decisions. Users may become under-collateralized but remain unliquidated, increasing the risk of bad debt and threatening the protocol's solvency.\n",
+            "severity": "Medium",
+            "location": [
+                "OraclePendlePT.sol#45"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "USG peg assumption in on-chain safety checks incorrect liquidation/insolvency decisions when USG depegs",
+            "description": "The MarketCore and Collateral contracts compute health factors, LTV, and liquidation eligibility by comparing USD-valued collateral against raw USG-denominated debt, assuming 1 USG == $1. This creates a unit mismatch because debt is not converted to USD using a USG price oracle.\n\nThe root cause is the hardcoded assumption of USG's $1 peg in safety checks. The function getAccountLTV returns collateral value in USD but compares it directly to userDebt_ in raw USG units without multiplying by the current USG price.\n\nIf USG depegs (e.g., drops to $0.90), the protocol will still treat 1 USG as $1, leading to incorrect LTV calculations. This can result in silent insolvency where under-collateralized positions are not flagged, or unfair liquidations when USG is overvalued.\n\nThe impact includes incorrect liquidation triggers, potential for silent insolvency, and operational risk for keepers relying on faulty on-chain signals. This undermines the protocol's risk management system during depeg events.\n",
+            "severity": "Medium",
+            "location": [
+                "Collateral.sol#192",
+                "Collateral.sol#194"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Lack of USDT support due to use of transfer",
+            "description": "The ZappingProxy contract uses the ERC20 transfer function to send leftover tokenIn (e.g., USDT) to the fee treasury. However, USDT and similar tokens do not return a boolean value on transfer, causing the transaction to revert when SafeERC20's transfer function expects a success boolean.\n\nThe root cause is the direct use of transfer instead of safeTransfer from the SafeERC20 library, which handles non-standard tokens like USDT that do not comply with the ERC20 boolean return requirement.\n\nUsers attempting to zap with USDT will experience transaction failures whenever there is a leftover balance, as the transfer call reverts. This results in a denial-of-service for USDT users across all zapping actions (zapDeposit, zapRepay, etc.).\n\nThe impact is a consistent denial-of-service for users trying to interact with the protocol using USDT, reducing token compatibility and user accessibility. This limits the protocol's utility and excludes a major stablecoin from its ecosystem.\n",
+            "severity": "Medium",
+            "location": [
+                "ZappingProxy.sol#66"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "ZappingProxy cannot receive ETH refunds resulting in failed zaps",
+            "description": "The ZappingProxy forwards ETH (msg.value) to routers during zap operations but lacks a payable receive or fallback function. As a result, if a router attempts to refund unused ETH to the proxy, the transaction reverts because the contract cannot accept ETH directly.\n\nThe root cause is the absence of a payable function to handle incoming ETH refunds. While the contract attempts to sweep ETH balance to the treasury, it cannot receive ETH in the first place, making the sweep logic unreachable in refund scenarios.\n\nThis affects any zap path involving ETH where the router may refund unused funds. The entire zap transaction will revert upon receiving ETH, even if the swap was successful, leading to failed operations.\n\nThe impact is failed zaps for ETH-based paths that expect refunds, resulting in a poor user experience and potential loss of gas fees. This limits the reliability of ETH-based interactions with the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "ZappingProxy.sol#39-76"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "No slippage check for liquidators when they burn USG from their account without Swapping first",
+            "description": "When a liquidator uses their own USG balance to liquidate a position, the protocol does not enforce a slippage check on the amount of USG burned relative to the collateral seized. This only applies when using the zap path (collateral to USG swap), but not when using existing USG balance.\n\nThe root cause is the lack of a minimum collateral valuation check when the liquidator uses msg.sender's USG balance. The system assumes the pre-defined minUSG value is sufficient, but does not validate the actual exchange rate at execution time.\n\nA liquidator may intend to seize $990 of collateral by burning $981 of USG (including fee), but if the collateral value drops to $978 at execution, they still burn $980 of USG. Without a slippage check, this results in a loss for the liquidator.\n\nThe impact is financial loss for liquidators who do not receive adequate collateral for the USG they burn. While this does not directly harm the protocol, it disincentivizes liquidation and may reduce market efficiency during volatile conditions.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incorrect calls and Enforcements during Migration To a market.",
+            "description": "The _migrateTo function in the MarketCore contract unconditionally enforces deposit and borrow pause checks and always calls _postDeposit, even when the migration only involves moving debt or collateral alone. This is incorrect because isDepositPaused and isBorrowPaused are meant to prevent new deposits and borrows, not apply to migrations. The root cause is improper conditional logic in migration handling, where special hooks like _postDeposit are called regardless of whether a deposit actually occurred. An attacker or affected user could exploit this by attempting to migrate debt without collateral during a paused state, which would fail even if legitimate, leading to a denial of service. The impact is that users cannot migrate positions when needed, increasing liquidation risk and potentially resulting in loss of funds during volatile market conditions.\n",
+            "severity": "Medium",
+            "location": [
+                "MarketCore.sol::migrateTo",
+                "MarketCore.sol#L655-L679",
+                "MarketCore.sol#L193-L196",
+                "MarketCore.sol#L105-L114"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "WStable Contract Invariant Break in is-Saving=true Mode",
+            "description": "The WStable contract breaks the 1:1 invariant between vault shares and WStable tokens when using the isSaving=true mode. The vulnerability arises from asymmetric conversion logic in the mint and burn functions: mint converts yield-bearing shares to assets using previewMint, while burn converts assets back to shares using previewWithdraw. When yield accrues in the underlying ERC4626 vault between mint and burn operations, users receive fewer shares than originally deposited. The root cause is the failure to account for already accrued yield at deposit time, leading to permanent share loss. An attacker can exploit this by depositing yield-bearing shares, waiting for additional yield accrual, then burning the WStable tokens to receive fewer shares. The impact is direct financial loss for users\u2014up to 8.33% in tested scenarios\u2014undermining trust in the 1:1 redemption promise of the WStable token.\n",
+            "severity": "Medium",
+            "location": [
+                "WStable.sol::mint",
+                "WStable.sol::burn",
+                "WStable.sol#L44"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Users can steal accumulated rewards when totalCollateral becomes zero due to incomplete state updates",
+            "description": "When totalCollateral becomes zero, the _updateReward function in RewardAccumulator skips updating userRewardPerTokenPaid for new depositors because it is wrapped in a condition that checks totalCollateral != 0. As a result, userRewardPerTokenPaid remains at 0 while rewardPerTokenStored retains previously accumulated values. The root cause is the omission of user state synchronization when totalCollateral is zero. An attacker can exploit this by depositing minimal collateral (e.g., 1 wei) when totalCollateral is zero, triggering reward calculation without updating their userRewardPerTokenPaid. Upon withdrawal, they claim rewards based on the full difference between current rewardPerTokenStored and 0, effectively stealing previously accumulated rewards. The impact includes loss of funds from the reward pool, depletion of protocol rewards, and denial of earned rewards to legitimate users.\n",
+            "severity": "Medium",
+            "location": [
+                "RewardAccumulator.sol::_updateReward",
+                "RewardAccumulator.sol#L156-L176"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "There is no way for the admin to sweep rewards lost due to precision",
+            "description": "The contract does not provide a mechanism for administrators to recover tokens lost due to precision errors during reward distribution. The root cause is the absence of a sweep function for leftover or truncated reward tokens in both VsTAN and RewardAccumulator contracts. During reward calculations, small amounts are truncated due to integer division, especially with low-decimal tokens like USDC, leading to accumulation of unrecoverable dust in the contract. While not directly exploitable in an attack, this represents a systemic loss of funds over time. The impact is permanent loss of reward tokens due to rounding errors, which cannot be reclaimed by the protocol or redistributed. This reduces the efficiency of the reward system and may lead to significant value loss over multiple reward cycles.\n",
+            "severity": "Medium",
+            "location": [
+                "RewardAccumulator.sol#L586C8-L590C10",
+                "VsTAN.sol#L556C6-L561C14"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "WStable 1:1 exit path breaks with cooldown enabled ERC4626 vaults like sUSDe",
+            "description": "The WStable contract is incompatible with ERC4626 vaults that enforce withdrawal cooldowns, such as sUSDe, because its burn and redeem functions directly call withdraw() on the underlying vault. The root cause is the lack of support for cooldown periods in WStable's design. When a user attempts to redeem wUSDE for USDe, the transaction reverts because sUSDe's withdraw() function enforces a 7-day cooldown by default. This breaks the promised 1:1 instant withdrawal invariant. The impact is that users cannot withdraw their funds instantly, leading to fund lock-up for up to 7 days, degraded user experience requiring multiple manual unstaking steps, and violation of Sherlock's fund accessibility guidelines. This is not an exploit but a critical design flaw affecting all users.\n",
+            "severity": "Medium",
+            "location": [
+                "WStable.sol::burn",
+                "WStable.sol::redeem",
+                "WStable.sol#L102-L105",
+                "WStable.sol#L80-L92"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Liquidation Fee is incorrectly computed",
+            "description": "The liquidation fee is incorrectly calculated as a percentage of the repaid debt (USGToRepay) rather than the liquidation bonus (collateral value minus debt). The root cause is a flawed fee calculation in the _liquidate function, where fee = _mulDiv(USGToRepay, liquidationFee, DENOMINATOR). This means liquidators must pay a fee based on the full debt amount, even when the collateral value is only slightly above the debt. In a price drop scenario, this can cause liquidators to pay more in USG than the value of collateral received, resulting in a net loss. The impact is that rational liquidators will avoid participating, disabling the liquidation mechanism, increasing protocol insolvency risk from accumulating bad debt, and causing cascading failures during market stress.\n",
+            "severity": "Medium",
+            "location": [
+                "MarketCore.sol::_liquidate",
+                "MarketCore.sol#L441"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Delayed Reward Cut Parameter Updates (Two-Cycle Enforcement Lag)",
+            "description": "The updateRCParams function in RewardAccumulator processes rewards before updating the new reward cut parameters, causing a two-cycle delay before changes take effect. The root cause is incorrect ordering of operations: processRewards() is called with old parameters before rcParams[market] is updated. As a result, when an admin updates parameters, they are not applied until the third reward cycle\u2014first cycle uses old params, second uses old lastRewardCuts, third finally uses new params. The impact is that critical parameter adjustments, such as during token depegging events, are delayed by two full processing cycles, reducing the protocol's responsiveness to market conditions and potentially leading to incorrect reward distributions during emergencies.\n",
+            "severity": "Medium",
+            "location": [
+                "RewardAccumulator.sol::updateRCParams",
+                "RewardAccumulator.sol#L620"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Edge-case USG prices will force reverts for functions relying on IRCalculator",
+            "description": "The vulnerability arises in the _computeIR() function when calculating quotientFixedPoint using integer division before converting to 64.64 fixed-point format. For USG prices extremely close to pMax * 1e12, the division result truncates to zero, which subsequently causes a revert in the ABDKMath64x64.log_2 function that does not accept zero input.\n\nThe root cause is the premature integer division ((pMax * E12) - USGPrice) / (pMax - pMin) in IRCalculator.sol, which discards fractional values less than 1. This truncation leads to a zero value being passed into fixed-point arithmetic operations, ultimately triggering a revert in log_2(0).\n\nAn attacker or natural market condition could cause the oracle to return a USG price very close to (but not exceeding) pMax * 1e12. When any user triggers a function that calls _computeIR() (e.g., borrow, withdraw), the calculation will result in quotientFixedPoint = 0, leading to log_2(0) and a revert.\n\nThe impact is a denial of service for critical protocol functions including withdraw, borrow, repay, liquidate, and migrate operations whenever the USG price approaches the upper bound. This disrupts normal protocol functionality and locks user funds temporarily.\n",
+            "severity": "Medium",
+            "location": [
+                "IRCalculator.sol::249",
+                "IRCalculator.sol::295",
+                "IRCalculator.sol::296"
+            ],
+            "files": []
+        }
+    ]
+}

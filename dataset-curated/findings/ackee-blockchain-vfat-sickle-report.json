@@ -1,0 +1,477 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-vfat-sickle-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/vfat-io/sickle-public"
+        ],
+        "commit_id": [
+            "899e7aaff58320f01f4aa5a9f906d0e41599a085"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-04",
+        "project_path": {
+            "sickle-public": "dataset-curated/contracts/ackee-blockchain-vfat-sickle-report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Whitelisted callers can perform delegatecall on every Sickle",
+            "description": "This vulnerability allows any address whitelisted in the SickleRegistry to perform delegatecall operations on every deployed Sickle contract. The root cause is the centralized SickleRegistry, which maintains a global whitelist used by all Sickle instances via the Multicall contract. Since the registry is immutable and shared across all user wallets, a malicious or compromised admin can add a malicious caller and target, enabling unauthorized execution of arbitrary code in the context of any Sickle. An attacker who gains control of the admin key can whitelist themselves and a malicious contract, then call multicall() on all Sickle instances to drain user funds via delegatecall. This results in a complete loss of user assets across the entire system, with no possibility of mitigation once the transaction is executed due to the atomic nature of the attack.\n",
+            "severity": "High",
+            "location": [
+                "Sickle.sol",
+                "Multicall.sol",
+                "SickleRegistry.sol::setWhitelistedCallers",
+                "SickleRegistry.sol::setWhitelistedTargets"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Referral code setter can be front-run",
+            "description": "The setReferralCode function in the SickleRegistry contract is vulnerable to front-running because it does not include any protection against race conditions. The function checks if a referral code is already assigned and, if not, assigns it to the caller. However, since this operation is not atomic or protected by a commit-reveal scheme, an attacker can observe a pending transaction in the mempool and submit a competing transaction with a higher gas price to claim the same referral code. This allows the attacker to steal referral rewards intended for the original user. The impact is limited to loss of referral incentives rather than principal funds, but it undermines the fairness and integrity of the referral system. The exploit is highly likely due to the simplicity of the attack and the lack of economic or technical barriers.\n",
+            "severity": "Medium",
+            "location": [
+                "SickleRegistry.sol::setReferralCode#104-111"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleRegistry.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Non-contract registries can cause reverts",
+            "description": "The ConnectorRegistry contract does not validate that addresses added to the customRegistries array are actual smart contracts, allowing EOAs (externally owned accounts) to be registered. When the connectorOf or hasConnector functions are called, they attempt external calls to each custom registry. While try-catch blocks are used, they do not catch reverts caused by calling functions on EOAs, which lack code and will always revert on function calls. This leads to unexpected reverts in the calling contract, disrupting normal operation and potentially causing denial of service. The root cause is the missing validation in the addCustomRegistry function, which should ensure only contract addresses are accepted. The impact is low as it requires an admin error and affects only specific functionality, but it can still impair system reliability.\n",
+            "severity": "Low",
+            "location": [
+                "ConnectorRegistry.sol::addCustomRegistry",
+                "ConnectorRegistry.sol::connectorOf",
+                "ConnectorRegistry.sol::hasConnector"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Incomplete data validation for NFT positions",
+            "description": "The NftSettingsRegistry contract lacks comprehensive input validation for NFT position settings, exposing the system to misconfiguration risks. Multiple critical parameters are not validated, including tick bounds (MIN_TICK/MAX_TICK), relative ordering of trigger ticks, validity of token addresses (zero address or EOA), alignment with pool tick spacing, existence of the NFT position, and logical conflicts between autoExit and autoRebalance triggers. Additionally, there is no validation that harvest or exit tokens are valid contracts, or that pool addresses correspond to the actual NFT's pool. The root cause is insufficient defensive programming and lack of invariant enforcement. While the client partially addressed this by dismissing some validations as unnecessary, the absence of these checks increases the risk of user errors leading to ineffective or broken automation strategies. The impact is limited to individual positions and can be corrected via updates, but it reduces system robustness and user trust.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Duplicate Sickle retrieval",
+            "description": "The _get_sickle_by_owner function is duplicated in both NftSettingsRegistry and PositionSettingsRegistry contracts, violating the DRY (Don't Repeat Yourself) principle and increasing maintenance burden. The function performs the same logic to retrieve a Sickle instance based on owner address, but is implemented separately in two contracts. This redundancy increases the risk of inconsistent behavior if one copy is modified without updating the other, and complicates future upgrades. The root cause is poor code organization and lack of shared utility functions. While not directly exploitable, it represents a code quality issue that could indirectly lead to vulnerabilities during refactoring or extension. The recommended fix is to centralize this logic in the SickleFactory contract, but the client acknowledged the duplication as acceptable due to deployment costs.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol::_get_sickle_by_owner",
+                "PositionSettingsRegistry.sol::_get_sickle_by_owner"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol",
+                "sickle-public/contracts/PositionSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Potential underflow or overflow in tick range calculation",
+            "description": "The validateRebalanceFor function in NftSettingsRegistry.sol calculates tick bounds using buffer values without proper bounds checking. This can lead to integer underflow when tickLower is very small (due to subtraction of bufferTicksBelow) or integer overflow when tickUpper is very large (due to addition of bufferTicksAbove). The root cause is the lack of clipping for extreme values in tick arithmetic involving int24 types. An attacker could potentially manipulate pool states or prevent rebalancing operations by triggering these arithmetic errors. This would result in a denial of service for certain rebalancing actions, undermining the protocol's automated position management. Although the impact is classified as a warning, the potential for arithmetic exceptions in critical logic paths poses a risk to system reliability.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol::validateRebalanceFor#125-130"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Variable shadowing",
+            "description": "In PositionSettingsRegistry.sol, the constructor parameter `timelockAdmin` shadows the inherited storage variable of the same name from the TimelockAdmin contract. This creates confusion during code review and increases the risk of bugs if developers mistakenly believe they are accessing or modifying the storage variable when they are actually referencing the local parameter. The root cause is poor naming hygiene in constructor arguments that conflict with existing state variables. This issue also occurs in multiple functions within SickleFactory.sol where the `admin` parameter shadows a storage variable. While this does not directly enable exploitation, it degrades code clarity and maintainability, increasing the likelihood of future vulnerabilities during upgrades or modifications. The impact is primarily on code quality and long-term security posture.\n",
+            "severity": "Informational",
+            "location": [
+                "PositionSettingsRegistry.sol::constructor",
+                "SickleFactory.sol::_deploy",
+                "SickleFactory.sol::_getSickle",
+                "SickleFactory.sol::predict",
+                "SickleFactory.sol::sickles",
+                "SickleFactory.sol::admins",
+                "SickleFactory.sol::getOrDeploy"
+            ],
+            "files": [
+                "sickle-public/contracts/PositionSettingsRegistry.sol",
+                "sickle-public/contracts/SickleFactory.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Insufficient data validation in the PositionSettingsRegistry contract",
+            "description": "The PositionSettingsRegistry contract fails to validate critical input parameters during initialization and operation. Specifically, it does not check for zero addresses in constructor arguments or in settings such as pair, router, and stakingContract. Additionally, it does not verify relationships between interdependent parameters or ensure valid token paths when output tokens differ from pool tokens. The root cause is the absence of defensive input validation. An attacker could exploit this by deploying the contract with invalid or malicious addresses, leading to loss of funds or complete contract dysfunction. For example, setting a zero address for the router would make swaps impossible. The impact includes potential fund loss, broken functionality, and reduced trust in the system's robustness.\n",
+            "severity": "Informational",
+            "location": [
+                "PositionSettingsRegistry.sol::constructor",
+                "PositionSettingsRegistry.sol"
+            ],
+            "files": [
+                "sickle-public/contracts/PositionSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incorrect price calculation in PositionSettingsRegistry",
+            "description": "The PositionSettingsRegistry contract calculates pool prices using getAmountOut with an amountIn of 1 wei, which can return zero due to precision loss, especially in stablecoin pools with balanced reserves. This causes the transaction to revert with InvalidPrice, disrupting functionality. The root cause is the use of an insufficiently large input amount for price estimation, combined with improper handling of edge cases. For pools like USDC/USDT, where reserves are nearly equal, swapping 1 wei returns zero output, triggering the revert. Additionally, if the return amount exceeds 1e18, the inverse calculation results in zero, also causing a revert. This leads to denial of service for price-sensitive operations. The impact is operational disruption in stable or highly volatile pools, reducing protocol reliability.\n",
+            "severity": "Informational",
+            "location": [
+                "PositionSettingsRegistry.sol::getAmountOut#275-300"
+            ],
+            "files": [
+                "sickle-public/contracts/PositionSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Incorrect usage of Initializable",
+            "description": "The Sickle.sol contract incorrectly uses the Initializable pattern by applying the initializer modifier to both the Multicall constructor and the Sickle constructor, as well as having a separate initialize function. This violates the OpenZeppelin Initializable contract's warning against multiple initializers, risking multiple initializations, callable initialization functions post-deployment, and undefined behavior in proxy patterns. The root cause is a misunderstanding of upgradeable contract patterns. This could allow malicious re-initialization, potentially changing ownership or critical parameters after deployment. The impact includes potential loss of control over the contract, fund loss, or permanent corruption of contract state, especially in an upgradeable architecture.\n",
+            "severity": "Informational",
+            "location": [
+                "Sickle.sol::constructor",
+                "Sickle.sol::initialize"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Variable naming convention",
+            "description": "The _referralCodes variable in SickleFactory.sol is marked public but uses an underscore prefix, which contradicts Solidity naming conventions that reserve underscores for internal/private variables. The root cause is inconsistent adherence to naming standards. This may mislead developers into believing the variable is private when it is actually publicly accessible, increasing the risk of unintended access or incorrect assumptions during integration. While the impact is primarily on code readability and maintainability, it can indirectly contribute to security issues during future development or audits due to confusion about access levels.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleFactory.sol::_referralCodes"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleFactory.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "One-step ownership transfer",
+            "description": "The SickleFactory contract uses a single-step admin transfer via setAdmin, which risks permanent loss of control if the new admin address is mistyped or compromised. The root cause is the lack of a two-step ownership transfer mechanism. Although the issue was acknowledged with the justification that a multisig is used, the pattern remains risky if the admin is ever changed to a non-multisig address. A single-step transfer provides no safety window for error correction. The impact is high: a typo in the address could result in irreversible loss of administrative privileges, disabling critical functions like upgrades or emergency pauses.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleFactory.sol::setAdmin"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleFactory.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Duplicate tokens in feeTokens array can lead to inconsistent fee calculation",
+            "description": "The chargeFees function in FeesLib.sol loops through a feeTokens array without deduplication. If duplicates exist, earlier fee charges alter the balance used as the basis for subsequent calculations, making fees dependent on input order. The root cause is the lack of input validation for duplicate entries. This undermines the predictability and transparency of the fee model. An attacker could manipulate the fee structure by crafting inputs with repeated tokens, potentially reducing total fees owed or creating accounting inconsistencies. The impact is financial\u2014distorting the intended economic model\u2014and reputational, as users cannot trust fee calculations.\n",
+            "severity": "Informational",
+            "location": [
+                "FeesLib.sol::chargeFees#84-89",
+                "FeesLib.sol::chargeFee#47-57"
+            ],
+            "files": [
+                "sickle-public/contracts/libraries/FeesLib.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Inconsistent handling of ETH and WETH across the FeesLib contract",
+            "description": "FeesLib.sol treats ETH and WETH inconsistently: chargeFee unwraps WETH and uses native balance when feeToken is ETH, but treats WETH as a regular ERC-20 when passed directly, ignoring native ETH. Conversely, getBalance returns only WETH balance for ETH queries, ignoring native ETH. The root cause is a lack of unified token handling logic. This can lead to incorrect fee calculations, especially when both ETH and WETH are present. For example, fees might be calculated on WETH only in one context but on combined ETH+WETH in another. The impact includes financial discrepancies, unexpected reverts, and potential fund loss due to miscalculated balances.\n",
+            "severity": "Informational",
+            "location": [
+                "FeesLib.sol::chargeFee#48-56",
+                "FeesLib.sol::getBalance#92-100"
+            ],
+            "files": [
+                "sickle-public/contracts/libraries/FeesLib.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Ambiguous handling of the native value in the SwapLib contract",
+            "description": "SwapLib.sol does not properly handle native ETH as an input token. The _swap function reverts when tokenIn is the zero address or ETH address due to balance checks and approvals on what is assumed to be an ERC-20. The root cause is the lack of native token wrapping logic. Although the issue was acknowledged with the note that ETH is wrapped earlier, the absence of explicit handling in SwapLib creates ambiguity and potential for misuse. If a caller bypasses pre-wrapping, the function will revert unexpectedly. The impact is functional disruption and potential denial of service for swap operations involving native ETH.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapLib.sol::_swap#49",
+                "SwapLib.sol::_swap#58"
+            ],
+            "files": [
+                "sickle-public/contracts/libraries/SwapLib.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Misleading inheritance",
+            "description": "The Automation.sol contract inherits from NonDelegateMulticall, which in turn inherits from SickleStorage (an upgradeable pattern), despite Automation being non-upgradeable. This introduces unused initializers and uninitialized owner/approved roles, rendering some functions inoperable (e.g., setApproved cannot be called). The root cause is improper inheritance design, mixing upgradeable and non-upgradeable components. This creates dead code, storage bloat, and confusion about access control. The impact is reduced code clarity, increased maintenance burden, and potential for future vulnerabilities if developers assume roles are functional when they are not.\n",
+            "severity": "Informational",
+            "location": [
+                "Automation.sol",
+                "NonDelegateMulticall.sol"
+            ],
+            "files": [
+                "sickle-public/contracts/Automation.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "No input array length validation",
+            "description": "The setConnectors, updateConnectors (in ConnectorRegistry.sol), and multicall functions in Automation.sol (e.g., harvestFor, compoundFor) accept multiple arrays that must be of equal length but lack validation. The root cause is missing require checks for array lengths. This can lead to out-of-bounds runtime panics if arrays are mismatched. An attacker or erroneous caller could trigger a denial of service by providing arrays of different lengths. The impact is operational disruption, especially in batch operations critical to automation, potentially freezing protocol functions that rely on these multicalls.\n",
+            "severity": "Informational",
+            "location": [
+                "ConnectorRegistry.sol::setConnectors",
+                "ConnectorRegistry.sol::updateConnectors",
+                "Automation.sol::harvestFor#178-192",
+                "Automation.sol::compoundFor#286-302"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol",
+                "sickle-public/contracts/Automation.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "No data validation on registry adding and updates",
+            "description": "The addCustomRegistry and updateCustomRegistry functions in ConnectorRegistry.sol lack critical validations: no duplicate checks, no zero address checks, and no bounds checking on indices. This allows duplicate entries and out-of-bounds access, leading to inconsistent state where a registry may be in the array but marked as not custom. The root cause is insufficient input validation in admin functions. Although partially fixed with duplicate checks, the lack of full on-chain validation increases risk. The impact includes state corruption, potential for unauthorized registry manipulation, and unreliable lookups, undermining the integrity of the registry system.\n",
+            "severity": "Informational",
+            "location": [
+                "ConnectorRegistry.sol::addCustomRegistry",
+                "ConnectorRegistry.sol::updateCustomRegistry"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Missing zero address validation",
+            "description": "Multiple contracts, including SickleFactory, ConnectorRegistry, SickleMultisig, NftSettingsRegistry, Automation, PositionSettingsRegistry, FeesLib, SwapLib, and TransferLib, lack zero address checks in constructors and critical functions. The root cause is the omission of basic defensive programming practices. Setting a zero address for critical dependencies (e.g., router, registry, WETH) would permanently break contract functionality. The impact is high: accidental or malicious use of zero addresses could lead to irreversible loss of functionality, fund locking, or governance paralysis. While acknowledged as handled off-chain, on-chain validation is a critical safety net.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleFactory.sol::constructor",
+                "ConnectorRegistry.sol::constructor",
+                "SickleMultisig.sol::constructor",
+                "SickleMultisig.sol::_addSigner",
+                "NftSettingsRegistry.sol::constructor",
+                "Automation.sol::constructor",
+                "PositionSettingsRegistry.sol::constructor",
+                "FeesLib.sol::constructor",
+                "SwapLib.sol::constructor",
+                "TransferLib.sol::constructor"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleFactory.sol",
+                "sickle-public/contracts/ConnectorRegistry.sol",
+                "sickle-public/contracts/SickleMultisig.sol",
+                "sickle-public/contracts/NftSettingsRegistry.sol",
+                "sickle-public/contracts/Automation.sol",
+                "sickle-public/contracts/PositionSettingsRegistry.sol",
+                "sickle-public/contracts/libraries/FeesLib.sol",
+                "sickle-public/contracts/libraries/SwapLib.sol",
+                "sickle-public/contracts/libraries/TransferLib.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Duplicate code",
+            "description": "The ConnectorRegistry contract contains duplicate logic in connectorOf and hasConnector functions, which both iterate to find a connector but return different values. The root cause is lack of code reuse through internal helper functions. This increases code size, maintenance burden, and the risk of inconsistent fixes. While not directly exploitable, it violates the DRY principle and can lead to bugs if one function is updated and the other is not. The impact is reduced code quality and increased technical debt, making audits and upgrades more error-prone.\n",
+            "severity": "Informational",
+            "location": [
+                "ConnectorRegistry.sol::connectorOf",
+                "ConnectorRegistry.sol::hasConnector"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Usage of magic constants",
+            "description": "The SickleRegistry and FeesLib contracts use magic numbers like 500 (for 5% fee cap) and 10_000 (for basis points) without defining named constants. The root cause is poor code readability practices. Magic constants make the code harder to understand and maintain, as their meaning is not immediately clear. For example, 500 could be misinterpreted without the comment. The impact is reduced code clarity and increased risk of errors during updates (e.g., changing fee limits incorrectly). Using named constants like MAX_FEE would improve transparency and safety.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleRegistry.sol::setFees#126",
+                "FeesLib.sol#59"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleRegistry.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Unconsolidated storage variable definitions",
+            "description": "In SickleMultisig.sol, the _signers variable is defined far from other storage variables (at line 253), while others are at the top. The root cause is inconsistent code organization. This can mislead developers about the storage layout, potentially causing incorrect assumptions during upgrades or audits. The impact is primarily on code maintainability and safety in upgradeable contexts, where storage layout must be preserved. Misplaced variables increase the risk of storage collisions in proxy patterns.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleMultisig.sol::_signers"
+            ],
+            "files": [
+                "sickle-public/contracts/governance/SickleMultisig.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Redundant storage variable",
+            "description": "The approvedAutomatorsLength variable in Automation.sol redundantly stores the length of the approvedAutomators array, which can be obtained via approvedAutomators.length. The root cause is unnecessary state variable usage. This wastes gas on updates and increases storage costs. Additionally, the _setApprovedAutomator function lacks a check for duplicate entries. The impact is increased transaction costs and potential for duplicate entries in the list, leading to inefficiencies and possible logic errors in access control checks.\n",
+            "severity": "Informational",
+            "location": [
+                "Automation.sol::approvedAutomatorsLength",
+                "Automation.sol::_setApprovedAutomator"
+            ],
+            "files": [
+                "sickle-public/contracts/Automation.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Mapping isCustomRegistry is redundant",
+            "description": "The isCustomRegistry mapping in ConnectorRegistry.sol is never read and only updated during registry additions and updates. The active state is already reflected in the customRegistries array, and removals are logged via events. The root cause is redundant state tracking. This wastes storage and increases gas costs. The impact is inefficient use of blockchain resources and unnecessary complexity. Removing it simplifies the contract and reduces attack surface, as confirmed by the fix that replaced it with a derived function.\n",
+            "severity": "Informational",
+            "location": [
+                "ConnectorRegistry.sol::isCustomRegistry"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Inconsistent function naming convention",
+            "description": "The NftSettingsRegistry.sol and PositionSettingsRegistry.sol contracts use snake_case for internal function names (e.g., _get_sickle_by_owner), violating Solidity's camelCase convention. The root cause is inconsistent style adherence. This reduces code readability and professionalism, making the codebase harder to navigate for developers familiar with standard practices. While not a security risk, it impacts maintainability and collaboration. The impact is on code quality and long-term project sustainability, increasing the cognitive load during reviews and audits.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol::_get_sickle_by_owner",
+                "NftSettingsRegistry.sol::_set_nft_settings",
+                "NftSettingsRegistry.sol::_unset_nft_settings",
+                "NftSettingsRegistry.sol::_check_rebalance_config",
+                "NftSettingsRegistry.sol::_check_tick_width",
+                "PositionSettingsRegistry.sol::_check_reward_config",
+                "PositionSettingsRegistry.sol::_get_sickle_by_owner",
+                "PositionSettingsRegistry.sol::_get_pool_price"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol",
+                "sickle-public/contracts/PositionSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Typographical error in function comment",
+            "description": "The NftSettingsRegistry.sol contract contains a typographical error in the comment for the _check_rebalance_config function, where \"configuratgion\" is incorrectly spelled instead of \"configuration.\" The cause is a simple typographical mistake in a code comment. This issue cannot be exploited as it pertains only to a comment and does not affect runtime behavior or security. The impact is purely informational, affecting code readability and professionalism but not functionality or security.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "Misleading error name",
+            "description": "The TransactionNotReadyToExecute error in SickleMultisig.sol is used when a transaction fails due to an insufficient number of signatures, but the name does not clearly reflect this condition. The cause is that the error name is ambiguous and does not accurately describe the specific failure condition, leading to potential confusion during debugging or integration. This cannot be exploited maliciously, but it may mislead developers interpreting error logs or handling exceptions. The impact is limited to code clarity and developer experience, with no direct security or financial consequences.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleMultisig.sol::TransactionNotReadyToExecute#333"
+            ],
+            "files": [
+                "sickle-public/contracts/governance/SickleMultisig.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Unused errors",
+            "description": "The NftSettingsRegistry.sol contract defines two custom errors, CompoundOrHarvestNotSet and CompoundAndHarvestBothSet, which are not used anywhere in the codebase. The cause is that these errors were likely defined in anticipation of use but were never actually referenced, resulting in dead code. Unused errors cannot be triggered and thus pose no exploit risk. The impact is minimal, limited to increased bytecode size and reduced code clarity, but no security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "NftSettingsRegistry.sol#35-36"
+            ],
+            "files": [
+                "sickle-public/contracts/NftSettingsRegistry.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Redundant function",
+            "description": "The _Sickle_initialize function in Sickle.sol acts solely as a pass-through to _SickleStorage_initialize without adding any logic or validation. The cause is that the function was created unnecessarily, increasing code complexity without benefit. This redundancy cannot be exploited but may confuse developers about the initialization flow. The impact is on code maintainability and gas efficiency during deployment due to unnecessary function calls, though minimal.\n",
+            "severity": "Informational",
+            "location": [
+                "Sickle.sol::_Sickle_initialize#34-39"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {},
+            "title": "Missing duplicate registry validation",
+            "description": "The ConnectorRegistry contract does not validate for duplicate entries when adding or updating custom registries, allowing the same address to be added multiple times. The cause is lack of input validation in the addCustomRegistry and updateCustomRegistry functions. An attacker or user could repeatedly add the same registry, increasing gas costs for future iterations over the array. This leads to inefficient gas usage and potential denial-of-service via bloating, though the severity is low as it does not compromise security directly.\n",
+            "severity": "Informational",
+            "location": [
+                "ConnectorRegistry.sol::addCustomRegistry",
+                "ConnectorRegistry.sol::updateCustomRegistry"
+            ],
+            "files": [
+                "sickle-public/contracts/ConnectorRegistry.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {},
+            "title": "Errors in documentation",
+            "description": "The documentation for the onlyOwner modifier in SickleStorage.sol incorrectly claims that if the admin is not set, the call will not be restricted, which contradicts the actual implementation. The cause is that the comment was not updated to reflect the actual behavior of the modifier, which always checks msg.sender against owner and reverts if not matched. Misleading documentation could lead developers to assume insecure behavior is allowed, potentially introducing vulnerabilities in dependent systems. The impact is on developer understanding and integration safety, with potential indirect security risks if misinterpreted.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleStorage.sol::onlyOwner#42-45"
+            ],
+            "files": [
+                "sickle-public/contracts/base/SickleStorage.sol"
+            ]
+        }
+    ]
+}

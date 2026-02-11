@@ -1,0 +1,107 @@
+{
+    "path": "dataset-curated/reports/Zenith/Ammplify - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/itos-finance/NadBets"
+        ],
+        "commit_id": [
+            "aa2f2091693c6384ded179353a17558298108d18"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-28",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Reentrancy while settling balances using RFTLib",
+            "description": "The RFTLib library is used in multiple contracts to settle balances by reading token balances before and after a callback, then verifying the difference. However, this pattern is vulnerable to reentrancy attacks because although RFTLib.settle() has a reentrancy guard, it does not prevent cross-function reentrancy. In the TakerVault contract, a malicious actor could re-enter via the deposit() function during the callback phase of repay(), artificially inflating their balance to pass the post-callback check without actually repaying funds. This could allow an attacker to clear debt without transferring any real value, leading to significant loss of funds for the protocol.\n",
+            "severity": "High",
+            "location": [
+                "TakerVault.sol",
+                "MonCollector.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Overflow leads to zero tax calculation",
+            "description": "When closing a bet, the tax is calculated using `mulX128(payoutSplitX32 << 96, earnings, false)`. However, `payoutSplitX32` is of type uint32, and shifting it left by 96 bits causes an overflow within the 32-bit domain, resulting in zero. This leads to a tax value of zero regardless of the intended tax rate. The root cause is the lack of type promotion before the bit shift operation. An attacker could exploit this by triggering bet closures to avoid paying any tax, resulting in loss of expected revenue for the protocol. The impact is medium because it affects revenue but not core fund safety.\n",
+            "severity": "High",
+            "location": [
+                "Bettor.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "FlashLender.forgive doesn\u2019t release currentOutstanding",
+            "description": "The `forgive` function in FlashLender reduces the per-borrower `outstanding` mapping but fails to decrease the global `currentOutstanding`. As a result, even after a debt is forgiven, the global outstanding remains inflated, causing future borrow attempts to fail the `verifyIntegrity` check due to the incorrect total. This could permanently brick the flash lending pool, making it unusable despite the owner's intent to clear debt. The root cause is the omission of `currentOutstanding -= amount` in the `forgive` function. The impact is high due to potential denial of service, but the likelihood is low because it requires specific conditions and owner interaction.\n",
+            "severity": "Medium",
+            "location": [
+                "FlashLender.sol#L80-L87"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "verifySignature check have no domain separation",
+            "description": "The `verifySignature` function does not include domain separation via `address(this)` or `block.chainid` in the signed message. This allows signatures from one deployment or network (e.g., testnet) to be replayed on another (e.g., mainnet). A user who obtains a valid signature on one chain can reuse it on another to open unauthorized bets. The root cause is the lack of chain and contract-specific context in the hashing. This could lead to unauthorized actions and loss of user funds. The impact is low due to the need for signature leakage, but the risk is real in multi-chain deployments.\n",
+            "severity": "Low",
+            "location": [
+                "Bettor.sol#L336-L350"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "locked flag ineffective due to assignment before revert",
+            "description": "In `FlashLender.sol`, the `locked` flag is set to true before reverting in `verifyIntegrity`, but because Ethereum reverts all state changes on a revert, the assignment is rolled back. Thus, the lock state is never persisted, rendering the mechanism ineffective. The intended protection against invariant violations fails, as repeated violations will just revert without locking the system. The root cause is incorrect error handling logic. The impact is low because it doesn't directly lead to fund loss, but it weakens system resilience.\n",
+            "severity": "Low",
+            "location": [
+                "FlashLender.sol#L106-L107"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "TakerVault\u2019s ERC-4626 maxWithdraw/maxRedeem overestimates withdrawable assets",
+            "description": "The `maxWithdraw` and `maxRedeem` functions in TakerVault rely on `totalAssets`, which includes both actual balance and outstanding loans. However, loaned tokens are not available for withdrawal, so users are shown an inflated withdrawable amount. When they attempt to withdraw the displayed amount, the transaction may revert due to insufficient actual assets. The root cause is the failure to subtract outstanding loans from `totalAssets` in these views. This leads to a poor user experience and potential failed transactions, though no funds are at risk.\n",
+            "severity": "Informational",
+            "location": [
+                "TakerVault.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Missing check for wMon in pool tokens",
+            "description": "The `setupParams` function assumes one of the two tokens in a Uniswap V3 pool is wMon but does not validate this assumption. It simply assigns the non-wMon token as the bet asset, even if neither token is wMon. This could lead to incorrect bet configurations and potential logic errors in betting mechanics. The root cause is the absence of a validation check like `require(token0 == address(wMon) || token1 == address(wMon))`. While not directly exploitable, it introduces fragility and incorrect assumptions in the code.\n",
+            "severity": "Informational",
+            "location": [
+                "Bettor.sol#L375-L380"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "borrow does not ensure flash loan repayment",
+            "description": "The `borrow` function transfers tokens to a recipient but does not enforce repayment within the same transaction. It only updates bookkeeping variables before the transfer and relies on external enforcement of repayment. A whitelisted borrower could call `borrow`, skip calling `repay`, and keep the funds indefinitely. The function does not revert if `transactionOutstanding` is not cleared post-callback, breaking the fundamental assumption of flash loans. The root cause is the lack of a callback pattern or post-execution check. The impact is informational as the team has acknowledged the risk and chosen to accept it for flexibility.\n",
+            "severity": "Informational",
+            "location": [
+                "FlashLender.sol#L42-L53"
+            ],
+            "files": []
+        }
+    ]
+}

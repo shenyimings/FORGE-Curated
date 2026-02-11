@@ -1,0 +1,386 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.08.14 - Final - Malda Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/malda-protocol/malda-lending",
+            "https://github.com/malda-protocol/malda-zk-coprocessor",
+            "https://github.com/sherlock-audit/2025-07-malda/blob/main/malda-lending"
+        ],
+        "commit_id": [
+            "0f62f27fbfc8a69e256dbbd45244450c9468cd80",
+            "b5b2fd3ffa7bfff8a55f1a9b65234875f8b43dcb",
+            "798d00b879b8412ca4049ba09dba5ae42464cfe7"
+        ],
+        "address": [],
+        "chain": "ethereum",
+        "compiler_version": "n/a",
+        "audit_date": "2025-07-24",
+        "project_path": {
+            "2025.08.14 - Final - Malda Audit Report.pdf-source": "dataset-curated/contracts/2025.08.14 - Final - Malda Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Rebalancer can steal funds from markets by sending to custom receiver through Everclear Bridge",
+            "description": "The Rebalancer contract allows the EverclearBridge to accept an unchecked `receiver` field in the IntentParams struct, which is a bytes32 value derived from user input. This field is used as the destination for rebalanced funds but is not validated against known or legitimate market addresses. As a result, a malicious rebalancer EOA can set this receiver to an address they control, thereby diverting user funds intended for rebalancing to their own wallet. The root cause is the lack of validation on the `receiver` parameter in the bridge logic. An attacker could exploit this by crafting a malicious intent with a controlled receiver address, leading to theft of funds during cross-chain rebalancing operations. The impact is direct loss of user funds, making this a critical vulnerability.\n",
+            "severity": "High",
+            "location": [
+                "EverclearBridge.sol::IntentParams#40-50",
+                "EverclearBridge.sol#111-121"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Wrong direction of rounding in redeem may lead to drain if exchange rate grows large",
+            "description": "In the mToken contract, the redeem function uses `div_` (rounding down) when calculating the number of tokens to burn in exchange for underlying assets. This causes the protocol to burn fewer shares than it should, while still sending out the full requested amount of underlying. Over many transactions, this discrepancy can be exploited. The root cause is the incorrect rounding direction in the division operation during redeem logic. An attacker can manipulate the exchange rate by repeatedly depositing and redeeming small amounts when the supply is low, inflating the exchange rate significantly. Once the exchange rate is large enough, the rounding error becomes substantial, allowing the attacker to withdraw large amounts of underlying while burning negligible shares. The impact is a potential economic drain on the protocol's reserves.\n",
+            "severity": "Medium",
+            "location": [
+                "mToken.sol#614-630",
+                "mToken.sol#699-707"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/mToken/mToken.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "First depositor can brick market by forcing very large borrow rate",
+            "description": "The JumpRateModelV4 calculates the borrow rate based on utilization, which is defined as borrows / (cash + borrows - reserves). However, this formula can result in utilization exceeding 1e18 when cash + borrows - reserves is less than borrows. A malicious first depositor can manipulate the market state by borrowing nearly all liquidity, letting interest accrue, repaying most of the debt, and then redeeming all shares, leaving a small borrow amount with zero cash. This results in an extremely high utilization rate, which causes the borrow rate to exceed the maximum allowed value (0.0005e16). As a result, the _accrueInterest function reverts on every call, effectively bricking the market. The root cause is the lack of a cap on utilization rate. The impact is a denial of service for all market operations, rendering the market unusable.\n",
+            "severity": "Medium",
+            "location": [
+                "JumpRateModelV4.sol#140-150",
+                "JumpRateModelV4.sol#127-135",
+                "mToken.sol#36-39",
+                "mTokenStorage.sol#351-356"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/interest/JumpRateModelV4.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Migrator severely underestimates slippage by using underlying instead of shares",
+            "description": "The Migrator contract computes slippage protection based on the underlying token amount rather than the equivalent share amount. Since the exchange rate is approximately 0.02, the slippage tolerance is off by a factor of 50. This means the actual slippage allowed is much higher than intended, potentially leading to significant losses during migration. The root cause is the failure to convert the underlying amount to shares before applying the slippage percentage. An attacker could exploit this by manipulating prices during migration, causing the protocol to accept unfavorable rates. The impact is economic loss due to excessive slippage during asset migration.\n",
+            "severity": "Medium",
+            "location": [
+                "Migrator.sol#90-100"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/migration/Migrator.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-179"
+                ]
+            },
+            "title": "Blacklist can be completely bypassed on outHere endpoint in mTokenGateway",
+            "description": "The mTokenGateway's outHere function is protected by ifNotBlacklisted modifiers for msg.sender and receiver. However, the receiver parameter is overwritten inside the _outHere function with _sender extracted from the journalData. Since _sender is not checked against the blacklist, a blacklisted user can craft a journal with a non-blacklisted allowedCaller as msg.sender and their own address as _sender, thereby bypassing the blacklist. The root cause is the lack of a blacklist check on the decoded _sender value. An attacker can exploit this to withdraw funds even if their address is blacklisted. The impact is a complete bypass of the blacklist mechanism, undermining the protocol's ability to restrict malicious actors.\n",
+            "severity": "Medium",
+            "location": [
+                "mTokenGateway.sol#254-262",
+                "mTokenGateway.sol#281-286"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/mToken/extension/mTokenGateway.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Rebalancer can send to unallowed destination chains through EverclearBridge",
+            "description": "The EverclearBridge allows multiple destination chains to be specified in the IntentParams. It only verifies that the current _dstChainId is among them, but the intent can be fulfilled on any chain in the list. If a destination chain is not supported by Malda, funds sent there may be lost. The root cause is the lack of strict validation that only one destination is allowed and that it must match the current chain. An attacker or malicious rebalancer could include an unsupported chain in the destinations array, leading to irreversible loss of funds. The impact is potential loss of funds due to routing to invalid or unsupported chains.\n",
+            "severity": "Medium",
+            "location": [
+                "EverclearBridge.sol#40-50",
+                "EverclearBridge.sol#95-102"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "EverclearBridge does not pull tokens from the Rebalancer, causing all rebalancing operations to fail",
+            "description": "The EverclearBridge contract assumes it has custody of tokens when performing bridging operations but does not actually pull them from the Rebalancer via safeTransferFrom. It relies on the Rebalancer to have already transferred the tokens, which is not enforced. The root cause is the missing token transfer call in the sendMsg function. As a result, even if the Rebalancer has approved the bridge, no tokens are transferred, and the bridging logic fails. The impact is a complete denial of service for all rebalancing operations, preventing cross-chain liquidity movement and potentially causing liquidity fragmentation.\n",
+            "severity": "Medium",
+            "location": [
+                "EverclearBridge.sol#79-123"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Incorrect transfer size validation after time window reset can lead to rebalancing DoS",
+            "description": "The Rebalancer's sendMsg function uses stale TransferInfo data after a time window reset. Even though the transfer size is reset for a new window, the contract may still revert due to checks on the previous window's limits. This can cause legitimate rebalancing transactions to fail unexpectedly. The root cause is the improper handling of transfer size state across time window boundaries. An attacker could potentially trigger this condition to disrupt rebalancing operations. The impact is a denial of service for rebalancing, which can affect the protocol's ability to maintain balanced liquidity across chains.\n",
+            "severity": "Medium",
+            "location": [
+                "Rebalancer.sol::sendMsg",
+                "Rebalancer.sol::sendMsg#141-152"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/Rebalancer.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "mErc20Host: Permissionless calls to external endpoints fail when source chain is Eth mainnet",
+            "description": "The mErc20Host contract requires the l1Inclusion flag to be set for permissionless proof submission, but attempting to set this flag for data originating from Ethereum mainnet causes a panic in viewcalls.rs. The root cause is a missing handling for Ethereum in the get_env_input_for_l1_inclusion_and_l2_block_number function, which does not return a default value for ETH_MAINNET. This makes it impossible for users who are not proof forwarders to trigger external actions on the host chain when the source is Ethereum mainnet. The exploitation occurs simply by attempting a valid permissionless call, which inevitably fails. The impact is a denial of service for permissionless operations like liquidateExternal from Ethereum mainnet, undermining a key use case of the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "mErc20Host.sol::_verifyProof#378-399",
+                "viewcalls.rs#get_env_input_for_l1_inclusion_and_l2_block_number#933-970",
+                "validators.rs#195"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/mToken/host/mErc20Host.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Rebalancing fails with EverclearBridge due to insufficient allowance for fee",
+            "description": "The sendMsg function in EverclearBridge.sol only approves the transfer amount (excluding the fee) for the FeeAdapter, but the FeeAdapter's newIntent function attempts to pull both the amount and the fee from the bridge contract. The root cause is a mismatch in the expected and approved amounts, where the fee is added on top rather than deducted. An authorized rebalancer triggers the issue by invoking sendMsg, which leads to the FeeAdapter pulling more tokens than approved. This results in a revert during the token transfer, causing the entire rebalancing operation to fail. The impact is that all cross-chain rebalancing using the EverclearBridge will fail, leading to a denial of service for liquidity management.\n",
+            "severity": "Medium",
+            "location": [
+                "EverclearBridge.sol#110",
+                "FeeAdapter#newIntent"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Unenforced maxFee and ttl parameters in sendMsg function",
+            "description": "The sendMsg function in EverclearBridge.sol does not validate that maxFee and ttl parameters are set to 0, as required for the netting pathway. The root cause is the absence of input validation before passing these parameters to everclearFeeAdapter.newIntent. A rebalancer can set non-zero values for maxFee or ttl, which may cause the intent to be misrouted to the unsupported solver pathway. The exploitation path involves a rebalancer calling sendMsg with non-zero parameters, leading to intent misrouting. The impact includes potential settlement failure, delays in rebalancing, unexpected fees, loss of funds, and the inability to benefit from cost-saving netting, resulting in a denial of service and financial loss.\n",
+            "severity": "Medium",
+            "location": [
+                "EverclearBridge.sol#79",
+                "EverclearBridge.sol#111-117"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "No endpoint to trigger liquidateExternal from extension chain",
+            "description": "The mErc20Host contract has a liquidateExternal endpoint, but there is no corresponding endpoint in mTokenGateway to trigger this function from an extension chain via a proof forwarder. The root cause is the missing functionality in mTokenGateway to handle liquidation requests from other chains. This issue is exacerbated by the inability to perform permissionless calls when the source is Ethereum mainnet. The exploitation is passive; any attempt to liquidate from an extension chain fails due to the missing endpoint. The impact is that liquidateExternal cannot be called from extension chains, especially Ethereum mainnet, preventing cross-chain liquidations and increasing risk of undercollateralized positions.\n",
+            "severity": "Medium",
+            "location": [
+                "mTokenGateway.sol#224-252"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/mToken/extension/mTokenGateway.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Rebalancer can drain market funds via excessive bridge fees",
+            "description": "The REBALANCER_EOA can specify an arbitrarily high maxFee in the _message parameter when calling sendMsg, which is passed unchecked to the EverclearFeeAdapter. The root cause is the lack of validation on the maxFee parameter in EverclearBridge.sendMsg. A malicious or compromised rebalancer can set a maxFee close to the entire transfer amount. The attack path involves the rebalancer extracting funds from a market, setting a high maxFee, and causing most of the bridged amount to be taken as fees by the bridge relayer. The impact is permanent loss of protocol funds, as user liquidity is drained from market contracts and paid to third parties, violating the trust assumption that the rebalancer cannot transfer user funds.\n",
+            "severity": "Medium",
+            "location": [
+                "Rebalancer.sol#129",
+                "EverclearBridge.sol#111-117"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/Rebalancer.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "WrapAndSupply prevents supplying on host when gasFee is set",
+            "description": "The wrapAndSupplyOnExtensionMarket function in WrapAndSupply.sol uses all of the msg.value to wrap native tokens, leaving no value to cover the gasFee required by mTokenGateway. The root cause is the failure to account for the gasFee when calculating the amount to wrap. A user calling this function with a non-zero gasFee set will cause the supplyOnHost call to revert due to insufficient value. The attack path is a legitimate user attempting to use the utility function, which fails unexpectedly. The impact is that the core functionality of supplying wrapped tokens on the host chain is broken when gasFee is non-zero, disrupting user experience and protocol functionality.\n",
+            "severity": "Medium",
+            "location": [
+                "WrapAndSupply.sol#78",
+                "WrapAndSupply.sol#93-100",
+                "mTokenGateway.sol#235"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/utils/WrapAndSupply.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "MixedPriceOracleV4 returns stale prices due to decimal mismatch",
+            "description": "The MixedPriceOracleV4 contract compares prices from API3 (18 decimals) and EO (8 decimals) oracles without normalizing decimals, causing _absDiff to produce an incorrect, disproportionately large delta. The root cause is the lack of decimal adjustment before comparison. This leads to the function always selecting the EO oracle's price, even when it is stale. If the EO price is stale, the function reverts with MixedPriceOracle_eOracleStalePrice, despite a fresh API3 price being available. The exploitation occurs during any price query for affected tokens. The impact is a denial of service for price feeds, preventing operations like borrowing or liquidation, even when valid price data exists.\n",
+            "severity": "Medium",
+            "location": [
+                "MixedPriceOracleV4.sol#114",
+                "MixedPriceOracleV4.sol::_getLatestPrice"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/oracles/MixedPriceOracleV4.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Across bridging failure locks funds in Rebalancer contract",
+            "description": "When Across bridging fails, funds are refunded to the Rebalancer contract, which is set as the depositor in depositV3Now. The root cause is the lack of a mechanism to rescue these refunded funds. Since the Rebalancer has no function to return these tokens to the market, they become permanently locked. The attack path involves a rebalancer initiating a bridging operation that fails or expires, triggering a refund to the Rebalancer. The impact is that funds become completely inaccessible, leading to permanent loss of liquidity.\n",
+            "severity": "Medium",
+            "location": [
+                "AcrossBridge.sol#168"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/Rebalancer.sol",
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/AcrossBridge.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Bridges don't support all of the listed assets",
+            "description": "The bridges (Across and Everclear) do not support all the assets that are listed as supported by the protocol. This discrepancy creates operational limitations within the system.\nCause: The root cause is the mismatch between the assets listed as supported and those actually handled by the bridge integrations, likely due to incomplete integration or outdated asset lists.\nExploitation: There is no direct attack path since the issue does not involve malicious exploitation, but it can be triggered organically when attempting to rebalance markets using unsupported tokens.\nImpact: The primary impact is that rebalancing operations will be impossible for markets associated with the unsupported assets, leading to potential inefficiencies or imbalances in the protocol's lending markets.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/AcrossBridge.sol",
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/rebalancer/bridges/EverclearBridge.sol"
+            ]
+        }
+    ]
+}

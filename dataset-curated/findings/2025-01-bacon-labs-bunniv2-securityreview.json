@@ -1,0 +1,593 @@
+{
+    "path": "dataset-curated/reports/TrailofBits/2025-01-bacon-labs-bunniv2-securityreview.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/timeless-fi/bunni-v2",
+            "https://github.com/Bunniapp/biddog"
+        ],
+        "commit_id": [
+            "7faae4718eecda1b33dc3abd894431ed2d16c929",
+            "95f4270ad4447e96044973580afda9176730e7c8"
+        ],
+        "address": "n/a",
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-09-23",
+        "project_path": {
+            "2025-01-bacon-labs-bunniv2-securityreview.pdf-source": "dataset-curated/contracts/2025-01-bacon-labs-bunniv2-securityreview.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "BunniToken permit cannot be revoked",
+            "description": "The BunniToken contract inherits the permit function from ERC20, allowing users to sign a payload to authorize token spending by another party. However, there is no mechanism to revoke a permit signature once it has been signed and shared.\n\nThe root cause is the lack of a function to invalidate or revoke existing permit signatures. Since the permit function relies on nonces, and only one nonce is valid at a time, a user cannot invalidate a previously signed permit without consuming it. An attacker who obtains a signed permit could front-run the original user's transaction, preventing revocation via nonce increment.\n\nAn attacker could exploit this by obtaining a signed permit (e.g., through phishing or interception) and using it at any time before the deadline. This could allow unauthorized token transfers if the spender address is compromised or malicious.\n\nThe impact is limited because the permit expires at a deadline and only applies to a specific amount. However, it still represents a loss of control for the user over their authorization, potentially leading to unexpected token movements if the spender acts maliciously.\n",
+            "severity": "Informational",
+            "location": [
+                "src/BunniToken.sol",
+                "src/base/ERC20.sol#L291-L355"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniToken.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/base/ERC20.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Token approvals to ERC-4626 vaults are never revoked",
+            "description": "The BunniHub contract approves ERC-4626 vaults to spend its tokens during deposit operations but does not revoke these approvals afterward. This occurs in functions like _depositVaultReserve and _updateVaultReserveViaClaimTokens.\n\nThe cause is the absence of a zero-approval reset after the vault deposit call. While the approval is intended to be used immediately, there is no safeguard to ensure it is cleared, even if the vault does not fully consume the allowance.\n\nAn attacker could exploit this if the vault implementation is malicious or compromised, allowing it to reuse the approval to withdraw additional tokens in the future. Even if the vault is benign, lingering approvals increase risk surface.\n\nThe impact includes potential unauthorized token withdrawals if the vault is later upgraded to a malicious version or if a vulnerability is discovered that allows misuse of the standing approval. This undermines the principle of least privilege.\n",
+            "severity": "Informational",
+            "location": [
+                "src/BunniHub.sol",
+                "src/lib/BunniHubLogic.sol",
+                "src/lib/BunniHubLogic.sol#L665-L668",
+                "src/BunniHub.sol#L432-L433"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHub.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHubLogic.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHub.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Overly strict bid withdrawal validation reduces am-AMM efficiency by enabling griefing",
+            "description": "The AmAmm contract's withdrawNextBid function requires the next highest bidder to maintain a deposit covering 24 hours of rent, regardless of the current top bidder's remaining deposit. This deviates from the intended design where the next bidder should be able to withdraw fully if the top bidder has sufficient deposit.\n\nThe cause is an overly strict condition in the withdrawNextBid function: (nextBid.deposit - amount) / nextBid.rent < K(id), which always enforces a 24-hour minimum. This creates unnecessary fund lockup.\n\nAn attacker (or competitive bidder) can exploit this by maintaining a long-running top bid with periodic top-ups, effectively locking the next bidder's funds indefinitely. This prevents the next bidder from reclaiming their capital even when economically justified.\n\nThe impact is reduced capital efficiency and increased risk for bidders, potentially leading to fewer participants in the auction. It also creates griefing opportunities and may reduce LP earnings by prolonging suboptimal fee regimes.\n",
+            "severity": "Low",
+            "location": [
+                "src/AmAmm.sol",
+                "src/AmAmm.sol#L273-L276",
+                "src/AmAmm.sol#L319-L325"
+            ],
+            "files": [
+                "95f4270ad4447e96044973580afda9176730e7c8/biddog/src/AmAmm.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Users can bid arbitrarily low rent during the bidding process",
+            "description": "The bid function in the AmAmm contract allows users to set rent to zero or an extremely low value when there is no existing next bid, as the 10% increase requirement only applies if a next bid exists.\n\nThe cause is the lack of a minimum rent floor in the validation logic. The condition `rent <= _nextBids[id].rent.mulWad(MIN_BID_MULTIPLIER(id))` does not account for the case when no next bid exists, allowing rent to be zero.\n\nAn attacker could exploit this by placing a near-zero rent bid when no next bid exists, becoming the next manager at minimal cost. If no higher bids follow, they could eventually become the top manager and collect full swap fees for a very low rent payment.\n\nThe impact is economic distortion of the auction mechanism, potentially allowing attackers to capture significant value for minimal cost, undermining the intended market-based fee discovery.\n",
+            "severity": "Informational",
+            "location": [
+                "lib/biddog/AmAMM.sol",
+                "src/AmAmm.sol#L75-L86",
+                "src/AmAmm.sol#L676-L680"
+            ],
+            "files": [
+                "95f4270ad4447e96044973580afda9176730e7c8/biddog/src/AmAmm.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Dirty bits of narrow types are not cleaned",
+            "description": "The getSqrtPriceTarget function in the SwapMath library uses uint160 parameters directly in assembly without clearing their higher-order bits. Solidity does not guarantee the state of unused bits in types smaller than 256 bits.\n\nThe cause is the direct use of sqrtPriceNextX96 and sqrtPriceLimitX96 in Yul assembly without masking to 160 bits. This differs from the updated Uniswap v4 implementation, which clears higher bits for safety.\n\nAn attacker could exploit this by crafting inputs with dirty upper bits that alter the arithmetic result in the assembly block, potentially leading to incorrect price calculations during swaps.\n\nThe impact could include incorrect swap execution prices, leading to loss of funds for users or the pool due to miscalculated amounts. This is particularly dangerous in price-sensitive operations.\n",
+            "severity": "Informational",
+            "location": [
+                "src/lib/SwapMath.sol",
+                "src/lib/SwapMath.sol#L19-L34"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/SwapMath.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Rebalance mechanism access control can be bypassed",
+            "description": "The BunniZone's validate function only checks the fulfiller's address (msg.sender) against a whitelist or the am-AMM manager, but does not validate the order's pre- and post-hooks. This allows an attacker to create a fake order with arbitrary hooks.\n\nThe cause is insufficient validation in the BunniZone contract. It trusts that the order's hooks are legitimate based only on the fulfiller's identity, not the order's integrity. Additionally, the BunniHook's isValidSignature function only checks poolId and hash, not the full order structure.\n\nAn attacker can create a fake order with a valid poolId and hash but insert malicious hooks, such as a call to permit2 to transfer tokens from the BunniHook contract. Since the signature validation passes and the fulfiller is whitelisted or is the manager, the order executes.\n\nThe impact is severe: an attacker can drain any token balance from the BunniHook contract for pools with active rebalance orders by inserting permit2 transfer calls, leading to complete loss of funds.\n",
+            "severity": "High",
+            "location": [
+                "src/BunniHook.sol",
+                "src/lib/BunniHookLogic.sol",
+                "flood-contracts/master/src/FloodPlain.sol#L55-L78",
+                "src/BunniZone.sol#L41-L54",
+                "src/lib/BunniHookLogic.sol#L733-L743",
+                "src/BunniHook.sol#L120-L131"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniZone.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHook.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHookLogic.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Pools can be drained via the rebalance mechanism by selectively executing the rebalanceOrderPreHook and the rebalanceOrderPostHook",
+            "description": "The rebalance mechanism allows pre- and post-hooks to be executed independently, enabling an attacker to execute a valid pre-hook (which pulls tokens into BunniHook) and then a malicious post-hook (which sends them to an attacker-controlled address).\n\nThe cause is the lack of atomicity and state tracking between pre- and post-hook execution. While each hook validates its own arguments, there is no mechanism to ensure they are executed as a pair or in sequence.\n\nAn attacker can create a fake order that includes a legitimate pool's pre-hook and a malicious pool's post-hook. After the pre-hook increases the BunniHook's balance, the post-hook can drain those tokens to the attacker.\n\nThe impact is complete loss of funds for any pool with an active rebalance order, as the attacker can repeatedly drain tokens until the pool is empty.\n",
+            "severity": "High",
+            "location": [
+                "src/BunniHook.sol",
+                "src/lib/BunniHookLogic.sol",
+                "flood-contracts/master/src/FloodPlain.sol#L55-L78",
+                "flood-contracts/master/src/lib/Hooks.sol#L9-L27",
+                "src/lib/BunniHookLogic.sol#L696-L714",
+                "src/BunniHook.sol#L429-L438",
+                "src/BunniHook.sol#L465-L474"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHook.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing maximum bounds for rebalance parameters",
+            "description": "The isValidParams function in BunniHook.sol validates rebalance parameters but does not enforce maximum bounds, only type-level and logical constraints (e.g., feeMin <= feeMax).\n\nThe cause is the absence of explicit upper limits on parameters like rebalanceMaxSlippage, rebalanceTwapSecondsAgo, and rebalanceOrderTTL. This allows potentially excessive values that could impair pool functionality.\n\nAn attacker (or negligent user) could deploy a pool with extremely high slippage or long TTL values, leading to poor trade execution, stale price references, or prolonged order validity, which could be exploited for MEV or manipulation.\n\nThe impact includes degraded pool performance, increased vulnerability to manipulation, and potential loss of user funds due to poor execution or unexpected behavior under extreme parameter settings.\n",
+            "severity": "Informational",
+            "location": [
+                "src/BunniHook.sol",
+                "src/lib/BunniHubLogic.sol#L489-L490",
+                "src/BunniHook.sol#L319-L337"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHook.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHookLogic.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Excess liquidity can be inflated to create arbitrarily large rebalance orders",
+            "description": "The calculation of excess liquidity used in rebalance orders is vulnerable to inflation through manipulation of internal accounting variables. This occurs because the system does not properly validate or cap the computed excess amount.\n\nThe root cause is the lack of safeguards against manipulation of liquidity inputs used in rebalance calculations. An attacker could manipulate pool state or hook interactions to report inflated excess liquidity, enabling the creation of disproportionately large rebalance orders.\n\nAn attacker could exploit this by inflating the perceived excess liquidity in a pool, possibly through temporary imbalances or flash loan attacks, to trigger a large rebalance order that benefits the attacker.\n\nThe impact could include significant misallocation of assets, loss of funds for LPs, or manipulation of pool state. This could result in the pool being drained of assets when the order is settled.\n",
+            "severity": "High",
+            "location": [
+                "src/lib/BunniHookLogic.sol",
+                "src/lib/BunniHubLogic.sol"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHookLogic.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHubLogic.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Insufficient event generation",
+            "description": "The system fails to emit events for certain critical state changes, particularly in the rebalance and hook execution flows. This is due to missing event emissions in specific functions. The lack of events reduces transparency and hinders off-chain monitoring, making it difficult for users and bots to track important actions. This could delay detection of malicious activity and complicate incident response.\n\nThe root cause is the absence of event emissions in functions that modify state or perform sensitive actions. Without events, external systems such as blockchain explorers, monitoring tools, and user dashboards cannot track these actions in real time.\n\nAn attacker could exploit this lack of transparency by performing malicious actions that go unnoticed. For example, unauthorized fee claims or manipulation of rebalance logic would not be easily detectable without event logs.\n\nThe impact is reduced observability and auditability of the system. This increases the risk of undetected exploits, hampers debugging, and reduces trust in the system\u2019s integrity. While no direct fund loss occurs, the lack of logging makes incident response and forensic analysis significantly harder.\n",
+            "severity": "Informational",
+            "location": [
+                "bunni-v2/src/BunniToken.sol#L155-L196",
+                "bunni-v2/src/BunniToken.sol#L132-L152",
+                "bunni-v2/src/BunniHook.sol#L244-L246",
+                "bunni-v2/src/BunniHook.sol#L429-L462",
+                "bunni-v2/src/BunniHook.sol#L465-L511",
+                "bunni-v2/src/lib/BunniHookLogic.sol#L532-L550",
+                "biddog/src/AmAmm.sol#L432-L434",
+                "src/lib/BunniHookLogic.sol"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniToken.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-267"
+                ]
+            },
+            "title": "AmAmm manager can manipulate TWAP prices without risk",
+            "description": "The AmAmm manager has the ability to set swap fees for a pool via the setBidPayload function. This allows them to set extremely high fees, effectively preventing arbitrageurs from correcting price imbalances. Since the TWAP (Time-Weighted Average Price) oracle is used by external systems such as lending protocols, a malicious manager can manipulate the TWAP by executing large swaps and then locking in the manipulated price with high fees.\n\nThe root cause is excessive privilege granted to the AmAmm manager without sufficient safeguards. The system allows the manager to control swap fees, which directly impacts the ability of the market to correct price deviations. Although there is a maximum fee limit, it may be set too high or misconfigured.\n\nAn attacker who becomes the AmAmm manager can borrow assets to manipulate the pool\u2019s price over several blocks, set fees to 100% to prevent arbitrage, and then use the inflated TWAP price to drain a lending protocol that relies on it for valuation.\n\nThe impact includes potential loss of funds in connected protocols (e.g., lending platforms), erosion of trust in the oracle system, and manipulation of market prices. This poses a systemic risk if the pool is used as a price feed for other DeFi applications.\n",
+            "severity": "Medium",
+            "location": [
+                "biddog/src/AmAmm.sol#L406-L429",
+                "src/lib/AmAmmPayload.sol#L11-L18",
+                "src/lib/BunniHookLogic.sol#L295-L305"
+            ],
+            "files": [
+                "95f4270ad4447e96044973580afda9176730e7c8/biddog/src/AmAmm.sol",
+                "95f4270ad4447e96044973580afda9176730e7c8/biddog/src/lib/AmAmmPayload.sol",
+                "95f4270ad4447e96044973580afda9176730e7c8/biddog/src/lib/BunniHookLogic.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of zero-value checks",
+            "description": "The system does not consistently validate against zero-value inputs in functions that handle token amounts or fees. This is due to missing require() checks for non-zero values. While not always exploitable, in certain contexts (e.g., swaps or deposits), zero amounts could trigger edge-case behaviors, such as incorrect fee calculations or unintended state transitions. This could lead to denial of service or inconsistent accounting.\n\nSeveral critical functions and constructors do not validate that input parameters are non-zero, particularly for address inputs. For example, the BunniHub constructor accepts addresses for poolManager, weth, and bunniTokenImplementation without checking if they are zero. If a zero address is provided, the contract will be misconfigured and unable to function correctly (e.g., unable to handle native ETH if weth is zero).\n\nThe root cause is missing input validation for parameters that must be non-zero to ensure correct system operation. Since these values are immutable, any misconfiguration requires redeployment, which disrupts users and forces liquidity providers to migrate.\n\nA deployer could accidentally pass a zero address, or a malicious deployer could intentionally do so in a forked or fake deployment to trap user funds. Even if unintentional, the result is a broken contract that cannot be fixed without migration.\n\nThe impact includes permanent misconfiguration, loss of functionality, poor user experience, and potential fund loss if users interact with a broken system. While the core logic may be sound, the lack of basic validation introduces operational risk.\n",
+            "severity": "Informational",
+            "location": [
+                "src/BunniHub.sol#L75-L86",
+                "src/BunniHook.sol",
+                "src/lib/BunniHookLogic.sol",
+                "src/BunniHub.sol#93-112"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/BunniHub.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Lack of systematic approach to rounding and arithmetic errors",
+            "description": "The codebase lacks a consistent strategy for handling rounding directions and bounding arithmetic errors, especially in complex mathematical operations within LDFs and BunniSwapMath. This results in unpredictable rounding behavior that may not consistently favor the protocol. Attackers could exploit these inconsistencies to extract value through repeated operations or edge-case swaps. The impact includes potential long-term erosion of pool funds due to rounding imbalances.\n\nThe codebase exhibits signs of ad-hoc handling of rounding and arithmetic errors, particularly in the computeSwap function of the BunniSwapMath library. This function performs multiple recomputations of output amounts to ensure they do not exceed token balances, indicating that rounding errors are being handled reactively rather than through a consistent, systematic approach.\n\nThe root cause appears to be inconsistent rounding directions or imprecise fixed-point arithmetic that leads to edge cases where output amounts slightly exceed available balances due to rounding. The function attempts to correct this by re-running the swap calculation or clamping the output, which suggests the underlying math is not robust.\n\nWhile no direct exploit is identified, an attacker might be able to manipulate input amounts or pool states to trigger these edge cases, potentially leading to incorrect swap results, miscalculated fees, or unexpected reverts.\n\nThe impact is uncertain but could include loss of funds, incorrect state updates, or denial of service if swaps fail unpredictably. The lack of documentation or systematic handling increases the risk of undiscovered vulnerabilities in arithmetic logic.\n",
+            "severity": "Informational",
+            "location": [
+                "src/lib/BunniSwapMath.sol#L62-L77"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Native assets deposited to pools with no native currencies are lost",
+            "description": "When native assets (e.g., ETH) are sent to pools that do not support native currencies, they are not properly refunded and become permanently stuck. This occurs because the system does not validate the pool's native asset support before accepting deposits. Users who accidentally send native tokens to incompatible pools lose their funds. The impact is direct loss of user assets due to poor input validation and error handling.\n\nThe deposit function in the BunniHub contract is marked as payable to handle native assets when one of the pool tokens is native. However, if a user deposits ETH (nonzero msg.value) into a pool where both tokens are non-native, the ETH is not refunded and remains trapped in the contract. This occurs because there is no validation to ensure msg.value is zero when neither token is native. An attacker could potentially exploit this by sending ETH to such a pool, resulting in permanent loss of funds. The impact is loss of user funds due to incorrect handling of native asset deposits in non-native pools.\n",
+            "severity": "Informational",
+            "location": [
+                "src/lib/BunniHubLogic.sol#172-184",
+                "src/BunniHub.sol#93-112"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHubLogic.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Users can gain free tokens through the BunniSwap swap functionality",
+            "description": "Due to a flaw in the swap calculation logic, users can receive positive output tokens even when providing zero input. This is caused by incorrect handling of edge cases in the swap math, particularly when amountSpecified is nonzero but effectively zero due to rounding. An attacker could exploit this to generate tokens from nothing, leading to inflation and direct loss of value from the pool. This is a high-severity issue as it enables unlimited minting of tokens.\n\nThe computeSwap function in the BunniSwapMath library allows users to receive a nonzero amount of output tokens even when the effective input amount is zero. This occurs due to improper handling of amountSpecified in the swap logic, particularly when negative values are used to indicate ExactIn swaps. The function fails to enforce that a nonzero output must require a corresponding nonzero input. As a result, users can manipulate the swap parameters to extract tokens without providing equivalent input, leading to free token minting. This undermines the economic model of the protocol and could lead to significant loss of liquidity.\n",
+            "severity": "High",
+            "location": [
+                "src/lib/BunniSwapMath.sol#101-104",
+                "src/lib/BunniSwapMath.sol#49-78"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Users can gain tokens during round-trip swaps",
+            "description": "The system allows users to perform round-trip swaps (e.g., token A to B and back to A) and end up with more tokens than they started with. This indicates a violation of economic invariants and is caused by asymmetric rounding or incorrect fee accounting. Attackers can repeatedly execute such swaps to extract value from the pool, leading to significant fund depletion over time. This is a high-severity vulnerability due to its profit-driven exploitability.\n\nDue to an incorrect implementation in the _computeSwap function, users can gain tokens by performing round-trip swaps (e.g., swapping token0 for token1 and back). The issue arises because the updatedTick variable is not properly initialized when certain conditions are skipped in the control flow, leading to inconsistent state updates. This causes the return amounts in reverse swaps to exceed the original input, effectively allowing arbitrage at the protocol's expense. The root cause lies in missing tick initialization logic, which results in inaccurate price and liquidity calculations. This can be exploited repeatedly to drain pool reserves.\n",
+            "severity": "High",
+            "location": [
+                "src/lib/BunniSwapMath.sol#228-302"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Different amount of input/output tokens can be returned in ExactIn and ExactOut configurations during the swap",
+            "description": "The swap function produces inconsistent results between ExactIn and ExactOut configurations for the same pool state. This is due to divergent calculation paths that do not maintain equivalence. Users can exploit this by choosing the more favorable configuration to minimize input or maximize output, leading to unfair advantages and potential loss of fees for the protocol. The impact is reduced economic efficiency and potential arbitrage losses.\n\nThe computeSwap function produces inconsistent results between ExactIn and ExactOut swap configurations for the same pool state. Specifically, the amount of input tokens required to receive a given output can differ depending on the swap type, allowing users to choose the more favorable configuration. This discrepancy stems from asymmetric rounding or calculation logic in the two modes. An attacker can exploit this by selecting the configuration that minimizes input for a desired output, leading to unfair advantages and potential loss of value from the pool due to inefficient pricing.\n",
+            "severity": "Low",
+            "location": [
+                "src/lib/BunniSwapMath.sol#101-104"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "BunniSwap swap functionality can cause panics during the swap",
+            "description": "The swap function may revert or cause arithmetic panics under certain valid pool states, particularly due to unchecked operations or edge-case overflows. This is caused by missing safe math checks or improper handling of extreme values. While this does not directly lead to fund theft, it can result in denial of service, preventing legitimate trades and disrupting liquidity provision. The severity is undetermined due to context-dependent exploitability.\n\nThe _computeSwap function can trigger an arithmetic underflow during a OneForZero swap when updatedActiveBalance1 becomes less than currentActiveBalance1, but the subtraction is performed without a safety check. This leads to a revert (panic) during execution, disrupting the swap operation. The issue occurs because the output amount calculation assumes updatedActiveBalance will always be greater than or equal to currentActiveBalance, which is not guaranteed under all valid conditions. This can be exploited to cause denial of service for swap functionality, preventing legitimate trades and harming user experience and trust.\n",
+            "severity": "Informational",
+            "location": [
+                "src/lib/BunniSwapMath.sol#326-334"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "cumulativeAmount0 can be greater than the cumulative amount computed through inverse functionality for certain LDFs",
+            "description": "For certain liquidity density functions (LDFs), the forward calculation of cumulativeAmount0 produces a value greater than the result of the inverse function, violating mathematical consistency. This indicates a flaw in the implementation of the inverse functions, likely due to incorrect rounding or truncation. This inconsistency could be exploited to manipulate liquidity accounting or generate incorrect swap outcomes, potentially leading to fund loss. The severity is undetermined due to the complexity of the affected math.\n\nFor certain Liquidity Distribution Functions (LDFs), the cumulativeAmount0 value computed directly can exceed the value derived from inverseCumulativeAmount0, violating expected mathematical invariants. This inconsistency affects the accuracy of liquidity density calculations and can lead to incorrect swap amounts or state transitions. The root cause lies in the implementation of UniformDistribution and CarpetedGeometricDistribution, where boundary conditions are not properly handled. This can result in miscalculated fees, incorrect token distributions, and potential exploitation through precision manipulation in swaps.\n",
+            "severity": "Informational",
+            "location": [
+                "src/lib/BunniSwapMath.sol#246-303"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Manipulation of Rebalance Orders via Just-in-Time Liquidity",
+            "description": "The Bunni v2 protocol allows for autonomous rebalancing of pool liquidity based on shifts in the Liquidity Density Function (LDF). The rebalance mechanism is triggered when the estimated liquidity of the two tokens in a pool diverges beyond a configured threshold. The amount of liquidity is calculated using token balances and their respective densities. However, the system allows liquidity to be added or removed only in proportion to current balances, which includes any excess liquidity, thereby preserving the imbalance ratio.\n\nThe root cause of the vulnerability lies in the fact that the rebalance order calculation uses the current pool balances, which can be temporarily inflated by just-in-time liquidity deposits. A malicious fulfiller can deposit a large amount of liquidity just before a rebalance is triggered, causing the rebalance order to be based on artificially inflated balances. After the order is created, the attacker can withdraw their liquidity and then fulfill the order themselves, profiting from the slippage tolerance.\n\nAn attacker can exploit this by monitoring pools for LDF shifts that will trigger rebalances, depositing liquidity to skew the balance, triggering the rebalance via a small swap, withdrawing their liquidity, and then fulfilling the order. This allows them to extract excess profit at the expense of the pool's balance, leaving it in a severely unbalanced state.\n\nThe impact includes financial gain for the attacker, potential loss of value for legitimate liquidity providers, and degradation of pool efficiency. In extreme cases, the pool could become unusable due to extreme imbalance, leading to denial of service for legitimate users.\n",
+            "severity": "High",
+            "location": [
+                "src/lib/QueryLDF.sol#L72-L84",
+                "src/lib/BunniHookLogic.sol#L618-L623",
+                "src/lib/BunniHubLogic.sol#L226-L312",
+                "src/lib/BunniHookLogic.sol#L652-L672"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/QueryLDF.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHookLogic.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHubLogic.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Users can gain free tokens through the BunniSwap swap functionality",
+            "description": "This vulnerability allows users to potentially gain free tokens during swap operations due to incorrect handling of idle pool balances and cumulative amount calculations. The root cause lies in the complex interaction between the swap logic, liquidity density functions (LDFs), and rebalance mechanics, where an attacker could exploit miscalculations in token outputs. Exploitation would involve crafting specific swap inputs that take advantage of unaccounted idle liquidity or incorrect cumulative values returned by LDFs. The impact could include unauthorized minting of tokens, leading to economic loss and undermining the integrity of the protocol.\n",
+            "severity": "High",
+            "location": [
+                "BunniSwapMath.sol::computeSwap",
+                "LibUniformDistribution.sol::cumulativeAmount0",
+                "BunniHookLogic.sol::beforeSwap"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/LibUniformDistribution.sol",
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniHookLogic.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Users can gain tokens during round-trip swaps",
+            "description": "This issue enables users to profit from round-trip swaps by receiving more tokens than they initially deposited, indicating a potential imbalance in the swap calculation logic. The cause stems from inconsistencies in how input and output amounts are computed across forward and reverse swap paths, possibly due to rounding errors or incorrect state updates. An attacker could exploit this by performing a sequence of swaps (e.g., token A to B, then back to A) and extracting excess tokens. The impact includes loss of funds from the pool and potential manipulation of market prices.\n",
+            "severity": "High",
+            "location": [
+                "BunniSwapMath.sol::computeSwap",
+                "BunniHub.sol::swap"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Different amount of input/output tokens can be returned in ExactIn and ExactOut configurations during the swap",
+            "description": "The swap functionality returns different token amounts when using ExactIn versus ExactOut modes under identical conditions, violating the expected economic symmetry. This discrepancy is caused by underlying differences in the Uniswap v4 SwapMath library\u2019s rate calculations, which the Bunni protocol inherits. While the team acknowledges this behavior, it remains unfixed, allowing potential arbitrage opportunities. Attackers could exploit this by choosing the more favorable swap direction to maximize profit, leading to unfair advantages and potential loss of value for other users.\n",
+            "severity": "Low",
+            "location": [
+                "BunniSwapMath.sol::computeSwap",
+                "SwapMath.sol::computeSwapStep"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "BunniSwap swap functionality can cause panics during the swap",
+            "description": "The swap functionality is susceptible to arithmetic panics (e.g., underflow) under certain edge cases, which could disrupt normal operation. Although the fix attempts to mitigate this by returning zero instead of reverting on underflow, the change introduces uncertainty about correctness in edge cases. The root cause is insufficient safeguards around arithmetic operations in the computeSwap function. Exploitation could involve submitting crafted inputs that trigger underflow conditions, potentially leading to incorrect state transitions or denial of service. The impact includes unreliable swap execution and potential loss of user funds if calculations are incorrect.\n",
+            "severity": "High",
+            "location": [
+                "BunniSwapMath.sol::computeSwap",
+                "BunniSwapMath.sol::computeSwapStep"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/lib/BunniSwapMath.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "cumulativeAmount0 can be greater than the cumulative amount computed through inverse functionality for certain LDFs",
+            "description": "For certain Liquidity Density Functions (LDFs), the cumulativeAmount0 value can exceed the result of its inverse calculation, indicating a logical inconsistency. This is caused by imprecise or incorrect mathematical implementations in the LDF libraries, particularly in LibUniformDistribution. The current fix returns zero when the value exceeds a threshold, acting as a band-aid rather than a root-cause solution. An attacker could exploit this by manipulating tick values or pool states to trigger incorrect cumulative calculations, potentially affecting TWAP-based pricing or rebalance logic. The impact includes incorrect state representation and potential financial loss.\n",
+            "severity": "Informational",
+            "location": [
+                "LibUniformDistribution.sol::cumulativeAmount0",
+                "LibUniformDistribution.sol::inverseCumulativeAmount0"
+            ],
+            "files": [
+                "7faae4718eecda1b33dc3abd894431ed2d16c929/bunni-v2/src/ldf/LibUniformDistribution.sol"
+            ]
+        }
+    ]
+}

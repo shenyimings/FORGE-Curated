@@ -1,0 +1,517 @@
+{
+    "path": "dataset-curated/reports/TrailofBits/2024-12-balancer-v3-securityreview.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/balancer/balancer-v3-monorepo/tree/main/pkg/vault",
+            "https://github.com/balancer/balancer-v3-monorepo"
+        ],
+        "commit_id": [
+            "a24ebf0141e9350a42639d8593c1436241deae59",
+            "a24ebf0141e9350a42639d8593c1436241deae59"
+        ],
+        "address": [],
+        "chain": "ethereum",
+        "compiler_version": "n/a",
+        "audit_date": "2024-08-05",
+        "project_path": {
+            "balancer-v3-monorepo": "dataset-curated/contracts/2024-12-balancer-v3-securityreview.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Lack of approval reset on buffer allows anyone to drain the Vault",
+            "description": "The lack of approval reset after the call to deposit allows a malicious wrapper contract to steal the Vault\u2019s funds. When wrapping tokens, the _wrapWithBuffer function allows the wrapped token contract to transfer the underlying tokens via ERC20 approval. However, since the approval is not reset to zero after the deposit call, a malicious wrapper contract can retain the approval and later withdraw the Vault's funds after it has been locked. This vulnerability arises from improper handling of ERC20 approvals and trust in external contracts without proper safeguards. An attacker can exploit this by creating a malicious wrapper that does nothing during deposit, thereby preserving the approval, and later directly transferring the tokens out. The impact is critical as it allows an attacker to drain all of the Vault\u2019s tokens for any underlying asset.\n",
+            "severity": "High",
+            "location": [
+                "Vault.sol::deposit#1169-1172",
+                "Vault.sol::erc4626BufferWrapOrUnwrap",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/855"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Lack of reserve updates when collecting fees allows anyone to drain the Vault",
+            "description": "The Vault fails to update its internal reserves after collecting fees, leading to a discrepancy between the recorded reserves and actual token balance. When fees are collected via collectAggregateFees, the tokens are transferred out but the Vault's reserve accounting remains unchanged. This causes the Vault to believe it holds more tokens than it actually does. The root cause is the omission of a reserve update step after fee collection. An attacker can exploit this by using the erc4626BufferWrapOrUnwrap function, which relies on reserve accounting to determine how many tokens to credit. By manipulating this discrepancy with a malicious wrapper contract, the attacker can withdraw tokens corresponding to the difference. The impact is high, as this can be repeated to drain the entire Vault of all its assets.\n",
+            "severity": "High",
+            "location": [
+                "VaultAdmin.sol::collectAggregateFees#273-295",
+                "Vault.sol::_updateReservesAfterWrapping#1367-1390",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/857"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Quote functions should not be payable",
+            "description": "The VaultExtension.quote and VaultExtension.quoteAndRevert functions are marked as payable, but they cannot receive Ether due to the Vault's fallback function reverting on non-zero msg.value. This creates a contradiction in the contract design. The cause is an unnecessary payable modifier on functions that do not and cannot handle Ether. While these functions use msg.value in their logic, the proxy architecture ensures msg.value is always zero when they are called. This issue does not lead to direct exploitation but indicates poor code hygiene and potential confusion for integrators. An attacker cannot exploit this to cause harm, as the system rejects Ether at the entry point. The impact is purely informational, affecting code clarity and maintainability rather than security.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::fallback#1436-1442",
+                "VaultExtension.sol::quote#843-851",
+                "VaultExtension.sol::quoteAndRevert",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/863"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultExtension.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Pool registration and initialization can be front-run",
+            "description": "The registration and initialization of pools can be front-run by malicious actors, potentially causing denial of service or enabling malicious parameter setup. Since anyone can call registerPool and initialize on VaultExtension, an attacker can observe a legitimate pool deployment and register it first with harmful parameters. The root cause is the lack of access control or commitment mechanisms during pool registration. An attacker can exploit this by monitoring the mempool and submitting a higher gas transaction to register a legitimate pool address before the original creator. This leads to the legitimate transaction reverting, forcing the creator to deploy a new pool. The impact is low, as it does not result in fund loss but can disrupt legitimate operations and increase deployment costs.\n",
+            "severity": "Low",
+            "location": [
+                "Vault.sol::registerPool",
+                "Vault.sol::initialize",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1164"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Buffer total supply can be reset",
+            "description": "The addLiquidityToBuffer function can be called multiple times to reset the buffer's total supply if the wrapped token's asset function returns address(0). This occurs because the function checks if _bufferAssets[wrappedToken] is zero to determine initialization, but does not validate that the underlying token is non-zero. The cause is missing input validation for the wrapped token's asset. An attacker can exploit this by deploying a malicious token that returns address(0) as its asset, allowing repeated initialization and incorrect accounting of _bufferTotalShares. This leads to inconsistent state and potential manipulation of share calculations. The impact is informational, as it affects internal accounting but does not directly enable fund theft.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultAdmin.sol::addLiquidityToBuffer#415-443",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/865"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-454"
+                ]
+            },
+            "title": "Vault can be drained by updating the buffer underlying token",
+            "description": "A malicious user can drain the Vault by manipulating the underlying token of a buffer. The erc4626BufferWrapOrUnwrap function allows wrapping via uninitialized buffers, and the addLiquidityToBuffer function does not prevent changes to the underlying token. An attacker can first wrap a worthless token into a buffer, then change the underlying token to a valuable one (e.g., DAI), and withdraw the full balance of that token. The root cause is the lack of a check ensuring that a buffer must be explicitly initialized before interaction and that the underlying token cannot be changed after initialization. Exploitation involves creating a malicious wrapper token, inflating buffer balances with a worthless token, switching the underlying token, and withdrawing the real assets. The impact is high, as it allows complete draining of any token in the Vault.\n",
+            "severity": "High",
+            "location": [
+                "Vault.sol::erc4626BufferWrapOrUnwrap#1054-1108",
+                "Vault.sol::_wrapWithBuffer#1117-1238",
+                "VaultAdmin.sol::addLiquidityToBuffer#415-465",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/881"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Yield fees collected when exiting recovery mode will be lost",
+            "description": "When a pool exits recovery mode, yield fees that are accrued during the disableRecoveryMode call are removed from the pool balance but not credited to the aggregate fee balance, resulting in permanent loss. The issue arises because _setPoolRecoveryMode sets the recovery mode flag to false before updating balances, causing _loadPoolData to accrue yield fees. However, there is no mechanism to transfer these fees to the ProtocolFeeController. The root cause is incorrect ordering of state updates. An attacker cannot directly exploit this for profit, but can trigger the condition by forcing a pool into recovery mode and waiting for yield accumulation. The impact is medium, as it leads to loss of fees that should have been distributed to stakeholders, affecting economic fairness.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultAdmin.sol::disableRecoveryMode#352-355",
+                "VaultAdmin.sol::_setPoolRecoveryMode#374-383",
+                "PoolDataLib.sol::load#31-64",
+                "PoolDataLib.sol::load#49-91",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/880"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Risks with non-standard token implementations",
+            "description": "The system is exposed to risks when interacting with non-standard ERC20 tokens, such as rebasing tokens (e.g., stETH), multi-address tokens (e.g., Celo), tokens with fees on transfer (e.g., PAXG), or tokens with more than 18 decimals. These tokens can break internal accounting assumptions. For example, rebasing tokens can cause balance discrepancies, double-entry tokens can be drained via settle, and fee-on-transfer tokens can lead to incorrect balance tracking. The root cause is the lack of explicit validation and handling for non-standard behaviors. While no direct exploit is described, an attacker could use such tokens to manipulate balances or drain funds. The impact is informational, but the risk is significant if unsupported tokens are registered, potentially leading to fund loss.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::settle",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1057"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Buffer can consider it has liquidity when it has none",
+            "description": "The erc4626BufferWrapOrUnwrap function does not validate that the calculated amountOutUnderlying or amountOutWrapped is non-zero before proceeding with balance updates. If these values are zero, the buffer may incorrectly believe it has liquidity and update balances accordingly, even if the buffer is uninitialized. The root cause is missing zero checks in the liquidity validation logic. An attacker can exploit this by providing zero amounts to trick the system into crediting shares or tokens without actual liquidity. This allows unauthorized minting or withdrawal of assets. The impact is informational in this context, but could lead to more serious issues if combined with other vulnerabilities.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::_wrapWithBuffer#1143-1156",
+                "Vault.sol::_unwrapWithBuffer#1271-1283",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/881"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Dynamic swap fee is not limited to 100%",
+            "description": "The dynamic swap fee, calculated via callComputeDynamicSwapFeeHook, is not explicitly capped at 100%, unlike other fees in the system. While arithmetic checks may implicitly prevent overflow, the absence of an explicit limit introduces risk of unexpected behavior if a hook returns a value greater than 100%. The root cause is incomplete validation of dynamic fee inputs. An attacker controlling a pool's hook could set an excessive fee, potentially causing incorrect fee calculations or reverts during swaps. The impact is informational, as it does not currently lead to fund loss, but represents a design inconsistency that could become critical if assumptions change.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::swap#228-239",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/915"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Lack of slippage protection on liquidity buffer increase",
+            "description": "The addLiquidityToBuffer function lacks slippage protection, exposing users to front-running and price manipulation during liquidity provision. Since the function does not include minimum amount expectations or price checks, an attacker can manipulate the price between the time of transaction submission and execution, causing the user to receive fewer shares than expected. The root cause is the absence of slippage controls in the buffer liquidity functions. An attacker can exploit this by sandwiching the transaction with large trades to alter the price. The impact is low, as it affects economic fairness rather than leading to direct fund loss, but can erode user trust. The addLiquidityToBuffer function does not allow users to specify a minimum amount of shares they expect to receive, making them vulnerable to unfavorable changes in the asset-to-share ratio between transaction submission and inclusion. This occurs because the number of shares issued is calculated dynamically via a call to the wrapped token\u2019s convertToAssets function without any slippage guardrails. If the ratio changes due to prior transactions (e.g., front-running), the user may receive fewer shares than anticipated. An attacker can exploit this by manipulating the underlying token state before the victim\u2019s transaction is processed, leading to economic loss for the liquidity provider.\n",
+            "severity": "Low",
+            "location": [
+                "VaultAdmin.sol::addLiquidityToBuffer",
+                "VaultAdmin.sol::addLiquidityToBuffer#430-432",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1108"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Reentrancy on pool initialization allows users to re-initialize pools",
+            "description": "The initialize function in VaultExtension.sol follows an incorrect check-effect-interaction pattern, where it checks if a pool is already initialized at the beginning but only marks it as initialized after an external call via the BeforeInitialize hook. This creates a window for reentrancy: a malicious contract can re-enter the initialize function during the hook call and re-initialize the pool multiple times. Since state changes occur after external calls, the attacker can manipulate pool behavior, potentially leading to unexpected state transitions or economic impacts. The severity is undetermined due to time constraints in fully assessing the impact, but the flaw enables repeated initialization which could be abused in combination with other actions like swapping or liquidity manipulation.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultExtension.sol::initialize#364-379",
+                "VaultExtension.sol::initialize#391-392",
+                "VaultExtension.sol::initialize#443-446",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/899"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultExtension.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Insufficient event generation",
+            "description": "Several critical functions in VaultAdmin.sol and ProtocolFeeController.sol do not emit events upon state changes, hindering off-chain monitoring and auditing. Operations such as withdrawing protocol fees, disabling queries, pausing buffers, and collecting aggregate fees lack corresponding events, making it difficult for users and monitoring systems to detect abnormal or malicious behavior. Events are essential for transparency, debugging, and security tooling; their absence increases the risk of undetected exploits or malfunctions. This reduces the system's observability and violates best practices for smart contract design.\n",
+            "severity": "Informational",
+            "location": [
+                "ProtocolFeeController.sol::withdrawProtocolFees#449-461",
+                "ProtocolFeeController.sol::_withdrawPoolCreatorFees#473-485",
+                "VaultAdmin.sol::disableQuery#390-394",
+                "VaultAdmin.sol::pauseVaultBuffers#401-405",
+                "VaultAdmin.sol::unpauseVaultBuffers#408-412",
+                "VaultAdmin.sol::collectAggregateFees#273-295",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/916"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/ProtocolFeeController.sol",
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Buffer _CONVERT_FACTOR can be avoided by providing unbalanced liquidity",
+            "description": "Users can bypass the _CONVERT_FACTOR safety mechanism\u2014intended to protect the buffer from rounding-related drain\u2014by adding unbalanced liquidity (only underlying or only wrapped tokens) and immediately removing it. The _CONVERT_FACTOR is applied during wrap/unwrap operations to reduce output tokens slightly, but addLiquidityToBuffer allows unbalanced deposits that effectively mimic wrapping without applying the factor. This arbitrage opportunity allows users to obtain more tokens than permitted under normal wrap operations, undermining the buffer\u2019s economic safeguards and potentially leading to gradual depletion over time.\n",
+            "severity": "Low",
+            "location": [
+                "Vault.sol::_wrapWithBuffer#1148-1171",
+                "VaultAdmin.sol::addLiquidityToBuffer",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/967"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Buffer wrap and unwrap queries return incorrect results",
+            "description": "The erc4626BufferWrapOrUnwrap function returns inaccurate values during query mode because it uses preview* functions that do not account for the _CONVERT_FACTOR, while actual on-chain operations do. This discrepancy means users may base their transactions on incorrect expected outputs, leading to failed transactions or suboptimal trades. Since queries are often used by frontends to estimate outcomes, this inconsistency introduces user experience and reliability issues, potentially causing financial loss due to miscalculated inputs.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::_wrapWithBuffer#1158-1170",
+                "Vault.sol::_unwrapWithBuffer",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/967"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Providing unbalanced liquidity to a buffer can mint more shares due to rounding",
+            "description": "When users provide only the underlying token to addLiquidityToBuffer, the invariant calculation uses convertToAssets, which rounds down. This results in a lower currentInvariant value, increasing the number of shares issued due to division by a smaller denominator. Consequently, depositing only underlying tokens yields more shares than depositing a balanced mix of underlying and wrapped tokens of equal value. This rounding advantage creates an arbitrage opportunity and unfair distribution of shares, favoring users who exploit the rounding behavior, which could erode trust in fair issuance mechanics.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultAdmin.sol::addLiquidityToBuffer#512-520",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/982"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/VaultAdmin.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Permit signatures can be front-run to execute a temporary denial-of-service attack",
+            "description": "The permitBatchAndCall function processes permit signatures and consumes nonces without protection against front-running. An attacker can observe a pending transaction containing valid permit data and submit a copy first, consuming the nonce and causing the original transaction to revert. This enables a griefing attack where legitimate users\u2019 transactions fail despite correct construction, resulting in a temporary denial of service. While no funds are stolen, user experience and reliability are compromised, especially in high-stakes or time-sensitive operations.\n",
+            "severity": "Low",
+            "location": [
+                "RouterCommon.sol::permitBatchAndCall#121-151",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1024",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1157"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/RouterCommon.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "permitBatchAndCall will revert when non-payable functions are called with value",
+            "description": "The permitBatchAndCall function uses delegatecall in its multicall implementation, preserving msg.value across all calls. If a non-payable function is included in the batch while msg.value > 0, the transaction will revert even if the value is intended only for a preceding payable function. This prevents safe batching of mixed payable and non-payable calls when Ether is involved, limiting composability and creating unexpected failures for users attempting complex multi-step operations involving ETH.\n",
+            "severity": "Informational",
+            "location": [
+                "RouterCommon.sol::permitBatchAndCall#153-154",
+                "RouterCommon.sol::multicall#158-164",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1012"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/RouterCommon.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ]
+            },
+            "title": "BalancerPoolToken permit signatures cannot be revoked",
+            "description": "The BalancerPoolToken contract implements ERC2612 permit functionality but lacks a mechanism for users to revoke a signed permit before its deadline. Once a signature is shared, the only way to invalidate it is to have it consumed or wait for expiration. A user cannot proactively invalidate a leaked or prematurely shared signature, leaving them exposed to potential unauthorized spending until the deadline passes. This reduces user control over permissions and increases risk in scenarios involving third-party relayers or compromised clients.\n",
+            "severity": "Informational",
+            "location": [
+                "BalancerPoolToken.sol::permit#125-149",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1009"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/BalancerPoolToken.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Single token liquidity provision and removal will not work on tokens that revert on zero value transfers",
+            "description": "The Router contract\u2019s addLiquidityHook and removeLiquidityHook functions iterate over all pool tokens and attempt transfers even when the amount is zero. For tokens like BNB that revert on zero-value transfers, this causes the entire transaction to fail, even if the zero transfer is irrelevant. As a result, single-sided liquidity operations (e.g., adding only WETH to a BNB/WETH pool) become impossible on chains where such tokens are used, breaking compatibility and limiting usability for common token types.\n",
+            "severity": "Low",
+            "location": [
+                "Router.sol::addLiquidityHook#266-311",
+                "Router.sol::removeLiquidityHook",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/1014"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Router.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "The swap functions allows zero amountIn to be provided",
+            "description": "The swap function checks for zero raw input amount but does not prevent scaled amounts from becoming zero due to rounding during conversion. The _ensureValidTradeAmount function only reverts if the scaled amount is non-zero and below the minimum threshold, allowing exactly zero to pass. If a calculation error existed that allowed a zero input to yield a non-zero output, this could be exploited to drain pools. While no such flaw was found, the lack of a zero-check on scaled amounts creates a potential attack vector under edge cases involving low-rate tokens and minimal inputs.\n",
+            "severity": "Informational",
+            "location": [
+                "Vault.sol::swap#195-197",
+                "Vault.sol::swap#231",
+                "Vault.sol::_ensureValidTradeAmount#1545-1549",
+                "https://github.com/balancer/balancer-v3-monorepo/pull/991"
+            ],
+            "files": [
+                "a24ebf0141e9350a42639d8593c1436241deae59/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol"
+            ]
+        }
+    ]
+}

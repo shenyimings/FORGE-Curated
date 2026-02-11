@@ -1,0 +1,133 @@
+{
+    "path": "dataset-curated/reports/Zellic/IBC Eureka - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/cosmos/solidity-ibc-eureka",
+            "https://github.com/skip-mev/skip-go-evm-contracts"
+        ],
+        "commit_id": [
+            "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7",
+            "64c5ba2db3155fee10d5fb5331dd371499c9548f"
+        ],
+        "address": [],
+        "chain": "evm/cosmos",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-03",
+        "project_path": {
+            "IBC Eureka - Zellic Audit Report.pdf-source": "dataset-curated/contracts/IBC Eureka - Zellic Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Untrusted input is used as trusted consensus state",
+            "description": "The function verify_header in the ethereum-light-client component uses user-provided input (header.trusted_sync_committee.sync_committee) to construct a TrustedConsensusState without validating it against the stored consensus state. This occurs because the sync_committee from the header is directly cloned into the trusted structure without cryptographic verification against the known aggregated public key. As a result, an attacker could provide a malicious sync committee that appears valid, allowing them to influence the consensus update process. This could lead to the acceptance of fraudulent headers, enabling the manipulation of the light client's state, including the finalized root and state root, ultimately compromising the integrity of cross-chain message verification.\n",
+            "severity": "Critical",
+            "location": [
+                "ethereum-light-client::verify_header",
+                "ethereum-light-client::update_consensus_state"
+            ],
+            "files": [
+                "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7/solidity-ibc-eureka/packages/ethereum/ethereum-light-client/src/verify.rs"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Merkle verification could be bypassed",
+            "description": "The implementation in ethereum-light-client fails to properly enforce Merkle proof validation for the next_sync_committee as required by the specification. Instead of validating the Merkle branch when a next_sync_committee_branch is provided, the code only performs the check if both the update.next_sync_committee and the trusted_consensus_state.next_sync_committee() are available. Since the latter is derived from untrusted user input (as highlighted in Finding 3.1), an attacker can manipulate this value to bypass the Merkle proof validation. This allows an invalid next sync committee to be accepted, which can then be used to validate fraudulent attested headers. The impact is that an attacker could submit a malicious header with a forged state root, leading to incorrect state updates in the light client and potential theft or misrouting of cross-chain messages.\n",
+            "severity": "Critical",
+            "location": [
+                "ethereum-light-client::validate_merkle_branch",
+                "ethereum-light-client::update.next_sync_committee_branch"
+            ],
+            "files": [
+                "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7/solidity-ibc-eureka/packages/ethereum/ethereum-light-client/src/trie.rs",
+                "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7/solidity-ibc-eureka/packages/ethereum/ethereum-light-client/src/verify.rs"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "IBC does not work with chains that generate subsecond blocks",
+            "description": "The _checkUpdateResult function in SP1ICS07Tendermint enforces that the timestamp of a new consensus state must be strictly greater than the previous one. However, this comparison uses second-level precision, which breaks when a blockchain produces multiple blocks within the same second (i.e., subsecond blockchains). In such cases, even legitimate updates with identical timestamps will fail the check, causing the IBC client to reject valid state updates. This results in the freezing of the IBC client, halting all cross-chain communication for chains that operate with subsecond block times. The root cause is the lack of finer time granularity (e.g., milliseconds or nanoseconds) in the timestamp comparison logic, making the system incompatible with high-throughput blockchains.\n",
+            "severity": "Critical",
+            "location": [
+                "SP1ICS07Tendermint::_checkUpdateResult"
+            ],
+            "files": [
+                "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7/solidity-ibc-eureka/contracts/light-clients/SP1ICS07Tendermint.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-348"
+                ]
+            },
+            "title": "Attested header is stored instead of finalized header",
+            "description": "The update_consensus_state function in ethereum-light-client uses data from the attested header\u2014such as slot, timestamp, and state root\u2014instead of the finalized header to update the stored consensus state. According to the Ethereum consensus specification, only finalized headers should be used for long-term state updates because they provide finality guarantees. Attested headers, while likely to become canonical, are not finalized and can be subject to reorganization. By relying on attested headers, the system risks storing and acting upon state that may later be reverted, undermining the security model of the light client. This could allow an attacker to temporarily manipulate perceived state, potentially leading to incorrect cross-chain message processing or fund transfers based on non-final data.\n",
+            "severity": "High",
+            "location": [
+                "ethereum-light-client::update_consensus_state",
+                "ethereum-light-client::verify.rs:verify_header",
+                "ethereum-light-client::verify_account_storage_root"
+            ],
+            "files": [
+                "6bb8fcf6af5094487c85f12d9398c8401fd4a1b7/solidity-ibc-eureka/packages/ethereum/ethereum-light-client/src/update.rs"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Unchecked slippage may lead to sandwich attacks",
+            "description": "The swapAndTransfer function in EurekaHandler performs a token swap using arbitrary calldata (swapCalldata) passed directly from the user without validating slippage parameters. Since the function does not enforce a minimum output amount or verify that slippage is bounded in the provided calldata, an attacker can craft a swap with zero or minimal slippage protection. This exposes users to sandwich attacks, where malicious actors front-run and back-run the swap to extract value. The lack of enforced slippage checks means users may receive significantly less output than expected, resulting in direct financial loss. While the impact is limited to individual user transactions, it represents a significant risk in a trustless environment where MEV (Miner Extractable Value) is prevalent.\n",
+            "severity": "Informational",
+            "location": [
+                "EurekaHandler::swapAndTransfer"
+            ],
+            "files": [
+                "64c5ba2db3155fee10d5fb5331dd371499c9548f/skip-go-evm-contracts/EurekaHandler/src/EurekaHandler.sol"
+            ]
+        }
+    ]
+}

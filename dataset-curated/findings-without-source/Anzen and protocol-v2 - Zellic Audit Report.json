@@ -1,0 +1,126 @@
+{
+    "path": "dataset-curated/reports/Zellic/Anzen and protocol-v2 - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Anzen-Finance/anz-contracts",
+            "https://github.com/Anzen-Finance/protocol-v2"
+        ],
+        "commit_id": [
+            "2ae05f2416ebcb6e6d317bfd4d3e89a5a332889d",
+            "aea43c06534fc63a7418380d6339387cfc6d7b3a"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-11-25",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Fees could be overcharged by duplicated chainIds during broadcast",
+            "description": "The finalizeAndBroadcast function in VotingResultBroadcaster allows external callers to pass an array of chainIds without validating for duplicates. The underlying _broadcastResults function in AnzenVotingControllerUpg does not check for duplicate chainId values, enabling repeated fee charges for the same chain.\n\nThe root cause is the lack of input validation on the chainIds array, combined with the absence of deduplication checks in the receiving contract. This allows an attacker to submit the same chainId multiple times in a single call.\n\nAn attacker can exploit this by calling finalizeAndBroadcast with a list containing repeated chainId values, forcing the contract to pay the broadcast fee multiple times for the same destination chain.\n\nThe impact is that the contract's Ether balance can be completely drained, disrupting the cross-chain voting result broadcasting mechanism and potentially halting protocol operations.\n",
+            "severity": "Medium",
+            "location": [
+                "VotingResultBroadcaster.sol::finalizeAndBroadcast",
+                "AnzenVotingControllerUpg.sol::_broadcastResults"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "High voting power could be usable without minimum lock time",
+            "description": "The _deposit_for function in LockingToken uses votingPowerUnlockTime to calculate voting power based on unlock time, but does not enforce the minimum lock duration (MINDAYS) when this method is used. This allows users to gain significant voting power without committing to the intended minimum lock period.\n\nThe cause is a logic gap in the voting power calculation path: while votingPowerLockedDays enforces MINDAYS, votingPowerUnlockTime does not, and _deposit_for does not impose additional checks when using the latter.\n\nAn attacker can exploit this by first locking tokens for the minimum duration, waiting until just before expiration, then increasing their deposit with a large amount and a minimal unlock time extension (e.g., one second), thereby gaining high voting power that becomes withdrawable almost immediately.\n\nThe impact is that governance decisions could be influenced by users who do not have a long-term stake in the protocol, undermining the intended economic security model and potentially enabling short-term manipulation of voting outcomes.\n",
+            "severity": "Medium",
+            "location": [
+                "LockingToken.sol::_deposit_for",
+                "LockingToken.sol::votingPowerUnlockTime"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Incorrect use of totalPendingTokens leads to inability to rescue ERC-1155 tokens",
+            "description": "The rescueERC1155 function in LockedUSDzMarket uses a global totalPendingTokens variable to prevent rescuing tokens that are reserved for pending offers. However, this variable aggregates pending amounts across all token IDs, leading to incorrect rejections when rescuing tokens of an ID not involved in pending orders.\n\nThe root cause is the use of a single total instead of a per-token-ID mapping to track pending balances. This design flaw causes arithmetic underflow when attempting to rescue tokens of a different ID than those in pending orders.\n\nAn attacker or malicious user could exploit this by creating a small pending order for one token ID, effectively blocking the rescue of any other token IDs, including those accidentally sent to the contract.\n\nThe impact is that administrators cannot recover lost or misrouted ERC-1155 tokens, leading to permanent loss of user assets and reduced trust in the protocol's operational reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "LockedUsdzMarket.sol::rescueERC1155",
+                "LockedUsdzMarket.sol::totalPendingTokens"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Rounding issue in USDz markets",
+            "description": "The calculateRequiredUSDC function in both MainnetUSDzMarket and LockedUsdzMarket performs integer division that can round down to zero for small USDz amounts. This allows users to obtain USDz tokens without paying the required USDC.\n\nThe cause is the sequence of operations: usdzAmount is first divided by 1e12 (truncating small values), then multiplied by askPrice and divided by 1e6. For very small usdzAmount values, the initial division results in zero, making requiredUSDC zero.\n\nAn attacker can exploit this by filling offers with amounts just below the threshold where rounding occurs (e.g., 2e12-1), receiving USDz tokens without paying any USDC.\n\nThe impact is a loss of protocol funds due to free minting of USDz, which could be exploited repeatedly to drain USDC reserves, especially in automated or high-frequency scenarios.\n",
+            "severity": "High",
+            "location": [
+                "MainnetUSDzMarket.sol::fillOffer",
+                "MainnetUSDzMarket.sol::calculateRequiredUSDC",
+                "LockedUsdzMarket.sol::calculateRequiredUSDC"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Cross-chain VotingEscrow sync temporarily fails",
+            "description": "The synchronization between VotingEscrowAnzenMainchain and VotingEscrowAnzenSidechain relies on block.timestamp for ordering, but there is no guarantee that multiple cross-chain messages within the same block will be processed in the same order on the destination chain.\n\nThe root cause is the lack of an explicit sequence number or ordering mechanism in the cross-chain communication protocol. Instead, the system depends on msgTime (block.timestamp), which does not provide strict ordering for messages sent in the same block.\n\nAn attacker or simply normal network conditions could result in out-of-order message delivery, causing temporary inconsistencies in user position data and totalSupply between chains.\n\nThe impact is temporary data inconsistency across chains, which could disrupt user experience, affect reward calculations, and introduce uncertainty in cross-chain operations, though the system can eventually self-correct.\n",
+            "severity": "Low",
+            "location": [
+                "VotingEscrowAnzenMainchain.sol",
+                "VotingEscrowAnzenSidechain.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing expiration time check in the fillOffer function",
+            "description": "The fillOffer function in both MainnetUSDzMarket and LockedUsdzMarket does not verify whether an offer has expired before fulfilling it. Offers have an expirationTime, and users can withdraw after expiration, but the fill function does not prevent filling expired offers.\n\nThe cause is the omission of a validation check on the offer's expirationTime in the fillOffer function, despite the existence of the field and its intended use in the protocol logic.\n\nAn attacker could exploit this by identifying and filling stale offers that users believe are no longer active, potentially leading to unintended trades at outdated prices.\n\nThe impact includes financial risk to users who set prices below market rate and expect automatic expiration, as well as potential inconsistencies in the protocol's expected behavior regarding offer lifecycle management.\n",
+            "severity": "Low",
+            "location": [
+                "MainnetUSDzMarket.sol::fillOffer",
+                "LockedUsdzMarket.sol::fillOffer"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Deletion does not delete all values",
+            "description": "In VotingControllerStorageUpg, the _removePool function uses delete on a struct that contains a mapping (slopeChanges), but in Solidity, delete does not clear mappings, leaving stale data in storage.\n\nThe root cause is a misunderstanding or oversight of Solidity's storage deletion semantics: while struct fields are cleared, nested mappings are not recursively deleted and retain their values.\n\nAlthough currently not exploitable due to access control checks, this could become a vulnerability if future code changes rely on the mapping being empty after deletion.\n\nThe impact is minimal in the current codebase, but it increases technical debt and poses a latent risk if the contract logic evolves to assume clean state after pool removal.\n",
+            "severity": "Informational",
+            "location": [
+                "VotingControllerStorageUpg.sol::_removePool"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Missing _disableInitializers",
+            "description": "The AnzenVotingControllerUpg contract does not call _disableInitializers in its constructor, leaving the implementation contract potentially initializable. This violates OpenZeppelin's recommended pattern for upgradeable contracts.\n\nThe cause is inconsistent use of initialization protection: some functions use initializer modifiers, but the constructor does not lock initialization, allowing the implementation contract to be re-initialized.\n\nAn attacker could potentially hijack the uninitialized implementation contract if it is ever used directly, which could compromise the proxy's functionality.\n\nThe impact is a theoretical risk to the upgradeability system, which could be exploited to take over the contract if the implementation is ever mistakenly interacted with directly.\n",
+            "severity": "Informational",
+            "location": [
+                "AnzenVotingControllerUpg.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Unnecessary transfer functionality in LockingToken",
+            "description": "The LockingToken contract includes transfer functionality that is not required for its intended purpose of locking LP positions and earning direct rewards. This increases the attack surface without providing clear utility.\n\nThe cause is the inclusion of ERC-20 transfer features in a token designed for staking, where transfers are not part of the core use case.\n\nWhile no direct exploit is identified, unnecessary code increases complexity and the risk of future vulnerabilities, especially if transfer logic is later modified or interacted with in unexpected ways.\n\nThe impact is an increased attack surface and reduced code clarity, which could lead to security issues in future upgrades or integrations.\n",
+            "severity": "Informational",
+            "location": [
+                "LockingToken.sol"
+            ],
+            "files": []
+        }
+    ]
+}

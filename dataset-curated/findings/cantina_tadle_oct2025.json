@@ -1,0 +1,447 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_tadle_oct2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/tadle-com/v3-sandbox-audit_1"
+        ],
+        "commit_id": [
+            "fff1ee67834fe651fb314c31e78c2fe565296ddc"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-09",
+        "project_path": {
+            "v3-sandbox-audit_1": "dataset-curated/contracts/cantina_tadle_oct2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Validator spoofing blocks victim claims indefinitely",
+            "description": "The claim function in TadleConnectors allows any user to specify an arbitrary validator address without authentication or consent. This causes the cooldown timestamp for the victim's address to be updated even if the victim did not initiate or approve the claim. As a result, the victim is blocked from making legitimate claims due to the enforced 24-hour cooldown being reset repeatedly by an attacker. The root cause is the lack of validation or binding of the validator to the caller. An attacker can exploit this by repeatedly calling the claim function with a victim's address as the validator, leading to a low-cost, repeatable griefing attack. The impact is indefinite denial of service for victims trying to claim their rightful allocations.\n",
+            "severity": "High",
+            "location": [
+                "Connectors.sol::claim#402-412"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Connectors.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Permanent block of withdrawal requests",
+            "description": "The ETH withdrawal logic in main.sol compares the contract's current balance against the sum of claimed ETH and the requested withdrawal amount. However, if the airdrop contract records the exact ETH amount claimed, the balance becomes equal to the claimed amount immediately after the first claim. This makes any subsequent withdrawal request fail because claimedAmount + amt exceeds the current balance, even if sufficient funds are present. The root cause is the flawed accounting logic that does not track spendable vs. claimed funds. An attacker or malicious airdrop design could trigger this condition, causing the smart account to be unable to withdraw ETH despite holding it. The impact is permanent locking of ETH within the account, rendering it unusable.\n",
+            "severity": "High",
+            "location": [
+                "main.sol::withdraw#117-125"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/airdrop/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/account-manager-v1/main.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Proxy upgrade functions do not verify implementation code",
+            "description": "The UpgradeableProxy contract allows upgrading to a new implementation without verifying that the target address contains actual contract code. The functions upgradeTo and initializeImplementation only check for non-zero addresses but do not ensure the new implementation is a valid contract. If an EOA or a self-destructed contract is set as the implementation, delegatecalls will revert, bricking the proxy. The root cause is the absence of a code presence check such as Address.isContract. An attacker could exploit this during initialization if initializeImplementation remains unguarded, allowing them to set a non-contract address and render the proxy inoperable. The impact is loss of functionality and potential permanent denial of service for the proxy contract.\n",
+            "severity": "High",
+            "location": [
+                "UpgradeableProxy.sol::initializeImplementation#71-75",
+                "UpgradeableProxy.sol::upgradeTo#100-113",
+                "UpgradeableProxy.sol#123-145"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Factory rotation breaks new sandbox claims",
+            "description": "The Auth contract allows the admin to rotate the sandbox factory, but TadleConnectors caches the old factory address during initialization and never updates it. As a result, after a factory rotation, newly created sandbox accounts are not recognized by the old factory's isSandboxAccount check, causing their claim attempts to revert. The root cause is the lack of synchronization between Auth and TadleConnectors when the factory is updated. An admin performing a legitimate rotation would inadvertently break claim functionality for all new sandboxes. The impact is a denial of service for all newly created sandbox accounts, halting onboarding and distribution mechanisms dependent on claiming.\n",
+            "severity": "Medium",
+            "location": [
+                "Auth.sol::setFactory#96-105",
+                "TadleConnectors.sol::initialize#",
+                "TadleConnectors.sol::onlySandboxAccount#"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Auth.sol",
+                "v3-sandbox-audit_1/src/core/Connectors.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Slippage input mis-scaled, causing reverts or loose fills",
+            "description": "The mint and deposit functions accept slippage in basis points but pass it directly to internal functions expecting WAD-scale (1e18 = 100%). This causes a 1% slippage input (100) to be interpreted as 0.00000000000000001%, making trades extremely sensitive to price changes and likely to revert. Conversely, large inputs create excessive slippage, leading to poor execution prices. The root cause is a unit mismatch between the public interface and internal logic. Users or bots may incorrectly adjust slippage values trying to fix reverts, worsening the issue. The impact includes failed transactions, suboptimal trade execution, and potential financial loss due to unfavorable fills.\n",
+            "severity": "Medium",
+            "location": [
+                "main.sol::mint#84",
+                "main.sol::_mint#",
+                "main.sol::getMinAmount#"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/uniswap-swap/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/uniswap-v3/main.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "UpgradeableProxy allows unprotected first-time init",
+            "description": "The initializeImplementation function in UpgradeableProxy is external and only checks that the current implementation is not set, without access control. If a proxy is deployed with a zero logic address, any caller can set the initial implementation and execute arbitrary initialization code via delegatecall. This allows an attacker to hijack the proxy before the legitimate owner initializes it. The root cause is missing ownership restriction on a critical initialization function. Exploitation involves front-running the owner to install malicious logic, leading to full control over the proxy's state and funds. The impact is complete compromise of the proxy, including theft of funds and loss of control.\n",
+            "severity": "Medium",
+            "location": [
+                "UpgradeableProxy.sol::initializeImplementation#123-145"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing contract code check in TadleImplementations",
+            "description": "The TadleImplementations contract allows setting default and additional implementations without verifying that the provided addresses contain contract code. This could result in routing to EOAs or destroyed contracts, causing reverts or malfunctioning proxies. The root cause is the absence of a code presence check like Address.isContract. While addImplementation was fixed to include a check, setDefaultImplementation still only rejects the zero address. An admin could accidentally or maliciously set a non-contract address as the default, breaking all routing. The impact is denial of service and disruption of dependent systems relying on correct implementation resolution.\n",
+            "severity": "Medium",
+            "location": [
+                "Implementations.sol::setDefaultImplementation#",
+                "Implementations.sol::addImplementation#83-97"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Implementations.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Unrestricted check-ins skew reward tracking",
+            "description": "The checkIn function lacks the onlySandboxAccount modifier, allowing any address to trigger it and emit a UserCheckIn event. This enables off-chain reward systems to be gamed by spamming check-ins from arbitrary accounts. The root cause is missing access control on a function intended for sandbox accounts only. Attackers can exploit this to inflate engagement metrics and potentially claim undeserved rewards. The impact is distorted analytics and potential financial loss if rewards are distributed based on unverified check-in events.\n",
+            "severity": "Low",
+            "location": [
+                "Connectors.sol::checkIn#456-476"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Connectors.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Constructor sets state on implementation",
+            "description": "The TadleConnectors and other proxied contracts use constructors to set ownership, but in an upgradeable architecture, constructor code runs only on the implementation, not the proxy. This results in ownership being set in the wrong storage context, leading to confusion and potential misconfiguration. The root cause is improper use of constructors in upgradeable contracts. Tools or operators inspecting the implementation directly may see incorrect state. The impact is operational confusion and risk of failed administrative actions due to mismatched ownership assumptions.\n",
+            "severity": "Low",
+            "location": [
+                "Connectors.sol::constructor#237"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Connectors.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Missing storage gap in upgradeable base",
+            "description": "The Setup contract, used as a base for upgradeable contracts, does not include a storage gap (__gap), making future upgrades unsafe. Without a gap, adding new state variables can shift existing storage slots, corrupting data. The root cause is omission of a best practice for upgradeable contracts. Future upgrades that add variables may inadvertently overwrite existing state. The impact is potential data corruption and breaking of contract functionality during upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "Implementations.sol::Setup#19-35"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Implementations.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Use constant for connector name",
+            "description": "The name variable in main.sol is stored in storage when it could be a compile-time constant. This wastes gas on deployment and runtime reads. The root cause is suboptimal use of storage for immutable data. While the behavior is correct, using a constant would reduce gas costs and eliminate storage collision risks under delegatecall. The impact is slightly higher gas usage and reduced efficiency, with no security implications.\n",
+            "severity": "Low",
+            "location": [
+                "main.sol::name#94"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/account-manager-v1/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/airdrop/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/nad-fun/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/aprioi/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/uniswap-v3/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/uniswap-swap/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/magma/main.sol",
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/weth/main.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Admin can call user logic through proxy",
+            "description": "The UpgradeableProxy allows the owner to call user-facing functions through the fallback, as there is no transparent proxy pattern to block such calls. This increases the risk of accidental execution of user logic by the admin. The root cause is the lack of a transparent proxy guard. While not directly exploitable, it complicates monitoring and increases operational risk. The impact is potential user errors and confusion in transaction monitoring.\n",
+            "severity": "Low",
+            "location": [
+                "UpgradeableProxy.sol#162-191"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/proxy/UpgradeableProxy.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Usage of custom errors",
+            "description": "The contract uses string-based require statements for error messages, which are more expensive in gas than custom errors. Custom errors are cheaper and provide structured revert data. The root cause is outdated error handling practices. Replacing string reverts with custom errors would save gas and improve tooling support. The impact is higher transaction costs and reduced efficiency, with no security implications.\n",
+            "severity": "Informational",
+            "location": [
+                "Auth.sol::initialize#91"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Auth.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "assembly blocks not marked memory-safe",
+            "description": "Inline assembly blocks, such as in TadleSandBoxFactory.createClone, are not annotated with \"memory-safe\", which prevents compiler optimizations and risks memory pointer corruption. The root cause is missing annotation in assembly blocks. Adding assembly (\"memory-safe\") { ... } informs the compiler that the free memory pointer is preserved, enabling optimizations. The impact is missed gas savings and potential subtle bugs in memory management.\n",
+            "severity": "Informational",
+            "location": [
+                "Factory.sol::createClone#39"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Factory.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Dual cooldown trackers allow double rewards",
+            "description": "The claim and airdrop functions use separate cooldown mappings (lastClaimTimes and lastTokenReceiveTimes), allowing users to claim twice within the same 24-hour period by using both paths. The root cause is duplicated and uncoordinated state tracking. The comment incorrectly states that timestamps are shared. An attacker can alternate between claim and airdrop to double their rewards. The impact is inflation of token distribution and financial loss to the protocol.\n",
+            "severity": "Informational",
+            "location": [
+                "Connectors.sol::claim#447-448",
+                "Connectors.sol::airdrop#"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Connectors.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Fixed price limit disables Ambient trade protections",
+            "description": "The Ambient connector hardcodes price limits to near-protocol extremes, rendering them ineffective. This disables intended trade protections, leaving swaps vulnerable to slippage if amountOutMin is misconfigured. The root cause is static, non-adaptive price limits. Operators relying on these limits may believe they are protected when they are not. The impact is potential financial loss due to unfavorable trade execution, though amountOutMin still provides some protection.\n",
+            "severity": "Informational",
+            "location": [
+                "main.sol::_encodeTradeCommand#425-463"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/ambient-finance/main.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Ambient buy flow withholds quote token approvals",
+            "description": "When buying base tokens, the Ambient connector fails to approve the quote token, causing ERC-20 quote purchases to revert due to insufficient allowance. Only native ETH buys work. The root cause is incorrect approval logic that only approves the base token regardless of trade direction. The impact is broken functionality for ERC-20 quote token trades, limiting usability and causing transaction failures.\n",
+            "severity": "Informational",
+            "location": [
+                "main.sol#367-370"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/relayers/monad_testnet/ambient-finance/main.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "TadleImplementations does not inherit AccountImplementations interface",
+            "description": "TadleImplementations implements the getImplementation function but does not explicitly inherit the AccountImplementations interface. This weakens type safety and prevents compile-time checks for interface conformance. The root cause is missing interface inheritance in the contract declaration. While functionally correct, this reduces integration safety and clarity for external callers. The impact is reduced code maintainability and potential integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "Implementations.sol::TadleImplementations#123"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Implementations.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "TadleSandBoxFactory mimics an upgradeable pattern in a non-proxied deployment",
+            "description": "TadleSandBoxFactory has an external initialize function despite being a non-proxied contract with a constructor. This creates confusion and ambiguity, as the pattern suggests upgradeability where none exists. The root cause is inconsistent design pattern usage. The initialize function can be called multiple times by the owner, lacking a reentrancy guard. The impact is reduced code clarity and potential misconfiguration risks.\n",
+            "severity": "Informational",
+            "location": [
+                "Factory.sol::initialize#81"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Factory.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Public initializer allows arbitrary name/symbol",
+            "description": "The MonUSD.initialize function is public and can be called by anyone if not atomically invoked during deployment. This allows an attacker to set arbitrary name and symbol values before locking the contract. The root cause is missing access control on a critical initialization function. The impact is potential branding abuse and loss of control over token metadata if deployment is not carefully orchestrated.\n",
+            "severity": "Informational",
+            "location": [
+                "MonUSD.sol::initialize#101-109"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/tokens/MonUSD.sol"
+            ]
+        }
+    ]
+}

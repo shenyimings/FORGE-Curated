@@ -1,0 +1,145 @@
+version: 2.1
+setup: true
+orbs:
+  continuation: circleci/continuation@0.3.1
+jobs:
+  checkout_and_install:
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/protocol
+    steps:
+      - checkout
+      - run:
+          name: Install Prereqs
+          command: sudo apt-get update && sudo apt-get install -y libudev-dev libusb-1.0-0-dev yarn
+      - run:
+          name: Install Dependencies
+          command: yarn --frozen-lockfile
+      - run:
+          name: Install Foundry
+          command: |
+            curl -L https://foundry.paradigm.xyz | bash || true
+            export PATH="$PATH:/home/circleci/.foundry/bin"
+            foundryup
+      - save_cache:
+          key: protocol-{{ .Environment.CIRCLE_SHA1 }}
+          paths:
+            - ~/protocol
+            - ~/.ssh
+  build:
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/protocol
+    resource_class: large
+    steps:
+      - restore_cache:
+          key: protocol-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Install Prereqs
+          command: sudo apt-get update && sudo apt-get install -y rsync
+      - run:
+          name: Run build
+          command: yarn qbuild
+      - run:
+          name: Modified packages
+          command: ./ci/check_lerna_packages.sh
+      - save_cache:
+          key: protocol-completed-build-{{ .Environment.CIRCLE_SHA1 }}
+          paths:
+            - ~/protocol
+            - ~/.ssh
+  lint:
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/protocol
+    steps:
+      - restore_cache:
+          key: protocol-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Lint
+          command: ./ci/lint.sh
+  test:
+    executor: continuation/default
+    steps:
+      - restore_cache:
+          key: protocol-completed-build-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Generate Tests
+          command: |
+            export PATH="$PATH:/home/circleci/.foundry/bin"
+            cd /home/circleci/protocol
+            ./ci/generate_lerna_config.sh
+      - continuation/continue:
+          configuration_path: /home/circleci/protocol/.circleci/lerna_config.yml
+  coverage:
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/protocol
+    steps:
+      - checkout
+      - restore_cache:
+          key: protocol-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Run coverage
+          command: ./ci/coverage.sh ~/protocol/packages/core
+      - store_artifacts:
+          path: packages/core/coverage
+  publish:
+    docker:
+      - image: cimg/node:lts
+    working_directory: ~/protocol
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "ad:e6:34:8f:ee:03:d5:b2:29:38:8c:64:0f:83:a2:ab"
+      - restore_cache:
+          key: protocol-completed-build-{{ .Environment.CIRCLE_SHA1 }}
+      - run:
+          name: Install Prereqs
+          command: sudo apt-get update && sudo apt-get install -y libudev-dev libusb-1.0-0-dev yarn rsync
+      - run:
+          name: Ignore untracked files
+          command: rm -rf lerna_output lerna_packages
+      - run:
+          name: Check if empty packages folder exists
+          command: path="packages/core/temp/lib/forge-std"; [ -d "$path" ] || mkdir -p "$path"
+      - run:
+          name: Publish
+          command: yarn run publish-release
+workflows:
+  version: 2.1
+  build_and_test:
+    jobs:
+      - checkout_and_install
+      - build:
+          requires:
+            - checkout_and_install
+      - lint:
+          requires:
+            - checkout_and_install
+      - test:
+          requires:
+            - build
+      - publish:
+          context: api_keys
+          requires:
+            - build
+            - test
+          filters:
+            branches:
+              only: master
+  # Note: The nightly workflow will be commented here, because the feature used
+  # from circle CI to split the jobs not allow more than one workflow at the moment.
+  # nightly:
+  #   triggers:
+  #     - schedule:
+  #         cron: "0 0 * * *"
+  #         filters:
+  #           branches:
+  #             only:
+  #               - master
+  #   jobs:
+  #     - checkout_and_install
+  #     - coverage:
+  #         requires:
+  #           - checkout_and_install

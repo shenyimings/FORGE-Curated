@@ -1,0 +1,168 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-vfat-farm-strategies-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Ackee-Blockchain/audit-vfat-sickle-252"
+        ],
+        "commit_id": [
+            "d85b2cd89cf5d6c76b92e3545b71ab0be71c08f5"
+        ],
+        "address": [],
+        "chain": null,
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-19",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Front-run of Sickle deployment gives an opportunity for attacker to specify arbitrary approved and referralCode arguments",
+            "description": "This vulnerability allows a malicious actor to front-run a user's deposit transaction by deploying the user's Sickle wallet ahead of time with attacker-controlled values for the `approved` and `referralCode` parameters. The root cause lies in the `getOrDeploySickle` function, which is called during deposit operations and does not validate whether the Sickle wallet has already been deployed by a legitimate party. An attacker monitoring the mempool can detect a user's deposit transaction and submit a transaction calling `getOrDeploySickle` with their own chosen parameters before the user's transaction is confirmed. If the user has set `autoExit` to true, the attacker can later manipulate the exit process by creating a malicious token and routing the user's funds through a malicious liquidity pool, ultimately draining the user's assets. The impact is high, as it can lead to complete loss of user funds, although the likelihood is low due to the specific conditions required (user not pre-deploying Sickle and enabling auto-exit).\n",
+            "severity": "Medium",
+            "location": [
+                "FarmStrategy.sol::deposit#92",
+                "NftFarmStrategy.sol::deposit#122",
+                "FarmStrategy.sol::simpleDeposit#248",
+                "NftFarmStrategy.sol::simpleDeposit#441",
+                "StrategyModule.sol::getOrDeploySickle#26"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "The charge fee can be bypassed for several functions",
+            "description": "This vulnerability allows users to bypass fee charges during harvest, withdraw, and compound operations by manipulating input arrays such as `tokensOut` or `rewardTokens`. The root cause is the lack of validation on these arrays in the fee calculation logic within the `_compound`, `_harvest`, and `_simpleWithdraw` functions. Since the fee library relies on these user-provided arrays to determine which tokens to charge fees on, an attacker can simply pass empty or irrelevant arrays to avoid any fee deduction. For example, in the `exit` function, a user can set `HarvestParams.tokensOut` and `WithdrawParams.tokensOut` to empty arrays, resulting in no fees being charged. This undermines the protocol's revenue model and creates an unfair advantage for malicious users. The impact is low as it affects protocol revenue rather than user fund safety, but the likelihood is medium because it is easily exploitable by any user with knowledge of the flaw.\n",
+            "severity": "Low",
+            "location": [
+                "FarmStrategy.sol::_harvest#560",
+                "FarmStrategy.sol::_simpleWithdraw#455",
+                "NFTFarmStrategy.sol",
+                "MultiFarmStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Withdrawal of funds can be blocked by Collector contract by not accepting tokens",
+            "description": "This issue arises when the protocol attempts to send ETH fees to the Collector contract using `safeTransferETH`, but the Collector contract is configured to reject incoming ETH transfers. The root cause is the lack of error handling in the fee transfer mechanism\u2014specifically, if the Collector is a contract that does not implement a payable fallback function, the entire withdrawal transaction will revert. This creates a trust dependency where a malicious or misconfigured Collector can block user withdrawals, even though the user is only trying to access their own funds. An attacker with control over the Collector could exploit this by disabling ETH reception, thereby freezing all withdrawal attempts that specify ETH as the fee token. The impact is categorized as Warning because it does not directly lead to fund loss but can disrupt protocol functionality and user experience under specific administrative misconfigurations.\n",
+            "severity": "Informational",
+            "location": [
+                "FeesLib.sol#68"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Connectors are single point of failure",
+            "description": "The protocol relies on external connector contracts to interact with DeFi protocols like Velodrome and Uniswap. If any of these connectors fail\u2014due to bugs, upgrades, or malicious behavior\u2014users may be unable to perform critical operations such as withdrawing funds. The root cause is the centralized reliance on a single connector per protocol without fallback mechanisms. For example, if the Velodrome connector fails, users cannot withdraw from Velodrome-based farms, effectively locking their funds. This creates a systemic risk where the failure of one component can halt user access to assets. While the likelihood is considered low due to the use of a timelock for connector changes, the potential impact on user fund accessibility is significant. The issue highlights a trust model weakness where users must trust both the correctness and availability of these connectors.\n",
+            "severity": "Informational",
+            "location": [
+                "FarmStrategy.sol",
+                "VelodromeRouterConnector.sol::_withdrawNft#876"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Usage of function with inplace=True argument always fails in gauges that use NFTs",
+            "description": "The `inplace=True` option in the `increase` and `compound` functions of `NftFarmStrategy` and `MultiFarmStrategy` will always fail when interacting with NFT-based gauges because the protocol contract does not own the NFT required to perform in-place modifications. The root cause is a logical inconsistency in the design: the function assumes the contract can act on the NFT directly, but in reality, the NFT is held by the user's Sickle wallet. Any attempt to modify the NFT in-place without first withdrawing it will revert with an \"NG\" error. This renders the `inplace` feature non-functional for NFT positions, leading to wasted gas and failed transactions for users. The impact is low as it affects usability rather than security, but it represents a clear logic error in the implementation that contradicts expected behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "NftFarmStrategy.sol",
+                "MultiFarmStrategy.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing CompoundFor fee calculation",
+            "description": "The `_compound` function used by both `compound` and `compoundFor` does not differentiate between the two operation types when charging fees, resulting in incorrect fee categorization. The root cause is the absence of a parameter in the `_compound` function to specify the fee type, leading to both operations being charged under the generic \"Compound\" fee category. This creates inconsistency with other parts of the system, such as `NftFarmStrategy`, which properly distinguishes between compound and compoundFor fees. While this does not result in financial loss, it affects the accuracy of fee tracking and reporting. The issue was acknowledged and fixed in a later commit by adding a fee type parameter to the `_compound` function. The impact is classified as Warning due to its effect on internal accounting rather than direct security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "FarmStrategy.sol::compoundFor#381",
+                "FarmStrategy.sol::_compound#636"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "W5: block.timestamp is used for swap deadline",
+            "description": "1. **Description:** The `block.timestamp` is used as the deadline for swap operations in the `VelodromeRouterConnector.swapExactTokensForTokens` function. This removes user control over the deadline, relying instead on the current block time.\n2. **Cause:** The vulnerability arises because the deadline is hardcoded using `block.timestamp` rather than being passed as a user-defined parameter.\n3. **Exploitation:** If network congestion or delays occur between transaction submission and execution, the swap could execute at an unintended time, potentially leading to unfavorable rates or failed transactions.\n4. **Impact:** The lack of a user-defined deadline reduces transaction safety and user control, increasing the risk of failed or undesirable swaps due to timing issues.\n",
+            "severity": "Informational",
+            "location": [
+                "VelodromeRouterConnector.sol::swapExactTokensForTokens#65-71"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "W6: Incorrect price calculation",
+            "description": "1. **Description:** The `VelodromeRouterConnector.getPoolPrice` function calculates token prices using `getAmountOut`, which may return imprecise values due to precision loss and is susceptible to price manipulation.\n2. **Cause:** The calculation uses raw output from `getAmountOut` without safeguards against precision loss or manipulation, and it does not use more secure alternatives like the `quote` function.\n3. **Exploitation:** An attacker could manipulate the pool price via flash loans or front-running, especially during deposit or exit operations, leading to incorrect price assessments in `validateExitFor`.\n4. **Impact:** Incorrect price evaluation could trigger premature or unintended exits from farming positions, resulting in financial loss for users.\n",
+            "severity": "Informational",
+            "location": [
+                "VelodromeRouterConnector.sol::getPoolPrice#89-109",
+                "PositionSettingsRegistry.sol::validateExitFor#220-228",
+                "FarmStrategy.sol::exitFor#397-411"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "I1: Missing NatSpec comments",
+            "description": "1. **Description:** The `SickleFactory.sol` contract lacks NatSpec documentation for the `approved` parameter in both `deploy` and `getOrDeploy` functions.\n2. **Cause:** Incomplete code documentation, specifically missing `@param` tags for critical parameters.\n3. **Exploitation:** This issue cannot be exploited maliciously but reduces code readability and maintainability.\n4. **Impact:** Developers and auditors may misunderstand the role of the `approved` parameter, increasing the risk of integration errors or misconfigurations.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleFactory.sol::deploy#178-187",
+                "SickleFactory.sol::getOrDeploy#156-165"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "I2: Potential incorrect fee calculation",
+            "description": "1. **Description:** In `TransferLib._transferTokenFromUser`, fees are charged by calling `FeesLib.chargeFee` with a fee basis of 0, causing the fee calculation to pull from the Sickle balance rather than the transferred amount.\n2. **Cause:** The logic incorrectly relies on the contract's balance instead of the transaction amount when calculating fees, which contradicts the intended fee model.\n3. **Exploitation:** If a Sickle wallet holds residual tokens, a fee could be incorrectly deducted from the balance instead of the transfer, leading to unintended fund loss.\n4. **Impact:** Users may lose funds from their Sickle balance due to miscalculated fees, especially in edge cases where leftover tokens exist.\n",
+            "severity": "Informational",
+            "location": [
+                "TransferLib.sol::_transferTokenFromUser#126-139",
+                "FeesLib.sol::chargeFee"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "I3: Unexpected revert in increase function",
+            "description": "1. **Description:** Calling `NftFarmStrategy.increase` with `tokenId == 0` reverts with a non-descriptive error `NftSupplyChanged`, which does not clarify the root cause.\n2. **Cause:** The function uses a generic modifier `nftSupplyUnchanged` that does not provide actionable feedback when `tokenId` is zero.\n3. **Exploitation:** This cannot be exploited maliciously but leads to poor user experience and debugging difficulty.\n4. **Impact:** Users and frontends receive unclear error messages, making it hard to diagnose and correct input mistakes.\n",
+            "severity": "Informational",
+            "location": [
+                "NftFarmStrategy.sol::increase#341-359",
+                "NftFarmStrategy.sol::deposit#123-131"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "I4: Missing events in MultiFarmStrategy",
+            "description": "1. **Description:** The `MultiFarmStrategy` contract performs NFT deposit and withdrawal operations but does not emit events, unlike the `NftFarmStrategy` which emits `SickleDepositedNft` and `SickleWithdrewNft`.\n2. **Cause:** Lack of event emission in `MultiFarmStrategy._depositNft` and `_withdrawNft` functions despite similar functionality.\n3. **Exploitation:** This cannot be exploited maliciously but hinders off-chain monitoring and indexing.\n4. **Impact:** External services (e.g., UIs, analytics tools) cannot reliably track NFT movements in `MultiFarmStrategy`, reducing transparency and usability.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiFarmStrategy.sol::_depositNft#304-309",
+                "MultiFarmStrategy.sol::_withdrawNft#286-290",
+                "NftFarmStrategy.sol::_depositNft#860-873",
+                "NftFarmStrategy.sol::_withdrawNft#887-893"
+            ],
+            "files": []
+        }
+    ]
+}

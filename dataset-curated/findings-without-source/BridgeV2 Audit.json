@@ -1,0 +1,266 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/BridgeV2 Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/lombard-finance/smart-contracts"
+        ],
+        "commit_id": [
+            "63d407689cb50212992a6bd7ad1b0d0d80ca5287"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-29",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Token Pool Deployment May Fail for Some Tokens",
+            "description": "The constructor of the `LombardTokenPoolV2` contract calls the `decimals()` function of the provided token to determine its decimal precision. However, according to the ERC-20 specification, the `decimals` function is optional and may not be implemented by all tokens. If a token does not implement this function, the call will revert, preventing the deployment of the `LombardTokenPoolV2` contract for that token. This issue arises due to reliance on an on-chain call that may fail, despite the inherited CCIP `TokenPool` contract already performing similar validation. The impact is that certain tokens cannot be supported by the bridge if their contracts lack the `decimals` function, limiting the system's interoperability. A safer approach would be to accept the decimals value as a constructor parameter supplied off-chain.\n",
+            "severity": "Medium",
+            "location": [
+                "LombardTokenPoolV2.sol#56-57",
+                "LombardTokenPoolV2.sol::constructor"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Lack of Cross-Verification for Destination Token",
+            "description": "The `lockOrBurn` function in both `LombardTokenPoolV2` and `BridgeTokenPool` contracts initiates a deposit on the `BridgeV2` contract, which burns the source token and triggers a mint on the destination chain. The destination token address is stored in the `BridgeV2` contract's `allowedDestinationToken` mapping. However, the Pool contracts also maintain their own record of the destination token via the inherited `getRemoteToken` function. There is no validation to ensure that the destination token known to the Pool contract matches the one expected by the `BridgeV2` contract. This inconsistency could lead to bridging failures or incorrect token minting if the two values diverge due to misconfiguration. The root cause is the lack of a cross-verification mechanism during setup or execution. This could result in user funds being stuck or misrouted, undermining trust in the bridge's reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "LombardTokenPoolV2.sol::lockOrBurn#79-119",
+                "BridgeTokenPool.sol::lockOrBurn#38-69",
+                "BridgeV2.sol::deposit#281-298",
+                "BridgeV2.sol#358-367",
+                "TokenPool.sol::getRemoteToken#404-408"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Unnecessary Infinite Approval to Bridge by the `BridgeTokenPool` Contract",
+            "description": "The `BridgeTokenPool` contract, in its constructor, grants infinite approval to the `BridgeV2` contract for the underlying token. This is inherited from `LombardTokenPoolV2`, where such approval is necessary for direct token burns. However, in the case of `BridgeTokenPool`, token transfers go through the `BridgeTokenAdapter`, which handles the actual burn logic. Therefore, the infinite approval to `BridgeV2` is redundant and introduces unnecessary risk. If the `BridgeTokenPool` were to hold tokens in the future (e.g., due to a code change), this approval could allow the `BridgeV2` contract to drain them. The cause is an over-privileged approval stemming from inheritance without contextual adjustment. While no immediate exploit is apparent, it violates the principle of least privilege and increases the attack surface in case of future upgrades or misconfigurations.\n",
+            "severity": "Medium",
+            "location": [
+                "BridgeTokenPool.sol#28",
+                "LombardTokenPoolV2.sol#69",
+                "BridgeTokenPool.sol::constructor",
+                "BridgeV2.sol::_burnToken#392-396",
+                "BridgeTokenAdapter.sol::transferFrom#308-316"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Insufficient Input Validation in `deposit` May Lead to Stuck Bridging Transactions",
+            "description": "The `deposit` function in the `BridgeV2` contract accepts a `recipient` parameter as a `bytes32` value, which is intended to represent an address on the destination chain. While it checks that the recipient is non-zero, it does not validate that the value is a valid EVM address when bridging to EVM-compatible chains. On the destination side, the recipient is converted to an address by taking the lower 20 bytes, and the transaction reverts if any higher-order bytes are non-zero. This means a malformed `bytes32` recipient could cause the destination transaction to permanently revert, resulting in stuck funds. Similarly, the `sender` field is not validated to be non-zero on the source side, which could also lead to reverts. The root cause is missing input validation in a critical cross-chain function. This could be exploited maliciously or occur accidentally, leading to loss of user funds due to unrecoverable bridging attempts.\n",
+            "severity": "Medium",
+            "location": [
+                "BridgeV2.sol::deposit#281-298",
+                "BridgeV2.sol#342-344",
+                "BridgeV2.sol#537",
+                "BridgeV2.sol#522-524"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing Validation in `addDestinationToken` May Cause Unusable Bridge Paths",
+            "description": "The `addDestinationToken` function in the `BridgeV2` contract does not validate that the `destinationToken` parameter is a non-zero address. If the owner mistakenly sets it to zero, any attempt to bridge the corresponding `sourceToken` to that chain will revert when the contract tries to use the destination token address. Additionally, there is no validation that the `destinationToken` has a valid format for the destination chain\u2014for example, on EVM chains, the higher-order 12 bytes of the `bytes32` should be zero. Without this check, a misconfigured token address could lead to failed bridging transactions. The cause is insufficient input validation in a privileged configuration function. This could result in operational failures and user frustration, requiring manual intervention to fix the configuration.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeV2.sol::addDestinationToken#95-138",
+                "BridgeV2.sol#365-367",
+                "BridgeV2.sol#535"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Missing Input Validation",
+            "description": "Several functions in the codebase lack basic input validation. The `BridgeTokenPool` constructor does not check that the `tokenAdapter` address is non-zero, which could lead to undefined behavior. The `setTokenRateLimits` function does not validate that the `window` parameter is non-zero, which would cause a division by zero in `availableAmountToSend`, leading to transaction reverts. The `rescueERC20` function does not ensure the `to` address is non-zero, which could result in token loss if the recipient is the zero address and the token does not revert on such transfers. These omissions stem from incomplete parameter validation in critical functions. While individually low-risk, collectively they increase the likelihood of operational errors and potential fund loss due to preventable misconfigurations.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeTokenPool.sol::constructor#19-29",
+                "BridgeV2.sol::setTokenRateLimits#209-219",
+                "RateLimits.sol::availableAmountToSend#71-94",
+                "BridgeV2.sol::rescueERC20#549-555"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Inconsistent Allowed Destination Token Logic May Cause Confusion",
+            "description": "The `getAllowedDestinationToken` function returns a destination token address based on the source token and destination chain, implying that a valid bridge path exists. However, if a destination chain is removed via `removeDestinationChain`, the associated entries in the `allowedDestinationToken` mapping are not cleaned up. As a result, `getAllowedDestinationToken` may return a non-zero address for a chain that is no longer supported, misleading external systems into believing the bridge path is active. This inconsistency arises from incomplete state cleanup during configuration updates. The impact is potential integration errors or failed transactions by third-party systems relying on this function to determine valid routes, leading to user confusion and reduced system reliability.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeV2.sol::getAllowedDestinationToken#154-165",
+                "BridgeV2.sol::removeDestinationChain#81-93"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Missing Docstrings",
+            "description": "Numerous functions and state variables across the codebase lack NatSpec documentation. This includes critical functions such as `initialize`, `getConsortium`, `getAssetRouter`, and events like `BridgeTokenChanged` in `BridgeTokenAdapter.sol`, as well as core bridge functions like `addDestinationToken`, `setTokenRateLimits`, and `decodeMsgBody` in `BridgeV2.sol`. The absence of docstrings reduces code readability and maintainability, making it harder for developers and auditors to understand the intended behavior and security assumptions. This is particularly problematic for privileged functions and complex logic. While not a direct security vulnerability, it increases the risk of future bugs and misconfigurations due to misunderstanding of the code's purpose and usage.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeTokenAdapter.sol::BridgeTokenChanged",
+                "BridgeTokenAdapter.sol::initialize",
+                "BridgeTokenAdapter.sol::getConsortium",
+                "BridgeTokenAdapter.sol::getAssetRouter",
+                "BridgeTokenAdapter.sol::isNative",
+                "BridgeTokenAdapter.sol::isRedeemsEnabled",
+                "BridgeTokenAdapter.sol::getTreasury",
+                "BridgeTokenAdapter.sol::getRedeemFee",
+                "BridgeTokenAdapter.sol::getFeeDigest",
+                "BridgeV2.sol::MSG_VERSION",
+                "BridgeV2.sol::initialize",
+                "BridgeV2.sol::addDestinationToken",
+                "BridgeV2.sol::getAllowedDestinationToken",
+                "BridgeV2.sol::removeDestinationToken",
+                "BridgeV2.sol::setTokenRateLimits",
+                "BridgeV2.sol::getTokenRateLimit",
+                "BridgeV2.sol::setSenderConfig",
+                "BridgeV2.sol::getSenderConfig",
+                "BridgeV2.sol::getFee",
+                "BridgeV2.sol::decodeMsgBody",
+                "BridgeV2.sol::destinationBridge",
+                "BridgeV2.sol::mailbox",
+                "BridgeTokenPool.sol::getTokenAdapter",
+                "LombardTokenPoolV2.sol::PathSet",
+                "LombardTokenPoolV2.sol::PathRemoved",
+                "LombardTokenPoolV2.sol::typeAndVersion",
+                "LombardTokenPoolV2.sol::bridge",
+                "LombardTokenPoolV2.sol::removePath"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incomplete Docstrings in Public Functions",
+            "description": "Several public and external functions across multiple contracts lack complete NatSpec documentation for parameters and return values. This includes missing @param and @return tags in critical functions such as changeConsortium, spendDeposit, setDestinationBridge, and lockOrBurn. The root cause is insufficient documentation discipline during development. While this does not directly enable exploits, it increases the risk of misinterpretation by developers, frontends, or auditors. An attacker could potentially exploit ambiguity in function behavior during complex interactions or upgrades. The impact is reduced code maintainability and increased risk of integration errors.\n",
+            "severity": "Informational",
+            "location": [
+                "BridgeTokenAdapter.sol::changeConsortium#92-96",
+                "BridgeTokenAdapter.sol::changeTreasuryAddress#100-104",
+                "BridgeTokenAdapter.sol::changeBridgeToken#141-145",
+                "BridgeTokenAdapter.sol::getBascule#188-190",
+                "BridgeTokenAdapter.sol::spendDeposit#282-304",
+                "BridgeTokenAdapter.sol::transferFrom#308-316",
+                "BridgeTokenAdapter.sol::burn#320-328",
+                "BridgeTokenAdapter.sol::burn#332-338",
+                "BridgeV2.sol::setDestinationBridge#82-93",
+                "BridgeV2.sol::setAllowance#142-152",
+                "BridgeV2.sol::deposit#281-298",
+                "BridgeV2.sol::deposit#310-326",
+                "BridgeTokenPool.sol::lockOrBurn#38-78",
+                "LombardTokenPoolV2.sol::lockOrBurn#79-119",
+                "LombardTokenPoolV2.sol::releaseOrMint#132-169",
+                "LombardTokenPoolV2.sol::setPath#172-204"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Redundant Mapping in BridgeV2",
+            "description": "The BridgeV2 contract maintains two bidirectional mappings (allowedDestinationToken and allowedSourceToken) that store redundant information and must be updated in sync. The removeDestinationToken function does not validate that the provided source and destination token pair matches the stored state, which could lead to inconsistent or incorrect state updates. The root cause is poor data structure design and lack of validation. An attacker could potentially exploit this by inducing incorrect removals during reconfiguration, leading to a denial of service for legitimate bridging operations. The impact is reduced reliability and potential for state corruption in the token allowance system.\n",
+            "severity": "Medium",
+            "location": [
+                "BridgeV2.sol::allowedDestinationToken#39",
+                "BridgeV2.sol::allowedSourceToken#40",
+                "BridgeV2.sol::removeDestinationToken#167-207"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Use of require(False) Instead of revert()",
+            "description": "The BridgeTokenAdapter.sol contract uses require(False) at line 183, which is functionally equivalent to revert() but less clear in intent. The root cause is suboptimal coding practice. This does not introduce a direct security vulnerability, but it reduces code readability and may confuse developers during maintenance. There is no direct exploitation vector, but it could contribute to logic errors during future modifications. The impact is reduced code clarity and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "BridgeTokenAdapter.sol#183"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Misleading Comments in Codebase",
+            "description": "Multiple instances of misleading or incorrect comments were found, such as a comment in setTokenRateLimits claiming the chain ID is unused when it is actually used in the next line, and a comment in the deposit function incorrectly stating it burns from the transaction sender. The root cause is failure to update comments after code changes. These inaccuracies can mislead developers, auditors, or automated tools, potentially leading to incorrect assumptions about function behavior. An attacker could exploit this during social engineering or by crafting transactions that rely on misunderstood logic. The impact is increased risk of integration bugs and reduced audit effectiveness.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeV2.sol::setTokenRateLimits#213",
+                "BridgeV2.sol::deposit#301"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Unnecessary Address Cast in BridgeTokenPool",
+            "description": "The BridgeTokenPool contract performs an unnecessary explicit cast of getTokenAdapter to address at line 57. The root cause is redundant type casting. This does not introduce a security vulnerability but reduces code clarity and may suggest a misunderstanding of Solidity's type system. There is no direct exploitation method, but it could distract reviewers from more critical issues. The impact is reduced code readability and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "BridgeTokenPool.sol#57"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "IBridgeV2 Interface Not Advertised in supportsInterface",
+            "description": "The BridgeV2 contract implements the IBridgeV2 interface but does not return true when supportsInterface is called with the IBridgeV2 interface ID. The root cause is incomplete implementation of the ERC-165 standard. This could cause external systems to incorrectly assume the contract does not support its own interface, leading to integration failures. An attacker could potentially exploit this by preventing legitimate integrations or frontends from recognizing the contract's capabilities. The impact is reduced interoperability and potential for integration errors.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeV2.sol::supportsInterface#567-573"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Unused Imports in Multiple Contracts",
+            "description": "Several contracts contain unused imports, including BaseLBTC, FeeUtils, IAdapter, RateLimits, and IBridge. The root cause is failure to clean up imports after refactoring. While this does not introduce a direct security risk, it increases the compiled bytecode size unnecessarily and may confuse developers about dependencies. There is no direct exploitation vector, but it could contribute to higher gas costs and reduced code clarity. The impact is increased deployment cost and reduced maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "BridgeTokenAdapter.sol#12",
+                "BridgeV2.sol#10",
+                "BridgeV2.sol#11",
+                "IBridgeV2.sol#4",
+                "TokenPool.sol#7"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Missing Security Contact in Contracts",
+            "description": "Multiple contracts lack a @custom:security-contact NatSpec tag, including BridgeTokenAdapter, BridgeV2, IBridgeV2, LombardTokenPool, BridgeTokenPool, and LombardTokenPoolV2. The root cause is omission of security disclosure information. This makes it difficult for security researchers to responsibly disclose vulnerabilities, potentially leading to public exposure or exploitation before fixes can be developed. An attacker could exploit the lack of clear communication channels to delay reporting of critical issues. The impact is reduced responsiveness to security threats and increased risk of unreported vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "BridgeTokenAdapter.sol",
+                "BridgeV2.sol",
+                "IBridgeV2.sol",
+                "TokenPool.sol",
+                "BridgeTokenPool.sol",
+                "LombardTokenPoolV2.sol"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,1116 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Jovay Rollup Contracts Audit.md",
+    "project_info": {
+        "url": "https://github.com/jovaynetwork/jovay-contracts",
+        "commit_id": "24f525f379558eed27441f7233e5921591e0063d",
+        "address": "n/a",
+        "chain": [
+            "evm",
+            "evm/ethereum"
+        ],
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-10",
+        "project_path": {
+            "jovay-contracts": "dataset-curated/contracts/Jovay Rollup Contracts Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Incorrect Use of ERC-20 `amount_` As ETH Value in L2 ERC-20 Bridge `withdraw`",
+            "description": "The L2ERC20Bridge contract incorrectly uses the ERC-20 token amount (`amount_`) as the ETH value when sending a cross-domain message via `L2Mailbox.sendMsg`. This function expects the `value` parameter to represent the amount of ETH to forward, which should be zero for ERC-20 token withdrawals. By passing `amount_` instead, the system may interpret the token amount as ETH, leading to incorrect ETH transfers or message execution failures.\n\nThe root cause is a logic error in the `withdraw` function where the wrong variable is passed to the `sendMsg` call. An attacker could potentially exploit this by initiating a withdrawal with a large token amount, causing the system to attempt an unintended ETH transfer, which may fail or lead to inconsistent state.\n\nThis could result in failed message executions on L1, incorrect accounting, or loss of user funds if the L1 bridge attempts to process a non-zero ETH value that was never sent. Even if no actual ETH is transferred, the inconsistency may disrupt message processing and bridge reliability.\n\nThe impact includes potential loss of user funds, failed withdrawals, and reduced trust in the bridge's correctness. Although the issue has been resolved, it highlights a critical flaw in cross-chain message construction.\n",
+            "severity": "High",
+            "location": [
+                "L2ERC20Bridge.sol::withdraw#47",
+                "L2Mailbox.sol::sendMsg#43-75"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Broken Set Token Mapping Flow",
+            "description": "The `setTokenMapping` function in the `L2ERC20Bridge` contract is only callable by the contract owner, which prevents the `L2Mailbox` from executing it when receiving a message from L1. Since token mapping updates are sent via cross-chain messages from L1 to L2, and the `L2Mailbox` acts as the caller, the function call fails unless the mailbox is the owner\u2014 which is not feasible due to conflicting privilege requirements.\n\nThe root cause is an access control misconfiguration: the function lacks a permission mechanism for the `L2Mailbox` to act as a trusted forwarder. This breaks the synchronization of token mappings between L1 and L2, leaving the system unable to process new ERC-20 token deposits.\n\nAn attacker could not directly exploit this, but malicious or negligent behavior by the owner (e.g., failing to manually set mappings) would prevent users from depositing unsupported tokens. More critically, even honest operation fails because the automated flow is broken.\n\nThe impact is that new ERC-20 tokens cannot be bridged until mappings are manually fixed, potentially locking user funds and disrupting onboarding of new assets. This undermines the autonomy and reliability of the bridge system.\n",
+            "severity": "High",
+            "location": [
+                "L1ERC20Bridge.sol::setTokenMapping#21-29",
+                "L2ERC20Bridge.sol::setTokenMapping#16-18",
+                "L2Mailbox.sol::relayMsg#85-108"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol",
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-1293"
+                ]
+            },
+            "title": "Inconsistent Handling of `l2MsgRoot` Across Proofs",
+            "description": "The `Rollup.verifyBatch` function enforces consistency of the `postStateRoot` across multiple proof types (e.g., TEE and ZK proofs) by storing and comparing values. However, it does not perform the same check for the `l2MsgRoot`, allowing the second proof to overwrite the value without validation.\n\nThe root cause is the absence of a cross-proof consistency check for `l2MsgRoot`, relying instead on the assumption that valid proofs will inherently agree on the message root. This weakens the security model, which is designed to tolerate bugs in one proof system by requiring agreement between two independent verifiers.\n\nIf a vulnerability exists in one proof system, an attacker could generate two valid but inconsistent proofs\u2014one with a legitimate `l2MsgRoot` and another with a malicious one\u2014causing the system to accept an incorrect message root. This could allow invalid or forged L2\u2192L1 messages to be processed.\n\nThe impact is a potential compromise of message integrity, leading to unauthorized withdrawals or execution of unapproved cross-chain actions, especially if one proof system is compromised. This undermines the redundancy-based security design.\n",
+            "severity": "Medium",
+            "location": [
+                "Rollup.sol::verifyBatch#187-230",
+                "Rollup.sol::_verifyTeeProof#291-297"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Unclear L1 Message Queue Logic",
+            "description": "The `L1Mailbox` contract contains ambiguous and inconsistent logic for handling the message queue. The `popMsgs` function has `popFront()` commented out, so messages are never removed from the queue. Meanwhile, `getMsg` relies on `lastestQueueIndex` and `stableRollingHash`, which becomes outdated because it is never updated after messages are processed.\n\nThe root cause is incomplete refactoring: the team changed from a popping model to an index-tracking model but failed to fully update all related functions and remove dead code. The `setLastQueueIndex` function exists for upgrades but is not integrated into normal operation, creating state desynchronization risks.\n\nAn attacker could exploit this by triggering edge cases where `getMsg` returns incorrect rolling hashes, potentially leading to invalid message inclusion in batches or verification failures. Relayers may submit inconsistent data, and upgrades could introduce hard-to-predict behavior.\n\nThe impact includes potential DoS due to verification mismatches, incorrect message processing, and operational fragility during upgrades. While the mainnet deployment avoids some issues due to clean state, the code remains fragile and error-prone.\n",
+            "severity": "Medium",
+            "location": [
+                "L1Mailbox.sol::getMsg#204-215",
+                "L1Mailbox.sol::popMsgs#242",
+                "L1Mailbox.sol::setLastQueueIndex#220-222"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Missing Manual Finalization Mechanism for ERC-20 Tokens Can Lead to Locked Funds",
+            "description": "The `L2Mailbox.relayMsg` function uses a low-level call to execute cross-chain messages and stores the message hash in `receiveMsgMap` to prevent replays. If the call fails (e.g., due to a revert in `finalizeDeposit`), the transaction does not revert, but no recovery mechanism exists for ERC-20 deposits or `setTokenMapping`.\n\nThe root cause is the lack of a user-callable fallback function like `claimDeposit` (which exists for ETH) to retry failed executions. Once the hash is stored, the relayer cannot resubmit the message, and the user has no way to finalize the deposit.\n\nAn attacker could trigger a failure (e.g., by causing a revert in the token contract during minting) to permanently lock deposited funds in the L1 bridge. Even non-malicious failures (e.g., gas limits) would result in lost funds without manual intervention.\n\nThe impact is permanent loss of user funds in the event of a failed execution, undermining trust in the bridge's reliability. While `setTokenMapping` can be re-submitted by the owner, ERC-20 deposits remain vulnerable.\n",
+            "severity": "Medium",
+            "location": [
+                "L2Mailbox.sol::relayMsg#85-108",
+                "L2ETHBridge.sol::claimDeposit#53-60",
+                "L2ERC20Bridge.sol::finalizeDeposit"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-1283"
+                ]
+            },
+            "title": "Mutable `layer2ChainId` Can Break Batch Verification and Cause DoS",
+            "description": "The `Rollup` contract allows the `layer2ChainId` to be updated via `setL2ChainId` after initialization. However, this value is used in the commitment input for TEE proof verification in `verifyBatch`. If the chain ID is changed after batches are committed but before they are verified, the proof verification will fail due to mismatched commitments.\n\nThe root cause is the mutable nature of a parameter that is part of a cryptographic commitment. Since batch verification must proceed sequentially and each batch depends on the previous state, a single failed verification halts the entire chain.\n\nAn attacker with ownership privileges could change the `layer2ChainId` to intentionally break verification, causing a denial of service. Even accidental changes would freeze the system until a fix is deployed.\n\nThe impact is a complete halt in batch processing, preventing all withdrawals and message finalizations until the issue is resolved, leading to a full system freeze and loss of liveness.\n",
+            "severity": "Medium",
+            "location": [
+                "Rollup.sol::setL2ChainId#361",
+                "Rollup.sol::verifyBatch#187-218",
+                "Rollup.sol::_verifyTeeProof#291-297"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Zero-Amount Withdraw Allows Spam Messaging",
+            "description": "The `L2ETHBridge.withdraw` function only checks that `msg.value` is non-zero but does not validate that the `amount_` parameter is greater than zero. This allows users to initiate withdrawals with zero value by paying a minimal ETH amount as `msg.value`, which is later refunded.\n\nThe root cause is missing input validation on the withdrawal amount. The system treats these zero-amount calls as valid messages, which are then included in batches and must be processed by relayers on L1.\n\nAn attacker can exploit this by submitting a large number of zero-amount withdrawals at low cost, forcing relayers to process spam messages. This increases the load on the system and delays legitimate withdrawals, especially under future ZK proof verification which is gas-intensive.\n\nThe impact is a potential denial of service due to resource exhaustion, increased costs for relayers, and degraded user experience as real transactions are delayed in the queue.\n",
+            "severity": "Medium",
+            "location": [
+                "L2ETHBridge.sol::withdraw#21-31",
+                "L2Mailbox.sol::sendMsg#43-75"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-408"
+                ]
+            },
+            "title": "Missing Gas Bounds and Fee Accounting in `L2Mailbox`",
+            "description": "The `L2Mailbox.sendMsg` function uses the `gasLimit` parameter to calculate fees but does not enforce any minimum or maximum bounds. Users can set `gasLimit` to zero and avoid paying any fee while still generating valid withdrawal messages that relayers must process.\n\nAdditionally, the fee calculation does not account for the size of the `msg_` data, which can be arbitrarily large and increase blob storage costs. There is also no fee tracking mechanism (e.g., a balance variable) or withdrawal function for collected fees, leading to unaccounted funds.\n\nThe root cause is incomplete fee design: while `L1Mailbox` includes fee accounting, `L2Mailbox` was designed to set `baseFee` to zero, effectively disabling fees. However, this creates a gap in economic security, especially if ZK proofs are enabled in the future.\n\nAn attacker could spam the system with zero-fee, high-data messages, forcing relayers to bear the cost of blob submissions and proof verification. This could make operation economically unviable.\n\nThe impact includes potential DoS via spam, unfair cost distribution, and lack of transparency in fee handling. Although currently mitigated by zero fees, the design is fragile and not future-proof.\n",
+            "severity": "Medium",
+            "location": [
+                "L2Mailbox.sol::sendMsg#43-75",
+                "L1Mailbox.sol::sendMsg#105-106",
+                "L2ETHBridge.sol::withdraw#21"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2Mailbox.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Gas Handling Inconsistencies in Bridge Message Execution",
+            "description": "The `L2ETHBridge.finalizeDeposit` function forwards `gasleft() / 2` to the recipient during the external call. This arbitrary split may leave insufficient gas for the callee to complete its execution, especially if it performs complex operations or calls other contracts.\n\nThe root cause is the use of a heuristic-based gas forwarding pattern instead of a fixed reserve. This approach is not robust and can lead to unpredictable behavior depending on the initial gas context.\n\nAn attacker could trigger a deposit to a contract that requires more than half of the remaining gas, causing the call to revert. This would prevent the user from receiving their funds, even though the message is valid.\n\nThe impact is potential failure of deposit finalization, leading to user funds being stuck and requiring manual intervention. It reduces the reliability of the bridge and introduces unnecessary risk in message execution.\n",
+            "severity": "Low",
+            "location": [
+                "L2ETHBridge.sol::finalizeDeposit#45"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Redundant `ADMIN_ROLE` Definition Instead of Using `DEFAULT_ADMIN_ROLE`",
+            "description": "The `ERC20Token` contract defines a custom `ADMIN_ROLE` and assigns it as the admin of all other roles, instead of using OpenZeppelin's built-in `DEFAULT_ADMIN_ROLE`. This creates redundancy and potential confusion in access control management.\n\nThe root cause is unnecessary customization of a standard pattern. OpenZeppelin's `AccessControl` defaults to `DEFAULT_ADMIN_ROLE` as the admin of new roles, so failing to assign it can result in roles being unmanageable.\n\nWhile not directly exploitable, this design increases the risk of privilege escalation or loss of control if new roles are added and `DEFAULT_ADMIN_ROLE` remains unassigned. It also consumes more gas due to extra role definitions.\n\nThe impact is increased maintenance complexity, higher risk of administrative errors, and suboptimal gas usage. It does not pose an immediate security threat but reduces code clarity and safety.\n",
+            "severity": "Low",
+            "location": [
+                "ERC20Token.sol::ADMIN_ROLE#34-38"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Unsafe ETH and Token Handling in the Bridge Contracts",
+            "description": "The L1Mailbox contract inherits a receive() function from MailBoxBase, allowing direct ETH transfers to it, which can result in permanently locked funds as users may mistakenly send ETH instead of using the proper deposit function. Similarly, on L2, users can send native tokens directly to L2Mailbox instead of calling withdraw, creating confusion and risk. Additionally, functions like relayMsgWithProof are marked payable despite not requiring ETH, increasing the risk of accidental and useless ETH transfers. The root cause is poor UX design and lack of protective measures against direct fund transfers. An attacker or mistaken user could send ETH directly to the contract, leading to loss of funds. The impact includes user fund loss and reduced trust in the bridge mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "L1ETHBridge.sol::deposit#16-27",
+                "L1Mailbox.sol::receive#96",
+                "MailBoxBase.sol::receive#96",
+                "L2ETHBridge.sol::withdraw#21-31",
+                "L1BridgeProof.sol::relayMsgWithProof#8-15"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol",
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2Mailbox.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ETHBridge.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Unsafe Token Mapping Updates Can Break Bridging",
+            "description": "The setTokenMapping function allows updating the L2 token counterpart for an existing L1 token. If a deposit is initiated before a mapping update but finalized after the update, the finalizeDeposit function will validate against the new mapping, causing the deposit to fail and the bridging process to stall. The root cause is the mutable nature of token mappings without safeguards for in-flight deposits. An attacker could potentially exploit timing by triggering a deposit and then influencing a mapping change, or honest users could be affected by legitimate updates. The impact is a denial of service for bridging operations, leading to stuck deposits and user fund lockups on L1.\n",
+            "severity": "Medium",
+            "location": [
+                "L1ERC20Bridge.sol::setTokenMapping#21-29",
+                "L2ERC20Bridge.sol::finalizeDeposit#65-66"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Invalid Gas Limit Configuration Can Disable Deposits",
+            "description": "The sendMsg function in L1Mailbox requires the user-provided gasLimit_ to be strictly less than l2GasLimit and greater than or equal to l2FinalizeDepositGasUsed. However, the setter functions allow l2GasLimit and l2FinalizeDepositGasUsed to be set equal, which would make it impossible to satisfy the strict inequality, thereby blocking all deposits. The root cause is insufficient validation in the setter functions, which only ensure l2GasLimit is not strictly less than l2FinalizeDepositGasUsed but allow equality. A malicious or mistaken owner could set these values equal, either intentionally or accidentally. The impact is a complete halt of deposit functionality, resulting in a denial of service for the entire bridge.\n",
+            "severity": "Medium",
+            "location": [
+                "L1Mailbox.sol::sendMsg#105-106",
+                "L1Mailbox.sol::setL2GasLimit#173-180",
+                "L1Mailbox.sol::setL2FinalizeDepositGasUsed#185-192"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Inconsistent Event Structures Between L1Mailbox and L2Mailbox",
+            "description": "The SentMsg event in L1Mailbox and L2Mailbox have different argument orders and meanings; specifically, the fifth argument is 'data' in L1Mailbox but 'msg_' in L2Mailbox. Similarly, the AppendMsg event uses different indexing semantics: L1Mailbox emits the next index, while L2Mailbox emits the current index. This inconsistency stems from divergent design choices between the two mailbox contracts. While not directly exploitable for financial gain, this creates confusion for developers, relayers, and integrators who must implement different decoding logic for similar events. The impact includes increased integration complexity, higher risk of bugs in off-chain systems, and potential misinterpretation of message sequencing.\n",
+            "severity": "Low",
+            "location": [
+                "L1Mailbox.sol::SentMsg#116",
+                "L2Mailbox.sol::SentMsg#65",
+                "L1Mailbox.sol::AppendMsg#230",
+                "L2Mailbox.sol::AppendMsg#130"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol",
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2Mailbox.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing Upper Bound Check in initialize for lastBatchByteLength",
+            "description": "The L1GasOracle contract enforces both upper and lower bounds on lastBatchByteLength in setNewBatchBlobFeeAndTxFee, but the initialize function only enforces the lower bound. This discrepancy allows an excessively large initial value to be set during deployment, which could distort gas cost calculations and potentially lead to incorrect fee modeling or denial of service if used in arithmetic operations without bounds. The root cause is incomplete validation logic in the initialization function. A malicious deployer or compromised deployment process could set an abnormally high value. The impact includes potential manipulation of gas pricing mechanisms and downstream effects on transaction cost estimation and relayer economics.\n",
+            "severity": "Low",
+            "location": [
+                "L1GasOracle.sol::initialize#55-71",
+                "L1GasOracle.sol::setNewBatchBlobFeeAndTxFee#100-121"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L1GasOracle.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "Multiple contracts in the codebase use floating pragma directives (e.g., ^0.8.0), which allow compilation with any minor version of Solidity within the specified range. This introduces risk because newer compiler versions may introduce changes in behavior, optimizations, or bugs that could affect contract security or correctness. The root cause is the use of caret versioning instead of fixed versions in the pragma statements. An attacker could potentially exploit known compiler bugs in a newer version if the contract is recompiled. The impact includes undefined behavior, potential reentrancy or overflow issues due to compiler-level changes, and reduced reproducibility of builds.\n",
+            "severity": "Low",
+            "location": [
+                "L1BridgeProof.sol",
+                "L1ERC20Bridge.sol",
+                "L1ETHBridge.sol",
+                "IL1BridgeProof.sol",
+                "IL1ERC20Bridge.sol",
+                "IL1ETHBridge.sol",
+                "L1Mailbox.sol",
+                "Rollup.sol",
+                "IL1MailQueue.sol",
+                "IL1Mailbox.sol",
+                "IRollup.sol",
+                "BatchHeaderCodec.sol",
+                "ITeeRollupVerifier.sol",
+                "IZkRollupVerifier.sol",
+                "WithdrawTrieVerifier.sol",
+                "L2ERC20Bridge.sol",
+                "L2ETHBridge.sol",
+                "IL2ERC20Bridge.sol",
+                "IL2ETHBridge.sol",
+                "L1GasOracle.sol",
+                "L2CoinBase.sol",
+                "L2Mailbox.sol",
+                "IClaimAmount.sol",
+                "IL2MailQueue.sol",
+                "IL2Mailbox.sol",
+                "AppendOnlyMerkleTree.sol",
+                "BridgeBase.sol",
+                "ERC20Token.sol",
+                "MailBoxBase.sol",
+                "TokenBridge.sol",
+                "IBridgeBase.sol",
+                "IERC20Token.sol",
+                "IGasPriceOracle.sol",
+                "IMailBoxBase.sol",
+                "ITokenBridge.sol"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1BridgeProof.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Free-Memory Pointer is Moved to a Non-Word-Aligned Address",
+            "description": "In the loadAndValidate function of BatchHeaderCodec.sol, the free memory pointer (0x40) is updated by adding a length of 105 bytes, which is not a multiple of 32, breaking Solidity's requirement for 32-byte alignment. This misalignment can cause subsequent memory allocations to overwrite existing data or lead to out-of-bounds reads, resulting in undefined behavior or transaction reverts. Additionally, store functions in the same library write directly to memory without updating the free memory pointer, which could cause memory corruption if used outside the Rollup contract. The root cause is improper memory management in low-level assembly code. The impact includes potential runtime failures, data corruption, and unpredictable contract behavior, especially if the library is reused in other contexts.\n",
+            "severity": "Medium",
+            "location": [
+                "BatchHeaderCodec.sol::loadAndValidate#47-56",
+                "Rollup.sol#161-164"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/codec/BatchHeaderCodec.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing Zero-Address Checks",
+            "description": "Several functions across the codebase fail to validate that address parameters are not the zero address before assigning them to state variables or using them in critical operations. This includes functions in L1Mailbox, Rollup, L2ERC20Bridge, L2ETHBridge, L2CoinBase, and ERC20Token. The root cause is the omission of require(_addr != address(0)) checks. A mistaken or malicious caller could set critical addresses to zero, which may result in loss of control, inability to recover funds, or breaking contract functionality (e.g., sending funds to the burn address). The impact includes permanent loss of access, denial of service, and potential fund loss due to irreversible operations.\n",
+            "severity": "Medium",
+            "location": [
+                "L1Mailbox.sol#147",
+                "L1Mailbox.sol#156",
+                "L1Mailbox.sol#166",
+                "Rollup.sol#107",
+                "L2ERC20Bridge.sol#72",
+                "L2ETHBridge.sol#45",
+                "L2CoinBase.sol#21",
+                "L2Mailbox.sol#117",
+                "ERC20Token.sol#38"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Inconsistent Handling of Empty Batches",
+            "description": "The _getBlobDataHash function in the Rollup contract computes the hash of an empty blob as keccak256(\"\") if the first blob is empty, instead of reverting. While relayers are expected to act honestly, this behavior allows the commitment of empty batches, which is unnecessary and potentially wasteful. The root cause is the lack of a validation check to revert when a batch is empty. A malicious or malfunctioning relayer could submit empty batches, increasing storage costs and bloating the chain without providing value. The impact includes increased gas costs for validators and inefficiencies in the rollup system, though the security risk is low.\n",
+            "severity": "Low",
+            "location": [
+                "Rollup.sol::_getBlobDataHash#253-271",
+                "Rollup.sol#151-184"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Incomplete Security Checks in Custom Merkle Tree Library",
+            "description": "The custom WithdrawTrieVerifier library used for Merkle proof verification lacks standard safety checks, such as validating the proof length against the expected tree depth. This allows construction of proofs for intermediate nodes rather than just leaves, potentially enabling invalid withdrawals if the library is misused. While the current integration with the bridge contracts is secure, the library itself is unsafe for reuse in other contexts. The root cause is the absence of defensive checks in low-level verification logic. The impact is limited in the current context but poses a significant risk if the library is reused elsewhere without additional safeguards, potentially leading to unauthorized withdrawals or state inconsistencies.\n",
+            "severity": "Low",
+            "location": [
+                "WithdrawTrieVerifier.sol",
+                "L1Mailbox.sol#139-160"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Modifier Applied Twice in withdrawAll",
+            "description": "The withdrawAll function in L2CoinBase calls the withdraw function, and both are annotated with the onlyWithdrawer modifier, resulting in the same access control check being executed twice. While this does not introduce a security vulnerability, it is inefficient and wastes gas. The root cause is redundant modifier usage. Every call to withdrawAll incurs unnecessary gas costs due to repeated checks. The impact is increased transaction fees for users, reducing the efficiency of the contract without any security benefit.\n",
+            "severity": "Low",
+            "location": [
+                "L2CoinBase.sol::withdrawAll#95-97",
+                "L2CoinBase.sol::withdraw#85-93"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2CoinBase.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Parent Contracts are not Initialized",
+            "description": "The `L2CoinBase` contract inherits from `OwnableUpgradeable`, `PausableUpgradeable`, and `ReentrancyGuardUpgradeable`, but only initializes the `Ownable` component in its `initialize` function. The `Pausable` and `ReentrancyGuard` parent contracts are not initialized, leaving their internal state uninitialized. Specifically, the `_status` variable in `ReentrancyGuardUpgradeable` remains at 0 instead of being set to `_NOT_ENTERED` (1). Although this creates an inconsistent initial state, the contract will self-correct after the first call to a `nonReentrant` function, which sets the correct state. The root cause is the omission of parent initializer calls. An attacker could potentially exploit the initial inconsistent state if reentrancy checks behave unexpectedly before the first modifier execution. However, the practical impact is low due to the self-correcting nature. Still, it represents a deviation from secure upgradeable contract patterns.\n",
+            "severity": "Low",
+            "location": [
+                "L2CoinBase.sol::initialize#19-22",
+                "ReentrancyGuardUpgradeable.sol::_status#38"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2CoinBase.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Setter Truncates 64-bit `rollupTimeLimit` to 32 bits",
+            "description": "In `Rollup.sol`, the `rollupTimeLimit` state variable is declared as `uint64`, but the setter function `setRollupTimeLimit` accepts a `uint32` parameter. This causes any value above 4,294,967,295 to be silently truncated, imposing an undocumented 32-bit cap on a 64-bit field. The root cause is a mismatch in parameter and variable size. An attacker or malicious owner could set a high value expecting full 64-bit range, but the truncation would result in a much lower effective limit, potentially disrupting protocol timing assumptions. This could lead to unexpected behavior in time-dependent logic, such as rollup finalization windows. The impact is moderate, primarily affecting configurability and introducing a silent failure mode.\n",
+            "severity": "Medium",
+            "location": [
+                "Rollup.sol::setRollupTimeLimit#355",
+                "Rollup.sol::rollupTimeLimit"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect Documentation for ZK Verifier Setter",
+            "description": "The parameter description in the function that sets the ZK verifier address in `Rollup.sol` incorrectly states \"The verifier address of tee\", implying a Trusted Execution Environment (TEE) verifier instead of a Zero-Knowledge (ZK) proof verifier. This is a documentation error that could mislead developers, auditors, or integrators into assuming the system uses TEE-based verification instead of ZK proofs. The root cause is inaccurate inline comment or NatSpec. While this does not introduce a direct security vulnerability, it can lead to misunderstandings during integration or security analysis, potentially resulting in incorrect threat modeling or integration errors. The impact is low but affects the clarity and correctness of the codebase.\n",
+            "severity": "Low",
+            "location": [
+                "Rollup.sol#373"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "\u2018TRANSFER_ROLE\u2019 Role Declared but Never Used",
+            "description": "The `TRANSFER_ROLE` constant is defined in `ERC20Token.sol` but is never assigned or checked in any function within the contract. This creates unnecessary code bloat and confusion about the intended access control model. The root cause is incomplete or outdated role management logic. An attacker cannot exploit this directly, but it may indicate a design inconsistency or a missing feature. Future developers might assume the role is functional and attempt to use it, leading to unexpected behavior. The impact is low, primarily affecting code clarity and maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "ERC20Token.sol#20"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused State Variables",
+            "description": "Multiple state variables in `Rollup.sol` (`maxTxsInChunk`, `maxBlockInChunk`, `maxCallDataInChunk`, `l1BlobNumberLimit`, `rollupTimeLimit`) are declared but not used within the contract logic. Although the team later stated these are used by the relayer, they are not accessed in the contract itself, making them appear as dead code. The root cause is either off-chain reliance or incomplete cleanup. While not directly exploitable, unused state variables increase deployment cost and storage bloat. If these variables are meant to be public constants, they should be declared as such. The impact is low, mainly affecting gas efficiency and code clarity.\n",
+            "severity": "Low",
+            "location": [
+                "Rollup.sol::maxTxsInChunk#20",
+                "Rollup.sol::maxBlockInChunk#23",
+                "Rollup.sol::maxCallDataInChunk#26",
+                "Rollup.sol::l1BlobNumberLimit#32",
+                "Rollup.sol::rollupTimeLimit#35"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Imports",
+            "description": "Several Solidity files contain import statements that are never used in the code, such as `IL1BridgeProof.sol` and `ITokenBridge.sol` in bridge interfaces, and `L2Mailbox` in `L2ETHBridge.sol`. The root cause is leftover or unnecessary imports. While this does not pose a security risk, it increases compilation time and reduces code clarity. Unused imports can also create confusion about dependencies and increase the attack surface if future code mistakenly relies on imported but unused contracts. The impact is informational, affecting maintainability and readability.\n",
+            "severity": "Low",
+            "location": [
+                "IL1ERC20Bridge.sol::import#4",
+                "IL1ERC20Bridge.sol::import#5",
+                "IL1ETHBridge.sol::import#4",
+                "L2ETHBridge.sol::import#9"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ETHBridge.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/interfaces/IL1BridgeProof.sol",
+                "jovay-contracts/rollup_contracts/contracts/common/interfaces/ITokenBridge.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Non-Explicit Imports",
+            "description": "The codebase uses non-explicit import syntax (e.g., `import \"./X.sol\";`) instead of named imports (e.g., `import {X} from \"./X.sol\";`). This can lead to naming conflicts and reduce code clarity, especially in large projects with many contracts. The root cause is deviation from best practices in module organization. While not directly exploitable, this can lead to accidental shadowing or confusion when multiple contracts are imported from the same file. The impact is low, primarily affecting code maintainability and readability.\n",
+            "severity": "Low",
+            "location": [
+                "L1BridgeProof.sol::import#4",
+                "L1ERC20Bridge.sol::import#9",
+                "L1ERC20Bridge.sol::import#10",
+                "L1ETHBridge.sol::import#8",
+                "L1ETHBridge.sol::import#10",
+                "L1Mailbox.sol::import#5",
+                "L1Mailbox.sol::import#6",
+                "Rollup.sol::import#4",
+                "Rollup.sol::import#7",
+                "L2ERC20Bridge.sol::import#6",
+                "L2ERC20Bridge.sol::import#7",
+                "L2ETHBridge.sol::import#7",
+                "L2CoinBase.sol::import#4"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1BridgeProof.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "Several loops in the codebase use the postfix increment operator (`i++`) instead of the more gas-efficient prefix increment (`++i`). Since the return value is ignored in loop increments, using `i++` unnecessarily stores the pre-increment value, wasting gas. The root cause is suboptimal coding practice. An attacker cannot exploit this, but it increases transaction costs for all users. Over many iterations, this can result in significant gas overhead. The impact is low, but optimizing this improves efficiency and reduces operational costs.\n",
+            "severity": "Low",
+            "location": [
+                "WithdrawTrieVerifier.sol::i++#22",
+                "AppendOnlyMerkleTree.sol::height++#26"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Multiple Functions With Incorrect Order of Modifiers",
+            "description": "Several functions across the codebase violate the Solidity style guide by not ordering modifiers in the recommended sequence: visibility, mutability, virtual, override, custom modifiers. For example, functions in `L1ERC20Bridge.sol` and `L1GasOracle.sol` have modifiers in incorrect order. The root cause is inconsistent coding style. While this does not introduce a security vulnerability, it reduces code readability and may lead to confusion during audits or maintenance. The impact is low, primarily affecting code quality and maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "L1ERC20Bridge.sol::setTokenMapping#21-29",
+                "L1ERC20Bridge.sol::deposit#31-46",
+                "L1GasOracle.sol::setNewBatchBlobFeeAndTxFee#100-121",
+                "L1GasOracle.sol::setBlobBaseFeeScalaAndTxFeeScala#123-130",
+                "L1GasOracle.sol::setL1Profit#132-137",
+                "L1GasOracle.sol::setTotalScala#139-144",
+                "L1GasOracle.sol::setMaxL1ExecGasUsedLimit#146-151",
+                "L1GasOracle.sol::setMaxL1BlobGasUsedLimit#153-158",
+                "L1GasOracle.sol::addRelayer#160-164",
+                "L1GasOracle.sol::removeRelayer#166-170",
+                "L2CoinBase.sol::setL2EthBridge#56-59",
+                "L2CoinBase.sol::addWithdrawer#61-65",
+                "L2CoinBase.sol::removeWithdrawer#67-71",
+                "L2CoinBase.sol::addWhiteAddress#73-77",
+                "L2CoinBase.sol::removeWhiteAddress#79-83",
+                "L2CoinBase.sol::withdraw#85-93",
+                "L2CoinBase.sol::withdrawAll#95-97",
+                "L2Mailbox.sol::setL1MailBox#38-41",
+                "ITokenBridge.sol::setTokenMapping#12"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Getter Functions",
+            "description": "Public state variables automatically generate getter functions in Solidity, making manually defined getters redundant. In `L1Mailbox.sol`, the `nextMsgIndex` function duplicates the auto-generated getter for `pendingQueueIndex`. Similarly, `getL2MsgRoot` in `Rollup.sol` duplicates the getter for `l2MsgRoots`. The root cause is unnecessary code duplication. While not exploitable, this increases contract size and gas costs. The team noted `getL2MsgRoot` is used externally, so it was retained with documentation. The impact is low, mainly affecting code efficiency and clarity.\n",
+            "severity": "Low",
+            "location": [
+                "L1Mailbox.sol::nextMsgIndex#197-199",
+                "Rollup.sol::getL2MsgRoot#249-251"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings in Solidity can include named parameters for better readability (e.g., `mapping(address owner => uint amount)`). However, many mappings in the codebase lack these names, such as `committedBatches` in `Rollup.sol`. The root cause is outdated or incomplete style adherence. While this does not introduce security risks, it reduces code clarity, especially for new developers. The impact is low, affecting maintainability and readability.\n",
+            "severity": "Low",
+            "location": [
+                "Rollup.sol::committedBatches#50",
+                "Rollup.sol::finalizedStateRoots#53",
+                "Rollup.sol::l2MsgRoots#56",
+                "Rollup.sol::l1MsgCount#59",
+                "Rollup.sol::isRelayer#66",
+                "L1GasOracle.sol::isRelayer#31",
+                "L2CoinBase.sol::isWithdrawer#25",
+                "L2CoinBase.sol::whiteListOnL1#28",
+                "L2Mailbox.sol::receiveMsgStatus#13",
+                "MailBoxBase.sol::sendMsgMap#27",
+                "MailBoxBase.sol::receiveMsgMap#29",
+                "MailBoxBase.sol::isBridge#34",
+                "TokenBridge.sol::tokenMapping#8",
+                "TokenBridge.sol::balanceOf#10"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing Security Contact",
+            "description": "None of the contracts include a `@custom:security-contact` NatSpec tag, making it difficult for security researchers to report vulnerabilities. The root cause is omission of best practices in responsible disclosure. While this does not directly affect contract security, it increases the risk of unreported vulnerabilities. The impact is low to medium depending on ecosystem expectations, but it is a recommended practice for production systems.\n",
+            "severity": "Low",
+            "location": [
+                "L1ERC20Bridge.sol",
+                "L1ETHBridge.sol",
+                "L1GasOracle.sol",
+                "L1Mailbox.sol",
+                "Rollup.sol",
+                "L2ERC20Bridge.sol",
+                "L2ETHBridge.sol",
+                "L2CoinBase.sol",
+                "L2Mailbox.sol"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1Mailbox.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Magic Numbers",
+            "description": "The codebase contains multiple literal values (e.g., 1000000, 100, 1e6) without explanation, known as \"magic numbers\". These appear in `L1ERC20Bridge.sol`, `Rollup.sol`, and `L1GasOracle.sol`. The root cause is lack of constant definitions. Magic numbers reduce code readability and make maintenance harder, as their purpose is unclear. While not directly exploitable, they can lead to errors during updates if the same value is used inconsistently. The impact is low, primarily affecting code clarity and maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "L1ERC20Bridge.sol#28",
+                "Rollup.sol#238",
+                "L1GasOracle.sol#59",
+                "L1GasOracle.sol#60",
+                "L1GasOracle.sol#61",
+                "L1GasOracle.sol#62",
+                "L1GasOracle.sol#63",
+                "L1GasOracle.sol#74",
+                "L1GasOracle.sol#75"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/core/Rollup.sol",
+                "jovay-contracts/rollup_contracts/contracts/L1/core/L1GasOracle.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "public Function or Variable Prefixed With Underscore",
+            "description": "In `AppendOnlyMerkleTree.sol`, the public state variable `_branches` is prefixed with an underscore, which contradicts Solidity naming conventions where underscores are reserved for internal/private members. The root cause is incorrect naming style. While this does not introduce a security issue, it can confuse developers into thinking the variable is private. The impact is low, affecting code readability and adherence to community standards.\n",
+            "severity": "Low",
+            "location": [
+                "AppendOnlyMerkleTree.sol::_branches#22"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "File and Contract Name Mismatch",
+            "description": "The file `IClaimAmount.sol` contains a contract named `IClaim`, creating a mismatch between file and contract name. This can confuse developers and tooling. The root cause is inconsistent naming. Although the team later removed the file, at the time of audit it was present and unused. The impact is low, primarily affecting code organization and clarity.\n",
+            "severity": "Low",
+            "location": [
+                "IClaimAmount.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-908"
+                ],
+                "4": [
+                    "CWE-457"
+                ]
+            },
+            "title": "Appending Before Merkle Tree Initialization Results in Permanent Root Inconsistency",
+            "description": "The `append` routine in `AppendOnlyMerkleTree.sol` can be called before the zero-hash cache is initialized because the guard check enforcing initialization is commented out. This allows the `_appendMsgHash` function to execute with all `_zeroHashes` values set to zero, leading to incorrect internal node computations that mix real data with zero values instead of canonical zero hashes.\n\nThe root cause is the disabled initialization guard and the lack of explicit assignment of `_zeroHashes[0] = bytes32(0)` in `_initializeMerkleTree`, which relies on default storage values and reduces code clarity. An attacker or misconfigured contract could invoke `_appendMsgHash` before initialization, corrupting the tree structure.\n\nOnce the tree is later initialized, the zero-hash cache changes, making all previously computed branches and the exposed `_msgRoot` mathematically invalid. This results in permanent failure of all Merkle proof verifications and consistency checks.\n\nThe impact is severe: it can lead to irreversible data inconsistency in the Merkle tree, breaking any functionality that depends on correct root computation, such as message inclusion proofs or state validation, potentially compromising the integrity of the rollup system.\n",
+            "severity": null,
+            "location": [
+                "AppendOnlyMerkleTree.sol::append",
+                "AppendOnlyMerkleTree.sol::_appendMsgHash",
+                "AppendOnlyMerkleTree.sol::_initializeMerkleTree"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "_transferERC20 Fails to Support Fee-on-Transfer Tokens Due to Balance Check",
+            "description": "The `_transferERC20` function in `L1ERC20Bridge.sol` assumes that the full `_amount` will be transferred to the contract when `safeTransferFrom` is called. However, for fee-on-transfer tokens, the actual received amount is less than `_amount`, while the internal balance is still increased by the full `_amount`.\n\nThe cause of the vulnerability is the incorrect assumption that the transferred amount equals the requested amount, combined with a subsequent `require` statement that checks whether the contract's actual ERC20 balance is at least equal to the tracked balance. Since fee-on-transfer tokens deliver less than requested, this check always fails.\n\nAn attacker cannot directly exploit this for gain, but malicious or legitimate users can trigger a revert when attempting to bridge fee-on-transfer tokens, effectively blocking their use.\n\nThe impact is that the bridge does not support fee-on-transfer tokens, contrary to what a comment in the code suggests. This creates a misleading interface and reduces token compatibility, potentially leading to user frustration or failed transactions.\n",
+            "severity": null,
+            "location": [
+                "L1ERC20Bridge.sol::_transferERC20#59-66"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Duplicate Ownership Transfer in Initialize Emits Two OwnershipTransferred Events",
+            "description": "In `BridgeBase.sol`, the `initialize` function first calls `OwnableUpgradeable.__Ownable_init()`, which sets the owner to `_msgSender()`, and then calls `_transferOwnership(owner)` to set it again to the provided `owner` argument. This results in two `OwnershipTransferred` events being emitted in the same transaction.\n\nThe root cause is the use of an outdated OpenZeppelin library (v4.x) where `__Ownable_init()` does not accept an initial owner parameter, forcing a second ownership transfer. This pattern is unnecessary and stems from version limitations.\n\nWhile not directly exploitable, this behavior can confuse off-chain indexers and on-chain systems that monitor ownership changes, especially those that assume the first `OwnershipTransferred` event reflects the final owner.\n\nThe impact is operational: it can lead to incorrect state interpretation by external systems, such as governance dashboards or monitoring tools, potentially causing erroneous alerts or decisions based on incomplete event parsing.\n",
+            "severity": null,
+            "location": [
+                "BridgeBase.sol::initialize#32",
+                "BridgeBase.sol::_transferOwnership#39"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/common/BridgeBase.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Misleading and Missing Event Emissions",
+            "description": "Several functions either emit events when no meaningful state change occurs (e.g., `removeRelayer` emits `RemoveRelayer` even for non-relayers) or fail to emit events despite modifying critical state variables (e.g., `initialize`, `setRollup`, `withdrawDepositFee`, etc.).\n\nThe cause is inconsistent event emission practices: some functions emit events without validating that a change occurred, while many state-modifying functions omit events entirely. This reduces transparency and hinders off-chain monitoring.\n\nAttackers could exploit the ambiguity in event streams to obscure malicious state changes, or legitimate operations could be misinterpreted due to missing or spurious events. Indexers relying on events for state reconstruction may diverge from the true contract state.\n\nThe impact includes reduced system observability, potential for data inconsistency in off-chain systems, and increased difficulty in debugging or auditing contract behavior. It undermines trust in the event log as a source of truth.\n",
+            "severity": null,
+            "location": [
+                "L1GasOracle.sol::removeRelayer#166-170",
+                "MailboxBase.sol::removeBridge#106-108",
+                "L1Mailbox.sol::initialize#65-80",
+                "L1Mailbox.sol::setRollup#82-85",
+                "L1Mailbox.sol::setWithdrawer#87-90",
+                "L1Mailbox.sol::withdrawDepositFee#162-168",
+                "L1Mailbox.sol::setLastQueueIndex#220-222",
+                "Rollup.sol::initialize#88-114",
+                "Rollup.sol::revertBatches#236-247",
+                "Rollup.sol::addRelayer#305-311",
+                "Rollup.sol::removeRelayer#315-317",
+                "Rollup.sol::setMaxTxsInChunk#331-333",
+                "Rollup.sol::setMaxBlockInChunk#337-339",
+                "Rollup.sol::setMaxCallDataInChunk#343-345",
+                "Rollup.sol::setL1BlobNumberLimit#349-351",
+                "Rollup.sol::setRollupTimeLimit#355-357",
+                "Rollup.sol::setL2ChainId#361-363",
+                "Rollup.sol::setTeeVerifierAddress#367-370",
+                "Rollup.sol::setZkVerifierAddress#374-377",
+                "L2ERC20Bridge.sol::withdraw#28-52",
+                "L2ERC20Bridge.sol::finalizeDeposit#63-75",
+                "L2ETHBridge.sol::claimDeposit#53-60",
+                "L2ETHBridge.sol::claimDeposit#62-70",
+                "L1GasOracle.sol::initialize#55-71",
+                "L1GasOracle.sol::CalcL1FeePerByte#73-76",
+                "L1GasOracle.sol::setNewBatchBlobFeeAndTxFee#100-121",
+                "L1GasOracle.sol::setBlobBaseFeeScalaAndTxFeeScala#123-130",
+                "L1GasOracle.sol::setL1Profit#132-137",
+                "L1GasOracle.sol::setTotalScala#139-144",
+                "L1GasOracle.sol::setMaxL1ExecGasUsedLimit#146-151",
+                "L1GasOracle.sol::setMaxL1BlobGasUsedLimit#153-158",
+                "L1GasOracle.sol::addRelayer#160-164",
+                "L1GasOracle.sol::removeRelayer#166-170",
+                "L2CoinBase.sol::initialize#19-22",
+                "L2CoinBase.sol::addWithdrawer#61-65",
+                "L2CoinBase.sol::removeWithdrawer#67-71",
+                "L2CoinBase.sol::addWhiteAddress#73-77",
+                "L2CoinBase.sol::removeWhiteAddress#79-83",
+                "L2CoinBase.sol::withdraw#85-93",
+                "L2CoinBase.sol::withdrawAll#95-97",
+                "L2Mailbox.sol::initialize#25-36",
+                "L2Mailbox.sol::setL1MailBox#38-41",
+                "BridgeBase.sol::initialize#31-40",
+                "BridgeBase.sol::setMailBox#42-45",
+                "BridgeBase.sol::setToBridge#47-50",
+                "MailBoxBase.sol::addBridge#100-102",
+                "MailBoxBase.sol::removeBridge#106-108"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L1GasOracle.sol"
+            ]
+        },
+        {
+            "id": 40,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use `calldata` Instead of `memory`",
+            "description": "The contract code uses `memory` as the data location for parameters in several `external` functions, when `calldata` would be more appropriate. Since `calldata` is a read-only, non-modifiable area that directly holds function arguments for external calls, using it avoids unnecessary copying of data into memory, thereby reducing gas costs. The root cause is the explicit or default use of `memory` for reference types in external functions where no modification is performed. An attacker cannot directly exploit this issue, but all users of the affected functions will incur higher gas costs than necessary. The impact is an increase in transaction costs for end users, reducing the economic efficiency of the system.\n",
+            "severity": "Low",
+            "location": [
+                "L1BridgeProof.sol::msg_#11",
+                "L1BridgeProof.sol::proof_#12",
+                "L1ERC20Bridge.sol::msg_#31",
+                "L1ERC20Bridge.sol::msg_#48",
+                "L1ETHBridge.sol::msg_#16",
+                "L1ETHBridge.sol::msg_#29",
+                "L1Mailbox.sol::msg_#144",
+                "L1Mailbox.sol::proof_#145",
+                "L2ERC20Bridge.sol::msg_#28",
+                "L2ETHBridge.sol::msg_#21"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1BridgeProof.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,74 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Eclipse Solidity Bridge Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Eclipse-Laboratories-Inc/syzygy-canonical-bridge"
+        ],
+        "commit_id": [
+            "5c5fac0"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-07-31",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Double Fee Deduction from `Treasury` for V1 Withdrawals via `CanonicalBridgeV3`",
+            "description": "The `CanonicalBridgeV3` contract's `claimWithdraw` function deducts fees during withdrawal claims, but for withdrawals originally authorized in `CanonicalBridgeV1`, fees were already deducted at authorization time. This results in a double fee deduction from the Treasury when V1-authorized withdrawals are claimed via V3.\nThe root cause is the lack of conditional fee handling based on the origin version of the withdrawal. The system fails to recognize that V1 withdrawals have already had fees deducted, leading to redundant fee subtraction in V3.\nAn attacker cannot directly exploit this for profit, but users initiating withdrawals from V1 through V3 will have fees deducted twice, effectively increasing the cost of their withdrawal.\nThe impact is economic loss for users and potential erosion of trust in the bridge's fairness. Although the issue has been resolved via a code update, the audited version at commit 5c5fac0 contains this flaw.\n",
+            "severity": "High",
+            "location": [
+                "CanonicalBridgeV3.sol::claimWithdraw",
+                "CanonicalBridgeV1.sol::authorizeWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "reinitialize Missing Access Control",
+            "description": "The `reinitialize` function in the `Treasury` contract is marked as `external` and uses the `reinitializer(2)` modifier, which prevents re-initialization after an upgrade. However, it lacks access control, meaning any external caller can invoke it if they are the first to do so after an upgrade.\nThe root cause is the absence of a role-based or ownership check on the `reinitialize` function. This allows the first caller to become the `DEFAULT_ADMIN_ROLE` holder, granting them full administrative control over the contract.\nAn attacker could monitor for proxy upgrades and race to call `reinitialize` before the legitimate owner, thereby gaining full control over the `Treasury` contract, including the ability to grant themselves withdrawal privileges or upgrade the contract to a malicious implementation.\nThe impact is complete compromise of the `Treasury` contract, including loss of all funds and control over its operations. This is a critical risk if the upgrade process is not atomic.\n",
+            "severity": "Low",
+            "location": [
+                "Treasury.sol::reinitialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Lack of Unique Identifier in `Deposited` Events",
+            "description": "The `Deposited` event in the `CanonicalBridge` contract does not include a unique identifier, making it difficult for off-chain relayers to distinguish between multiple deposits with identical parameters (sender, recipient, amount) occurring in the same or different transactions.\nThe root cause is the omission of a nonce or deposit ID in the event signature. Without a unique on-chain identifier, the Deposit Relayer must rely on transaction-level metadata (like log index) to differentiate events, which is fragile and not queryable via standard event filters.\nAn attacker could potentially exploit this by crafting transactions with duplicate deposits to confuse the relayer, leading to missed or duplicated L2 mints.\nThe impact is operational fragility and potential loss of deposit tracking, which could result in user funds not being credited on L2. While not directly exploitable for fund theft, it undermines system reliability.\n",
+            "severity": "Low",
+            "location": [
+                "ICanonicalBridge.sol::Deposited"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Incomplete Docstrings",
+            "description": "Multiple functions and events in `ICanonicalBridge.sol` lack complete NatSpec documentation, particularly missing parameter and return value descriptions.\nThe root cause is incomplete or missing comments in the source code, violating best practices for API documentation. This includes undocumented parameters like `amountLamports` in `Deposited` and missing return value descriptions for role and constant functions.\nWhile not directly exploitable, this reduces code readability and increases the risk of misinterpretation by developers, auditors, or tools relying on documentation.\nThe impact is reduced maintainability and potential for integration errors, especially in off-chain systems that depend on accurate API documentation.\n",
+            "severity": "Low",
+            "location": [
+                "ICanonicalBridge.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing Zero-Address Checks",
+            "description": "The constructor of `CanonicalBridgeV3.sol` sets several immutable address variables (`TREASURY`, `CANONICAL_BRIDGE_V1`, `CANONICAL_BRIDGE_V2`) without validating that they are non-zero.\nThe root cause is the absence of require statements to check for zero addresses during initialization. Since these variables are immutable, a mistaken deployment with a zero address would permanently break functionality dependent on those contracts.\nAn attacker cannot directly exploit this, but a deployment error could render the bridge inoperable or allow a malicious address to be set if input validation is skipped.\nThe impact is potential loss of functionality or permanent misconfiguration, leading to a denial of service for users.\n",
+            "severity": "Low",
+            "location": [
+                "CanonicalBridgeV3.sol::constructor"
+            ],
+            "files": []
+        }
+    ]
+}

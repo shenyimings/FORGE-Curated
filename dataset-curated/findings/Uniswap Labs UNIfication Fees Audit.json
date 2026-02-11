@@ -1,0 +1,132 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Uniswap Labs UNIfication Fees Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/Uniswap/phoenix-fees/"
+        ],
+        "commit_id": [
+            "146d367281b0e7b97a5b2e8f41b872515d35af83"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-09-05",
+        "project_path": {
+            "phoenix-fees": "dataset-curated/contracts/Uniswap Labs UNIfication Fees Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-282"
+                ]
+            },
+            "title": "Factory Ownership is Permanently Locked",
+            "description": "The V3FeeController contract is designed to act as the owner of the Uniswap V3 Factory to manage fee-related parameters such as enabling new fee tiers. However, it does not implement a function to call the setOwner method of the Uniswap V3 Factory contract. As a result, once ownership is transferred to the V3FeeController, there is no mechanism to transfer it to another address, permanently locking the ownership.\n\nThe root cause is the absence of an owner-restricted function in the V3FeeController that would allow it to invoke the setOwner method on the factory. This design decision removes the possibility of upgrading the controller or recovering from a critical issue by reassigning ownership.\n\nAn attacker or malicious actor cannot directly exploit this issue, but it represents a critical operational risk. If the V3FeeController contract is compromised or contains undiscovered bugs, there would be no way to transfer ownership to a new, secure controller.\n\nThe impact is a permanent loss of administrative flexibility and upgradeability for the Uniswap V3 Factory, which could lead to irreversible consequences in the event of a security incident or the need for protocol upgrades.\n",
+            "severity": "High",
+            "location": [
+                "V3FeeController.sol::setOwner#missing",
+                "UniswapV3Factory.sol#62"
+            ],
+            "files": [
+                "phoenix-fees/src/feeControllers/V3FeeController.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Incorrect Leaf Hashing for the `MerkleProof` Library",
+            "description": "The V3FeeController contract uses OpenZeppelin's MerkleProof library to verify Merkle proofs on-chain for enabling protocol fee updates on specific pools. However, the contract hashes each leaf only once using keccak256(abi.encode(pool)), while the off-chain merkle-tree JS library used to generate the proofs applies a double hash (hash(hash(leaf))). This mismatch means that valid proofs generated off-chain will fail verification on-chain.\n\nThe cause is an inconsistency between the on-chain leaf hashing method and the expected format of the off-chain Merkle tree implementation. Specifically, the triggerFeeUpdate and batchTriggerFeeUpdate functions in V3FeeController use single hashing, which is incompatible with the OpenZeppelin merkle-tree library.\n\nAn attacker could not directly exploit this for financial gain, but a legitimate user attempting to trigger a fee update with a valid proof would fail, leading to a denial of service for the fee update mechanism.\n\nThe impact is functional disruption of the fee update system, preventing authorized fee changes even when correct proofs are provided, undermining the decentralization and automation goals of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "V3FeeController.sol::triggerFeeUpdate#82-83",
+                "V3FeeController.sol::batchTriggerFeeUpdate#103"
+            ],
+            "files": [
+                "phoenix-fees/src/feeControllers/V3FeeController.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Users Can Overpay if `threshold` Changes",
+            "description": "The Firepit releaser contract allows users to release fees from the TokenJar by paying a threshold amount of RESOURCE tokens. However, if the threshold is adjusted by the thresholdSetter after a user has submitted a transaction but before it is mined, the user may end up paying more than intended. The release function uses the current threshold at execution time, not at submission time.\n\nThe root cause is the lack of synchronization between the threshold value and the nonce mechanism. The nonce is not incremented when the threshold is changed, so pending transactions in the mempool remain valid even if the cost has increased.\n\nAn attacker could exploit this by monitoring the mempool and frontrunning a release transaction with a threshold increase, forcing the original user to overpay. Alternatively, a user could be victimized by normal network latency if the threshold is raised during confirmation.\n\nThe impact is economic loss for users who end up overpaying for fee releases, leading to a poor user experience and potential loss of trust in the system's predictability.\n",
+            "severity": "Low",
+            "location": [
+                "ResourceManager.sol::setThreshold#45",
+                "Firepit.sol::release#22-25",
+                "Nonce.sol#8"
+            ],
+            "files": [
+                "phoenix-fees/src/base/ResourceManager.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Unconventional Import Paths",
+            "description": "The ResourceManager contract uses indirect import paths for the ERC20 interface and the IResourceManager interface, importing them through intermediate files rather than directly from their source. This practice, while not affecting runtime behavior, reduces code clarity and complicates dependency tracing for developers and auditors. The root cause is the use of transitive imports instead of direct references. This could lead to confusion during maintenance or auditing, especially in large codebases or during integration efforts. The impact is limited to reduced code readability and maintainability, with no direct security risk.\n",
+            "severity": null,
+            "location": [
+                "ResourceManager.sol#5",
+                "ResourceManager.sol#6"
+            ],
+            "files": [
+                "phoenix-fees/src/base/ResourceManager.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Unused Custom Error",
+            "description": "The IV3FeeController interface defines a custom error named AmountCollectedTooLow, suggesting an intent to validate minimum fee collection amounts during the collect operation. However, the implementing contract V3FeeController does not use this error anywhere, and no such validation is performed in the collect function. The root cause is a discrepancy between interface design and implementation logic. This could mislead external developers or integrators into assuming a validation exists when it does not. The impact is limited to potential confusion and incorrect assumptions about the contract's behavior, with no direct exploit risk.\n",
+            "severity": null,
+            "location": [
+                "IV3FeeController.sol#8",
+                "V3FeeController.sol#52"
+            ],
+            "files": [
+                "phoenix-fees/src/interfaces/IV3FeeController.sol"
+            ]
+        }
+    ]
+}

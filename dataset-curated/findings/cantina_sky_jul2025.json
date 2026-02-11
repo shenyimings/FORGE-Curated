@@ -1,0 +1,218 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_sky_jul2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/sparkdotfi/spark-alm-controller"
+        ],
+        "commit_id": [
+            "9f24f17f9dbd79e55e556b8ad29aa8747c4f2297"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "spark-alm-controller": "dataset-curated/contracts/cantina_sky_jul2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "ForeignController.transferTokenLayerZero is missing approval to the Sky OFT adapter",
+            "description": "The ForeignController.transferTokenLayerZero function is intended to support LayerZero OFT token transfers, but it fails to approve the Sky OFT adapter before attempting to burn or transfer tokens. Unlike the USDT0 adapter, the Sky OFT adapter does not have special burn privileges and requires explicit approval from the caller. The root cause is the absence of an approval call before invoking the burn function on the Sky OFT token. An attacker or malicious relayer could exploit this by triggering a transfer that fails due to lack of approval, potentially disrupting legitimate operations or causing unexpected reverts. The impact includes failed transactions and potential denial of service for valid users relying on the bridging functionality.\n",
+            "severity": "Medium",
+            "location": [
+                "ForeignController.sol#L239"
+            ],
+            "files": [
+                "spark-alm-controller/src/ForeignController.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ]
+            },
+            "title": "Compromised relayer can use transferTokenLayerZero to burn ETH in ALM Proxy",
+            "description": "The transferTokenLayerZero function in MainnetController can be exploited by a compromised relayer to bridge minimal amounts of ETH (e.g., 1 wei) repeatedly, potentially draining native token balances held in the ALM Proxy over time. The cause is the lack of rate limiting or call frequency restrictions on this function, allowing repeated invocations. An attacker with control over the relayer could exploit this by initiating numerous small transfers, gradually depleting the proxy's ETH balance. The impact is a potential loss of native tokens from the ALM Proxy, especially if significant ETH is held there, although the risk is mitigated by the small per-call amount.\n",
+            "severity": "Low",
+            "location": [
+                "MainnetController.sol#L813"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-228"
+                ],
+                "3": [
+                    "CWE-237"
+                ]
+            },
+            "title": "_approve ignores the success bool return value",
+            "description": "The _approve function in MainnetController incorrectly interprets the return data from a low-level call to the ALM Proxy when checking the success of an ERC20 approve call. Due to double encoding of the return data, the function reads the offset (0x20) as a success flag instead of decoding the actual boolean return value. This leads to false positives where failed approvals (returning false) are treated as successful, preventing the fallback logic (resetting to 0 then re-approving) from executing. The root cause is improper handling of nested ABI encoding in the low-level call. An attacker could exploit this with a token like USDT that returns false on approval failure instead of reverting, causing the system to believe an approval succeeded when it did not. The impact includes failed subsequent operations that depend on valid approvals, potentially leading to transaction failures or incorrect state assumptions.\n",
+            "severity": "Low",
+            "location": [
+                "MainnetController.sol#L846-L857"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "_approve can re-use approveData in third call",
+            "description": "The _approve function performs three potential approve calls: the initial attempt, a reset to zero, and a retry of the original amount. In the third call, the function re-encodes the approve calldata instead of reusing the previously constructed approveData variable. This is inefficient and results in unnecessary gas consumption during execution. The root cause is redundant calldata encoding in the third approve call. While not a security vulnerability, this issue increases transaction costs for users. An attacker cannot directly exploit this, but all users bear higher gas fees than necessary. The impact is increased operational costs without any functional benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L861"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Quirks in OFT implementations",
+            "description": "Different LayerZero OFT token implementations exhibit inconsistent behaviors, particularly in how they handle zero-address destinations. For example, USDT0 does not redirect transfers to address(0) or the token itself, while Sky's OFT implementation redirects such transfers to 0xdead. This inconsistency means that integrating new OFTs requires careful, case-by-case review rather than assuming uniform behavior. The root cause is the lack of standardized handling for edge cases across OFT implementations. If not properly reviewed, this could lead to unexpected token burns or misdirected funds during bridging operations. The impact is potential loss of funds or incorrect state if assumptions about OFT behavior are made without verification during integration.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetController.sol#L810-L814",
+                "ForeignController.sol#L270-L274"
+            ],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Minor issues",
+            "description": "This finding aggregates several minor code quality issues: unused imports (IMetaMorpho, AccessControl, RateLimitHelpers), duplicated interface definitions (IATokenWithPool), a typo (\"multipled\" instead of \"multiplied\"), and the use of custom interfaces instead of standard ones like OpenZeppelin's. These issues do not pose direct security risks but indicate suboptimal code hygiene. The root causes include oversight during development and lack of strict linting or code review practices. While no direct exploitation is possible, these issues can increase maintenance burden, create confusion, and potentially introduce bugs during future modifications. The impact is reduced code readability, maintainability, and increased risk of human error in future development.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "spark-alm-controller/src/MainnetController.sol",
+                "spark-alm-controller/src/ForeignController.sol",
+                "spark-alm-controller/test/base-fork/Morpho.t.sol",
+                "spark-alm-controller/test/base-fork/MorphoAllocations.t.sol",
+                "spark-alm-controller/script/staging/test/StagingDeployment.t.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Deployment scripts set mintRecipients (for CCTP bridging) but no LayerZero recipients",
+            "description": "The deployment initialization scripts configure mintRecipients for CCTP bridging but fail to set corresponding LayerZero recipients using setLayerZeroRecipient. This creates an inconsistency in bridge configuration, potentially leaving the system unable to receive tokens via LayerZero even though CCTP is properly configured. The root cause is an omission in the deployment logic. An attacker cannot directly exploit this, but it could lead to operational issues where LayerZero deposits fail or are blocked, resulting in a partial denial of service for users relying on that bridge. The impact is reduced functionality and potential user fund lockups if LayerZero is a primary bridge method.\n",
+            "severity": "Informational",
+            "location": [
+                "MainnetControllerInit.sol#L155-L157"
+            ],
+            "files": [
+                "spark-alm-controller/deploy/MainnetControllerInit.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "ILayerZero interface improvements",
+            "description": "The ILayerZero interface has two inconsistencies: it uses non-standard uint types for MessagingFee instead of uint256, and the quoteSend function is not marked as view despite being a read-only function in the implementation. These issues can lead to integration problems, such as incorrect static call assumptions or type mismatches. The root cause is incomplete or outdated interface definition. While not directly exploitable, these inconsistencies may cause integration errors or prevent optimization (e.g., static calls) in calling contracts. The impact includes potential integration failures, increased gas costs due to non-view calls, and reduced developer experience.\n",
+            "severity": "Informational",
+            "location": [
+                "ILayerZero.sol#L61"
+            ],
+            "files": [
+                "spark-alm-controller/src/interfaces/ILayerZero.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Consistent IRateLimits rateLimits parameter order",
+            "description": "The PSMLib library functions _rateLimited and _cancelRateLimit take the IRateLimits parameter as the last argument, while other similar helper functions in the codebase take controller state variables as the first parameter. This inconsistency breaks established patterns and reduces code readability and maintainability. The root cause is a deviation from internal coding conventions. There is no direct security impact or exploit path. The impact is purely on code quality, making the codebase harder to navigate and increasing the risk of developer errors during future modifications.\n",
+            "severity": "Informational",
+            "location": [
+                "PSMLib.sol#L156-L162"
+            ],
+            "files": [
+                "spark-alm-controller/src/libraries/PSMLib.sol"
+            ]
+        }
+    ]
+}

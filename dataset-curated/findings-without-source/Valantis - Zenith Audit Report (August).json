@@ -1,0 +1,74 @@
+{
+    "path": "dataset-curated/reports/Zenith/Valantis - Zenith Audit Report (August).pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/ValantisLabs/valantis-stex-khype"
+        ],
+        "commit_id": [
+            "aa748defdf55107659cecfab383cbbbd8a41a53c"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-06",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "ManagerFee will be incorrect if the withdrawal exceeds totalPrincipal",
+            "description": "The protocol calculates the ManagerFee based on the difference between totalBalance and totalPrincipal, treating the difference as net yield. However, when a withdrawal exceeds the totalPrincipal, the totalPrincipal is set to zero, which incorrectly reduces the remaining yield base for future fee calculations. This leads to an underreporting of the net yield and thus an incorrect ManagerFee.\n\nThe root cause is the lack of tracking for previously withdrawn yield. When a large withdrawal occurs, the system fails to account for the fact that part of the withdrawal includes yield that should still contribute to the fee calculation. Instead, it resets the principal to zero, discarding the historical yield context.\n\nAn attacker (or manager) could exploit this by making a large withdrawal that exceeds the totalPrincipal, thereby reducing the effective yield base and lowering the manager fee that would otherwise be claimable in subsequent periods. This manipulation distorts the fee accrual mechanism.\n\nThe impact is financial inaccuracy in fee distribution, potentially leading to loss of rightful fees for the manager or, conversely, incorrect fee claims if not properly audited. While funds are not directly stolen, the economic model is compromised.\n",
+            "severity": "High",
+            "location": [
+                "MultiMarketLendingModule.sol::#L565",
+                "MultiMarketLendingModule.sol::#L504"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "withdraw of all assets in MultiMarketLendingModule will frequently revert",
+            "description": "When withdrawing assets, the MultiMarketLendingModule calculates the amount to withdraw from each lending module using a ceiling operation to avoid dust. However, this calculation does not verify whether the computed amount exceeds the actual available liquidity in the target lending module.\n\nThe cause is the absence of a pre-check against the maximum withdrawable balance from each lending module. The use of Math.Rounding.Ceil can result in an amountToWithdraw that is slightly higher than what the module can provide, especially when attempting to withdraw all assets.\n\nAn attacker or user attempting to withdraw all assets could trigger a revert if the rounded-up amount exceeds the available liquidity in any of the underlying modules. This is particularly problematic during module replacement, where full withdrawal is required.\n\nThe impact is a potential denial of service for withdrawals, especially during critical operations like module upgrades. Users may be unable to access their funds until weights are manually adjusted, undermining the reliability of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "MultiMarketLendingModule.sol::#L528-L536"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "deposit does not consider the vault\u2019s max deposit limit",
+            "description": "The deposit function in MultiMarketLendingModule does not check whether the target lending modules have reached their maximum deposit capacity. It proceeds to deposit funds based on configured weights without validating the vault's max deposit limit.\n\nThis occurs because the deposit logic assumes all modules can accept new deposits without querying their _maxDeposit() or equivalent function. This is especially risky when integrating with ERC4626 vaults like the Felix Hype vault, which enforce deposit caps.\n\nAn attacker could trigger a revert during deposit if one of the target vaults is at capacity, causing the entire deposit transaction to fail. This leads to user frustration and potential loss of gas fees.\n\nThe impact is reduced reliability and usability of the deposit function. Frequent reverts may require manual intervention to rebalance weights or exclude saturated vaults, increasing operational overhead.\n",
+            "severity": "Low",
+            "location": [
+                "MultiMarketLendingModule.sol::#L418-L426"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Add duplicate checks to _lendingModules",
+            "description": "The initialize function allows duplicate lending module addresses to be added to _lendingModules. While the Set data structure prevents actual duplication in storage, the configuration for the last occurrence overrides earlier ones, leading to inconsistent total weight calculations.\n\nThe root cause is the lack of explicit validation during initialization to prevent duplicate entries. Although _lendingModules.add() returns false on duplicates, this return value is not checked, allowing misconfigurations to pass silently.\n\nAn attacker could exploit this by initializing a module with duplicate entries and mismatched weights, causing totalDepositWeightBips and totalWithdrawWeightBips to not sum to BIPS. This leads to partial deposit or withdrawal reverts, effectively locking funds.\n\nThe impact includes potential fund lockup and denial of service for deposit/withdraw functions. Additionally, a maliciously configured module may become impossible to replace if it holds non-zero balances but fails withdrawals due to weight mismatches.\n",
+            "severity": "Low",
+            "location": [
+                "MultiMarketLendingModule.sol::#L286"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Lack of asset validation for lendingModule in initialize",
+            "description": "During initialization, the MultiMarketLendingModule does not validate that the asset of the provided lending modules matches its own configured asset. This allows potentially incompatible modules with different underlying tokens to be integrated.\n\nThe cause is the omission of an asset equality check before accepting a lending module. While a call to assetBalance() is made for sanity, it does not confirm asset compatibility, leading to potential integration of mismatched modules.\n\nAn attacker could supply a lending module with a different asset, causing deposit calls to fail or assetBalance to return incorrect values. This could result in lost funds or incorrect accounting within the system.\n\nThe impact is potential integration of incompatible modules, leading to failed transactions, incorrect state, or loss of funds. While not directly exploitable for theft, it introduces significant operational risk and reduces system robustness.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiMarketLendingModule.sol::#L250-L294"
+            ],
+            "files": []
+        }
+    ]
+}

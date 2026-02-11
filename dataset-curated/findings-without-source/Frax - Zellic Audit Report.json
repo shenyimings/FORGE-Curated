@@ -1,0 +1,116 @@
+{
+    "path": "dataset-curated/reports/Zellic/Frax - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/FraxFinance/fraxnet-dev"
+        ],
+        "commit_id": [
+            "d0e4ef06dda7aac4da3890f6e9a68d98fd4def82"
+        ],
+        "address": [],
+        "chain": "EVM",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-23",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Missing slippage check in shuffleToRwa",
+            "description": "The shuffleToRwa function in the FrxUSDCustodian contract performs a swap from USDC to RWA tokens but lacks a slippage check after the swap. Unlike the redeemRWA function in RWARedemptionCoordinator, which includes a slippage check, this function does not validate the outcome of the swap against a minimum acceptable threshold. This omission occurs because the function directly calls the RWA issuer without enforcing slippage protection. An attacker or unfavorable market condition could result in a significantly worse-than-expected swap rate. The impact is an unbounded swap outcome, potentially leading to unfavorable economic results for the protocol, though not direct fund loss.\n",
+            "severity": "Medium",
+            "location": [
+                "FrxUSDCustodian.sol::shuffleToRwa"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Frozen tokens cannot be burned by owner",
+            "description": "The FrxUSD contract's _update function reverts if either the sender or receiver is a frozen address, which is intended to enforce freezing restrictions. However, this check also applies to the owner-only burn functions (burn and burnMany), preventing the owner from burning tokens held in frozen accounts. The root cause is that _update is called internally during burning, without an exception for owner calls. This could prevent emergency actions such as wiping tokens from a compromised or frozen account. An attacker cannot directly exploit this, but it limits the owner's ability to respond to security incidents, reducing operational control and recovery flexibility.\n",
+            "severity": "Low",
+            "location": [
+                "FrxUSD.sol::_update",
+                "FrxUSD.sol::burn",
+                "FrxUSD.sol::burnMany"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "The maxSlippage is not validated during initialization",
+            "description": "The initialize function in the RWARedemptionCoordinator contract sets the maxSlippage parameter without validating that it is within the valid range (\u2264 PERCENT_SCALE = 1e5). This allows the contract to be initialized with an invalid slippage value, which could cause legitimate swaps to fail due to incorrect slippage checks. The cause is the absence of a bounds check during initialization. An attacker could potentially exploit this by forcing a misconfigured contract into a state where redeemRWA consistently reverts, leading to a denial of service for redemption functionality. The impact is operational disruption rather than direct fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "RWARedemptionCoordinator.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Incorrect address emitted in ProcessedRedemption event for Solana",
+            "description": "In the processRedemption function of FraxNetDeposit and FraxNetDepositV2, when the targetEid is 30168 (Solana), the actual recipient is targetUsdcAtaAddress, but the emitted ProcessedRedemption event logs targetAddress instead. This inconsistency arises because the event uses targetAddress unconditionally, despite the logic using a different recipient for Solana. This could mislead off-chain systems (e.g., monitoring tools, UIs) that rely on event data to track redemption flows. The impact is incorrect interpretation of on-chain data, potentially leading to reconciliation errors or false alerts, though funds are sent correctly.\n",
+            "severity": "Low",
+            "location": [
+                "FraxNetDeposit.sol::processRedemption",
+                "FraxNetDepositV2.sol::processRedemption",
+                "ProcessedRedemption event"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Incorrect fee checking in the setMintRedeemFee function",
+            "description": "The setMintRedeemFee function in FrxUSDCustodian uses a logical OR (||) in the require statement to check that either mintFee or redeemFee is less than 1e18, instead of requiring both. This allows one fee to be set to an invalid value (\u22651e18) as long as the other is valid. The root cause is a logical error in the condition. An attacker with ownership privileges could set an invalid fee, leading to incorrect fee calculations during minting or redemption. While this does not directly enable fund theft, it could result in economic inefficiencies or unexpected behavior in fee collection.\n",
+            "severity": "Low",
+            "location": [
+                "FrxUSDCustodian.sol::setMintRedeemFee"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Lack of zero-address check in the initialize function",
+            "description": "The initialize function in both FrxUSDCustodian and FrxUSD contracts sets ownership by calling _transferOwnership without validating that the provided _owner address is not the zero address. This could result in the contract being permanently owned by address(0), rendering ownership-based functions inoperable. The cause is the absence of a basic input validation. While accidental misuse is more likely than malicious exploitation, a misconfigured deployment could lead to a loss of administrative control, introducing unnecessary risk during initialization.\n",
+            "severity": "Low",
+            "location": [
+                "FrxUSDCustodian.sol::initialize",
+                "FrxUSD.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Inconsistent frxUSDMinted check",
+            "description": "The maxDeposit and maxMint functions return 0 when frxUSDMinted >= mintCap, indicating no further deposits are allowed. However, the _deposit function only reverts if frxUSDMinted > mintCap, allowing a deposit to succeed when frxUSDMinted == mintCap. This inconsistency stems from differing comparison operators (>= vs >) across functions. A user could potentially deposit when frxUSDMinted == mintCap, exceeding the intended cap by a small margin. While the impact is minor and aligns with ERC-4626 rounding behavior, it introduces ambiguity in cap enforcement and could lead to slight over-minting.\n",
+            "severity": "Informational",
+            "location": [
+                "FrxUSDCustodian.sol::maxDeposit",
+                "FrxUSDCustodian.sol::maxMint",
+                "FrxUSDCustodian.sol::_deposit"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Shared interface creates confusion between contracts with different functionality",
+            "description": "The IRWAUSDCRedeemer interface is implemented by two contracts\u2014RedemptionIdle and RWARedemptionCoordinator\u2014that support different subsets of its functions. RedemptionIdle implements redeem, while RWARedemptionCoordinator implements redeemRWA. Despite this, both conform to the same interface, leading to potential confusion and incorrect assumptions about available functionality. The root cause is poor interface design that groups unrelated functions. This does not introduce direct security risks but reduces code clarity and increases the likelihood of integration errors or misuse during future development.\n",
+            "severity": "Informational",
+            "location": [
+                "interfaces/IRWAUSDCRedeemer.sol",
+                "RWARedemptionCoordinator.sol",
+                "FraxNetDeposit.sol",
+                "FraxNetDepositV2.sol"
+            ],
+            "files": []
+        }
+    ]
+}

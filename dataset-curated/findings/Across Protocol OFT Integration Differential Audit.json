@@ -1,0 +1,704 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Across Protocol OFT Integration Differential Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts/"
+        ],
+        "commit_id": [
+            "c5d7541037d19053ce2106583b1b711037483038"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-19",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Across Protocol OFT Integration Differential Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Failed Messenger Can Render the Canonical Methods Useless",
+            "description": "The Arbitrum_Adapter and Arbitrum_SpokePool contracts use the `_transferViaOFT` function to bridge tokens via LayerZero's OFT standard. The logic enters this path if the associated messenger address is non-zero, without fallback mechanisms in case the messenger fails. If the messenger reverts during message sending, the entire transaction reverts, preventing both token transfer and the delivery of refund roots to SpokePool. This halts the rebalancing process and blocks relayer reimbursements.\n\nThe root cause is the lack of error isolation\u2014specifically, the absence of a try-catch mechanism or alternative routing when the OFT messenger fails. Because the OFT path is prioritized and canonical bridges (like Arbitrum Gateway) are only checked afterward, a failing OFT messenger blocks all subsequent methods.\n\nAn attacker or malfunctioning messenger could cause a denial-of-service by making the OFT route fail, either through freezing the route or reverting on send. This would prevent the HubPool from executing root bundle settlements involving affected tokens.\n\nThe impact is a complete stall in cross-chain liquidity rebalancing and relayer reimbursements for tokens relying solely on OFT (e.g., USDT), leading to operational disruption and potential financial loss due to delayed or failed settlements.\n",
+            "severity": "High",
+            "location": [
+                "Arbitrum_Adapter.sol::relayTokens#133",
+                "Arbitrum_SpokePool.sol::#94",
+                "OFTTransportAdapter.sol::_transferViaOFT#57",
+                "HubPool.sol::_sendTokensToChainAndUpdatePooledTokenTrackers#876"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_Adapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Insufficient Validation of Sent Amount in OFTTransportAdapter",
+            "description": "The `_transferViaOFT` function in the OFTTransportAdapter contract validates only the `amountReceivedLD` from the `OFTReceipt`, ensuring it matches the intended transfer amount. However, it does not validate the `amountSentLD` field, which represents how much the messenger actually debits from the origin chain.\n\nThe cause is incomplete validation logic. LayerZero's OFT implementation allows `amountSentLD` to differ from `amountReceivedLD` due to fees, but the current code assumes the messenger will not take more than necessary. The `forceApprove` call does not fully mitigate this, as some token implementations may allow spending beyond the intended amount.\n\nAn attacker controlling or manipulating the messenger contract could cause it to withdraw more tokens than intended at the origin while delivering the correct amount at the destination. This would pass the current validation but result in unexpected token loss on the source chain.\n\nThe impact is potential loss of funds due to excess token deductions during cross-chain transfers, especially if the messenger is malicious or compromised. This undermines the economic integrity of the bridging mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#94-97"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Compromised Messengers Cannot Be Removed",
+            "description": "The `_setOftMessenger` function in the SpokePool contract allows setting or updating an OFT messenger for a token but does not allow removing a messenger by setting its address to zero. The function reverts if the provided messenger address is zero or does not implement the `token()` method, preventing the admin from disabling a compromised or malfunctioning messenger.\n\nThe root cause is the lack of a dedicated removal function and the strict validation that blocks zero-address updates. This forces the admin to replace a compromised messenger with a new one, which may not be feasible during an active exploit or emergency.\n\nAn attacker who compromises a messenger contract could block all OFT-based transfers by causing reverts or stealing funds. The admin cannot quickly disable the messenger, increasing the window of exposure.\n\nThe impact is prolonged vulnerability exposure and potential fund loss or service disruption until a new contract is deployed and configured, reducing the protocol's resilience to attacks.\n",
+            "severity": "Medium",
+            "location": [
+                "SpokePool.sol::_setOftMessenger#1739"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "OFT Transfer Might Revert Due to Non-Zero ZRO Token Fee Quote",
+            "description": "The `_transferViaOFT` function quotes LayerZero fees using `quoteSend`, which returns both native and ZRO token fees. Although the protocol intends to pay in native tokens, it does not validate that the `lzTokenFee` (ZRO fee) is zero before passing it to the `send` function. If the messenger expects ZRO payment when this value is non-zero, the call may revert.\n\nThe cause is missing input validation. The LayerZero documentation specifies that `lzTokenFee` should be zero when paying in native tokens, but the current implementation does not enforce this.\n\nA malicious or misconfigured messenger could return a non-zero `lzTokenFee`, causing the `send` call to revert even if sufficient native gas is provided. This could be exploited to disrupt transfers.\n\nThe impact is unexpected transaction reverts during cross-chain transfers, leading to failed rebalances and relayer reimbursements, resulting in operational delays and potential financial loss.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#85",
+                "OFTTransportAdapter.sol::_transferViaOFT#94"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Insufficient Test Coverage",
+            "description": "The codebase suffers from inadequate test coverage, particularly in the newly added OFT integration. Multiple test suites (Hardhat and Foundry) are used inconsistently across contracts, increasing maintenance burden and reducing reliability. New features are tested with only a few positive cases, with no negative or edge-case testing.\n\nThe root cause is a lack of standardized, comprehensive testing practices. Fees are tested with zero values, bypassing fee logic entirely. There is no fuzzing, and integration with LayerZero is not properly simulated or tested under real-world conditions.\n\nAn attacker could exploit untested edge cases in the OFT integration, such as fee manipulation, malformed messages, or reentrancy, which are not covered by existing tests. The absence of fork tests for most chains increases the risk of deployment failures.\n\nThe impact is a high likelihood of undiscovered vulnerabilities, increased risk of regressions, and reduced confidence in the correctness and robustness of the system. This undermines the overall security posture and increases the probability of critical failures in production.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "LayerZero's Dust Removal Might Revert OFT Transfers",
+            "description": "The `_transferViaOFT` function in the `OFTTransportAdapter` contract verifies that the input amount matches the amount received at the destination. However, LayerZero's `_removeDust` function removes decimal precision beyond `sharedDecimals` (default 6), which can cause the received amount to be less than the input due to \"dust\" being stripped. This discrepancy causes the final validation check to revert the transaction. The root cause is the lack of pre-emptive rounding of the input amount to match the precision enforced by LayerZero. An attacker or malfunctioning Dataworker could trigger this by sending amounts with extra decimal digits, leading to transaction failure. The impact is potential disruption of cross-chain transfers, especially when precise decimal amounts are used, resulting in failed bundles and operational issues.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::deposit#97",
+                "OFTTransportAdapter.sol::deposit#69-71"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ]
+            },
+            "title": "OFT Transfers Revert if Chains Have Different Local Decimals",
+            "description": "The `_transferViaOFT` function in the `OFTTransportAdapter` contract reverts when transferring tokens between chains with different local decimals because it compares the sent amount in source chain decimals with the received amount in destination chain decimals. The root cause is the lack of decimal conversion logic during the validation step, assuming both chains use the same decimal precision. An attacker cannot directly exploit this, but legitimate transfers will fail if the chains have different decimals, stalling cross-chain movement. This leads to a denial of service for OFT-based transfers in heterogeneous decimal environments, even though it works when decimals match.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#97",
+                "OFTCore.sol::_debitView#349"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent Use of the `__gap` Variable",
+            "description": "The `__gap` variable is used inconsistently across the codebase, with no uniform pattern in the number of reserved storage slots. This inconsistency can lead to storage collisions during upgrades, especially in inherited contracts, because the total number of used and reserved slots exceeds expected limits (e.g., SpokePool exceeds 1000). The root cause is poor standardization and lack of documentation for storage layout. If a new variable is added in a future upgrade without awareness of prior `__gap` modifications, it could overwrite existing state, leading to corrupted data or unauthorized state changes. This poses a critical risk to contract integrity during upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "MultiCallerUpgradeable.sol::__gap#77",
+                "Arbitrum_SpokePool.sol::__gap#15-19",
+                "SpokePool.sol::__gap#1762",
+                "SpokePool.sol#122",
+                "SpokePool.sol#1786"
+            ],
+            "files": [
+                "contracts/contracts/upgradeable/MultiCallerUpgradeable.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "EIP-7702 EOA Accounts' Treatment Could Result in Reentrancy",
+            "description": "When sending ETH or WETH to an EIP-7702 EOA wallet, the `_unwrapwrappedNativeTokenTo` function uses a low-level `.call` without limiting gas, allowing the recipient's fallback or receive function to execute arbitrary logic, including reentrancy attacks. The root cause is treating EIP-7702 EOAs as regular wallets without restricting gas or using WETH instead. Since EIP-7702 wallets can have arbitrary logic, a malicious implementation could reenter the protocol before state changes are finalized, potentially manipulating funds or logic flow. Although some functions are reentrancy-protected, this vector increases the attack surface and could be exploited in combination with other vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::_is7702DelegatedWallet#1611",
+                "SpokePool.sol::_unwrapwrappedNativeTokenTo#1613"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Lack of Validation On Linked Messengers",
+            "description": "The `SpokePool` contract performs only a basic `token` function check when setting messengers, which is insufficient to verify that a contract supports the required `IOFT` interface. The root cause is the absence of EIP-165 interface detection, allowing potentially incompatible contracts to be registered. A malicious or misconfigured contract with a `token` function could be accepted, leading to unexpected behavior or failed messages. This could result in message delivery failures, loss of funds, or denial of service. The risk is mitigated slightly by admin control, but human error remains a concern.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol#1740",
+                "AdapterStore.sol#28-L64",
+                "IOFT.sol#48"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Documentation",
+            "description": "Several parts of the codebase contain outdated or incorrect documentation. For example, the `Universal_Adapter` contract claims to only use `CircleCCTPAdapter` for USDC, but it also supports OFT. Similarly, a comment in `AlephZero_SpokePool` claims Arbitrum only supports Solidity 0.8.19, which is false. The root cause is failure to update comments after implementation changes. This can mislead developers and auditors, leading to incorrect assumptions about functionality and potentially introducing bugs during maintenance or integration. While not directly exploitable, it increases operational risk.\n",
+            "severity": "Low",
+            "location": [
+                "Universal_Adapter.sol#74",
+                "AlephZero_SpokePool.sol#3"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Universal_Adapter.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Logic Not Fully Deprecated",
+            "description": "The `SpokePool` contract inherits `OFTTransportAdapter` and accepts OFT-related constructor parameters even on chains that do not use OFT functionality, setting them to zero. The root cause is incomplete deprecation of unused logic. This increases the attack surface because zero values in `OFT_DST_EID` and `OFT_FEE_CAP` could be exploited in future upgrades if the OFT path becomes active. Additionally, admins can still modify the `oftMessengers` mapping, potentially pre-configuring malicious or incorrect messengers for future exploitation. This represents a latent security risk.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol#1739-L1749",
+                "SpokePool.sol#226",
+                "Polygon_SpokePool.sol#94-L96",
+                "OFTTransportAdapter.sol#57",
+                "OFTTransportAdapter.sol#85-L92",
+                "OFTTransportAdapter.sol#88"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1061"
+                ],
+                "3": [
+                    "CWE-766"
+                ]
+            },
+            "title": "Abstract Contracts Allow Direct Modification of State Variables",
+            "description": "The `SpokePool` abstract contract exposes the `oftMessengers` state variable as `public`, allowing child contracts to modify it directly without going through controlled setters. The root cause is improper visibility settings in an abstract base contract. This can break expected invariants, bypass validation logic, and prevent event emission, hindering off-chain monitoring. A malicious or buggy child contract could corrupt the mapping, leading to incorrect messenger routing and potential fund loss. While admin-controlled, it reduces code safety and auditability.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol#117"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Zero-Address Checks",
+            "description": "Multiple functions that assign address parameters lack zero-address validation, including `_setMessenger` in `AdapterStore` and `SpokePool`, and `_adapterStore` in `OFTTransportAdapterWithStore`. The root cause is missing input validation. If a zero address is accidentally set, it could lead to loss of control or unintended behavior, such as sending funds to the burn address. Although these functions are admin-controlled, the lack of safeguards increases the risk of operational errors. The team acknowledges this but considers it low risk due to admin trust assumptions.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol#34",
+                "AdapterStore.sol#52",
+                "OFTTransportAdapterWithStore.sol#17",
+                "SpokePool.sol#363"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol",
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing Docstrings",
+            "description": "Numerous contracts, including `AdapterStore.sol`, `OFTTransportAdapter.sol`, and various SpokePool implementations, lack NatSpec documentation for functions, parameters, and state variables. The root cause is incomplete code documentation practices. This reduces code readability, increases the risk of misinterpretation during audits or upgrades, and hinders developer onboarding. While not directly exploitable, it contributes to long-term maintainability and security risks. Some docstrings were added post-audit, but coverage remains incomplete.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol",
+                "OFTTransportAdapter.sol",
+                "SpokePool.sol",
+                "Universal_Adapter.sol"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol",
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "Multiple contracts use floating pragma directives (e.g., `^0.8.0`, `^0.8.19`), which can lead to compilation with untested Solidity versions. The root cause is lack of version pinning. This introduces risk of unexpected behavior due to compiler changes, including security-relevant optimizations or bugs. While the team uses consistent versions in practice, the absence of fixed pragmas makes the build process less deterministic and increases supply chain risk.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol#2",
+                "AlephZero_SpokePool.sol#5",
+                "Arbitrum_Adapter.sol#2",
+                "SpokePool.sol#2",
+                "OFTTransportAdapter.sol#2",
+                "Universal_Adapter.sol#2"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Different Pragma Directives Are Used",
+            "description": "Some contracts use different pragma versions than the ones they import (e.g., `AlephZero_SpokePool.sol` uses `^0.8.19` but imports `Arbitrum_SpokePool.sol` with `^0.8.0`). The root cause is inconsistent version management across the codebase. This can lead to compatibility issues, unexpected inheritance behaviors, or compilation errors in certain environments. While Solidity allows this within minor versions, it increases technical debt and complicates audits. The team acknowledges the suggestion but has not resolved it.\n",
+            "severity": "Low",
+            "location": [
+                "AlephZero_SpokePool.sol#5",
+                "Linea_SpokePool.sol#5",
+                "Arbitrum_SpokePool.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Adapter Implementation Could Be Misused",
+            "description": "The `Arbitrum_Adapter` contract, intended to be used via `delegateCall` from `HubPool`, can be called directly. Although it should not hold funds, if assets are mistakenly sent to it, a user could exploit the `relay` function to withdraw them. The root cause is lack of a protection mechanism (e.g., `onlyDelegateCall` or `self` check). This creates an unintended entry point, allowing theft of misrouted funds. While the risk is low under normal operation, it represents a potential misuse vector that could be exploited in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "Arbitrum_Adapter.sol#80-L85",
+                "HubPool.sol#901-L909",
+                "Arbitrum_Adapter.sol#121"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_Adapter.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Protocol Cannot Overcome OFT Fee Increase Without Upgrading",
+            "description": "The `OFTTransportAdapter` uses an immutable `OFT_FEE_CAP` to prevent excessive fees, but this value cannot be updated without redeploying the adapter or `SpokePool`. The root cause is immutability of a critical parameter. If LayerZero messaging fees exceed the cap, OFT transfers will permanently fail until a contract upgrade. This could delay bundle execution and relayer repayments, though core user functions remain operational. The lack of an upgrade mechanism reduces protocol resilience to economic changes and requires manual intervention.\n",
+            "severity": "Low",
+            "location": [
+                "OFTTransportAdapter.sol#21-L25",
+                "OFTTransportAdapter.sol#88",
+                "Arbitrum_Adapter.sol#81",
+                "SpokePool.sol#226",
+                "HubPool.sol#338"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ]
+            },
+            "title": "Transfers of Fee-On-Transfer Tokens Will Revert",
+            "description": "The `_transferViaOFT` function reverts when used with fee-on-transfer tokens because it compares the input `_amount` with `amountReceivedLD`, which will differ due to the transfer fee. The root cause is the absence of fee tolerance or adjustment logic in the validation step. This prevents the use of any token that charges fees on transfer, limiting protocol flexibility. While the team plans to only support non-fee tokens, this restriction should be clearly documented to avoid integration attempts with incompatible tokens.\n",
+            "severity": "Low",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#57",
+                "OFTTransportAdapter.sol#97"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-430"
+                ]
+            },
+            "title": "Function Selectors On Deprecated Functions Are Not Locked",
+            "description": "The contract removed deprecated functions such as `depositDeprecated_5947912356` and `depositFor`, but did not preserve their function selectors to block reuse. This creates a risk that future functions could accidentally inherit the same selectors, leading to unintended execution if old calls are replayed. The root cause is the deletion of function definitions without adding explicit reverts for their selectors. An attacker or legacy system could call the contract with calldata matching the old function signatures, potentially triggering new logic with unintended consequences. The impact includes potential misrouting of calls and unexpected behavior in the contract, especially in systems relying on historical interfaces.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::depositDeprecated_5947912356",
+                "SpokePool.sol::depositFor"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Zero-Address Validation Bypass in SpokePool",
+            "description": "The `_setOftMessenger` function in `SpokePool` validates that the messenger is appropriate for the token but does not check that the `_token` parameter is non-zero. If the messenger has not set its token, an admin could link it to the zero address. While subsequent transfers would fail, this edge case increases the attack surface and could be exploited in complex call sequences or during initialization phases. The root cause is missing input validation for the zero address. An admin with malicious intent or error could set the token to address(0), leading to confusion or potential future vulnerabilities if logic changes. The impact is limited due to subsequent checks, but it represents an unnecessary risk.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::_setOftMessenger#1740"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "Possible Duplicate Event Emissions",
+            "description": "The `setOftMessenger` function in `SpokePool` emits an event without checking if the value has changed. This allows an admin to repeatedly emit the same event by setting an identical value, potentially spamming off-chain indexing systems and causing confusion. The root cause is the absence of a state-change check before event emission. A malicious or misconfigured admin could exploit this to flood event logs, making it harder for clients to track real changes. The impact is primarily on off-chain monitoring and data integrity, with minimal on-chain consequences.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::setOftMessenger#1743",
+                "SpokePool.sol::setOftMessenger#1744"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Getter Function",
+            "description": "The `_getOftMessenger` function in `SpokePool` is redundant because the `oftMessengers` mapping is public and already generates a getter. This redundancy adds unnecessary code and can confuse developers about intended access patterns. The root cause is the explicit creation of a getter for a public state variable. While not directly exploitable, it increases code complexity and maintenance burden. The impact is reduced code clarity and potential for inconsistent usage across the codebase.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::_getOftMessenger#1747-1749"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-668"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Several functions have more permissive visibility than necessary. For example, `_setOftMessenger` is `internal` but could be `private`, and `setOftMessenger` is `public` but should be `external` since it's only intended for admin calls. The root cause is overly broad access modifiers. While not immediately exploitable due to admin controls, overly permissive visibility increases the attack surface and may lead to unintended usage in derived contracts. The impact includes potential misuse in inheritance hierarchies and slightly higher gas costs.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol::_setOftMessenger#1739-1745",
+                "SpokePool.sol::setOftMessenger#362"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Non-Explicit Imports",
+            "description": "The codebase uses global imports (e.g., `import \"./libraries/OFTTransportAdapter.sol\";`) instead of named imports. This reduces code clarity and increases the risk of naming conflicts, especially in large files or complex inheritance trees. The root cause is the use of legacy import syntax. While not a direct security vulnerability, it can lead to developer errors and confusion during audits or maintenance. The impact is reduced readability and maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePool.sol#15",
+                "Universal_Adapter.sol#11"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Multiple Contract Declarations Per File",
+            "description": "The `AdapterStore.sol` file declares both the `MessengerTypes` library and the `AdapterStore` contract. While acceptable for small libraries, this practice can reduce code organization and make it harder to navigate. The root cause is combining multiple logical components in one file. This does not pose a direct security risk but can hinder code review and understanding, especially for new developers. The impact is reduced code modularity and clarity.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings such as `crossChainMessengers` and `oftMessengers` do not use named parameters, a feature available since Solidity 0.8.18. This reduces code readability and makes it harder to understand the purpose of each mapping component. The root cause is the use of older syntax. While not a vulnerability, it affects code maintainability and clarity. The impact is reduced developer experience and potential for misinterpretation during audits.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol::crossChainMessengers#17",
+                "SpokePool.sol::oftMessengers#117"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "Several contracts and libraries, including `MessengerTypes`, `AdapterStore`, and `OFTTransportAdapterWithStore`, lack a `@custom:security-contact` NatSpec tag. This makes it harder for security researchers to report vulnerabilities. The root cause is missing documentation. The impact is potential delays in vulnerability disclosure and response, increasing the window of exposure if a critical issue is found.\n",
+            "severity": "Low",
+            "location": [
+                "AdapterStore.sol::MessengerTypes",
+                "AdapterStore.sol::AdapterStore",
+                "OFTTransportAdapterWithStore.sol"
+            ],
+            "files": [
+                "contracts/contracts/AdapterStore.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Custom Errors in require Statements",
+            "description": "The code uses `if-revert` patterns instead of the newer `require(condition, CustomError())` syntax, which is supported since Solidity 0.8.27. Examples include checks in `OFTTransportAdapter.sol` and `SpokePool.sol`. The root cause is the use of older control flow patterns. While functionally equivalent, `require` with custom errors is more concise and gas-efficient. The impact is slightly higher gas usage and reduced code modernity, though no security risk is introduced.\n",
+            "severity": "Low",
+            "location": [
+                "OFTTransportAdapter.sol#88",
+                "OFTTransportAdapter.sol#89",
+                "OFTTransportAdapter.sol#97",
+                "SpokePool.sol#1740-1742"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Errors Due To Deprecated Logic",
+            "description": "After removing the `_deposit` function, the `InvalidRelayerFeePct` and `MaxTransferSizeExceeded` errors are no longer used. These orphaned errors clutter the interface and may confuse developers. The root cause is failure to clean up error definitions after removing associated logic. The impact is reduced code clarity and potential confusion about active functionality.\n",
+            "severity": "Low",
+            "location": [
+                "SpokePoolInterface.sol::InvalidRelayerFeePct",
+                "SpokePoolInterface.sol::MaxTransferSizeExceeded"
+            ],
+            "files": [
+                "contracts/interfaces/SpokePoolInterface.sol"
+            ]
+        }
+    ]
+}

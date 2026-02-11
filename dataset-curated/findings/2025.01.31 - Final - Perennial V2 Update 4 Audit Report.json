@@ -1,0 +1,173 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.01.31 - Final - Perennial V2 Update 4 Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/equilibria-xyz/perennial-v2"
+        ],
+        "commit_id": [
+            "1beb10a3fe23a8a594b4275d376e261dffa811c2"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-23",
+        "project_path": {
+            "perennial-v2": "dataset-curated/contracts/2025.01.31 - Final - Perennial V2 Update 4 Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Anyone can steal all funds from the market due to incorrect health accounting for pending pnl from difference of intent price and market price when multiple intents are used.",
+            "description": "This vulnerability allows an attacker to exploit the incorrect handling of pending PnL in account health calculations when multiple signed intents are used. The system only accounts for the PnL adjustment of the current intent during health checks, ignoring all other pending intents for the same account. This enables an attacker to submit multiple intents that individually appear to maintain sufficient collateral, but collectively result in a highly negative collateral position. The root cause lies in the `InvariantLib.validate` function, which only considers the `newGuarantee.priceAdjustment` for the current intent and fails to aggregate adjustments from all pending guarantees. An attacker can exploit this by repeatedly submitting identical intents from one account while using another to execute them, thereby inflating their effective position without triggering a health check failure. Upon settlement, the victim account ends up with negative collateral while the attacker's account gains equivalent profit, allowing the attacker to withdraw all funds from the market, resulting in a total loss of market collateral.\n",
+            "severity": "High",
+            "location": [
+                "InvariantLib.sol::validate#L71",
+                "packages/core/contracts/libs/InvariantLib.sol",
+                "packages/core/contracts/types/Guarantee.sol"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol",
+                "perennial-v2/packages/core/contracts/types/Guarantee.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "InvariantLib uses current position for margin check allowing to withdraw collateral while the position decrease is only pending and can cause unexpected immediate user liquidation.",
+            "description": "This issue arises from the inconsistent use of position data in margin and maintenance checks within `InvariantLib.validate`. During a normal update, the function uses `currentPosition` for the margin check, which reflects the expected position after pending updates. However, during liquidation (when protected = true), it uses `latestPosition`, which is based on the last committed price. This discrepancy allows a user to reduce their position and withdraw collateral based on the pending (current) position, even though the actual (latest) position remains unchanged until settlement. As a result, after withdrawal, the account may become immediately liquidatable because the maintenance check uses the outdated `latestPosition`. The root cause is the incorrect use of `currentPosition` in the margined check and the mismatch between normal update and liquidation logic. An attacker can exploit this by reducing their position and withdrawing all collateral, then immediately liquidating their own account, potentially profiting from liquidation fees while leaving the system in bad debt. This leads to unfair liquidations and potential loss of user funds, or even a self-liquidation attack to extract liquidation fees at the expense of the market.\n",
+            "severity": "High",
+            "location": [
+                "InvariantLib.sol::validate#L87-L93",
+                "InvariantLib.sol::validate#L124-L128",
+                "packages/core/contracts/libs/InvariantLib.sol"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Intent orders are guaranteed to execute, but fees from these orders are not accounted in collateral, allowing user to withdraw all collateral ignoring these pending fees.",
+            "description": "This vulnerability stems from the fact that intent orders are guaranteed to execute (invalidation = 0), but the associated trading fees are not applied to the user's collateral until after the epoch price is committed. This creates a window where a user can open and close a position via intent orders, withdraw all their collateral (since fees are not yet deducted), and then, after the price is committed, have the fees applied to an account with zero collateral, resulting in bad debt. The root cause is the delay in fee application, handled in `CheckpointLib.advance`, combined with the ability to fully close a position even when the opening is still pending, as allowed by `InvariantLib`. An attacker can exploit this by using multiple accounts to generate and execute paired intent orders (open and close), withdraw all collateral immediately, and then claim referral fees once the epoch settles. Since the fees become bad debt, the market loses funds while the attacker profits from the claimed fees. This can be executed in a single transaction using flash loans, enabling the attacker to drain the entire market balance over repeated iterations.\n",
+            "severity": "High",
+            "location": [
+                "CheckpointLib.sol::advance#L84-L92",
+                "InvariantLib.sol::validate#L35-L38",
+                "packages/core/contracts/libs/CheckpointLib.sol",
+                "packages/core/contracts/libs/InvariantLib.sol"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/CheckpointLib.sol",
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "When account is liquidated (protected), liquidator can increase account's position to any value up to 2**62 - 1 breaking all market accounting and stealing all market funds.",
+            "description": "This critical flaw allows a liquidator to arbitrarily increase a liquidated account's position during liquidation, bypassing all position and collateral checks. The vulnerability exists because the only condition enforced during liquidation is that `pending.negative == latestPosition.magnitude`, which is satisfied when a user has fully closed their position (pending close). Once this condition is met, the liquidator can increase the position to the maximum value (2^62 - 1) without any restrictions. The root cause is the removal of the previous check that enforced position reduction during liquidation, leaving only the pending negative check, which does not prevent position inflation. An attacker can exploit this by opening a small position, closing it (making it pending), and then liquidating it with a massive position increase. After the price is committed, a small price change generates enormous PnL, which the attacker can withdraw entirely from the market. This completely breaks market accounting and allows the attacker to steal all market funds.\n",
+            "severity": "High",
+            "location": [
+                "InvariantLib.sol::validate#L121",
+                "packages/core/contracts/libs/InvariantLib.sol"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Vault.settle(account=coordinator) will lose profitShares",
+            "description": "The `Vault.settle()` function is designed to convert a portion of profits into `profitShares` for the coordinator using the `_credit()` method. However, it fails to update the `context.local.shares` in memory when the settlement account is the coordinator. This means that if an attacker specifies the coordinator as the settlement account, the updated `profitShares` value written to storage will be overwritten by the stale value from memory at the end of the function. As a result, the newly credited shares are lost, leading to a permanent loss of profitShares. The root cause is the lack of synchronization between storage and memory state when the account is the coordinator. This could be exploited by a malicious coordinator or an attacker who controls the settlement call to manipulate the share accounting and cause financial loss to the coordinator or the vault. The impact is the erosion of expected profits for the coordinator due to incorrect state management in memory.\n",
+            "severity": "Medium",
+            "location": [
+                "Vault.sol::settle",
+                "Vault.sol::settle#390",
+                "Vault.sol::_saveContext#424",
+                "Vault.sol::_credit"
+            ],
+            "files": [
+                "perennial-v2/packages/vault/contracts/Vault.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent Collateral Accounting for Pending Intents During Liquidation",
+            "description": "This vulnerability arises when accounts use signed intents to trade, as the profit or loss from the intent price difference is not accounted for during liquidation checks. The root cause is that InvariantLib.validate only considers the current collateral and does not include the guaranteed PnL from pending intents when assessing margin requirements. As a result, an account that is effectively healthy due to pending profit may be unfairly liquidated, or an unhealthy account with pending losses may avoid liquidation because the loss is not deducted. The attack path involves a user creating a favorable intent (e.g., closing a position at a better price), then being liquidated despite having sufficient effective collateral, or conversely, delaying liquidation by having a pending loss. The impact includes unfair liquidations, user fund loss (up to 6.7% in the example), and potential manipulation of the liquidation system.\n",
+            "severity": "Medium",
+            "location": [
+                "InvariantLib.sol::validate#127",
+                "InvariantLib.sol#L92"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Liquidations Blocked Due to Over-Close Validation on Pending Intent Orders",
+            "description": "The vulnerability prevents timely liquidations when a user's pending close amount exceeds their latest position size. The root cause is an incorrect validation in InvariantLib that applies the same over-close check to liquidation orders as to regular orders, even though liquidation orders cannot reduce pending negative positions. Since liquidation orders are always non-intent (invalidation != 0), they must satisfy the condition that pending close does not exceed the latest position, which becomes impossible if the pending close is already too large. The attack path involves a user creating a sequence of intent orders that result in a pending close greater than the latest position, after which no liquidation can succeed until a settlement occurs. The impact is delayed liquidations, potential accumulation of bad debt, and systemic risk to the market, as undercollateralized positions remain open longer than they should.\n",
+            "severity": "Medium",
+            "location": [
+                "InvariantLib.sol#L118-L122"
+            ],
+            "files": [
+                "perennial-v2/packages/core/contracts/libs/InvariantLib.sol"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,118 @@
+{
+    "path": "dataset-curated/reports/Zenith/Pooltogether - Zenith Audit Report (March).pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/GenerationSoftware/pt-v5-prize-pool-twab-rewards"
+        ],
+        "commit_id": [
+            "63d7c8d2a3740d38dd56a2a07d07b6097b475dad"
+        ],
+        "address": [],
+        "chain": "n/a",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-19",
+        "project_path": {
+            "pt-v5-prize-pool-twab-rewards": "dataset-curated/contracts/Pooltogether - Zenith Audit Report (March).pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "PrizePoolTwabRewards.sol contract doesn't support rebasing tokens",
+            "description": "The contract fails to properly handle rebasing tokens (like stETH) when used as reward tokens, leading to potential fund locking or failed claims. The issue stems from the contract tracking rewards through a fixed rewardsUnclaimed variable that doesn't account for rebasing effects.\nIn the case of a positive rebase, the actual token balance increases over time due to rebase mechanics, but the contract's accounting does not reflect this, resulting in leftover funds being permanently locked. In a negative rebase scenario, the contract balance may drop below the recorded unclaimed amount, causing reward claim or promotion end transactions to revert due to insufficient balance.\nThe root cause is the lack of dynamic balance checks and reliance on a static accounting mechanism that assumes non-rebasing token behavior.\nAn attacker could potentially exploit this by manipulating timing or using tokens with known rebase behavior to either trap funds or cause denial of service for legitimate claims.\nThe impact includes loss of funds for the promoter and disruption of reward distribution, undermining user trust and protocol reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "PrizePoolTwabRewards.sol"
+            ],
+            "files": [
+                "pt-v5-prize-pool-twab-rewards/src/PrizePoolTwabRewards.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing epoch validation in getVaultRewardAmount()",
+            "description": "The function getVaultRewardAmount() does not validate whether the epoch is over before calculating rewards, unlike _calculateRewardAmount(), which is used in claimRewards(). This inconsistency can lead to incorrect reward calculations when querying rewards for epochs that are still active or invalid.\nThe cause is the omission of epoch validation logic in a public view function that should enforce the same preconditions as its internal counterpart.\nWhile this function is not directly used in state-changing operations, it could mislead external systems or front-ends relying on accurate reward estimates, potentially leading to user confusion or incorrect decisions.\nThe impact is limited to incorrect data reporting rather than direct fund loss, but it affects the reliability of off-chain integrations and user experience.\n",
+            "severity": "Low",
+            "location": [
+                "PrizePoolTwabRewards.sol::getVaultRewardAmount#L439"
+            ],
+            "files": [
+                "pt-v5-prize-pool-twab-rewards/src/PrizePoolTwabRewards.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Strict balance checks prevents using tokens with rounding issues like stETH",
+            "description": "The contract performs a strict balance comparison in createPromotion() to verify received tokens, using the condition: if (_afterBalance < _beforeBalance + unclaimedRewards). This check does not account for known rounding issues in tokens like stETH, which can lose 1-2 wei during transfers due to Lido's documented corner cases.\nThe root cause is the use of a strict equality check without any tolerance margin, making the contract incompatible with widely used tokens that exhibit minor balance discrepancies post-transfer.\nAn attacker could potentially exploit this by initiating promotion creation with stETH, causing the transaction to consistently fail and preventing legitimate use of the protocol with such tokens.\nThe impact is a denial of service for users attempting to use stETH or similar tokens with rounding behaviors, limiting the protocol's interoperability and usability.\n",
+            "severity": "Low",
+            "location": [
+                "PrizePoolTwabRewards.sol::createPromotion#L238"
+            ],
+            "files": [
+                "pt-v5-prize-pool-twab-rewards/src/PrizePoolTwabRewards.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Inefficient error handling and misleading NatSpec in reward claiming",
+            "description": "The _claimRewards() function contains inefficient error handling by reverting with RewardsAlreadyClaimed when an already claimed epoch is detected, instead of simply skipping it. Additionally, the NatSpec documentation for parameter _epochClaimFlags is misleading, stating it represents \"which epochs were claimed\" when it actually indicates which epochs should be claimed in the current transaction.\nFurthermore, the internal function _isClaimedEpoch() is used for two different semantic purposes: checking which epochs are to be claimed and which have already been claimed by the user, leading to confusion and poor code clarity.\nThis issue stems from suboptimal control flow and poor documentation practices.\nWhile not directly exploitable for financial gain, it can lead to unnecessary transaction failures and confusion for developers integrating with the contract.\nThe impact includes increased gas costs due to avoidable reverts and potential integration errors due to incorrect assumptions based on misleading documentation.\n",
+            "severity": "Informational",
+            "location": [
+                "PrizePoolTwabRewards.sol::claimRewards#L589",
+                "PrizePoolTwabRewards.sol::_isClaimedEpoch#L843"
+            ],
+            "files": [
+                "pt-v5-prize-pool-twab-rewards/src/PrizePoolTwabRewards.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Perform divisions after multiplications",
+            "description": "The _calculateRewardAmount() function performs a division before a multiplication in its arithmetic calculation, which, while not causing functional issues in this specific case, violates the best practice of performing multiplications before divisions to minimize precision loss in fixed-point arithmetic.\nThe current implementation computes: ((_promotion.tokensPerEpoch * _userAverage) / totalSupply) - contributed, then divides by another denominator. This ordering increases the risk of truncation errors, especially with low token amounts.\nThe root cause is suboptimal arithmetic ordering in reward calculation logic.\nAlthough no immediate exploit is possible due to the current parameter ranges, under different economic conditions or with low balances, this could result in miscalculated rewards.\nThe impact is potential inaccuracy in reward distribution, which could affect fairness and user trust, especially in edge cases.\n",
+            "severity": "Informational",
+            "location": [
+                "PrizePoolTwabRewards.sol::_calculateRewardAmount#L710"
+            ],
+            "files": [
+                "pt-v5-prize-pool-twab-rewards/src/PrizePoolTwabRewards.sol"
+            ]
+        }
+    ]
+}

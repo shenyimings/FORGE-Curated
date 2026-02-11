@@ -1,0 +1,1199 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/f(x) v2 Audit.md",
+    "project_info": {
+        "url": "https://github.com/AladdinDAO/fx-protocol-contracts",
+        "commit_id": "56a47eab8d10334e479df83a2b13a8b68ce390e9",
+        "address": "n/a",
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-27",
+        "project_path": {
+            "fx-protocol-contracts": "dataset-curated/contracts/f(x) v2 Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Attacker can Lock User Funds through Redeem Function",
+            "description": "1. **Description:** The redeem function in the PoolManager contract allows users to burn fxUSD and receive collateral at a favorable rate, but lacks a minimum rawDebt (fxUSD) requirement. This enables an attacker to perform repeated small redemptions, creating a long chain of child nodes in the tick structure without updating the top tick.\n\n2. **Cause:** The absence of a minimum rawDebt threshold in the redeem function, combined with the recursive _getRootNodeAndCompress function in TickLogic.sol, creates a vulnerability. Each small redemption creates a new child node, and the recursive traversal to find the root node can result in a stack overflow when too many nested nodes exist.\n\n3. **Exploitation:** An attacker can repeatedly call redeem with minimal fxUSD (e.g., 2 wei) to generate hundreds or thousands of child nodes under a tick. When a user attempts to update or close a position in that tick via the operate function, the _getRootNodeAndCompress function will fail due to stack overflow, preventing the operation.\n\n4. **Impact:** Users affected by this attack will be unable to close or modify their positions, effectively locking their funds. They can only be rebalanced or liquidated by external actors, leading to potential loss of control and accessibility of funds.\n",
+            "severity": "Critical",
+            "location": [
+                "PoolManager.sol::redeem#307-334",
+                "BasePool.sol::redeem#191-245",
+                "BasePool.sol::operate#73-188",
+                "TickLogic.sol::_liquidateTick#L198",
+                "TickLogic.sol::_getRootNodeAndCompress#65-85"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PoolManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Flashloan Functionality is Blocked",
+            "description": "1. **Description:** The flashLoan function in the FlashLoans contract incorrectly validates repayment by comparing returnedAmount against amount + fee. However, returnedAmount is calculated as the difference between post-callback and pre-loan balances, which only reflects the fee portion, not the principal.\n\n2. **Cause:** The function computes returnedAmount as (post-callback balance - pre-loan balance), which measures only the additional tokens sent beyond the borrowed amount. Since the principal is not included in this delta, the condition returnedAmount < amount + fee always evaluates to true unless the borrower sends back the full principal plus fee as extra tokens.\n\n3. **Exploitation:** Any legitimate flash loan will revert because the repayment check fails even when the borrower correctly returns the principal and fee. This effectively blocks all flash loan functionality, denying a core DeFi feature and potentially disrupting integrations or arbitrage mechanisms relying on it.\n\n4. **Impact:** The flash loan mechanism becomes unusable, reducing the protocol's utility and interoperability within the DeFi ecosystem. This could hinder arbitrageurs, liquidity providers, or other protocols attempting to interact with the system via flash loans.\n",
+            "severity": "High",
+            "location": [
+                "FlashLoans.sol::flashLoan#67-97"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FlashLoans.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Pools Can Be Subject to Price Manipulation Leading to Early Liquidations or Arbitrage",
+            "description": "The protocol's price oracle uses a combination of Chainlink's `anchorPrice` and spot prices from multiple on-chain DEX pools to derive `minPrice` and `maxPrice`. These are used in critical operations such as liquidation and redemption. However, the system allows manipulation if any single pool's spot price deviates by exactly 1% from the `anchorPrice`, at which point it bypasses the deviation check and is accepted. An attacker can manipulate a low-TLV pool (e.g., WETH/USDC Uniswap V2) to force `minPrice` down, triggering premature liquidations for profit, or manipulate `maxPrice` to create arbitrage during redemption. The root cause is the aggregation logic that collapses multiple spot prices into a single `minPrice` and `maxPrice`, making the system vulnerable to a single point of failure. This negates the intended resilience from diversification. The impact includes potential loss of user funds due to forced liquidations and unfair arbitrage, undermining the protocol's economic security.\n",
+            "severity": "Medium",
+            "location": [
+                "LSDPriceOracleBase.sol::getPrice#85-99",
+                "StETHPriceOracle.sol::getPrice#36-43",
+                "BasePool.sol::operate#92",
+                "BasePool.sol::rebalance#250",
+                "BasePool.sol::liquidate#388",
+                "BasePool.sol::redeem#196"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/LSDPriceOracleBase.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Flashloan Functionality Does Not Follow ERC-3156 Standard",
+            "description": "The `flashLoan` function in the FlashLoans contract does not comply with the ERC-3156 standard, which requires the lender to pull the principal plus fee from the borrower after the callback. Instead, the current implementation relies on the borrower to return the tokens, which breaks interoperability with standard-compliant `IERC3156FlashBorrower` contracts. Additionally, the `flashFee` function does not revert when the token is unsupported (i.e., when `maxFlashLoan` returns zero), as required by the ERC-3156 specification. The cause is a deviation from the standard's expected behavior in both token handling and fee calculation logic. This could prevent integration with other DeFi protocols and lead to unexpected reverts or failed flash loans. The impact is reduced composability and potential integration failures with external systems expecting standard behavior.\n",
+            "severity": "Medium",
+            "location": [
+                "FlashLoans.sol::flashLoan#86",
+                "FlashLoans.sol::flashFee#59"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FlashLoans.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ],
+                "4": [
+                    "CWE-613"
+                ]
+            },
+            "title": "Redemption Waiting Can Be Gamed",
+            "description": "The `requestRedeem` function in the FxUSDBasePool contract allows users to register a redemption request without any expiration. A user can deposit and immediately request redemption, then wait indefinitely to execute it after the cooldown period. This undermines the intended purpose of the cooldown, which is to prevent rapid redemption runs on the stability pool. The root cause is the lack of a time-bound expiration for redemption requests. An attacker could exploit this by locking in a favorable rate and redeeming later when market conditions are more advantageous, effectively gaming the system. The impact is potential economic imbalance and reduced effectiveness of the cooldown mechanism in stabilizing the pool during volatility.\n",
+            "severity": "Low",
+            "location": [
+                "FxUSDBasePool.sol::requestRedeem#315-325"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Pool at Capacity Cannot Be Liquidated",
+            "description": "When a pool reaches its maximum collateral capacity, liquidation may fail even if funds are available from the ReservePool. This occurs because the `liquidate` function adds the reserve funds to the pool's current balance before checking capacity, potentially exceeding the limit and causing a revert. The root cause is the order of operations in the liquidation logic: reserve funds are added before subtracting the liquidated collateral. An attacker could exploit this by pushing a pool to capacity and then causing bad debt, knowing that liquidation will fail, thus preventing recovery. The impact is that undercapitalized positions may remain unliquidated, increasing systemic risk and potential losses for the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "PoolManager.sol::_changePoolCollateral#688",
+                "PoolManager.sol::liquidate#386",
+                "PoolManager.sol#416"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PoolManager.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Stale Value of `totalStableToken` Used in Stability Pool",
+            "description": "The `previewDeposit`, `previewRedeem`, and `nav` functions in the FxUSDBasePool contract do not use the `sync` modifier, resulting in the use of a stale `totalStableToken` value. This variable reflects the total stablecoin balance including yield from strategies, and if not updated, these view functions return incorrect estimates. The root cause is the omission of the `sync` modifier on read-only functions that depend on dynamically updated state. An attacker could exploit this by triggering a deposit when the view function overestimates shares, causing the transaction to revert due to `minSharesOut` checks, leading to a denial-of-service for legitimate users. The impact is inaccurate previews and potential failed transactions, degrading user experience and trust.\n",
+            "severity": "Low",
+            "location": [
+                "FxUSDBasePool.sol::previewDeposit#226",
+                "FxUSDBasePool.sol::previewRedeem#246",
+                "FxUSDBasePool.sol::nav#257"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Minimum Price Deviation Is Calculated Incorrectly in Price Oracles",
+            "description": "The `getPrice` functions in multiple oracle contracts (ETHPriceOracle, LSDPriceOracleBase, BTCDerivativeOracleBase) incorrectly calculate the minimum price deviation using `(anchorPrice - minPrice) / minPrice > maxDeviation`, which compares the deviation relative to `minPrice` instead of `anchorPrice`. The correct formula should be `(anchorPrice - minPrice) / anchorPrice > maxDeviation` to ensure consistent deviation thresholds. The root cause is a mathematical error in the comparison logic. This leads to overly restrictive checks that may incorrectly reset valid prices, reducing price accuracy. The impact is reduced responsiveness to real market movements and potential missed liquidations or incorrect pricing, affecting protocol stability.\n",
+            "severity": "Low",
+            "location": [
+                "ETHPriceOracle.sol::getPrice#61-74",
+                "LSDPriceOracleBase.sol::getPrice#85-99",
+                "BTCDerivativeOracleBase.sol::getPrice#58-72",
+                "BTCDerivativeOracleBase.sol::getExchangePrice#58-72"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/ETHPriceOracle.sol",
+                "fx-protocol-contracts/contracts/price-oracle/LSDPriceOracleBase.sol",
+                "fx-protocol-contracts/contracts/price-oracle/BTCDerivativeOracleBase.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Users Can Open Null Positions",
+            "description": "The `operate` function in the PoolManager contract allows users to create null positions by passing `type(int256).min` for both `newDebt` and `newColl` with `positionId = 0`. This results in the creation of a new position with zero debt and zero collateral, which serves no functional purpose. The root cause is the lack of validation to prevent no-op state transitions. While this does not pose a direct financial risk, it leads to event spam and ambiguity in off-chain indexing and analytics. The impact is degraded data quality for external tools and potential confusion for integrators, though there is no direct loss of funds or protocol instability.\n",
+            "severity": "Low",
+            "location": [
+                "PoolManager.sol::operate#259-264",
+                "BasePool.sol::_addPositionToTick#128-157"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PoolManager.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Missing L2 Sequencer Uptime Checks",
+            "description": "The protocol does not implement checks for L2 sequencer downtime, which can render the application unusable for most users even if the underlying chain is operational. Oracle calls such as `latestRoundData` in FxUSDBasePool and SpotPriceOracleBase may return stale or incorrect data during such outages. The root cause is the absence of integration with Chainlink's Sequencer Uptime Feeds or equivalent monitoring. An attacker could exploit network downtime to manipulate prices or delay updates, leading to unfair liquidations or incorrect state changes. The impact is reduced reliability and potential for user harm during L2 outages, especially on chains like Base where sequencer health is critical.\n",
+            "severity": "Low",
+            "location": [
+                "FxUSDBasePool.sol::latestRoundData#279",
+                "SpotPriceOracleBase.sol::latestRoundData#59"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Strategy Allocation Could Fail",
+            "description": "The `alloc` function in the AssetManagement contract does not validate whether the strategy supports the specified token. For example, the AaveV3Strategy only interacts with its predefined `ASSET`, and sending an unsupported token could result in irrecoverable funds. The root cause is the lack of pre-allocation checks on token compatibility. An attacker or mistaken governance action could allocate funds to a strategy with an unsupported token, leading to permanent loss of assets. The impact is potential fund loss due to misconfiguration, especially in the absence of automated validation.\n",
+            "severity": "Low",
+            "location": [
+                "AssetManagement.sol::alloc#40",
+                "AaveV3Strategy.sol::withdraw#53",
+                "AaveV3Strategy.sol::kill#63"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Incorrect Strategy for an Asset Can Never Be Updated",
+            "description": "The `alloc` function does not validate that the new strategy implements the `kill()` function. If an invalid strategy is set, subsequent attempts to update or kill it will revert, making it impossible to recover funds or correct the configuration. The root cause is the lack of interface checks or fallback mechanisms for strategy replacement. Once a non-compliant strategy is set, the system becomes stuck, leading to a permanent lock of assets. The impact is a critical governance failure that could result in irreversible fund loss if exploited or misconfigured.\n",
+            "severity": "Low",
+            "location": [
+                "AssetManagement.sol::alloc#40-44",
+                "AssetManagement.sol::kill#33"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Minimum Debt Requirement for a Position Is Not Enforced Correctly",
+            "description": "The `operate` function enforces a `MIN_DEBT` of 1e9 on `rawDebt`, but later checks the same threshold on `debtShares` after division by `debtIndex`. Since `debtShares` can be less than 1e9 even if `rawDebt` exceeds the minimum, the second check may revert valid operations. The root cause is inconsistent enforcement of the minimum debt requirement across different representations of debt. As `debtIndex` increases over time, the effective minimum debt rises, making it harder to open new positions. The impact is reduced usability and potential denial of service for users trying to open small positions, especially as the protocol ages.\n",
+            "severity": "Low",
+            "location": [
+                "BasePool.sol::operate#83",
+                "BasePool.sol::_addPositionToTick#176"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/BasePool.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Different Pragma Directives",
+            "description": "The Solidity pragma directives across the codebase are inconsistent and not fixed to a specific version, which can lead to different compiler behaviors and potential vulnerabilities during deployment. This inconsistency increases the risk of introducing compiler-specific bugs or unexpected behavior due to version differences. The root cause is the lack of a unified compiler version policy across contract files. An attacker could potentially exploit differences in compiler behavior if a contract is recompiled with a different version than intended. This could result in logic errors, failed deployments, or even security breaches due to changed bytecode semantics.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/core/ReservePool.sol",
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol",
+                "fx-protocol-contracts/contracts/periphery/facets/MigrateFacet.sol",
+                "fx-protocol-contracts/contracts/periphery/libraries/LibRouter.sol",
+                "fx-protocol-contracts/contracts/v2/interfaces/IFxUSD.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Misleading Return Value in `_takeAccumulatedPoolFee`",
+            "description": "The `_takeAccumulatedPoolFee` function in the `ProtocolFees` contract returns a value that is overwritten multiple times, ultimately only reflecting the last fee category (`accumulatedPoolMiscFees`). This makes the return value misleading and technically incorrect as it does not represent the total accumulated fees. The cause is poor variable reuse without aggregation. Although no internal or external function uses this return value, its presence could confuse developers or future auditors into assuming it represents a total. The impact is limited to code clarity and maintainability, but it could lead to incorrect assumptions in future development or integration efforts.\n",
+            "severity": null,
+            "location": [
+                "ProtocolFees.sol::_takeAccumulatedPoolFee#441-458"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/ProtocolFees.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Inconsistent Sanity Checks for On-Chain Spot Encodings in Oracle Contracts",
+            "description": "The `updateOnchainSpotEncodings` function lacks consistent input validation across different oracle implementations. While `BTCDerivativeOracleBase` checks for non-empty prices, `ETHPriceOracle` does not, and `LSDPriceOracleBase` applies the check only conditionally. This inconsistency allows potentially empty or malformed data to be set in critical price oracle contracts. The root cause is the absence of a uniform validation standard across inherited or similarly structured contracts. An attacker could exploit this by submitting empty data arrays, causing downstream read functions to revert or return invalid prices. This could disrupt protocol operations, lead to incorrect pricing, or trigger unintended behavior in dependent systems.\n",
+            "severity": null,
+            "location": [
+                "BTCDerivativeOracleBase.sol::updateOnchainSpotEncodings#111",
+                "ETHPriceOracle.sol::updateOnchainSpotEncodings#108-110",
+                "LSDPriceOracleBase.sol::updateOnchainSpotEncodings#131"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/BTCDerivativeOracleBase.sol",
+                "fx-protocol-contracts/contracts/price-oracle/ETHPriceOracle.sol",
+                "fx-protocol-contracts/contracts/price-oracle/LSDPriceOracleBase.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "Possible Duplicate Event Emissions",
+            "description": "Multiple setter functions across the codebase emit events without first checking if the new value differs from the current one. This allows for repeated emission of identical events when the same value is set multiple times. The cause is the absence of a value-change precondition check in these functions. An attacker or user could spam the event logs by repeatedly calling setters with the same value. This could confuse off-chain indexing services, increase gas costs for users, and degrade the reliability of event-based monitoring systems, leading to incorrect state assumptions by frontends or bots.\n",
+            "severity": null,
+            "location": [
+                "FxUSDBasePool.sol::_updateRedeemCoolDownPeriod#565-572",
+                "FxUSDBasePool.sol::_updateInstantRedeemFeeRatio#576-583",
+                "PegKeeper.sol::_updateConverter#193-200",
+                "PegKeeper.sol::_updateCurvePool#204-211",
+                "PegKeeper.sol::_updatePriceThreshold#215-220",
+                "PoolManager.sol::_updateThreshold#600-605",
+                "PoolStorage.sol::_updatePriceOracle#245-252",
+                "ProtocolFees.sol::_updateTreasury#275-282",
+                "ProtocolFees.sol::_updateOpenRevenuePool#286-293",
+                "ProtocolFees.sol::_updateCloseRevenuePool#297-304",
+                "ProtocolFees.sol::_updateMiscRevenuePool#308-315",
+                "ProtocolFees.sol::_updateReservePool#319-326"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inheritance Correctness",
+            "description": "The `ProtocolFees` contract inherits `PausableUpgradeable` but does not use any pause functionality, while contracts that do implement pausing (`FlashLoans`, `PoolManager`) inherit from it. Additionally, the `AaveV3Strategy` contract breaks a clear codebase pattern by not inheriting the `IStrategy` interface, unlike other strategy-related contracts. The root cause is inconsistent inheritance design and deviation from established conventions. This leads to unnecessary bloat in `ProtocolFees` and reduces code clarity. The impact includes increased deployment costs, potential confusion for developers, and weakened interface consistency, which could lead to integration errors or missed functionality assumptions.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/core/ProtocolFees.sol",
+                "fx-protocol-contracts/contracts/core/FlashLoans.sol",
+                "fx-protocol-contracts/contracts/core/PoolManager.sol",
+                "fx-protocol-contracts/contracts/fund/AaveV3Strategy.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-188"
+                ]
+            },
+            "title": "Gap Variables Allow Future Storage Collision",
+            "description": "Multiple upgradeable contracts use unstructured gap variables (e.g., `__gap`) to reserve storage slots for future additions. However, since these contracts are already deployed, any future changes must carefully account for existing storage layout. The current use of gap variables does not guarantee safety against storage collisions if new variables are added without proper planning. The root cause is reliance on manual gap management instead of structured storage techniques. If a future upgrade incorrectly places new state variables, it could overwrite existing data, leading to catastrophic failures such as loss of funds or protocol freeze. This is a critical risk for long-term maintainability and upgrade safety.\n",
+            "severity": null,
+            "location": [
+                "ProtocolFees.sol#__gap#464",
+                "BasePool.sol#__gap#619",
+                "PoolStorage.sol#__gap#470",
+                "PositionLogic.sol#__gap#139",
+                "TickLogic.sol#__gap#251",
+                "AssetManagement.sol#__gap#28",
+                "StrategyBase.sol#__gap#16"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/ProtocolFees.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Usage of Transient Storage can Lower Gas Costs",
+            "description": "The `PegKeeper` contract uses a permanent storage variable `context` to track execution context during `buyback` and `stabilize` calls, which is only needed temporarily. This results in unnecessary gas costs for both setting and clearing storage. The root cause is the use of persistent storage for transient state. By using transient storage (EIP-1153), which is cheaper and automatically cleared after transaction execution, the contract could significantly reduce gas consumption. The impact of not fixing this is higher transaction costs for users, but there is no direct security risk. However, gas inefficiencies can make the protocol less competitive and more expensive to operate.\n",
+            "severity": null,
+            "location": [
+                "PegKeeper.sol#context"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PegKeeper.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing Docstrings",
+            "description": "Numerous contracts, functions, and state variables lack NatSpec documentation, including critical initialization functions and public interfaces. The cause is insufficient code documentation practices. This reduces code readability, maintainability, and auditability, making it harder for developers and auditors to understand the intended behavior. While there is no direct security exploit, the lack of documentation increases the risk of incorrect usage, integration errors, and missed vulnerabilities during audits. Off-chain tools relying on NatSpec for UI generation or analysis will also be impaired.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol#13",
+                "AaveFundingPool.sol::initialize#101-126",
+                "AaveV3Strategy.sol::POOL#16",
+                "AaveV3Strategy.sol::INCENTIVE#18",
+                "AaveV3Strategy.sol::ASSET#20",
+                "AaveV3Strategy.sol::ATOKEN#22",
+                "AaveV3Strategy.sol::principal#24",
+                "AaveV3Strategy.sol::totalSupply#42-44",
+                "AaveV3Strategy.sol::deposit#46-51",
+                "AaveV3Strategy.sol::withdraw#53-60",
+                "AaveV3Strategy.sol::kill#62-67",
+                "AssetManagement.sol::ASSET_MANAGER_ROLE#15",
+                "AssetManagement.sol::allocations#22",
+                "AssetManagement.sol::kill#30-38",
+                "AssetManagement.sol::alloc#40-44",
+                "AssetManagement.sol::manage#46-52",
+                "FxUSDBasePool.sol::initialize#196-219",
+                "FxUSDBasePool.sol::updateInstantRedeemFeeRatio#535-537",
+                "FxUSDRegeneracy.sol::initialize#150-158",
+                "FxUSDRegeneracy.sol::initializeV2#160-163",
+                "IStrategy.sol::totalSupply#6",
+                "IStrategy.sol::deposit#8",
+                "IStrategy.sol::withdraw#10",
+                "IStrategy.sol::kill#12",
+                "IStrategy.sol::harvest#14",
+                "PegKeeper.sol::initialize#96-108",
+                "PoolManager.sol::initialize#184-204",
+                "PoolManager.sol::initializeV2#206-219",
+                "ReservePool.sol::receive#69",
+                "SavingFxUSD.sol::execute#34-48",
+                "SavingFxUSD.sol::initialize#125-142",
+                "StrategyBase.sol::HARVESTER_ROLE#8",
+                "StrategyBase.sol::operator#10",
+                "StrategyBase.sol::harvest#29-31",
+                "StrategyBase.sol::execute#33-39"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstrings",
+            "description": "Several functions have partial NatSpec documentation where parameters or return values are not fully described. For example, the `isRedeem` parameter in `getBTCDerivativeUSDAnchorPrice`, and `collateralCapacity`/`debtCapacity` in `registerPool` are undocumented. The cause is incomplete documentation efforts. This reduces the usefulness of the existing docstrings and can mislead developers about the function's behavior or required inputs. The impact is increased risk of incorrect function usage, integration bugs, and longer onboarding time for new developers, potentially leading to operational errors or security issues due to misunderstood parameters.\n",
+            "severity": null,
+            "location": [
+                "BTCDerivativeOracleBase.sol::getBTCDerivativeUSDAnchorPrice#52-54",
+                "PoolManager.sol::registerPool#515-529",
+                "ReservePool.sol::withdrawFund#94-96"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/BTCDerivativeOracleBase.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Storage Description",
+            "description": "Storage slot layouts in comments are depicted with index 0 on the left, contradicting the standard convention where index 0 is on the right (least significant bit). This is seen in `miscData`, `rebalanceRatioData`, and others in `PoolStorage`, `ProtocolFees`, and `AaveFundingPool`. The cause is incorrect bit layout documentation. This can lead developers to misunderstand how data is packed and unpacked, potentially causing errors in bitwise operations or storage manipulation. The impact is high risk of logic bugs during development or upgrades, especially when dealing with packed variables, which could result in incorrect state interpretation or corruption.\n",
+            "severity": null,
+            "location": [
+                "PoolStorage.sol::miscData#105-109",
+                "PoolStorage.sol::rebalanceRatioData#117-121",
+                "PoolStorage.sol::indexData#127-131",
+                "PoolStorage.sol::shareData#139-143",
+                "PoolStorage.sol::positionMetadata#148-152",
+                "ProtocolFees.sol::_miscData#92-96",
+                "AaveFundingPool.sol::fundingMiscData#81-85"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/PoolStorage.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Lack of event emissions",
+            "description": "Critical state-changing functions such as `kill`, `alloc`, and `manage` in `AssetManagement.sol`, and `updateOnchainSpotEncodings` in oracle contracts do not emit events. The cause is missing event declarations after state modifications. Without events, off-chain systems cannot reliably track state changes, making monitoring, indexing, and user notifications difficult or impossible. This reduces transparency and auditability of the protocol. The impact includes degraded user experience, inability to detect malicious activity in real-time, and increased operational risk due to lack of observability.\n",
+            "severity": null,
+            "location": [
+                "AssetManagement.sol::kill#30-38",
+                "AssetManagement.sol::alloc#40-44",
+                "AssetManagement.sol::manage#46-52",
+                "BTCDerivativeOracleBase.sol::updateOnchainSpotEncodings#108-114",
+                "LSDPriceOracleBase.sol::updateOnchainSpotEncodings#125-137"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Silent Shortfall in `_transferOut`",
+            "description": "The `_transferOut` function in `AssetManagement` attempts to transfer a specific amount by first using its own balance and then withdrawing the shortfall from a strategy. However, the `AaveV3Strategy.withdraw` function does not revert if insufficient liquidity is available but instead returns what it can. This means `_transferOut` may complete successfully while transferring less than requested, violating the expected all-or-nothing behavior. The cause is the lack of a post-withdraw amount verification. The impact is that callers may assume funds were fully transferred when they were not, leading to incorrect accounting, user fund loss, or protocol insolvency in edge cases.\n",
+            "severity": null,
+            "location": [
+                "AssetManagement.sol::_transferOut#57-68",
+                "AaveV3Strategy.sol::withdraw#55"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect or Inaccurate Comments",
+            "description": "Several code comments do not match the actual implementation. For example, the comment stating the price validity condition uses `< maxPriceDeviation` while the code uses `< 2 * maxPriceDeviation`. Additionally, a comment in `LSDPriceOracleBase` incorrectly refers to LSD/ETH instead of LSD/USD. The cause is outdated or incorrect documentation. These inaccuracies can mislead developers and auditors into believing the logic is different from what it actually is. The impact includes potential logic errors during maintenance, incorrect security assumptions, and increased risk of introducing bugs when modifying the code based on false premises.\n",
+            "severity": null,
+            "location": [
+                "BTCDerivativeOracleBase.sol#57",
+                "ETHPriceOracle.sol#60",
+                "LSDPriceOracleBase.sol#71"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/BTCDerivativeOracleBase.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Hardcoded Addresses",
+            "description": "The `SavingFxUSD.sol` contract contains hardcoded addresses (e.g., `0xAffe966B27ba3E4Ebb8A0eC124C7b7019CC762f8` and `0x365AccFCa291e7D3914637ABf1F7635dB165Bb09`) that are not configurable. The cause is direct address embedding in the source code. This reduces deployment flexibility across different networks and increases the risk of deploying with incorrect addresses. If the contract is deployed on a new network without address updates, it may interact with wrong or malicious contracts. The impact includes potential fund loss, broken functionality, and the need for costly redeployments.\n",
+            "severity": null,
+            "location": [
+                "SavingFxUSD.sol#70",
+                "SavingFxUSD.sol#73"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/SavingFxUSD.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Use `calldata` Instead of `memory`",
+            "description": "Using `memory` for external function parameters results in higher gas costs compared to `calldata`, which is a read-only and cheaper memory region for function arguments. The cause is the unnecessary copying of data from calldata to memory in external functions. An attacker cannot directly exploit this, but users will pay higher gas fees for transactions. The impact is increased transaction costs and reduced efficiency, though there is no direct security risk.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol::name_#103",
+                "AaveFundingPool.sol::symbol_#104",
+                "BTCDerivativeOracleBase.sol::encodings#108",
+                "ETHPriceOracle.sol::encodings#99",
+                "FxUSDBasePool.sol::_name#198",
+                "FxUSDBasePool.sol::_symbol#199",
+                "FxUSDRegeneracy.sol::_name#150",
+                "FxUSDRegeneracy.sol::_symbol#150",
+                "FxUSDRegeneracy.sol::_minOuts#324",
+                "LSDPriceOracleBase.sol::encodings#125",
+                "ProtocolFees.sol::pools#197",
+                "SavingFxUSD.sol::params#125"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The contracts use plain `revert` statements with string messages instead of custom errors, which are more gas-efficient and provide better clarity. The cause is the use of older Solidity patterns before custom errors were introduced in 0.8.4. While not directly exploitable, this reduces transparency and increases gas costs during reverts. The impact includes higher gas usage and less informative error messages for users and frontends.\n",
+            "severity": null,
+            "location": [
+                "FxUSDBasePool.sol",
+                "FxUSDRegeneracy.sol",
+                "SavingFxUSD.sol",
+                "AssetManagement.sol",
+                "StrategyBase.sol",
+                "BTCDerivativeOracleBase.sol",
+                "SpotPriceOracleBase.sol"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FxUSDBasePool.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unnecessary Casts",
+            "description": "The code performs redundant `uint256` casts on values that are already of type `uint256`, adding unnecessary complexity and slight gas overhead. The cause is superfluous type casting in `ProtocolFees.sol`. This does not introduce a security vulnerability but harms code clarity and slightly increases gas usage. The impact is reduced readability and minor inefficiency in execution.\n",
+            "severity": null,
+            "location": [
+                "ProtocolFees.sol::uint256(newRatio)#331",
+                "ProtocolFees.sol::uint256(newRatio)#345",
+                "ProtocolFees.sol::uint256(newRatio)#359",
+                "ProtocolFees.sol::uint256(newRatio)#373",
+                "ProtocolFees.sol::uint256(newRatio)#387",
+                "ProtocolFees.sol::uint256(newRatio)#401"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/ProtocolFees.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inconsistent Order Within Contracts",
+            "description": "The ordering of functions within multiple contracts does not follow a consistent pattern, reducing code readability and maintainability. The cause is the lack of adherence to the Solidity Style Guide's recommended function ordering. This is not a security issue, but inconsistent structure can lead to confusion and increase the risk of missing logic during audits or updates. The impact is reduced code clarity and potential for human error during development.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol",
+                "AaveV3Strategy.sol",
+                "AssetManagement.sol",
+                "BTCDerivativeOracleBase.sol",
+                "BasePool.sol",
+                "ETHPriceOracle.sol",
+                "FlashLoans.sol",
+                "FxUSDBasePool.sol",
+                "FxUSDRegeneracy.sol",
+                "LSDPriceOracleBase.sol",
+                "PegKeeper.sol",
+                "PoolManager.sol",
+                "PoolStorage.sol",
+                "PositionLogic.sol",
+                "ProtocolFees.sol",
+                "ReservePool.sol",
+                "SavingFxUSD.sol",
+                "SpotPriceOracleBase.sol",
+                "StrategyBase.sol",
+                "WBTCPriceOracle.sol"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "The use of postfix increment (`i++`) in loops results in storing the original value before incrementing, which is unnecessary when the return value is unused. The cause is suboptimal loop iteration practices. This leads to higher gas consumption during loop execution. The impact is increased transaction costs, especially in loops with many iterations, though there is no direct security vulnerability.\n",
+            "severity": null,
+            "location": [
+                "BTCDerivativeOracleBase.sol#150",
+                "ETHPriceOracle.sol#137",
+                "FxUSDRegeneracy.sol#193",
+                "LSDPriceOracleBase.sol#170",
+                "SpotPriceOracleBase.sol#88"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/BTCDerivativeOracleBase.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Imports",
+            "description": "Some imported symbols are never used in the contract, which adds unnecessary clutter and can confuse developers. The cause is leftover imports from prior development stages. While not a security risk, this reduces code clarity and may lead to confusion about dependencies. The impact is reduced maintainability and readability.\n",
+            "severity": null,
+            "location": [
+                "ETHPriceOracle.sol::ITwapOracle#10",
+                "LSDPriceOracleBase.sol::ITwapOracle#10"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/price-oracle/ETHPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "State Variable Visibility Not Explicitly Declared",
+            "description": "State variables are declared without explicit visibility keywords, relying on Solidity's default behavior. The cause is omission of `private` or `internal` keywords. This can lead to confusion about access control and may result in unintended exposure if the default changes in future versions. The impact is reduced code clarity and potential future vulnerabilities if assumptions about visibility are incorrect.\n",
+            "severity": null,
+            "location": [
+                "SavingFxUSD.sol::fxSAVE#26",
+                "SpotPriceOracleBase.sol::spotPriceOracle#30"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/SavingFxUSD.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Named Return Variables",
+            "description": "Functions declare named return variables that are never assigned or used, which can mislead developers into thinking they are part of the return logic. The cause is leftover variable declarations from prior implementations. This harms code clarity and may lead to bugs if developers assume the variables are used. The impact is reduced readability and potential for logic errors.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol::getOpenRatio#135",
+                "PositionLogic.sol::getPositionDebtRatio#46"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Errors",
+            "description": "Custom errors are defined but never emitted in the code, which can mislead auditors and developers about possible failure paths. The cause is leftover error definitions from prior development stages. This reduces code clarity and may lead to incorrect assumptions about error handling. The impact is reduced maintainability and potential confusion during audits.\n",
+            "severity": null,
+            "location": [
+                "PoolErrors.sol::ErrorRebalanceOnLiquidatablePosition#57",
+                "PoolErrors.sol::ErrorInsufficientCollateralToLiquidate#59",
+                "ReservePool.sol::ErrorRatioTooLarge#23",
+                "ReservePool.sol::ErrorRebalancePoolAlreadyAdded#26",
+                "ReservePool.sol::ErrorRebalancePoolNotAdded#29"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/PoolErrors.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent usage of `msg.sender`",
+            "description": "The `StrategyBase` contract uses `msg.sender` in the `onlyOperator` modifier instead of `_msgSender`, which may break support for meta-transactions if the contract is intended to support them. The cause is inconsistent use of message sender patterns. This could lead to access control issues in meta-transaction contexts. The impact is potential failure of meta-transaction execution or incorrect access control assumptions.\n",
+            "severity": null,
+            "location": [
+                "StrategyBase.sol::onlyOperator#19"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/strategy/StrategyBase.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Constants",
+            "description": "Constants are defined but never used in the code, adding unnecessary complexity. The cause is leftover definitions from prior development. This reduces code clarity and may mislead developers about their purpose. The impact is reduced readability and maintainability.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol::INTEREST_RATE_OFFSET#33",
+                "AaveFundingPool.sol::TIMESTAMP_OFFSET#36",
+                "PoolConstant.sol::X60#31",
+                "PoolConstant.sol::X96#32"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-547"
+                ]
+            },
+            "title": "Literal Number Safety",
+            "description": "Large literal numbers are used directly in the code without suffixes or scientific notation, making them hard to read and prone to errors. The cause is the use of raw numbers instead of Ether or time units. This can lead to mistakes in value interpretation (e.g., mistaking wei for ether). The impact is reduced readability and potential for incorrect value usage.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol#120",
+                "BasePool.sol#64",
+                "PegKeeper.sol#105"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 39,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Magic Numbers",
+            "description": "The `initialize` function in `AaveFundingPool` uses a literal value `1e9` without explanation, making its purpose unclear. The cause is the absence of a named constant to document the value's meaning. This reduces code readability and makes future maintenance harder. The impact is potential confusion and errors during updates or audits.\n",
+            "severity": null,
+            "location": [
+                "AaveFundingPool.sol#125"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+            ]
+        },
+        {
+            "id": 40,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "Contracts do not include a security contact in NatSpec comments, making it harder for researchers to report vulnerabilities. The cause is omission of the `@custom:security-contact` tag. This increases the risk of unreported vulnerabilities due to unclear reporting channels. The impact is reduced security posture and slower response to potential issues.\n",
+            "severity": null,
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 41,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings are declared without named parameters, reducing clarity about key and value meanings. The cause is the use of older syntax despite Solidity 0.8.18+ supporting named parameters. This harms code readability and makes it harder to understand mapping structure. The impact is reduced maintainability and increased risk of logic errors.\n",
+            "severity": null,
+            "location": [
+                "AssetManagement.sol::allocations#22",
+                "FxUSDBasePool.sol::redeemRequests#141",
+                "FxUSDRegeneracy.sol::markets#97",
+                "PoolManager.sol::poolInfo#141",
+                "PoolManager.sol::rewardSplitter#144",
+                "PoolManager.sol::tokenRates#147",
+                "PoolStorage.sol::positionData#145",
+                "PoolStorage.sol::positionMetadata#151",
+                "PoolStorage.sol::tickBitmap#154",
+                "PoolStorage.sol::tickData#157",
+                "PoolStorage.sol::tickTreeData#160",
+                "ProtocolFees.sol::accumulatedPoolOpenFees#108",
+                "ProtocolFees.sol::accumulatedPoolCloseFees#115",
+                "ProtocolFees.sol::accumulatedPoolMiscFees#122",
+                "SavingFxUSD.sol::lockedProxy#105"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 42,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Multiple Contract Declarations Per File",
+            "description": "The `SavingFxUSD.sol` file contains two contract declarations, which can reduce code organization and clarity. The cause is combining multiple contracts in one file. This makes the code harder to navigate and maintain. The impact is reduced readability and potential confusion about contract boundaries.\n",
+            "severity": null,
+            "location": [
+                "SavingFxUSD.sol"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/SavingFxUSD.sol"
+            ]
+        },
+        {
+            "id": 43,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Code Readability Suggestions",
+            "description": "Several functions and modifiers have misleading names that do not reflect their actual behavior, such as `onlyFxSave` which checks for `fxBase`, or `totalSupply` which returns deposited assets plus yield. The cause is inaccurate naming. This can lead to confusion and bugs during development and auditing. The impact is reduced code clarity and increased risk of logic errors.\n",
+            "severity": null,
+            "location": [
+                "PoolManager.sol::onlyFxSave#161",
+                "AaveV3Strategy.sol::totalSupply#42",
+                "AssetManagement.sol::manage#46"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PoolManager.sol"
+            ]
+        },
+        {
+            "id": 44,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused Code in _getTick",
+            "description": "1.  **Description:** The `_getTick` function in `TickLogic.sol` computes a ratio value that is never used in subsequent logic.\n2.  **Cause:** A line of code was left in the function that performs a calculation but does not utilize the result, likely due to refactoring or oversight.\n3.  **Exploitation:** This issue cannot be exploited by an attacker as it does not affect functionality or security.\n4.  **Impact:** The impact is minimal, limited to slight gas inefficiency and reduced code clarity. It does not pose a security risk.\n",
+            "severity": "Low",
+            "location": [
+                "TickLogic.sol::_getTick#114"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/TickLogic.sol"
+            ]
+        },
+        {
+            "id": 45,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Critical Issue in Tick and Node Logic",
+            "description": "1.  **Description:** A critical-severity issue was identified involving manipulation of tick and node logic that could block the operate functionality of the protocol.\n2.  **Cause:** The root cause is not fully detailed in this chunk but appears to stem from improper validation or state management in the tick/node system.\n3.  **Exploitation:** An attacker could potentially manipulate the tick or node state to prevent certain operations from executing.\n4.  **Impact:** The impact is described as critical, suggesting a complete blockage of core functionality, possibly leading to denial of service for key features.\n",
+            "severity": "Critical",
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/core/pool/TickLogic.sol"
+            ]
+        },
+        {
+            "id": 46,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-654"
+                ]
+            },
+            "title": "High Severity: Pricing Scheme Vulnerability",
+            "description": "1.  **Description:** The pricing scheme is susceptible to manipulation due to reliance on a single, potentially manipulable liquidity pool.\n2.  **Cause:** The protocol's price determination mechanism does not sufficiently diversify or validate price sources, making it vulnerable to oracle attacks.\n3.  **Exploitation:** An attacker could manipulate the price in the targeted liquidity pool to trigger early or unjustified liquidations of user positions.\n4.  **Impact:** This could lead to unfair liquidations, loss of user funds, and erosion of trust in the system's stability mechanisms.\n",
+            "severity": "High",
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/core/PegKeeper.sol",
+                "fx-protocol-contracts/contracts/mocks/MockPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 47,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "High Severity: Flashloan Functionality Blocked",
+            "description": "1.  **Description:** A flaw completely blocks the flashloan functionality of the protocol.\n2.  **Cause:** The root cause is not detailed in this chunk, but it likely involves a logic error or access control issue in the flashloan execution path.\n3.  **Exploitation:** This may not be directly exploitable by attackers but prevents intended functionality from working.\n4.  **Impact:** Users and integrations relying on flashloans (e.g., Morpho, Balancer) would be unable to use the feature, impairing protocol functionality and composability.\n",
+            "severity": "High",
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/periphery/facets/MorphoFlashLoanCallbackFacet.sol"
+            ]
+        }
+    ]
+}

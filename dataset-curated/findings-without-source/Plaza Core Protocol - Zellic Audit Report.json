@@ -1,0 +1,270 @@
+{
+    "path": "dataset-curated/reports/Zellic/Plaza Core Protocol - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Convexity-Research/plaza-evm"
+        ],
+        "commit_id": [
+            "1f07f8e685c56ddf8796c41af008ff5c42ef9803"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "base",
+        "compiler_version": "n/a",
+        "audit_date": "2024-10-31",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Distributor could be drained by fake pool",
+            "description": "1. **Description:** The `claim` and `allocate` functions in the Distributor contract do not validate that the provided pool address is a registered pool. This allows an attacker to pass a maliciously crafted fake pool address.\n2. **Cause:** Lack of input validation on the `_pool` parameter in both `claim` and `allocate` functions, enabling the use of an unregistered or fake pool contract.\n3. **Exploitation:** An attacker can create a fake pool contract that implements required interfaces (e.g., `balanceOf`, `getIndexedUserAmount`) to manipulate return values and trick the Distributor into distributing tokens to the attacker.\n4. **Impact:** The attacker can drain all coupon tokens from the Distributor contract, leading to a complete loss of funds for legitimate users.\n",
+            "severity": "Critical",
+            "location": [
+                "Distributor.sol::claim",
+                "Distributor.sol::allocate"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "A malicious bidder could drain the Auction contract",
+            "description": "1. **Description:** The `_removeBid` function in the Auction contract refunds `buyReserveAmount` instead of `sellCouponAmount` when removing a bid, creating a critical vulnerability.\n2. **Cause:** A logic error in the `_removeBid` function where it transfers `buyReserveAmount` (reserve tokens) back to the bidder instead of returning the `sellCouponAmount` (coupon tokens) they originally paid.\n3. **Exploitation:** An attacker can place a low-price bid with a large `buyReserveAmount`, then trigger its removal by placing a higher-priced bid. The contract will refund the large `buyReserveAmount` in coupon tokens, effectively allowing the attacker to extract more than they deposited.\n4. **Impact:** The attacker can repeatedly exploit this to drain all coupon tokens from the Auction contract, resulting in total loss of user funds.\n",
+            "severity": "Critical",
+            "location": [
+                "Auction.sol::_removeBid",
+                "Auction.sol::bid"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Incorrect PreDeposit reward",
+            "description": "1. **Description:** The `claim` function in PreDeposit calculates user shares based on the current contract balance rather than the initial balance at the time of deposit, leading to incorrect reward distribution.\n2. **Cause:** The calculation uses `bondToken.balanceOf(address(this))` which changes as users claim, instead of using a snapshot of the balance taken at the end of the deposit period.\n3. **Exploitation:** Users who claim earlier receive disproportionately more tokens than those who claim later, even if their relative contribution was equal.\n4. **Impact:** Late claimants receive significantly fewer tokens than expected, undermining fairness and potentially locking value for users who claim last due to depletion.\n",
+            "severity": "High",
+            "location": [
+                "PreDeposit.sol::claim"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Claim function could be broken by timing attack",
+            "description": "1. **Description:** The `createPool`, `deposit`, and `claim` functions in PreDeposit have inconsistent checks on `depositEndTime`, allowing a user to manipulate the state during a narrow time window.\n2. **Cause:** The `createPool` function only checks that the current time is after `depositEndTime`, but does not prevent subsequent deposits or claims in the same block or transaction sequence.\n3. **Exploitation:** A malicious user can call `createPool` and then immediately deposit a small amount, increasing `reserveAmount` after the numerator for share calculation has been fixed, thereby breaking the share formula for other users.\n4. **Impact:** This can cause subsequent claims to fail or result in incorrect distributions, potentially locking user funds indefinitely.\n",
+            "severity": "High",
+            "location": [
+                "PreDeposit.sol::createPool",
+                "PreDeposit.sol::deposit",
+                "PreDeposit.sol::claim"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Lack of handling of auction failures",
+            "description": "1. **Description:** The system does not handle failed auction states (FAILED_UNDERSOLD or FAILED_LIQUIDATION), leaving the protocol in a stuck state.\n2. **Cause:** The `distribute` function in Pool only increments the period if the auction succeeds, and there is no fallback logic to recover from failed auctions.\n3. **Exploitation:** If an auction fails, the current period cannot advance, preventing future auctions and distributions. Additionally, bidders' coupon tokens remain locked in the auction contract with no way to reclaim them.\n4. **Impact:** The entire protocol becomes frozen, users cannot participate in new auctions, and funds are permanently locked, leading to a denial of service and financial loss.\n",
+            "severity": "High",
+            "location": [
+                "Pool.sol::startAuction",
+                "Pool.sol::distribute",
+                "Auction.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Bidders are unable to claim the expected amount of reserve tokens",
+            "description": "1. **Description:** In the Auction contract, the `claimBid` function transfers `sellCouponAmount` of reserve tokens instead of the expected `buyReserveAmount`, which was the actual amount the bidder intended to receive.\n2. **Cause:** A coding mistake in the `claimBid` function where it uses `sellCouponAmount` (the number of coupon tokens paid) as the amount to transfer in reserve tokens, rather than `buyReserveAmount` (the amount of reserve tokens the bidder expected).\n3. **Exploitation:** Bidders receive an incorrect amount of reserve tokens that does not match their bid terms, leading to financial loss or unexpected outcomes.\n4. **Impact:** Users receive less (or possibly more) than expected, causing imbalance in the system and potential loss of trust. It may also lead to leftover tokens being stuck in the contract.\n",
+            "severity": "High",
+            "location": [
+                "Auction.sol::claimBid",
+                "Auction.sol::bid"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Distribution's claim function does not update storage variables",
+            "description": "1. **Description:** The `claim` function in Distributor operates on a memory copy of `poolInfo` instead of updating the storage variable, so the `amountToDistribute` is not reduced after claims.\n2. **Cause:** The `poolInfo` is loaded into memory and modified there, but the changes are not written back to storage, leaving the on-chain state unchanged.\n3. **Exploitation:** After the first claim, the balance of coupon tokens decreases, but `amountToDistribute` remains high. Subsequent claims will revert due to insufficient balance, even if enough tokens were initially allocated.\n4. **Impact:** Users after the first claimant cannot withdraw their rewards, leading to fund lockup and disruption of the distribution mechanism.\n",
+            "severity": "High",
+            "location": [
+                "Distributor.sol::claim"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Huge bid could cause overflow in subsequent bids",
+            "description": "1. **Description:** A very large bid in the Auction contract could cause arithmetic overflows when processing subsequent bids, particularly in calculations involving total amounts.\n2. **Cause:** The contract performs arithmetic operations on bid amounts without proper safe math checks or limits, making it vulnerable to overflow when summing large values.\n3. **Exploitation:** An attacker could place an extremely large bid (close to uint256 max) to cause an overflow in `totalSellReserveAmount` or similar variables when additional bids are added, potentially reverting legitimate transactions or distorting auction outcomes.\n4. **Impact:** This could lead to denial of service for other bidders, incorrect auction results, or complete failure of the auction mechanism.\n",
+            "severity": "High",
+            "location": [
+                "Auction.sol::bid"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Integer Overflow in Auction Bid Insertion",
+            "description": "The `insertSortedBid` function in the Auction contract does not impose a limit on the `buyReserveAmount` a bidder can specify. This allows a malicious bidder to place a bid with an extremely large `buyReserveAmount`, which can cause arithmetic overflow in subsequent bid calculations. The root cause is the lack of input validation or capping on the bid amount, particularly in the comparison logic involving multiplication of large values (e.g., `newSellCouponAmount * currentBuyReserveAmount`). An attacker can exploit this by placing a bid with a `buyReserveAmount` close to the maximum uint256 value, causing future bids to fail when the multiplication overflows during the sorting process. This prevents legitimate users from placing bids, resulting in a denial-of-service condition for the auction mechanism.\n",
+            "severity": "High",
+            "location": [
+                "Auction.sol::insertSortedBid",
+                "Auction.sol::bid",
+                "testAuditAuctionBidOverflow"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Inconsistent Coupon Token Accounting in Pool Distribution",
+            "description": "The `startAuction` and `distribute` functions in the Pool contract use different sources for the bond token total supply and shares-per-token values. During `startAuction`, the values are captured from `bondToken.globalPool()`, but during `distribute`, they are read from local state variables (`bondToken.totalSupply()` and `sharesPerToken`) that may have changed due to user deposits, redemptions, or governance updates. The root cause is the inconsistency between the time of auction creation and distribution, where state changes are allowed without synchronization. An attacker or opportunistic user can exploit this by depositing bond tokens just before distribution to increase their share of coupon tokens, or by manipulating the timing of actions to cause discrepancies. The impact is twofold: the pool may either lack sufficient coupon tokens to distribute (leading to underpayment) or leave excess tokens stranded in the contract, undermining the economic model and fairness of the distribution.\n",
+            "severity": "High",
+            "location": [
+                "Pool.sol::startAuction",
+                "Pool.sol::distribute",
+                "Pool.sol::_create",
+                "Pool.sol::_redeem",
+                "Pool.sol::setSharesPerToken"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Incorrect Decimals Handling in BalancerOracleAdapter",
+            "description": "The `latestRoundData` function in BalancerOracleAdapter converts price data to base units using the contract's state variable `decimals`, but this may not match the actual decimals of the underlying price feeds. The root cause is the misuse of a fixed `decimals` value instead of dynamically using the feed-specific decimals during conversion. This leads to incorrect scaling of prices, potentially resulting in significant precision loss or even zero values. An attacker could exploit this by manipulating or selecting price feeds with non-standard decimals, causing the calculated fair price to be inaccurate. The impact is that the pool's fair price calculation becomes unreliable, which can lead to incorrect valuation, unfair trading conditions, or potential loss of funds due to mispriced assets.\n",
+            "severity": "High",
+            "location": [
+                "BalancerOracleAdapter.sol::latestRoundData",
+                "BalancerOracleAdapter.sol::toBaseUnit"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Incorrect Start Time Validation in PreDeposit",
+            "description": "The `setDepositStartTime` function in the PreDeposit contract incorrectly compares `block.timestamp` with `newDepositStartTime` instead of comparing against the current `depositStartTime`. The root cause is a logic error in the validation condition, which was intended to prevent setting a start time before the current one but instead checks against the current block time. This allows the owner to reset the start time to a future value even after the predeposit period has begun, effectively reverting the state from \"started\" to \"not started\". An attacker with owner privileges could exploit this to disrupt user expectations, delay deposits, or manipulate withdrawal conditions. The impact is a violation of the expected state progression, leading to user confusion and potential loss of trust or funds due to unexpected changes in deposit availability.\n",
+            "severity": "Medium",
+            "location": [
+                "PreDeposit.sol::setDepositStartTime"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "State Variable Inconsistency in removeExcessBids",
+            "description": "The `removeExcessBids` function in the Auction contract updates the `sellCouponAmount` and `buyReserveAmount` of a bid proportionally but fails to update the global state variables `currentCouponAmount` and `totalSellReserveAmount` accordingly. The root cause is the omission of state synchronization when partially removing a bid. An attacker could exploit this by triggering partial bid removals, causing the recorded total reserve amount to exceed the actual sum of bids. If the auction succeeds, the pool will attempt to transfer `totalSellReserveAmount` to the auction, but the actual collected amount is less, leaving a discrepancy. The impact is that excess reserve tokens become locked in the Auction contract, inaccessible to both users and the protocol, resulting in permanent loss of funds.\n",
+            "severity": "Medium",
+            "location": [
+                "Auction.sol::removeExcessBids",
+                "Auction.sol::bid"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Uninitialized OwnableUpgradeable in BalancerOracleAdapter",
+            "description": "The `BalancerOracleAdapter` contract inherits from `OwnableUpgradeable` but does not call its initializer in the `initialize` function. The root cause is the omission of `__Ownable_init()` during contract initialization. As a result, the owner role remains uninitialized, meaning the `onlyOwner` modifier will revert for all addresses, including the intended owner. This renders critical functions like `_authorizeUpgrade` unusable, effectively preventing any future upgrades to the contract. The impact is a loss of upgradability, which could prevent the deployment of critical fixes or features, leading to long-term maintenance issues or permanent vulnerabilities if the contract cannot be patched.\n",
+            "severity": "Medium",
+            "location": [
+                "BalancerOracleAdapter.sol::initialize"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Precision Loss in getCreateAmount and getRedeemAmount",
+            "description": "The `getCreateAmount` and `getRedeemAmount` functions in the Pool contract perform division before multiplication and convert `ethPrice` to base units prematurely, leading to precision loss. The root cause is poor arithmetic ordering and early truncation due to integer division. This can result in `creationRate` becoming zero, causing a division-by-zero error during create amount calculation, or `redeemAmount` being rounded down to zero. An attacker could exploit this by manipulating market conditions (e.g., low collateral levels) to trigger these edge cases. The impact includes failed transactions due to division by zero or zero output, preventing users from creating or redeeming tokens, leading to denial of service and potential loss of user funds.\n",
+            "severity": "Medium",
+            "location": [
+                "Pool.sol::getCreateAmount",
+                "Pool.sol::getRedeemAmount"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Incorrect Inverted Price Calculation in OracleReader",
+            "description": "The `getOraclePrice` function in OracleReader calculates the inverse price as `10 ** feed.decimals() / answer`, which results in a value with zero decimals instead of preserving the feed's decimal precision. The root cause is an incorrect formula for price inversion that fails to scale the numerator appropriately. This leads to significantly underestimated prices when inverted feeds are used. An attacker could exploit this by forcing the use of inverted price paths, causing the protocol to use artificially low prices for valuation. The impact is incorrect pricing across dependent components, potentially leading to overpayment, undercollateralization, or loss of funds during trading or redemption.\n",
+            "severity": "High",
+            "location": [
+                "OracleReader.sol::getOraclePrice"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Governance May Fail to Set Fee Due to Access Control",
+            "description": "The `setFee` function in the Pool contract calls `claimFees` if there are accumulated fees, but `claimFees` restricts access to the `feeBeneficiary` only. The root cause is a mismatch between the roles allowed to set the fee (GOV_ROLE) and claim fees (feeBeneficiary). If these are different addresses, the transaction will revert with `NotBeneficiary`, preventing the fee from being updated. An attacker with governance privileges could be blocked from performing routine fee adjustments, or the system could enter an inconsistent state where fees cannot be collected or updated. The impact is a potential governance deadlock, preventing fee management and leading to revenue loss or operational disruption.\n",
+            "severity": "Low",
+            "location": [
+                "Pool.sol::setFee",
+                "Pool.sol::claimFees"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Missing Storage Gap in OracleReader",
+            "description": "The `OracleReader` contract is upgradable but does not include a storage gap (`__gap`) variable. The root cause is the omission of a reserved storage space for future variables. If new state variables are added in a future upgrade, they may overwrite storage slots used by derived contracts (e.g., `BalancerOracleAdapter`), leading to data corruption. An attacker could potentially exploit this by predicting or influencing upgrade patterns, but the primary risk is accidental breakage during legitimate upgrades. The impact is severe state corruption, potentially resulting in loss of funds or complete contract malfunction after an upgrade.\n",
+            "severity": "Low",
+            "location": [
+                "OracleReader.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Potentially Stale Prices Due to Unbounded Heartbeat",
+            "description": "The `setPriceFeed` function allows governance to set an arbitrarily long heartbeat, and `getOraclePrice` only reverts if the price is older than `updatedTimestamp + heartbeat`. The root cause is the lack of an upper bound on the heartbeat duration. Although governance is trusted, a misconfigured or maliciously set long heartbeat could allow stale prices to be used without detection. An attacker with governance control could exploit this to feed outdated prices, enabling manipulation of asset valuations. The impact is the use of stale oracle data, which can lead to incorrect pricing, unfair trades, or loss of funds during liquidations or redemptions.\n",
+            "severity": "Low",
+            "location": [
+                "OracleReader.sol::getOraclePrice",
+                "OracleFeeds.sol::setPriceFeed"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Missing Safe Transfer in Auction and PreDeposit",
+            "description": "The `bid` function in Auction uses `transferFrom` directly instead of `safeTransferFrom`, and similar issues exist in PreDeposit. The root cause is the use of low-level ERC20 functions without safety checks. While the protocol may only intend to support whitelist tokens that do not revert on transfer, this is not enforced, and non-compliant tokens could cause silent failures or unexpected behavior. An attacker could exploit this by interacting with a token that has side effects on transfer, or by using a token that reverts under certain conditions. The impact is reduced interoperability and potential transaction failures, though the risk is low given token whitelisting.\n",
+            "severity": "Informational",
+            "location": [
+                "Auction.sol::bid",
+                "PreDeposit.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Missing Zero-Value Check for assetSupply in getCreateAmount",
+            "description": "In `getCreateAmount`, when `tokenType` is `LEVERAGE` and `collateralLevel <= COLLATERAL_THRESHOLD`, the function divides by `assetSupply` (set to `levSupply`) without checking for zero. The root cause is an incomplete validation path\u2014while a check exists in the `else if` branch, it is missing in the first `if` branch. An attacker could trigger a division-by-zero error by ensuring `levSupply` is zero, causing the transaction to revert with a generic arithmetic error instead of a clear custom error. The impact is a less informative error message and potential denial of service for legitimate users attempting to create leverage tokens when supply is zero.\n",
+            "severity": "Informational",
+            "location": [
+                "Pool.sol::getCreateAmount"
+            ],
+            "files": []
+        }
+    ]
+}

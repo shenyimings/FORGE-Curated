@@ -1,0 +1,774 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Sponsored Periphery Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/UMAprotocol/across-contracts-private",
+            "https://github.com/across-protocol/contracts"
+        ],
+        "commit_id": [
+            "ec9bd791ea7fd59457ad315e8a2f8fb3765059e3",
+            "758570a9ace4a3c2335d2628342f71a33fbbc908"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-23",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Sponsored Periphery Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Execution Context for Transfer on Core When Finalizing a Swap",
+            "description": "The `finalizeSwapFlows` function in `HyperCoreFlowExecutor.sol` attempts to transfer final tokens from a `SwapHandler` back to the user by calling `HyperCoreLib.transferERC20CoreToCore` directly. However, this call is executed from the context of the `HyperCoreFlowExecutor` contract, not the `SwapHandler` contract that holds the funds. Since the `HyperCoreFlowExecutor` does not own the tokens, the transfer fails and reverts.\n\nThe root cause is a logic error in the execution context: the transfer is not delegated to the `SwapHandler`, which is the rightful owner of the swapped assets. An attacker cannot directly exploit this, but any user attempting to finalize a swap will face a transaction revert.\n\nThis results in a permanent denial-of-service (DoS) for all swap finalizations, freezing user funds in their respective `SwapHandler` contracts. Only a privileged administrator can manually recover the funds, which undermines the protocol's self-service design and availability.\n\nThis issue was resolved in pull request #29 by modifying `_finalizeSingleSwap` to delegate the transfer call to the correct `SwapHandler`.\n",
+            "severity": "High",
+            "location": [
+                "HyperCoreFlowExecutor.sol::finalizeSwapFlows#558",
+                "HyperCoreFlowExecutor.sol::_finalizeSingleSwap#670",
+                "HyperCoreLib.transferERC20CoreToCore"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Token Index Prevents Asset Rescue",
+            "description": "The `sweepOnCoreFromSwapHandler` function in `HyperCoreFlowExecutor.sol` is the only administrative mechanism to withdraw assets from a `SwapHandler` on the HyperCore layer. However, it incorrectly uses a market-specific `assetIndex` instead of the required token-specific `coreIndex` when calling `transferFundsToUserOnCore`.\n\nThis flaw stems from a mismatch in index types: `assetIndex` is used in the context of trading markets, while `coreIndex` is required for token identification on HyperCore. If these indices collide, the function may transfer the wrong asset.\n\nAn attacker could potentially manipulate market configurations to cause index collisions, leading to incorrect asset sweeps. More critically, if funds become stuck in a `SwapHandler` due to other failures, this function cannot reliably rescue them, rendering the assets permanently trapped.\n\nThis issue was resolved in pull request #30 by correcting the index to `coreTokenInfos[token].coreIndex`.\n",
+            "severity": "High",
+            "location": [
+                "HyperCoreFlowExecutor.sol::sweepOnCoreFromSwapHandler#940",
+                "SwapHandler.sol::transferFundsToUserOnCore"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Partial Conversion of Initial Token Leads to Stranded Funds",
+            "description": "The `_executeFlow` function in `ArbitraryEVMFlowExecutor.sol` uses balance snapshots before and after a multicall execution to determine the outcome. It assumes that the `initialToken` is either fully consumed or fully refunded, and only accounts for the resulting `finalToken`.\n\nThe root cause is an incorrect assumption about the behavior of arbitrary execution sequences. Many valid swap paths may only partially convert the `initialToken`, returning the remainder to the executor. The function interprets any decrease in the `initialToken` balance as a full conversion, ignoring the leftover amount.\n\nAn attacker cannot directly exploit this, but users may lose funds if the execution flow leaves behind partial `initialToken` balances. These leftover tokens become permanently stranded on the `ArbitraryEVMFlowExecutor` contract, as there is no mechanism to return them.\n\nThe issue was acknowledged but not resolved. The team argued that it is the API's responsibility to ensure no leftover tokens are created and that `drainLeftoverTokens` can be used to handle such cases.\n",
+            "severity": "High",
+            "location": [
+                "ArbitraryEVMFlowExecutor.sol::_executeFlow#56-114"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/ArbitraryEVMFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect `finalToken` in `HyperEVMFallback`",
+            "description": "In the `_initiateSwapFlow` function, if a user's HyperCore account is not activated and the swap is not sponsored, the flow diverts to `_fallbackHyperEVMFlow`. However, the `params` object passed to the fallback still contains the user's intended `finalToken`, not the `initialToken` they provided.\n\nThe cause is a logic error in parameter handling: the fallback mechanism is meant to refund the input token, but it attempts to transfer the output token instead. If the contract holds any balance of the `finalToken`, it will try to send it to the user.\n\nThis can lead to failed transactions if the contract does not hold the `finalToken`, causing the `safeTransfer` call to revert. In the worst case, if the contract does hold the `finalToken`, it may send an incorrect token to the user, leading to confusion and potential loss.\n\nThis issue was resolved in pull request #28 by setting `params.finalToken` to `initialToken` before calling the fallback function.\n",
+            "severity": "Medium",
+            "location": [
+                "HyperCoreFlowExecutor.sol::_initiateSwapFlow#445",
+                "HyperCoreFlowExecutor.sol::_fallbackHyperEVMFlow"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Stranded `baseToken` Dust in `SwapHandler` Contracts",
+            "description": "The `HyperCoreFlowExecutor` transfers the entire `baseToken` amount to a `SwapHandler` for external swaps. Due to exchange precision limits (e.g., tick size, fees), small amounts of `baseToken` dust may remain in the `SwapHandler` after a swap.\n\nThe root cause is the lack of a mechanism to recover this dust. The existing `sweepOnCoreFromSwapHandler` function only sweeps the `finalToken`, not the `baseToken`. Over time, this leads to a cumulative loss of funds across multiple `SwapHandler` instances.\n\nWhile not directly exploitable, this results in inefficient capital use and commingling of user funds. A privileged role cannot recover the dust, increasing reliance on off-chain bots to manage residual balances.\n\nThis issue was resolved in pull request #40 by updating `sweepOnCoreFromSwapHandler` to sweep both `finalToken` and `baseToken`.\n",
+            "severity": "Medium",
+            "location": [
+                "HyperCoreFlowExecutor.sol::_initiateSwapFlow#549",
+                "HyperCoreFlowExecutor.sol::sweepOnCoreFromSwapHandler#934"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Native Tokens Are Irrecoverable",
+            "description": "The `ArbitraryEVMFlowExecutor.sol` contract has a `receive() payable` function, allowing it to accept native HYPE tokens. However, there is no mechanism to withdraw these native tokens once received.\n\nThe cause is a missing administrative function for native token recovery. While ERC-20 sweep functions exist, no equivalent exists for native currency. This creates a risk that funds sent by mistake or as part of a malicious deposit become permanently locked.\n\nAn attacker could grief the system by sending small amounts of native tokens to prevent clean contract state, or users could lose funds if they accidentally send native tokens. The impact is limited to the value of the native tokens sent.\n\nThis issue was resolved in pull request #41 by implementing a guarded withdrawal function for privileged roles.\n",
+            "severity": "Medium",
+            "location": [
+                "ArbitraryEVMFlowExecutor.sol::receive#180",
+                "HyperCoreFlowExecutor.sol"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/ArbitraryEVMFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "`HyperliquidDepositHandler` is Susceptible to Funds Griefing",
+            "description": "The `HyperliquidDepositHandler` contract allows user account activation via `_depositToHypercore`, which unconditionally withdraws an activation fee from a `DonationBox`. An attacker can repeatedly call `handleV3AcrossMessage` with a zero amount and a new user address to drain the `DonationBox`.\n\nThe root cause is the lack of access control or replay protection on the account activation logic. The function does not verify whether the caller is authorized or whether the account has already been activated.\n\nThis enables a griefing attack where an attacker exhausts the `DonationBox` balance for supported tokens, disrupting legitimate user onboarding. Relayers can also trigger this via zero-fill relay messages with non-empty payloads.\n\nThis issue was resolved in pull request #77 by requiring a signed payload from the Across API to authorize account activation, adding replay protection at commit 8dcd19a.\n",
+            "severity": "Medium",
+            "location": [
+                "HyperliquidDepositHandler.sol::handleV3AcrossMessage#93-101",
+                "HyperliquidDepositHandler.sol::depositToHypercore#81-84",
+                "HyperliquidDepositHandler.sol::_depositToHypercore#137-158",
+                "SpokePool.sol::fillRelay#1722-1723"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/handlers/HyperliquidDepositHandler.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Misleading and Non-Authoritative Whitelist Events in `PermissionedMulticallHandler`",
+            "description": "The `PermissionedMulticallHandler` contract emits custom events `CallerWhitelisted` and `CallerRemovedFromWhitelist` via wrapper functions `whitelistCaller` and `removeCallerFromWhitelist`. However, these events are emitted unconditionally, regardless of whether the underlying role state actually changed, leading to false positives. Additionally, direct calls to `grantRole` and `revokeRole` bypass these custom events entirely, resulting in false negatives. \nThe root cause is the lack of state checks before emitting events and the existence of alternative paths to modify roles without triggering the custom events. \nAn attacker or misconfigured off-chain system could exploit this by relying on these events for state synchronization, leading to an incorrect view of the whitelist. \nThe impact is that off-chain monitoring tools may maintain an inaccurate state of authorized callers, potentially leading to incorrect access decisions or missed security alerts.\n",
+            "severity": "Medium",
+            "location": [
+                "PermissionedMulticallHandler.sol::whitelistCaller#60-63",
+                "PermissionedMulticallHandler.sol::removeCallerFromWhitelist#69-72",
+                "PermissionedMulticallHandler.sol::CallerWhitelisted#18",
+                "PermissionedMulticallHandler.sol::CallerRemovedFromWhitelist#21"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/handlers/PermissionedMulticallHandler.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Unsafe ABI Encoding",
+            "description": "The codebase uses `abi.encodeWithSelector` in multiple locations, which is not type-safe and can lead to incorrect calldata encoding if the function signature does not match the intended target. This is used in functions such as `_buildMulticallInstructions`, `receiveMessage`, `lzCompose`, and others across several contracts.\nThe root cause is the manual construction of function selectors without compile-time type checking, increasing the risk of silent failures or unintended behavior during low-level calls.\nAn attacker could potentially exploit this if a mismatched selector leads to a call to an unintended function, especially in delegatecall contexts, though the direct exploitability depends on the target contract's logic.\nThe impact includes potential incorrect execution, loss of funds, or unexpected state changes due to malformed calldata, especially during upgrades or integrations with external contracts.\n",
+            "severity": "Medium",
+            "location": [
+                "ArbitraryEVMFlowExecutor.sol::_buildMulticallInstructions#142-146",
+                "SponsoredCCTPDstPeriphery.sol::receiveMessage#141-146",
+                "SponsoredCCTPDstPeriphery.sol::_executeWithEVMFlow#166-171",
+                "DstOFTHandler.sol::lzCompose#163",
+                "DstOFTHandler.sol::_executeWithEVMFlow#173-178"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/ArbitraryEVMFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Unchecked Return Value of `transfer` Call",
+            "description": "The `sweepErc20` function in the `SwapHandler` contract calls `transfer` on an ERC-20 token but does not check its boolean return value. Some ERC-20 tokens return `false` on failure instead of reverting, which would cause the transfer to fail silently while the transaction succeeds.\nThe root cause is the direct use of the `transfer` function without proper error handling or use of a safe library.\nAn attacker could exploit this by using a non-compliant token that returns `false` on failure, leading to a successful transaction that does not actually transfer funds.\nThe impact is that users may believe funds were withdrawn when they were not, leading to loss of funds or incorrect accounting.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapHandler.sol::sweepErc20#66-69",
+                "SwapHandler.sol::transfer#67"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/SwapHandler.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Finalize Swap Flow Lacks Configuration Check for Final Token",
+            "description": "The `finalizeSwapFlows` function in `HyperCoreFlowExecutor` reads `FinalTokenInfo` from a mapping without validating whether the token is configured. If an unconfigured token is passed, the `swapHandler` will be address(0), leading to a balance check on the zero address, which may return a non-zero balance and prevent finalization.\nThe root cause is the absence of a validation check before using the `FinalTokenInfo` struct.\nA permissioned bot could accidentally pass an unconfigured token, or an attacker could attempt to manipulate the flow with invalid inputs, though the function is permissioned.\nThe impact is that legitimate swap flows may fail to finalize, leading to user fund delays or denial of service for valid transactions.\n",
+            "severity": "Medium",
+            "location": [
+                "HyperCoreFlowExecutor.sol::finalizeSwapFlows#564-633",
+                "HyperCoreFlowExecutor.sol::FinalTokenInfo#573",
+                "HyperCoreFlowExecutor.sol::_getExistingFinalTokenInfo#223-228"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Lack of Integration and End-to-End Tests",
+            "description": "The system consists of multiple interconnected contracts and off-chain components, but the test suite lacks integration and end-to-end tests that simulate complete transaction lifecycles.\nThe root cause is the reliance on unit tests without comprehensive cross-contract and cross-chain flow testing.\nThis increases the risk that bugs in complex interactions\u2014such as asynchronous swap flows or interactions with external precompiles\u2014go undetected.\nThe impact is a higher likelihood of undetected regressions, incorrect assumptions about external dependencies, and potential system failures in production despite passing unit tests.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Application Payloads Lack Versioning",
+            "description": "The system uses custom-encoded payloads (`composeMsg` and `hookData`) to pass data between chains, but these payloads do not include a version number.\nThe root cause is the absence of a versioning mechanism in the payload structure.\nIf the payload format is changed on the source chain before the destination is updated, the destination will fail to parse the message, likely causing a revert.\nThe impact is that user funds could become stranded on the destination chain due to parsing failures during upgrades, especially in unsynchronized deployments.\n",
+            "severity": "Medium",
+            "location": [
+                "SponsoredOFTSrcPeriphery.sol::composeMsg#107-116",
+                "SponsoredCCTPQuoteLib.sol::hookData#78-87"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/sponsored-oft/SponsoredOFTSrcPeriphery.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Unnecessary `payable` Fallback Function",
+            "description": "The `fallback` function in `BaseModuleHandler` is marked `payable`, allowing it to receive native assets, but the target logic in `HyperCoreFlowExecutor` does not contain any `payable` functions.\nThe root cause is the inclusion of the `payable` modifier without a functional need.\nAn attacker could send native tokens to the contract, which cannot be retrieved through normal means, potentially leading to loss of funds.\nThe impact is an increased attack surface and potential loss of native assets sent to the contract, reducing the contract's security posture.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseModuleHandler.sol::fallback#34-36"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/BaseModuleHandler.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Inconsistent Storage Layout Pattern",
+            "description": "The contracts use a hybrid storage model combining Solidity's default state variable layout with a namespaced storage pattern using EIP-7201.\nThe root cause is an attempt to manage contract size while minimizing refactoring, leading to mixed patterns.\nThis complexity increases the risk of storage collisions or developer errors during future upgrades.\nThe impact is reduced code readability, higher maintenance burden, and increased risk of storage-related vulnerabilities in future development.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Lack of Access Control Can Lead to Loss of Contract-Held Funds",
+            "description": "The `handleV3AcrossMessage` function in `HyperliquidDepositHandler` is external and lacks access control, allowing any caller to trigger a bridge of the contract's token balance to a user on Hypercore.\nThe root cause is the absence of role-based restrictions on a sensitive function.\nAn attacker can call this function after tokens are mistakenly sent to the contract, draining them to an arbitrary Hypercore account.\nThe impact is loss of any funds that end up in the contract, whether by error or incomplete transactions, due to lack of protection.\n",
+            "severity": "High",
+            "location": [
+                "HyperliquidDepositHandler.sol::handleV3AcrossMessage#93-101"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/HyperliquidDepositHandler.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Lack of Event Emission",
+            "description": "The `addSupportedToken` function in `HyperliquidDepositHandler` modifies state by adding a new token configuration but does not emit an event.\nThe root cause is the omission of an event emission after a state-changing administrative action.\nOff-chain systems such as monitoring tools or front-ends cannot detect when new tokens are added or verify configuration changes.\nThe impact is reduced transparency, auditability, and operational visibility into the contract's configuration history.\n",
+            "severity": "Medium",
+            "location": [
+                "HyperliquidDepositHandler.sol::addSupportedToken#60-72"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/HyperliquidDepositHandler.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused Variables",
+            "description": "Multiple state and local variables are declared but never used in the codebase, such as `BPS_DECIMALS`, `PX_D`, and `accountActivationFeeToken`.\nThe root cause is leftover or obsolete code from development or refactoring.\nWhile not directly exploitable, these variables increase code complexity and reduce clarity.\nThe impact is reduced code readability and maintainability, potentially leading to confusion for auditors and developers.\n",
+            "severity": "Informational",
+            "location": [
+                "ArbitraryEVMFlowExecutor.sol::BPS_DECIMALS#43",
+                "HyperCoreFlowExecutor.sol::PX_D#29",
+                "HyperCoreFlowExecutor.sol::accountActivationFeeToken#282-313"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/ArbitraryEVMFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Errors",
+            "description": "Several custom errors are defined but never used, including `TransferAmtExceedsAssetBridgeBalance`, `InsufficientFinalBalance`, and `DonationBoxInsufficientFundsError`.\nThe root cause is likely incomplete implementation or removal of logic that used these errors.\nUnused errors clutter the code and may mislead developers into thinking certain checks are in place.\nThe impact is reduced code clarity and potential confusion about the actual error handling behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperCoreLib.sol::TransferAmtExceedsAssetBridgeBalance#68",
+                "ArbitraryEVMFlowExecutor.sol::InsufficientFinalBalance#40",
+                "HyperCoreFlowExecutor.sol::DonationBoxInsufficientFundsError#178"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/libraries/HyperCoreLib.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Imports",
+            "description": "The `Structs.sol` file imports `SendParam` and `MessagingFee` from `IOFT.sol` but does not use them.\nThe root cause is an unnecessary import that was not cleaned up.\nUnused imports increase compilation cost and reduce code clarity.\nThe impact is minor but contributes to technical debt and reduces code quality.\n",
+            "severity": "Informational",
+            "location": [
+                "Structs.sol::import#4"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/Structs.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "The loop in `MulticallHandler.sol` uses the postfix increment operator (`i++`), which creates a temporary copy of the value before incrementing.\nThe root cause is the use of a less gas-efficient increment pattern.\nIn loops with many iterations, this can lead to unnecessary gas costs.\nThe impact is higher transaction costs than necessary, reducing economic efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "MulticallHandler.sol#133"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/MulticallHandler.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1084"
+                ]
+            },
+            "title": "Multiple Optimizable State Reads",
+            "description": "The `coreTokenInfo` struct is read multiple times from storage in the `_executeSimpleTransferFlow` function without caching.\nThe root cause is repeated SLOAD operations instead of caching the struct in memory.\nEach storage read consumes significant gas, so redundant reads increase execution cost.\nThe impact is higher gas consumption than necessary, leading to more expensive transactions.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperCoreFlowExecutor.sol::coreTokenInfo#348",
+                "HyperCoreFlowExecutor.sol::_executeSimpleTransferFlow#346-429"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstrings",
+            "description": "Multiple functions and events across several contracts lack proper NatSpec documentation for parameters and return values, making it difficult for developers and auditors to understand the intended behavior.\nThe cause is developers omitting or incompletely filling out documentation comments (e.g., @param, @return) for public and external API elements.\nWhile not directly exploitable, incomplete documentation increases the risk of incorrect integration or modification by developers, potentially leading to logic errors or security vulnerabilities.\nThe impact is reduced code maintainability, increased risk of integration errors, and hindered auditability due to lack of clarity on function and event behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "MulticallHandler.sol::handleV3AcrossMessage",
+                "PermissionedMulticallHandler.sol::CallerWhitelisted",
+                "PermissionedMulticallHandler.sol::CallerRemovedFromWhitelist",
+                "ArbitraryEVMFlowExecutor.sol::ArbitraryActionsExecuted",
+                "HyperCoreFlowExecutor.sol::DonationBoxInsufficientFunds",
+                "HyperCoreFlowExecutor.sol::AccountNotActivated",
+                "HyperCoreFlowExecutor.sol::SimpleTransferFlowCompleted",
+                "HyperCoreFlowExecutor.sol::FallbackHyperEVMFlowCompleted",
+                "HyperCoreFlowExecutor.sol::SwapFlowInitialized",
+                "HyperCoreFlowExecutor.sol::SwapFlowFinalized",
+                "HyperCoreFlowExecutor.sol::CancelledLimitOrder",
+                "HyperCoreFlowExecutor.sol::SubmittedLimitOrder",
+                "HyperCoreFlowExecutor.sol::SwapFlowTooExpensive",
+                "HyperCoreFlowExecutor.sol::UnsafeToBridge",
+                "HyperCoreFlowExecutor.sol::SponsoredAccountActivation",
+                "HyperCoreFlowExecutor.sol::SetCoreTokenInfo",
+                "HyperCoreFlowExecutor.sol::setCoreTokenInfo",
+                "HyperCoreFlowExecutor.sol::predictSwapHandler",
+                "HyperCoreFlowExecutor.sol::finalizeSwapFlows",
+                "HyperCoreFlowExecutor.sol::cancelLimitOrderByCloid",
+                "HyperCoreFlowExecutor.sol::sendSponsorshipFundsToSwapHandler",
+                "DstOFTHandler.sol::SetAuthorizedPeriphery",
+                "DstOFTHandler.sol::lzCompose",
+                "SponsoredOFTSrcPeriphery.sol::SponsoredOFTSend",
+                "SponsoredOFTSrcPeriphery.sol::deposit"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/MulticallHandler.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Boolean Comparisons Reduce Readability",
+            "description": "The codebase uses explicit comparisons of boolean variables to `false` (e.g., `x == false`) instead of the more idiomatic and readable `!x`.\nThe cause is non-standard coding style that deviates from common Solidity conventions.\nThis is not a security vulnerability and cannot be exploited. However, it reduces code clarity and increases the chance of logical errors during maintenance.\nThe impact is lower code readability and maintainability, potentially leading to mistakes during future development or audits.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperCoreFlowExecutor.sol#714",
+                "DstOFTHandler.sol#105"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1116"
+                ]
+            },
+            "title": "Typographical Errors",
+            "description": "Several spelling mistakes were found in comments and potentially in code (e.g., 'Calcualtes', 'form', 'revover', 'receipent').\nThe cause is typos introduced during development without subsequent review.\nThese errors do not introduce security vulnerabilities but can mislead developers reading the code or documentation.\nThe impact is reduced code professionalism and clarity, potentially causing confusion during development or auditing.\n",
+            "severity": "Informational",
+            "location": [
+                "ArbitraryEVMFlowExecutor.sol#159",
+                "HyperCoreFlowExecutor.sol#547",
+                "DstOFTHandler.sol#104",
+                "SponsoredCCTPDstPeriphery.sol#97"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/ArbitraryEVMFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Documentation",
+            "description": "A comment in `SponsoredCCTPDstPeriphery.sol` incorrectly states that funds will be minted to the contract itself, when in fact they are minted directly to the specified `mintRecipient`.\nThe cause is outdated or incorrect inline documentation that does not reflect the actual behavior of the external contract call.\nDevelopers relying on the comment may misunderstand the flow of funds, potentially leading to incorrect assumptions in integrations or security analyses.\nThe impact is risk of incorrect integration logic or flawed security assessments due to reliance on inaccurate documentation.\n",
+            "severity": "Informational",
+            "location": [
+                "SponsoredCCTPDstPeriphery.sol#84-85"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/sponsored-cctp/SponsoredCCTPDstPeriphery.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Unaddressed TODO Comments",
+            "description": "TODO comments in the codebase (e.g., in `SponsoredCCTPInterface.sol` and `HyperCoreLib.sol`) indicate incomplete or pending work that has not been resolved before audit.\nThe cause is development tasks were left incomplete and tracked only in code comments rather than in a formal issue tracker.\nIf the TODOs relate to security-critical functionality, their neglect could lead to vulnerabilities. Even if not, they indicate technical debt.\nThe impact is increased risk of forgotten security considerations, reduced code maturity, and potential for future bugs if not properly tracked and resolved.\n",
+            "severity": "Informational",
+            "location": [
+                "SponsoredCCTPInterface.sol#59",
+                "HyperCoreLib.sol#48"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/interfaces/SponsoredCCTPInterface.sol",
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/libraries/HyperCoreLib.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1053"
+                ]
+            },
+            "title": "Lack of Documentation",
+            "description": "The `HyperCoreFlowExecutor` contract lacks documentation stating that it is intended to be used only via `delegatecall` from periphery contracts and should not be called directly.\nThe cause is missing architectural documentation in the contract's NatSpec or comments.\nA developer might call a function like `predictSwapHandler` directly on the `HyperCoreFlowExecutor` contract, causing it to use the wrong context (`address(this)`) and return incorrect results.\nThe impact is potential for incorrect behavior or integration failures if the contract is used in an unintended manner due to lack of guidance.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperCoreFlowExecutor.sol"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Unoptimized USDC Transfer to HyperCore",
+            "description": "The `HyperCoreLib` library uses a two-step process to transfer USDC to HyperCore, first depositing to its own account and then transferring to the final recipient, instead of using a single `depositFor` call.\nThe cause is suboptimal implementation that does not leverage the full functionality of the `ICoreDepositWallet` contract.\nThis inefficiency increases gas costs and transaction complexity for USDC transfers, though it does not lead to fund loss.\nThe impact is higher transaction costs and reduced efficiency for USDC transfers, negatively affecting user experience and economic efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "HyperCoreLib.sol::transferERC20EVMToCore"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/libraries/HyperCoreLib.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Not Forwarding The Exact OFT Messaging Fees",
+            "description": "The `deposit` function in `SponsoredOFTSrcPeriphery` forwards the entire `msg.value` to the LayerZero messenger without validating it against the calculated fee, which may cause reverts if the amount is not exact.\nThe cause is lack of input validation and fee adjustment logic; the underlying LayerZero contract enforces strict fee equality.\nUsers who send more or less than the exact fee will have their transactions reverted, leading to a denial of service.\nThe impact is poor user experience and potential loss of transaction fees due to failed transactions.\n",
+            "severity": "High",
+            "location": [
+                "SponsoredOFTSrcPeriphery.sol::deposit"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/sponsored-oft/SponsoredOFTSrcPeriphery.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Incorrect Spot Price Decimal Conversion",
+            "description": "The `_getApproxRealizedPrice` function assumes a fixed 8-decimal precision for spot prices from HyperCore, but the actual precision depends on the asset's `szDecimals`.\nThe cause is hardcoded decimal assumption without accounting for asset-specific scaling.\nPrice and slippage calculations will be incorrect, potentially leading to unfavorable trades or failed swaps.\nThe impact is incorrect pricing logic could result in financial loss for users due to miscalculated slippage or execution prices.\n",
+            "severity": "High",
+            "location": [
+                "HyperCoreFlowExecutor.sol::_getApproxRealizedPrice"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Market Index for Limit Orders",
+            "description": "The market index for limit orders is incorrectly set to the asset index instead of `10000 + asset index`, as required by the HyperCore system.\nThe cause is logic error in the `submitLimitOrderFromBot` and `cancelLimitOrderByCloid` functions.\nLimit orders will be submitted to an incorrect market index, likely causing them to fail or be placed in the wrong market.\nThe impact is failed or misrouted limit orders, leading to loss of user funds or failed transactions.\n",
+            "severity": "High",
+            "location": [
+                "HyperCoreFlowExecutor.sol::submitLimitOrderFromBot",
+                "HyperCoreFlowExecutor.sol::cancelLimitOrderByCloid"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Incorrect Handling Of The Sponsored Account Activation Fee",
+            "description": "The `activateUserAccount` function incorrectly transfers the activation fee directly to the user's HyperCore account instead of having the sponsor's account cover the fee during activation.\nThe cause is misunderstanding of the HyperCore account activation mechanism, which deducts fees from the sponsor's balance when the user performs an action.\nThe activation may fail or behave incorrectly because the system expects the sponsor to have sufficient balance, not the recipient.\nThe impact is risk of failed account activations and stranded user funds, undermining the sponsorship mechanism.\n",
+            "severity": "High",
+            "location": [
+                "HyperCoreFlowExecutor.sol::activateUserAccount"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/periphery/mintburn/HyperCoreFlowExecutor.sol"
+            ]
+        }
+    ]
+}

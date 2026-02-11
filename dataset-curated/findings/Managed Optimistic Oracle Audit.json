@@ -1,0 +1,385 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Managed Optimistic Oracle Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/UMAprotocol/managed-oracle"
+        ],
+        "commit_id": [
+            "fc03083eca91c880efa8918c6d9532af9362f00d"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-27",
+        "project_path": {
+            "managed-oracle": "dataset-curated/contracts/Managed Optimistic Oracle Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Currencies Do Not Accept a Bond By Default",
+            "description": "The ManagedOptimisticOracleV2 contract uses a mapping called `maximumBonds` to store per-currency maximum bond amounts. If no maximum bond is explicitly set for a given currency, the mapping returns zero by default, which causes any non-zero bond to fail validation in the `_validateBond` function. This behavior effectively prevents the usage of any currency that has not been explicitly configured with a maximum bond limit.\n\nThe root cause is the lack of a default \"unlimited\" or \"infinite\" bond setting for currencies. Instead, the system defaults to a maximum bond of zero, which is interpreted as no valid bond being allowed. This design choice may be intentional but is not clearly documented.\n\nAn attacker cannot directly exploit this, but a malicious or misconfigured admin could prevent certain currencies from being used by simply not setting a maximum bond. Alternatively, a legitimate user may be unable to use a desired currency if the admin has not pre-configured it.\n\nThe impact is a potential denial-of-service (DoS) for specific currency usage in price requests, reducing the flexibility and usability of the oracle system. Users may be unable to request prices in certain tokens unless the admin explicitly configures them.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::maximumBonds#107",
+                "ManagedOptimisticOracleV2.sol::_validateBond#474-476",
+                "ManagedOptimisticOracleV2.sol#initializer#132",
+                "ManagedOptimisticOracleV2.sol::setMaximumBond#198-200"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "The `RequestManagerAdded` and `RequestManagerRemoved` Events Can Be Wrongfully Emitted",
+            "description": "The `addRequestManager` and `removeRequestManager` functions in the ManagedOptimisticOracleV2 contract emit `RequestManagerAdded` and `RequestManagerRemoved` events unconditionally, regardless of whether the underlying role was actually granted or revoked. This can lead to misleading event logs when the functions are called redundantly (e.g., adding a role that already exists).\n\nThe cause is the direct emission of these events without first checking the current role status via `hasRole`. Since `grantRole` and `revokeRole` from `AccessControlUpgradeable` are idempotent, calling them multiple times does not change state, but the custom events are still emitted, creating false signals.\n\nAn off-chain service or indexer relying on these events to track role changes could misinterpret redundant events as actual state transitions, leading to incorrect state reconstruction or alerting.\n\nThe impact is degraded reliability of event-based monitoring systems and potential confusion for developers and users. While not directly exploitable for financial gain, it undermines trust in the event system and could lead to operational errors in dependent systems.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::addRequestManager#177-180",
+                "ManagedOptimisticOracleV2.sol::removeRequestManager#187-190"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing Interface Validation for Whitelist Contracts",
+            "description": "The ManagedOptimisticOracleV2 contract allows external contracts to be set as whitelist implementations via functions like `setDefaultProposerWhitelist`, `setRequesterWhitelist`, and `requestManagerSetProposerWhitelist`. However, these functions do not verify that the provided addresses actually implement the `DisableableAddressWhitelistInterface`.\n\nThe root cause is the absence of an ERC-165 interface check or any form of runtime validation (e.g., a function call to confirm interface compliance). This allows potentially invalid or malicious contracts to be set, which could lead to silent failures or unexpected behavior when the oracle attempts to query the whitelist.\n\nAn attacker could deploy a contract that lacks the required functions and trick the system into using it as a whitelist, resulting in access control bypass or runtime reverts during critical operations.\n\nThe impact includes potential denial-of-service or incorrect access control decisions, undermining the security model that relies on properly functioning whitelists. This could allow unauthorized parties to propose or dispute prices if the system fails to validate membership correctly.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::setDefaultProposerWhitelist#216",
+                "ManagedOptimisticOracleV2.sol::setRequesterWhitelist#225",
+                "ManagedOptimisticOracleV2.sol::requestManagerSetProposerWhitelist#304"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Missing Test Suite",
+            "description": "The audited contracts, including OptimisticOracleV2 and ManagedOptimisticOracleV2, lack a dedicated test suite within the repository. This absence means there are no automated tests to verify the correctness of complex logic involving state transitions, bond handling, and access control.\n\nThe cause is the omission of test files or integration tests for the core functionality. Manual review alone is insufficient to ensure robustness, especially for upgradeable contracts and financial systems.\n\nWithout tests, future code changes could introduce regressions or critical bugs that go undetected until deployment, where they could lead to financial loss or system failure.\n\nThe impact is a significantly increased risk of undetected vulnerabilities and reduced confidence in the reliability and maintainability of the codebase. This undermines long-term security and developer productivity.\n",
+            "severity": "Low",
+            "location": [
+                "OptimisticOracleV2.sol",
+                "ManagedOptimisticOracleV2.sol"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/OptimisticOracleV2.sol",
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Problematic Whitelist Implementation",
+            "description": "The AddressWhitelist contract uses a soft-delete mechanism where removed addresses remain in the `whitelistIndices` array, causing it to grow indefinitely. The `getWhitelist` function iterates over this entire array twice, leading to increasing gas costs and potential out-of-gas errors for large lists.\n\nThe root cause is the inefficient data structure design: using a dynamic array for enumeration without removing entries upon deletion. Additionally, the three-state system (`None`, `Out`, `In`) introduces logical inconsistencies, such as an address being marked `In` without being in the array, thus not appearing in `getWhitelist`.\n\nAn attacker could exploit this by repeatedly adding and removing addresses to bloat the array, increasing gas costs for legitimate users calling `getWhitelist`, effectively causing a denial-of-service.\n\nThe impact includes high gas costs, potential DoS via gas exhaustion, and inconsistent state representation. This undermines the usability and reliability of the whitelist functionality.\n",
+            "severity": "Low",
+            "location": [
+                "AddressWhitelist.sol::removeFromWhitelist#55",
+                "AddressWhitelist.sol::getWhitelist#79",
+                "AddressWhitelist.sol#73-76"
+            ],
+            "files": [
+                "managed-oracle/src/common/implementation/AddressWhitelist.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Minimum Liveness Can Be Set Beyond Valid Bounds",
+            "description": "The `setMinimumLiveness` function in ManagedOptimisticOracleV2 allows the admin to set a global minimum liveness value without validating it against the upper bounds enforced by the underlying OptimisticOracleV2 contract.\n\nThe cause is the lack of a validation check in `_setMinimumLiveness` to ensure the new value is within the acceptable range defined by the parent contract. This could result in a configuration that breaks functionality.\n\nIf the minimum liveness is set above the maximum allowed by OptimisticOracleV2, any attempt by a requester or request manager to set a custom liveness will fail, even if the value is otherwise valid.\n\nThe impact is a potential denial-of-service for custom liveness configuration, preventing users from setting appropriate dispute windows. While this requires admin error, it could still disrupt protocol operations.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::setMinimumLiveness#207",
+                "OptimisticOracleV2.sol#244-256",
+                "ManagedOptimisticOracleV2.sol#284-294"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-188"
+                ]
+            },
+            "title": "Use of Storage Gaps for Upgradeability",
+            "description": "The OptimisticOracleV2 contract uses the `__gap` storage pattern to reserve space for future variables in upgradeable contracts. While functional, this approach is manual and opaque, making it difficult to reason about storage layout, especially in complex inheritance hierarchies.\n\nThe cause is reliance on a legacy pattern that does not provide structured or modular storage organization. This can lead to errors during upgrades if new variables are added without careful alignment.\n\nFuture upgrades may inadvertently cause storage collisions if developers miscount the gap or fail to account for changes in parent contracts.\n\nThe impact is reduced maintainability and increased risk of storage layout corruption during upgrades, which could lead to data loss or corruption. Adopting EIP-7201 would improve clarity and safety.\n",
+            "severity": "Informational",
+            "location": [
+                "OptimisticOracleV2.sol#__gap#998"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/OptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Inconsistent Use of Re-entrancy Guard on `view` Functions",
+            "description": "The ManagedOptimisticOracleV2 contract introduces new `external view` functions (`getCustomProposerWhitelist` and `getProposerWhitelistWithEnforcementStatus`) that do not use the `nonReentrantView` modifier, unlike similar functions in the parent OptimisticOracleV2 contract.\n\nThe cause is a deviation from the established security pattern of protecting `view` functions against re-entrancy to prevent reading inconsistent state during state changes.\n\nWhile no direct exploit was found, this inconsistency increases the attack surface and could lead to vulnerabilities if future logic changes introduce state-dependent behavior in these functions.\n\nThe impact is a weakened security posture and reduced code consistency, making the system harder to audit and maintain. It represents a missed opportunity to enforce uniform protection.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::getCustomProposerWhitelist#362",
+                "ManagedOptimisticOracleV2.sol::getProposerWhitelistWithEnforcementStatus#381"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Code Improvement Opportunities",
+            "description": "Multiple code quality issues were identified, including redundant functions (`_getManagedRequestId` and `getManagedRequestId`), unnecessary casting of `msg.sender` and `requester` to `address`, unused parameter names (`newImplementation`), redundant boolean flags in structs (`isSet`), and lack of named mapping parameters.\n\nThe root causes are suboptimal coding practices that increase gas costs, reduce readability, and complicate maintenance.\n\nThese issues do not directly enable exploits but contribute to higher deployment and transaction costs, increased code size, and reduced developer clarity.\n\nThe impact is reduced efficiency, higher operational costs, and increased risk of bugs due to code complexity. Addressing these would improve gas efficiency, readability, and long-term maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::_getManagedRequestId#460-467",
+                "ManagedOptimisticOracleV2.sol::getManagedRequestId#402-409",
+                "ManagedOptimisticOracleV2.sol#248",
+                "OptimisticOracleV2.sol#366",
+                "OptimisticOracleV2.sol#457",
+                "OptimisticOracleV2.sol#652",
+                "ManagedOptimisticOracleV2.sol#166",
+                "ManagedOptimisticOracleV2.sol#65-73"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Naming Suggestions",
+            "description": "The codebase uses the term \"whitelist\", which is being phased out in favor of more neutral terms like \"allowlist\". Additionally, role constants like `REGULAR_ADMIN` and `REQUEST_MANAGER` do not follow the `_ROLE` suffix convention, and the `liveness` field in `InitializeParams` could be more clearly named `defaultLiveness`.\n\nThe cause is inconsistent naming conventions and use of outdated terminology.\n\nWhile not a security risk, this reduces code clarity and may hinder adoption by teams preferring inclusive language.\n\nThe impact is reduced readability and potential friction in community or team adoption. Standardizing naming would improve consistency and professionalism.\n",
+            "severity": "Informational",
+            "location": [
+                "ManagedOptimisticOracleV2.sol#88",
+                "ManagedOptimisticOracleV2.sol#91",
+                "ManagedOptimisticOracleV2.sol#76"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The contracts use `require` and `revert` with string messages for error handling, which is more expensive in terms of gas and less efficient than using custom errors introduced in Solidity 0.8.4.\n\nThe cause is the use of older error handling patterns instead of modern, gas-optimized custom errors.\n\nThis increases the deployment and execution cost of the contracts, especially for frequently called functions that include revert strings.\n\nThe impact is higher gas consumption for users and increased contract size. Migrating to custom errors would reduce costs and improve error clarity in client applications.\n",
+            "severity": "Informational",
+            "location": [
+                "OptimisticOracleV2.sol",
+                "ManagedOptimisticOracleV2.sol"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/OptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Missing Security Contact",
+            "description": "The OptimisticOracleV2, ManagedOptimisticOracleV2, AddressWhitelist, and DisableableAddressWhitelist contracts do not include a designated security contact in their NatSpec comments. This omission makes it difficult for security researchers or third-party developers to responsibly disclose vulnerabilities, potentially leading to unreported or delayed reporting of critical issues. The root cause is the absence of a `@custom:security-contact` tag in the contract documentation. While this does not directly enable an exploit, it increases the risk of undiscovered vulnerabilities persisting in production. The impact is reduced security posture and slower response time to potential threats.\n",
+            "severity": "Informational",
+            "location": [
+                "OptimisticOracleV2.sol",
+                "ManagedOptimisticOracleV2.sol",
+                "AddressWhitelist.sol",
+                "DisableableAddressWhitelist.sol"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/OptimisticOracleV2.sol",
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol",
+                "managed-oracle/src/common/implementation/AddressWhitelist.sol",
+                "managed-oracle/src/common/implementation/DisableableAddressWhitelist.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1061"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Multiple internal functions in both ManagedOptimisticOracleV2 and OptimisticOracleV2 could be set to private instead of internal, as they are not intended to be accessed by derived contracts. This includes functions such as _setMaximumBond, _setMinimumLiveness, and others. The root cause is unnecessarily broad visibility settings, which expand the attack surface by allowing potential access from unintended child contracts. An attacker could exploit this in a maliciously extended contract to manipulate internal state or bypass intended access controls. While no immediate exploit is evident, this reduces code safety and increases risk in future extensions. The impact is a weakened defense-in-depth principle and potential for future vulnerabilities in derived contracts.\n",
+            "severity": "Low",
+            "location": [
+                "ManagedOptimisticOracleV2.sol::_setMaximumBond#416-420",
+                "ManagedOptimisticOracleV2.sol::_setMinimumLiveness#427-430",
+                "ManagedOptimisticOracleV2.sol::_setDefaultProposerWhitelist#436-440",
+                "ManagedOptimisticOracleV2.sol::_setRequesterWhitelist#446-450",
+                "ManagedOptimisticOracleV2.sol::_getManagedRequestId#460-466",
+                "ManagedOptimisticOracleV2.sol::_validateBond#474-476",
+                "ManagedOptimisticOracleV2.sol::_getEffectiveProposerWhitelist#498-507",
+                "OptimisticOracleV2.sol::_getId#591-597",
+                "OptimisticOracleV2.sol::_getState#676-696",
+                "OptimisticOracleV2.sol::_getOracle#698-700",
+                "OptimisticOracleV2.sol::_getStore#706-708",
+                "OptimisticOracleV2.sol::_getIdentifierWhitelist#710-712",
+                "OptimisticOracleV2.sol::_getTimestampForDvmRequest#714-726",
+                "OptimisticOracleV2.sol::_stampAncillaryData#733-737"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol",
+                "managed-oracle/src/optimistic-oracle-v2/implementation/OptimisticOracleV2.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-1188"
+                ],
+                "5": [
+                    "CWE-453"
+                ]
+            },
+            "title": "DisableableAddressWhitelist Is Not Enforced By Default",
+            "description": "The DisableableAddressWhitelist contract has an `isEnforced` flag that defaults to false, meaning the whitelist is inactive upon deployment unless explicitly enabled. This creates a risk that the owner may mistakenly believe the whitelist is active, allowing unauthorized addresses to pass checks. The root cause is the lack of explicit initialization of the `isEnforced` flag to true in the constructor. An attacker could exploit this by interacting with the system during the window when the contract is deployed but not yet enforced, potentially gaining unauthorized access or privileges. The impact is a potential security bypass due to misconfiguration, leading to loss of access control integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "DisableableAddressWhitelist.sol#12"
+            ],
+            "files": [
+                "managed-oracle/src/common/implementation/DisableableAddressWhitelist.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading or Incomplete Documentation",
+            "description": "Several instances of incorrect or outdated NatSpec documentation were found in the codebase. For example, the @return tag for getCustomProposerWhitelist incorrectly specifies the return type, and the @dev tag for getManagedRequestId contains inaccurate information. The root cause is failure to update documentation when code changes were made. This can mislead developers and auditors, increasing the likelihood of incorrect assumptions during integration or review. While not directly exploitable, this can lead to logic errors in external systems or missed vulnerabilities during audits. The impact is reduced code clarity and increased risk of human error in dependent projects or future development.\n",
+            "severity": "Informational",
+            "location": [
+                "ManagedOptimisticOracleV2.sol#360",
+                "ManagedOptimisticOracleV2.sol#395"
+            ],
+            "files": [
+                "managed-oracle/src/optimistic-oracle-v2/implementation/ManagedOptimisticOracleV2.sol"
+            ]
+        }
+    ]
+}

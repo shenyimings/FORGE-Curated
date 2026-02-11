@@ -1,0 +1,762 @@
+{
+    "path": "dataset-curated/reports/Zenith/Virtuals Protocol AI Agents - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Virtual-Protocol/protocol-contracts"
+        ],
+        "commit_id": [
+            "2aef6291b0140c2035e58c5824faab43d700981f"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "base",
+        "compiler_version": "n/a",
+        "audit_date": "2025-01-17",
+        "project_path": {
+            "protocol-contracts": "dataset-curated/contracts/Virtuals Protocol AI Agents - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "When migrating an Agent via AgentMigrator::migrateAgent() the old sAgentToken will still be locked preventing the creator from retrieving VIRTUAL tokens",
+            "description": "The AgentMigrator::migrateAgent() function allows migration of an existing agent to new contracts, including a new AgentToken and Uniswap pool. However, the original sAgentToken tokens, which represent staked LP tokens from the old Uniswap pool, remain locked for the full 10-year maturity duration. This prevents the agent creator from redeeming the old LP tokens and retrieving the underlying VIRTUAL tokens used as initial liquidity. The root cause is the lack of logic in the migration process to unlock or transfer the old staked LP position. An attacker cannot directly exploit this, but the legitimate creator is permanently locked out of their funds. The impact is loss of access to VIRTUAL tokens that were originally provided as liquidity, effectively resulting in a permanent loss of capital for the agent creator.\n",
+            "severity": "High",
+            "location": [
+                "AgentMigrator.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "AgentToken tokens are created out of thin air if AgentToken::distributeTaxTokens() triggers an autoswap",
+            "description": "The AgentToken::distributeTaxTokens() function transfers pending tax tokens to AgentTax.sol by calling the internal _transfer() function. This function saves the sender's balance before any state changes, then performs an autoswap if thresholds are met, which reduces the contract's balance of AgentToken. However, the balance update uses the pre-swap balance value, subtracting the transferred amount from the outdated balance. This discrepancy allows the creation of AgentToken tokens out of thin air when the swap occurs during the transfer. The root cause is the incorrect ordering of balance snapshot and state-changing operations. An attacker could potentially manipulate this to inflate supply or disrupt accounting. The impact includes potential inflation of AgentToken supply, undermining tokenomics and trust in the system.\n",
+            "severity": "High",
+            "location": [
+                "AgentToken.sol::distributeTaxTokens"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentToken.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "Agent token graduation can be blocked",
+            "description": "An attacker can prevent the successful deployment and liquidity seeding of a new Agent token by front-running its creation. By precomputing the Agent token address and creating a Uniswap pair in advance, the attacker can donate 1 wei of an asset and call sync(), setting one reserve to a non-zero value. When the protocol attempts to add liquidity via the Uniswap router, the quote() function reverts due to insufficient liquidity (one reserve zero, one non-zero), causing the entire liquidity addition to fail. The root cause is reliance on Uniswap's router logic without handling edge cases of pre-initialized pairs. This can be exploited to block agent graduation, particularly affecting bonding curve launches. The impact is denial of service, where assets become trapped in the FPair contract and the agent cannot proceed with its launch.\n",
+            "severity": "High",
+            "location": [
+                "AgentToken.sol#L279-L289"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentToken.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Attacker can steal AgentToken taxes by sandwich his own transfer",
+            "description": "AgentToken implements automatic tax swapping during transfers via _swapTax(), which exchanges accumulated AgentToken taxes for VIRTUAL tokens on Uniswap. However, this swap lacks slippage protection, using a hard-coded deadline but no minimum output amount. An attacker can sandwich their own transfer to manipulate the price: first, they sell a large amount of AgentToken to depress its price; then, they trigger the tax swap, which receives fewer VIRTUAL tokens due to the manipulated pool state; finally, they buy back AgentToken at a discount. The root cause is the absence of slippage controls in a critical swap operation. This allows profit extraction at the expense of the protocol's tax revenue. The impact is financial loss to the protocol treasury, reducing funds available for development and rewards.\n",
+            "severity": "High",
+            "location": [
+                "AgentToken.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentToken.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "AgentFactoryV3::initFromBondingCurve() sets application proposer to the wrong address",
+            "description": "The AgentFactoryV3::initFromBondingCurve() function sets the application proposer to msg.sender, which in the context of Bonding::_openTradingOnUniswap() is the Bonding.sol contract itself, not the original user who launched the agent. This misassignment causes the sAgentToken (representing staked LP tokens) to be sent to the Bonding contract instead of the creator. As a result, the legitimate creator loses voting rights in the AgentDAO and cannot retrieve the LP tokens when they unlock. The root cause is incorrect use of msg.sender without forwarding the original caller's address. This can be exploited to disenfranchise the agent creator. The impact is loss of governance rights and permanent loss of access to staked liquidity.\n",
+            "severity": "High",
+            "location": [
+                "AgentFactoryV3.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentFactoryV3.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Creating an agent that uses VIRTUAL itself as custom tokens allows to drain VIRTUAL tokens held in AgentFactoryV4",
+            "description": "During agent creation via AgentFactoryV4, VIRTUAL tokens are temporarily held in the contract. An attacker can initiate an application using VIRTUAL as the custom token, then call withdraw() to cancel the application. The withdraw() function transfers the full balance of the customToken (which is VIRTUAL) back to the proposer. Since the contract holds VIRTUAL tokens from other pending applications, this allows the attacker to drain all VIRTUAL tokens in the contract. The root cause is the failure to distinguish between the application's own deposit and the global contract balance when withdrawing. This can be exploited to steal funds from other users' pending applications. The impact is complete loss of all VIRTUAL tokens held in AgentFactoryV4, affecting multiple users and applications.\n",
+            "severity": "High",
+            "location": [
+                "AgentFactoryV4.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentFactoryV4.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Small amount of AgentToken will be locked in the FPair after graduating",
+            "description": "When an agent graduates via Bonding::_openTradingOnUniswap(), the amount of FERC20 tokens in the FPair is divided by 1e18 to normalize decimals. If the balance is not a multiple of 1e18, precision is lost due to truncation. This rounded-down value is used to mint AgentToken for Uniswap liquidity, while the remainder is sent to the FPair. As a result, slightly more AgentToken than intended ends up in the FPair, where it cannot be retrieved. The root cause is improper handling of decimal precision in token amount calculations. This can be exploited to cause permanent loss of tokens, though the amount per incident is small. The impact is gradual erosion of token supply, with up to 1e18-1 tokens locked per graduation event.\n",
+            "severity": "Medium",
+            "location": [
+                "Bonding.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "FERC20 tokens lose value when they graduate to AgentTokens",
+            "description": "During agent graduation, the FERC20 tokens are converted 1:1 to AgentToken and migrated to a real Uniswap pool. However, the VIRTUAL liquidity in the new pool comes from actual reserves, whereas the FPair used a \"virtual\" reserve of 6000e18 VIRTUAL tokens that were never actually deposited. This results in a lower VIRTUAL liquidity in the Uniswap pool compared to the FPair, reducing the exchange rate for AgentToken. The root cause is the discrepancy between virtual and real liquidity models. This is not directly exploitable by an attacker but creates economic loss for FERC20 holders. The impact is devaluation of user holdings upon graduation, undermining trust and creating misaligned incentives.\n",
+            "severity": "Medium",
+            "location": [
+                "Bonding.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Liquidity locked for full maturity duration regardless of time already passed",
+            "description": "The vulnerability arises in the AgentMigrator contract when an Agent is migrated, where the initial liquidity composed of AgentToken and VIRTUAL is locked for an additional full maturityDuration (e.g., 10 years), irrespective of how much time has already passed since the original Agent creation. The root cause is the lack of time adjustment in the locking mechanism during migration. An attacker or malicious user could exploit this by repeatedly migrating Agents to extend lock-up periods artificially, though the primary impact is on user fairness and capital efficiency. As a result, users who migrate their Agents lose additional access to liquidity for the full duration, even if a significant portion of the original lock-up period has already elapsed, leading to unnecessary and unfair capital lock-up.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol::migrateAgent",
+                "AgentMigrator.sol::migrateAgent#110"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "FERC20 onlyOwner functions are unreachable",
+            "description": "The FERC20 token, when deployed via the Bonding contract, transfers ownership to the Bonding contract itself in the constructor, but there is no mechanism for the original deployer or owner to invoke owner-only functions such as updateMaxTx or excludeFromMaxTx. The root cause is the absence of wrapper functions in the Bonding contract to forward these calls. This renders critical configuration functions inaccessible, making it impossible to adjust transaction limits or exclude addresses post-deployment. While the impact is mitigated by the fact that these features are currently unused (as acknowledged by the team), the vulnerability remains in the design. An attacker cannot directly exploit this, but it reduces protocol flexibility and could lead to operational issues if owner functions are needed in the future.\n",
+            "severity": "Medium",
+            "location": [
+                "FERC20.sol#33"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/FERC20.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "FERC20 creator can launch a sale with faulty parameters",
+            "description": "The Bonding contract allows a token creator to launch a bonding sale with an empty cores array, which later causes the AgentFactoryV3::initFromBondingCurve function to revert due to a requirement that cores.length > 0. The root cause is the lack of input validation in the Bonding::launch function. An attacker or malicious creator could exploit this by launching a sale with an empty cores array, causing the sale to proceed until graduation, at which point the transaction reverts and traps user funds in the FPair contract. This leads to a loss of user funds and a denial of service for the sale process, undermining trust in the protocol's reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "Bonding.sol#191",
+                "AgentFactoryV3.sol#531"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Agent token holders do not receive refunds when token migrates",
+            "description": "When an Agent is migrated using AgentMigrator, holders of the old Agent token are forced to sell in the old pool and buy the new token, causing potential losses due to price volatility and slippage. The root cause is the lack of a direct redemption or migration mechanism for existing token holders. An attacker could exploit high volatility in the old pool to profit from the forced sell-off, while legitimate holders incur losses. This leads to an unfair migration process and potential loss of user funds, damaging user trust and economic fairness in the migration mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol#110-160"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ]
+            },
+            "title": "Agent creator can partially bypass LPs lock on agents with custom tokens",
+            "description": "The AgentFactoryV4 contract allows the creator to specify a low initialLP amount during Agent creation, which results in only a small amount of LP tokens being locked for the 10-year maturity period. The creator can then add a large amount of unbalanced liquidity afterward, effectively bypassing the long-term lock intended for initial liquidity providers. The root cause is the ability to set arbitrary initial liquidity values without enforcement of fair or balanced locking. An attacker (the Agent creator) can exploit this to maintain liquidity control and exit flexibility while appearing to comply with lock-up requirements. This undermines the economic security model and allows manipulation of pool dynamics.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentFactoryV4.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentFactoryV4.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ]
+            },
+            "title": "Users can bypass votes threshold requirement necessary to create a proposal on AgentDAO",
+            "description": "Users can stake LP tokens into AgentVeToken to receive voting power, create a proposal immediately, and then unstake their tokens within the same block or shortly after, effectively bypassing any intended lock-up period for governance participation. The root cause is the absence of a time-based lock on voting power after staking. An attacker can exploit this by temporarily staking to meet the proposal threshold, submitting a proposal, and then unstaking, allowing reuse of the same liquidity across multiple proposals. This weakens the governance model by enabling spam or low-commitment proposals, reducing the skin-in-the-game requirement for governance actions.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentVeToken.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentVeToken.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Founder of AgentDAO can prevent proposal execution by migrating the Agent",
+            "description": "The ServiceNFT::mint function requires the caller to be the current AgentDAO. If the Agent is migrated, the old AgentDAO is replaced, making it impossible to execute proposals that require minting a serviceNFT, as the old DAO can no longer call the function. The root cause is the lack of support for legacy DAOs in the minting logic. A malicious founder could exploit this by migrating the Agent to block execution of unfavorable proposals, even if they passed. This leads to a loss of proposal finality and undermines the integrity of the governance process, enabling unilateral censorship by the founder.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol",
+                "ServiceNf.solt"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Creation of an agent with a custom token can be DOSed",
+            "description": "The AgentFactoryV4 contract reverts if a Uniswap pool for VIRTUAL/customToken already exists when calling executeTokenApplication. An attacker can front-run the deployment by creating the pool in advance, thereby preventing the legitimate Agent creation. The root cause is the strict requirement that the pool must not exist, without any mechanism to handle or bypass pre-existing pools. This allows any third party to deny service to Agent creators using custom tokens, leading to a denial of service. While the impact is limited to new Agent deployment, it disrupts the intended functionality and can be used maliciously to block competitors.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentFactoryV4"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentFactoryV4.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Attacker can sandwich the call to BondingTax/:swapForAsset() in order to steal taxes",
+            "description": "The BondingTax::swapForAsset function uses getAmountsOut to determine the minimum output for a swap but does not enforce it with slippage protection during the actual swap. Because the price query and swap are not atomic, an attacker can sandwich the swap by manipulating the pool state before and after the tax swap. The root cause is the lack of a minimum output enforcement in the swap call. The attacker profits by causing the protocol to receive fewer cbBTC than expected, effectively stealing part of the tax revenue. This leads to direct financial loss for the protocol and undermines the sustainability of the tax collection mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "BondingTax.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/tax/BondingTax.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Bonding/:buy() and Bonding/:sell() lack slippage parameters",
+            "description": "The Bonding::buy and Bonding::sell functions do not include slippage controls, meaning users cannot specify a minimum amount of tokens they expect to receive. The root cause is the absence of minAmountOut parameters in these functions. While the Base chain's private mempool reduces the risk of sandwich attacks, users can still suffer losses due to execution ordering, especially when large trades are processed ahead of smaller ones. This leads to a suboptimal user experience and potential economic loss, even in the absence of malicious actors, reducing trust in the fairness of the bonding curve mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "Bonding.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol",
+                "protocol-contracts/contracts/fun/FRouter.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "FRouter::buy()/FRouter::sell() revert if BondingTax.sol holds 0 VIRTUAL tokens",
+            "description": "The BondingTax::swapForAsset function reverts if the contract has zero VIRTUAL tokens, which can happen if buy/sell taxes are set to zero or no fees have accumulated. This causes FRouter::buy and FRouter::sell to revert, blocking user transactions. The root cause is the lack of a guard clause to handle zero-balance cases gracefully. While the impact is low due to the current tax settings, it introduces unnecessary fragility. A simple check to return early when the balance is zero would prevent reverts and ensure uninterrupted trading, improving robustness.\n",
+            "severity": "Low",
+            "location": [
+                "BondingTax.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/tax/BondingTax.sol",
+                "protocol-contracts/contracts/fun/FRouter.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Vote can be cast on AgentDAO proposal before the relative contributionNFT is minted",
+            "description": "Users can cast votes on AgentDAO proposals before the proposer mints the associated contributionNFT. The _castVote function checks for the NFT's existence and returns early if it doesn't exist, resulting in the vote not updating the proposal's maturity. The root cause is the non-atomic minting of the contributionNFT, which is done off-chain by the proposer rather than in the propose function. This can lead to votes being effectively ignored, reducing the accuracy of governance outcomes. While the impact is low, it introduces inconsistency in vote processing and could be exploited to manipulate voting dynamics.\n",
+            "severity": "Low",
+            "location": [
+                "AgentDAO.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentDAO.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of deadline on Bonding::buy() and Bonding::sell() functions",
+            "description": "The Bonding::buy() and Bonding::sell() functions do not include a deadline parameter, allowing user transactions to remain in the mempool indefinitely before execution. This occurs because there is no time-bound enforcement on transaction execution. An attacker or network congestion could delay transaction inclusion, causing the transaction to execute at a much later time than intended by the user. This could result in unfavorable price execution or unexpected state changes due to delayed actions, undermining user expectations and potentially leading to financial loss.\n",
+            "severity": "Low",
+            "location": [
+                "Bonding.sol::buy#341",
+                "Bonding.sol::sell#288"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Ineffective deadline parameters",
+            "description": "The BondingTax.sol and AgentTax.sol contracts set Uniswap swap deadlines using block.timestamp + 300, which is ineffective because the deadline is evaluated at the time of the initial call, not during execution. The Uniswap router's ensure modifier checks if the deadline is greater than or equal to the current block.timestamp, but since the deadline is always set relative to the current block time, it will always pass during execution. This negates the intended protection against front-running or long-pending transactions. As a result, swaps may be executed after significant delays, increasing exposure to price slippage and reducing transaction safety.\n",
+            "severity": "Low",
+            "location": [
+                "BondingTax.sol#173",
+                "AgentTax.sol#273"
+            ],
+            "files": [
+                "protocol-contracts/contracts/tax/BondingTax.sol",
+                "protocol-contracts/contracts/tax/AgentTax.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "_tokenHasTax parameter is not updated if tax BPS was changed from 0",
+            "description": "The _tokenHasTax flag is initialized to false when a token is created with zero tax on buy and sell. However, if the tax rates are later updated to non-zero values via setProjectTaxRates, the _tokenHasTax flag is not updated, so tax processing remains disabled. This is caused by the lack of synchronization between tax rate updates and the flag state. As a result, even though tax rates are set, no tax is collected on transactions because the _taxProcessing function checks the outdated _tokenHasTax flag. This leads to loss of expected tax revenue and incorrect token behavior.\n",
+            "severity": "Low",
+            "location": [
+                "AgentToken.sol#466"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentToken.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Sanity checks in Agent factory",
+            "description": "The AgentFactoryV4 contract lacks validation for critical token parameters such as maxSupply, lpSupply, vaultSupply, and tax basis points. If maxSupply does not equal the sum of lpSupply and vaultSupply, token creation reverts, potentially locking funds or preventing deployment. Additionally, tax parameters exceeding 10,000 basis points can break internal accounting. This is due to missing input validation in setTokenSupplyParams and setTokenTaxParams. The impact includes operational failure during token deployment or incorrect tax calculations, leading to financial discrepancies or denial of service.\n",
+            "severity": "Low",
+            "location": [
+                "AgentFactoryV4.sol#472",
+                "AgentFactoryV4.sol#492",
+                "AgentToken.sol#466"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentFactoryV4.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "If two different AgentDAO have two proposals with the same proposalID it will be impossible to mint a contributionNFT",
+            "description": "The ContributionNft::mint() function uses the proposalId derived from hashing proposal parameters, including description. If two different AgentDAOs create proposals with identical parameters (targets, values, calldatas, description), they will generate the same proposalId. Since NFT IDs are based on proposalId, minting a contributionNFT for the second proposal will fail due to ID collision. This is caused by the lack of scoping the proposalId to the AgentDAO contract address. The impact is that valid contributions may be blocked from minting NFTs, leading to loss of recognition or rewards.\n",
+            "severity": "Low",
+            "location": [
+                "ContributionNf.solt"
+            ],
+            "files": [
+                "protocol-contracts/contracts/contribution/ContributionNft.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "FERC20 tokens revert on 0 transfers",
+            "description": "The FERC20::_transfer() function reverts when attempting to transfer 0 tokens, which deviates from standard ERC-20 behavior where 0-value transfers are allowed. This is caused by an explicit check that reverts on zero amount transfers. This incompatibility can break integrations with third-party protocols or contracts that expect standard ERC-20 semantics, potentially causing failed transactions or unexpected reverts in composability scenarios.\n",
+            "severity": "Informational",
+            "location": [
+                "FERC20.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/FERC20.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "AgentToken::distributeTaxTokens() reverts in some situations",
+            "description": "The distributeTaxTokens() function sets projectTaxPendingSwap to 0 before calling _transfer(), which may trigger _autoSwap() and _swapTax(). In _swapTax(), if the swapBalance_ is less than contractBalance_, it attempts to subtract from projectTaxPendingSwap, which has already been set to 0, causing an underflow revert. This occurs due to incorrect ordering of state updates and swap logic. The impact is that tax distribution can fail unexpectedly, preventing proper tax handling and potentially disrupting token operations.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentToken.sol#955"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentToken.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Sale data is not updated on initial FERC20 purchase",
+            "description": "During the initial purchase of FERC20 tokens by the creator, the bonding contract fails to update key sale statistics such as price, market cap, liquidity, volume, and lastUpdated. This is caused by the absence of the update logic in the initial purchase path, unlike regular transactions. As a result, the displayed metrics will be inaccurate or outdated, misleading users and analytics tools about the token's performance and market activity.\n",
+            "severity": "Informational",
+            "location": [
+                "Bonding.sol#282"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Tokens left in the Airdrop contract can be stolen",
+            "description": "The Airdrop::airdrop() function does not validate that the sum of _amounts equals _total, allowing a caller to pass a smaller _total than the actual sum. This discrepancy enables the function to transfer more tokens than accounted for, letting an attacker drain excess tokens from the contract. This is due to missing input validation. The impact is direct loss of funds from the airdrop contract, compromising the integrity of the distribution mechanism.\n",
+            "severity": "Informational",
+            "location": [
+                "Airdrop.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/Airdrop.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ],
+                "3": [
+                    "CWE-835"
+                ]
+            },
+            "title": "No escape plan for a scenario when bonding sale never meets graduation threshold",
+            "description": "The bonding sale only concludes when the FERC20 token reserve drops below gradThreshold. If this threshold is never reached, the sale remains open indefinitely, locking user funds in the FPair and preventing Agent token deployment. While EXECUTOR_ROLE can manually withdraw tokens, there is no automated or time-based fallback. This creates a risk of permanent fund lockup if market conditions prevent threshold achievement, leading to user fund loss and poor user experience.\n",
+            "severity": "Informational",
+            "location": [
+                "Bonding.sol#391-L393"
+            ],
+            "files": [
+                "protocol-contracts/contracts/fun/Bonding.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Agent's custom token will be transformed to regular during migration",
+            "description": "During migration via AgentMigrator, any Agent with a custom token is forced to use the standard AgentToken, losing the custom token's unique properties. This occurs because _createNewAgentToken is called without preserving the original token type. The impact is loss of functionality or branding for Agents that relied on custom tokens, reducing flexibility and backward compatibility in the migration process.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol#110"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Migrator has pausable modifier but it is not used",
+            "description": "The AgentMigrator contract inherits from Pausable but does not apply the whenNotPaused modifier to any function, rendering the pausability feature unused. This is a code hygiene issue, as unnecessary inheritance increases contract complexity and attack surface without benefit. While no direct security impact is present, it suggests incomplete design or oversight in access control planning.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol#8"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-454"
+                ]
+            },
+            "title": "When migrating an Agent the state variable _factory of the new AgentToken is set to the AgentMigrator contract",
+            "description": "During migration, the AgentToken is initialized with msg.sender being AgentMigrator, causing _factory to point to AgentMigrator instead of the original factory. This breaks the expected factory-agent relationship, though currently no functionality depends on it. The cause is direct deployment from AgentMigrator without proxying through the factory. While no immediate impact exists, future logic relying on _factory for access control or validation could malfunction.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "AgentDAO proposal calldata necessary to mint ServiceNFT is not enforced to be correct",
+            "description": "The AgentDAO::propose() function does not validate that the attached calldata correctly calls ServiceNft::mint() with the right parameters. A proposer could use an incorrect descHash or duplicate calls, leading to incorrect proposalID calculation or unintended NFT minting. This could block legitimate proposals if their IDs collide. The cause is lack of on-chain validation of calldata structure. While governance voting mitigates risk, a malicious proposal could still cause state inconsistencies.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentDAO.sol",
+                "ServiceNf.solt"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentDAO.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Bonding/:unwrapToken() can convert FERC20 tokens of any address, including smart contracts",
+            "description": "The Bonding::unwrapToken() function allows anyone to unwrap FERC20 tokens held by any address, including smart contracts. This is problematic because integrating contracts may not expect their tokens to be converted unexpectedly. The function is permissionless and does not restrict the source of tokens. This could disrupt contract invariants or accounting, leading to unexpected behavior or loss of funds in dependent systems.\n",
+            "severity": "Informational",
+            "location": [
+                "Bonding.sol"
+            ],
+            "files": []
+        }
+    ]
+}

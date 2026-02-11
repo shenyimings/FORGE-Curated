@@ -1,0 +1,91 @@
+{
+    "path": "dataset-curated/reports/Zellic/Multisafe USPC Contracts - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Multisafe/uspc-contracts"
+        ],
+        "commit_id": [
+            "faf06f42d12560adff5940ccccf31d8460243a59"
+        ],
+        "address": [],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-11",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "iUSPC Tokens are not burned during instant vault redemptions",
+            "description": "The vaultRedemption function in IUSPCHub allows whitelisted vaults to instantly redeem iUSPC for collateral. It correctly transfers iUSPC from the vault to the Hub and sends out the corresponding USDC, but it fails to burn the iUSPC tokens received by the Hub. In contrast, the standard processRedemptions function correctly burns accumulated tokens. This omission creates a critical accounting flaw where liabilities remain in circulation even after collateral is paid out. The root cause is the missing burn operation in the vaultRedemption function. An attacker or privileged vault could exploit this by repeatedly redeeming via the instant path, extracting collateral while leaving the iUSPC supply inflated. This breaks the 1:1 backing model of the system, leading to a fractionally reserved state where total iUSPC supply exceeds actual collateral, potentially undermining trust and solvency.\n",
+            "severity": "Critical",
+            "location": [
+                "IUSPCHub.sol::vaultRedemption"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Missing price staleness check in IUSPCHub.vaultSubscription and IUSPCHub.vaultRedemption",
+            "description": "The IUSPCHub.vaultSubscription and IUSPCHub.vaultRedemption functions use pricer.getLatestPrice() to fetch the current NAV price but do not retrieve or validate the timestamp of that price. Unlike the batch processing functions (processSubscriptions and processRedemptions), which correctly enforce that the price is not older than MAX_PRICE_AGE, the instant vault functions lack this check. The root cause is the failure to call pricer.getLatestPriceInfo() or validate the timestamp. An attacker with VAULT_ROLE and whitelist access could exploit this by calling vaultSubscription or vaultRedemption when the price is stale (e.g., after 24 hours of no updates), using outdated NAV values to mint or redeem at favorable rates. This enables arbitrage where the vault profits at the expense of the protocol, distorting the asset backing and potentially leading to significant financial loss.\n",
+            "severity": "Medium",
+            "location": [
+                "IUSPCHub.sol::vaultSubscription",
+                "IUSPCHub.sol::vaultRedemption"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Incorrect implementation of USPC._checkMinShares causes DOS",
+            "description": "The _checkMinShares function in the USPC contract reverts if the total supply of shares is greater than zero but less than MIN_SHARES (e.g., 10000e6). While intended to prevent donation attacks, this logic introduces a denial-of-service vulnerability. The root cause is the lack of a virtual offset or cleanup mechanism to handle edge cases when the last withdrawal would leave a tiny residual balance. An attacker can exploit this by depositing a minimal amount (e.g., 1 wei) of assets, reducing the total share supply to a value below MIN_SHARES. After this, any user attempting to withdraw their full balance will cause the _checkMinShares check to revert, as the resulting total supply would be non-zero but below the minimum threshold. This effectively locks user funds in the vault, preventing withdrawals and leading to a loss of access to funds for legitimate users.\n",
+            "severity": "Medium",
+            "location": [
+                "USPC.sol::_checkMinShares"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Flawed Pause Logic",
+            "description": "The pause mechanism in the protocol is incorrectly implemented across multiple contracts. In USPC, the _update function lacks the whenNotPaused modifier, allowing state changes even when the contract is paused. In Pricer, price-reading functions are protected by whenNotPaused, but price-setting functions (addPrice, updatePrice) are not, allowing price manipulation during a pause. Additionally, the processRedemptions function only checks the global pause flag but omits the redemptionPaused flag, allowing redemptions to proceed even when specifically disabled. The root cause is inconsistent and incomplete application of access control modifiers. An attacker or malicious actor with privileged roles could exploit this during an emergency pause to update prices, manipulate the state, or process redemptions, undermining the intended safety mechanism. This renders the pause functionality ineffective, increasing risk during critical incidents.\n",
+            "severity": "Medium",
+            "location": [
+                "USPC.sol::_update",
+                "Pricer.sol::addPrice",
+                "Pricer.sol::updatePrice",
+                "IUSPCHub.sol::processRedemptions"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing Pricer Setter in IUSPCHub",
+            "description": "The IUSPCHub contract initializes the pricer address during construction but does not include a privileged function to update it afterward. The root cause is the absence of a setter function with appropriate role-based access control. If the current pricer contract becomes compromised, deprecated, or requires an upgrade, there is no way to replace it without deploying a new hub contract. This creates a single point of failure, as the protocol would be forced to rely on a potentially malfunctioning or outdated price feed. The impact is a critical availability and security risk, as stale or incorrect prices could lead to incorrect minting and redemption values, enabling arbitrage or causing systemic imbalance in the token economy.\n",
+            "severity": "Low",
+            "location": [
+                "IUSPCHub.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Ineffective Fee Collection on Micro-Transactions",
+            "description": "The fee calculation logic in the protocol does not account for integer division truncation, causing fees on very small transactions to round down to zero. The root cause is the lack of a minimum fee or minimum transaction size enforcement. An attacker can exploit this by splitting large transactions into many tiny \"dust\" amounts, each of which incurs zero fees due to precision loss. This allows users to bypass the fee mechanism entirely, eroding the protocol's revenue model. Additionally, this can be abused to launch a denial-of-service attack by flooding the system with zero-fee transactions, increasing gas costs and congestion without financial penalty, thereby degrading system performance and economic sustainability.\n",
+            "severity": "Low",
+            "location": [
+                "IUSPCHub.sol::vaultSubscription",
+                "IUSPCHub.sol::vaultRedemption",
+                "IUSPCHub.sol::processSubscriptions",
+                "IUSPCHub.sol::processRedemptions"
+            ],
+            "files": []
+        }
+    ]
+}

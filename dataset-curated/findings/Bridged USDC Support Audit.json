@@ -1,0 +1,139 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Bridged USDC Support Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts/"
+        ],
+        "commit_id": [
+            "77761d74152e319e6edd6d4d766cb46c39e6f38d"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-22",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Bridged USDC Support Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Custom Gas Tokens Can Get Stuck In `HubPool`",
+            "description": "The `ZkStack_CustomGasToken_Adapter` contract pulls custom gas tokens from the funder via the `relayTokens` function when bridging tokens to a ZK Stack chain. However, when using the CCTP bridge, custom gas tokens are not required for the transaction. Despite this, the function still pulls the gas tokens from the funder during the delegatecall from `HubPool`, causing these tokens to become stuck in the `HubPool` contract with no mechanism to retrieve them.\n\nThe root cause is the unconditional execution of `_pullCustomGas` before checking whether the custom gas token is actually needed for the selected bridge route (e.g., CCTP does not require it). This leads to unnecessary token transfers in cases where they serve no purpose.\n\nAn attacker could potentially exploit this by initiating multiple bridging transactions using the CCTP route, leading to accumulation of stuck gas tokens in `HubPool`, effectively locking user funds indefinitely.\n\nThe impact is loss of custom gas tokens for users, reducing capital efficiency and potentially disrupting gas token economics on affected chains. While not catastrophic, it represents a loss of user funds and reduced system reliability.\n",
+            "severity": "Low",
+            "location": [
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#186",
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#299",
+                "ZkStack_Adapter.sol::txBaseCost#162",
+                "ZkStack_CustomGasToken_Adapter.sol::sharedBridge#187"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Missing and Misleading Documentation",
+            "description": "Several parts of the codebase contain outdated or incorrect comments that do not reflect the actual logic, particularly around edge cases involving USDC bridging when `address(usdcToken) == address(0)`. For example, comments in `ZkStack_Adapter.sol` and `ZkStack_CustomGasToken_Adapter.sol` fail to account for this condition, which can mislead developers and auditors about the expected behavior.\n\nThe cause is insufficient maintenance of documentation during implementation changes, especially when new bridging routes like CCTP were introduced. Additionally, the mutual exclusivity of `zkUSDCBridgeDisabled` and `cctpUSDCBridgeDisabled` flags is enforced in code but not documented, increasing the risk of incorrect usage.\n\nWhile this cannot be directly exploited for financial gain, it increases the likelihood of developer errors during integration or future upgrades, especially when relying on comments instead of code.\n\nThe impact is reduced code maintainability, increased risk of integration bugs, and potential for future vulnerabilities due to misunderstanding of system invariants. This affects long-term security and developer experience.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkStack_Adapter.sol#203",
+                "ZkStack_CustomGasToken_Adapter.sol#247",
+                "ZkStack_Adapter.sol#107-109",
+                "ZkStack_CustomGasToken_Adapter.sol#130-132",
+                "ZkSync_SpokePool.sol#74-76"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_Adapter.sol",
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Relay Tokens From L1 Emits Empty Transaction Hash When Relaying USDC Through CCTP",
+            "description": "The `relayTokens` functions in both `ZkStack_Adapter.sol` and `ZkStack_CustomGasToken_Adapter.sol` define a `txHash` variable intended to capture the transaction hash from the `BRIDGE_HUB`. However, when CCTP is used, the `_transferUsdc` function bypasses the `BRIDGE_HUB` and does not return a transaction hash. As a result, the `ZkStackMessageRelayed` event is emitted with an empty `txHash`, which can confuse users and indexing services.\n\nThe root cause is the assumption that all bridging paths return a valid transaction hash, without handling the CCTP path as a special case. The event is emitted unconditionally regardless of the bridging method used.\n\nOff-chain systems that rely on the `txHash` for tracking or verification may fail or produce incorrect results when processing these events, leading to broken user experiences or incorrect analytics.\n\nThe impact is degraded observability and potential confusion for users and third-party services. While not a direct security vulnerability, it undermines trust and usability of the system's event interface.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkStack_Adapter.sol::relayTokens#154",
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#178",
+                "ZkStack_Adapter.sol::txHash#164",
+                "ZkStack_CustomGasToken_Adapter.sol::txHash#189",
+                "ZkStack_Adapter.sol::ZkStackMessageRelayed#222",
+                "ZkStack_CustomGasToken_Adapter.sol::ZkStackMessageRelayed#266"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_Adapter.sol",
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Potential Revert in USDC Relayer Refunds via Custom Bridge",
+            "description": "The `executeSlowRelayLeaf` function in `SpokePool.sol` triggers relayer refunds by calling `_distributeRelayerRefunds`, which in turn calls `_bridgeTokensToHubPool`. When bridging USDC via the ZK Stack custom bridge, this call reverts because the `HubPool` has not approved the `zkUSDCBridge` to transfer USDC tokens on its behalf.\n\nThe cause is the missing approval step before attempting to withdraw USDC through the custom bridge. The `HubPool` holds the tokens to be refunded but lacks the necessary allowance for the bridge contract to pull them.\n\nAn attacker could potentially trigger refund attempts that are destined to fail, causing denial of service for legitimate relayer refunds on this path. While not directly profitable, it disrupts protocol operations.\n\nThe impact is failed relayer refund transactions, leading to delayed or blocked fund recovery for relayers. This affects protocol reliability and economic incentives, potentially discouraging participation.\n",
+            "severity": "High",
+            "location": [
+                "SpokePool.sol::executeSlowRelayLeaf#1169",
+                "ZkSync_SpokePool.sol::withdraw#154"
+            ],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-430"
+                ]
+            },
+            "title": "Restricted USDC Bridging via Shared Bridge with Custom Gas Token",
+            "description": "In the `ZkStack_CustomGasToken_Adapter` contract, the `relayTokens` function incorrectly approves the `txBaseCost` amount of custom gas tokens to the `USDC_SHARED_BRIDGE` instead of the `sharedBridge` when bridging USDC via the shared bridge. This causes the bridging transaction to fail because the actual bridge (`sharedBridge`) lacks the necessary allowance.\n\nThe root cause is a logic error in the approval destination: the code uses `USDC_SHARED_BRIDGE` unconditionally, even when the `sharedBridge` is the one performing the transfer. This mismatch prevents the bridge from deducting gas fees.\n\nAn attacker could exploit this by initiating bridging transactions that appear valid but are guaranteed to revert, potentially disrupting user flows or causing front-running opportunities in dependent systems.\n\nThe impact is failed bridging transactions for USDC when using the shared bridge with custom gas tokens, leading to user fund lockups (temporarily) and degraded user experience. It breaks a core functionality path.\n",
+            "severity": "High",
+            "location": [
+                "ZkStack_CustomGasToken_Adapter.sol::relayTokens#178",
+                "ZkStack_CustomGasToken_Adapter.sol#230"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ZkStack_CustomGasToken_Adapter.sol"
+            ]
+        }
+    ]
+}

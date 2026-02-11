@@ -1,0 +1,856 @@
+{
+    "path": "dataset-curated/reports/MixBytes/DIA Lumina Staking Security Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/diadata-org/lumina-staking"
+        ],
+        "commit_id": [
+            "50b709199461ae48e3186d5a04cd22eff39ebcf5",
+            "dfd0bb6dc60735ed6983ee2aa4b10c7fac875ff6"
+        ],
+        "address": [
+            "0x677Cf1...059a5919",
+            "0x530643...d90389c8",
+            "0x9F5dA8...15cBdCa7"
+        ],
+        "chain": "EVM",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-22",
+        "project_path": {
+            "lumina-staking": "dataset-curated/contracts/DIA Lumina Staking Security Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "paidOutReward subtraction may lead to unstake and unstakePrincipal functions reverting",
+            "description": "This vulnerability occurs in the DIAWhitelistedStaking contract where, upon a user's first reward claim, the currentStore.reward is zeroed out after payout. If the user then attempts to unstake after the unstaking period, the unstake function may revert during the calculation `rewardToSend = currentStore.reward - currentStore.paidOutReward`, because currentStore.reward could be less than currentStore.paidOutReward if insufficient time has passed since staking began. The root cause is improper accounting of reward and paidOutReward state variables, leading to an underflow condition. An attacker could exploit this by claiming rewards early and then initiating an unstake request, causing the transaction to revert. The impact is that users are permanently blocked from unstaking their principal and rewards, effectively locking their funds in the contract.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAWhitelistedStaking.sol::unstake#",
+                "DIAWhitelistedStaking.sol::unstakePrincipal#"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inflation Attack in DIAExternalStaking Allows Stealing First Depositor's Stake",
+            "description": "The DIAExternalStaking contract is vulnerable to an inflation attack due to the permissionless addRewardToPool function and flawed share calculation logic. The attacker stakes a minimal amount, then unstakes all but one token, leaving total shares and total supply at 1. By frontrunning a victim's deposit and calling addRewardToPool with an amount equal to the victim's deposit, the attacker manipulates the pool state so the victim receives zero shares. The root cause is the lack of minimum share minting and unrestricted access to reward injection. This allows an attacker to repeatedly steal the first depositor's stake in a new or empty pool by manipulating share distribution. The impact is direct theft of user funds, leading to loss of deposited assets and undermining trust in the protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAExternalStaking.sol::addRewardToPool",
+                "DIAExternalStaking.sol::_stake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "Missing Reward Accumulator Initialization in Stake Creation",
+            "description": "In the DIAStakingCommons contract's _internalStakeForAddress function, the rewardAccumulator is not initialized when a new stake is created. This allows stakers to claim all historical rewards accumulated by the contract, not just those accrued since their deposit, due to the calculation `stakerDelta = rewardAccumulator - currentStore.rewardAccumulator` where the uninitialized currentStore.rewardAccumulator defaults to zero. A similar flaw exists in DIAWhitelistedStaking._getTotalRewards. The root cause is the omission of proper initialization of rewardAccumulator during stake creation. An attacker can exploit this by creating a new stake and immediately claiming rewards, receiving an unfairly large amount. The impact is incorrect reward distribution and potential loss of funds from the rewards pool due to unauthorized claims.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAStakingCommons.sol::_internalStakeForAddress",
+                "DIAWhitelistedStaking.sol::_getTotalRewards"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "currentStore.principal is not subtracted after it was withdrawn, allowing users to claim it again infinitely",
+            "description": "In the DIAWhitelistedStaking contract, the currentStore.principal value is not reset after a user withdraws their principal via the unstake function. This creates a vulnerability where a user can repeatedly call unstake and withdraw the same principal amount multiple times, as the contract does not track that the principal has already been withdrawn. The root cause is the missing update of the principal balance in storage post-withdrawal. An attacker can exploit this by calling unstake multiple times, draining more tokens than originally staked. The impact is severe financial loss to the protocol, potentially leading to complete depletion of the staking contract's token balance.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAWhitelistedStaking.sol::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "WDIA prohibits zero transfers, which will block rewards distribution to beneficiary address if 100% goes to principal unstaker",
+            "description": "The DIAExternalStaking contract's unstake function calculates reward distribution based on principalWalletShareBps. When set to 100%, the entire reward goes to the principal unstaker, making the beneficiary's reward amount zero. However, the WDIA token reverts on zero-amount transfers (if (wad == 0) revert ZeroTransferAmount()), causing the entire transaction to fail. The root cause is the lack of a zero-amount check before the transfer and WDIA's strict zero-transfer prohibition. An attacker or misconfigured setup can trigger this by setting principalWalletShareBps to 100%, blocking all reward claims. The impact is that users cannot claim any rewards under this configuration, effectively freezing rewards and rendering the staking mechanism unusable for such stakes.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAExternalStaking.sol::unstake",
+                "WDIA.sol::transfer"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Rewards are lost if user requests unstake in less than one day",
+            "description": "The DIAWhitelistedStaking contract's getRewardForStakingStore function calculates rewards based on full days using the formula passedDays = passedSeconds / (24 * 60 * 60). If a user requests unstake in less than one day, passedDays becomes 0, resulting in no reward being calculated for that period. This occurs due to integer division truncation in Solidity, which discards fractional days. An attacker could exploit this by repeatedly staking and unstaking within sub-daily intervals to manipulate reward accrual timing. The impact is that users lose accrued rewards for partial days, leading to unfair distribution and reduced user trust in the staking mechanism.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Rewards claiming may fail due to potentially decreasing parameters used in calculation",
+            "description": "In the DIAWhitelistedStaking contract, the updateReward function contains an assertion assert(reward >= currentStore.reward) that can fail if either rewardRatePerDay is decreased by the owner or currentStore.principal is reduced during partial unstaking. The getRewardForStakingStore function calculates rewards as (rewardRatePerDay * passedDays * currentStore.principal) / 10000, which may yield a value lower than currentStore.reward when inputs decrease. This causes the assertion to revert, blocking both reward and principal withdrawals for the user. The root cause is improper state validation when mutable parameters affect reward calculations. An attacker with ownership privileges could intentionally lower the reward rate to block user withdrawals. The impact is denial of service for reward and principal claiming, potentially locking user funds indefinitely.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::updateReward",
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Pending principal wallet share BPS value is not saved in storage",
+            "description": "In both DIAExternalStaking and DIAWhitelistedStaking contracts, the _getCurrentPrincipalWalletShareBps function reads from memory without persisting the pending BPS update to storage after the timeout period. This leads to outdated stakingStores[stakingStoreIndex].principalWalletShareBps values being used if new pending updates occur before the grace period ends. The cause is missing storage update logic in the BPS update mechanism. An attacker (or malicious beneficiary) could exploit this by timing BPS changes to manipulate reward distribution between principal and beneficiary wallets. The impact is loss of expected control over reward splits for beneficiaries, undermining the intended governance model and potentially causing financial loss.\n",
+            "severity": "High",
+            "location": [
+                "DIAExternalStaking::_getCurrentPrincipalWalletShareBps",
+                "DIAWhitelistedStaking::_getCurrentPrincipalWalletShareBps"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Reward Calculation When Reward Rate Changes",
+            "description": "The getRewardForStakingStore function in DIAWhitelistedStaking uses the current rewardRatePerDay to calculate rewards regardless of historical rate changes. This means two identical stakes started at different times may receive different rewards depending on when they call unstake(), even if their staking duration is the same. The root cause is the lack of time-segmented reward accounting based on rate periods. A malicious user could exploit this by timing unstake calls to maximize gains under higher rates, while others receive less due to rate drops. The impact is unfair and inconsistent reward distribution, which undermines trust in the staking system and may lead to user disputes or loss of confidence.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Incorrect Initialization of lastWithdrawalResetDay Causes Withdrawal Limits to Malfunction",
+            "description": "In the DIAExternalStaking contract constructor, lastWithdrawalResetDay is initialized with block.timestamp instead of block.timestamp / SECONDS_IN_A_DAY. This causes the daily withdrawal reset logic to malfunction because the comparison block.timestamp / SECONDS_IN_A_DAY > lastWithdrawalResetDay will never be true. As a result, the daily withdrawal limit becomes a one-time limit, breaking the intended security mechanism. The cause is incorrect unit handling during initialization. An attacker could exploit this by making early withdrawals to exhaust the pool's daily limit, permanently blocking others. The impact is a critical failure of the withdrawal rate-limiting feature, potentially leading to fund lockouts and reduced security.\n",
+            "severity": "High",
+            "location": [
+                "DIAExternalStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Reward Accumulation Manipulation Through Frequent Claims",
+            "description": "In the claim function of DIAWhitelistedStaking, a malicious user can repeatedly call claim() multiple times per day with minimal stake. Each call updates rewardLastUpdateTime but due to daysElapsed = (block.timestamp - rewardLastUpdateTime) / SECONDS_IN_A_DAY rounding down to zero, no rewards are accrued and rewardAccumulator remains unchanged. This prevents other stakers from receiving rewards, effectively freezing the entire reward distribution system. The root cause is insufficient precision in time-based reward accrual calculations. The impact is severe financial harm to honest stakers, as their rewards are withheld due to griefing attacks, undermining the economic model of the protocol.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::claim"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Calculation of Accrued Rewards in updateRewardRatePerDay",
+            "description": "In the DIARewardsDistribution contract's updateRewardRatePerDay function, two flaws exist: (1) it uses the updated rewardRatePerDay instead of the oldRewardRate to calculate rewards accrued since the last update, leading to incorrect accruals based on the new rate rather than the historical one; and (2) it divides rewardsAccrued by 10000 before adding to rewardAccumulator, which is later divided again by 10000 when calculating user rewards, resulting in excessive division and lost rewards. The cause is flawed arithmetic logic in accumulator updates. An attacker with rate-setting privileges could exploit this by rapidly changing rates to siphon or erase rewards. The impact is significant financial loss due to miscalculated and unfairly distributed rewards.\n",
+            "severity": "High",
+            "location": [
+                "DIARewardsDistribution::updateRewardRatePerDay"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Daily withdrawal limit decreases with totalPoolSize reduction",
+            "description": "In the DIAExternalStaking contract, the availableDailyLimit is calculated as (totalPoolSize * withdrawalCapBps) / 10000 inside the checkDailyWithdrawalLimit modifier. When totalPoolSize decreases due to unstaking, the daily limit shrinks proportionally, even if the remaining pool is large. This creates inconsistent behavior where users may be blocked from withdrawing later in the day despite sufficient liquidity. The root cause is dynamic dependency on a fluctuating totalPoolSize instead of a fixed daily baseline. An attacker could exploit this by unstaking large amounts early to reduce the limit for others. The impact is denial of access to funds and unpredictable withdrawal behavior, reducing user confidence.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::checkDailyWithdrawalLimit"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Principal wallet pending share BPS usage is missed in getRewardForStakingStore function",
+            "description": "In the DIAExternalStaking contract, the getRewardForStakingStore function uses the static store.principalWalletShareBps value instead of calling _getCurrentPrincipalWalletShareBps, which accounts for pending updates. This means pending BPS changes are not reflected in reward estimates, misleading users about expected payouts. The cause is failure to use the correct view function for dynamic state. An attacker could exploit this by initiating a BPS change and then quickly claiming rewards before the update takes effect, capturing more than intended. The impact is inaccurate reward reporting and potential for unfair distribution during transition periods.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "stakingIndicesByPrincipalUnstaker mapping not updated in updatePrincipalUnstaker function",
+            "description": "In both DIAExternalStaking and DIAWhitelistedStaking contracts, the updatePrincipalUnstaker function fails to update the stakingIndicesByPrincipalUnstaker mapping when changing the principal unstaker. This results in stale indices for both old and new unstakers, leading to incorrect tracking of associated stakes. The cause is missing mapping maintenance logic in the update function. An attacker could exploit this by changing unstakers and then manipulating stake operations using outdated indices. The impact is corrupted internal accounting, which may lead to incorrect unstaking behavior or denial of service for legitimate unstake requests.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::updatePrincipalUnstaker",
+                "DIAWhitelistedStaking::updatePrincipalUnstaker"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Whitelist can be bypassed in DIAWhitelistedStaking",
+            "description": "The stakeForAddress function in DIAWhitelistedStaking allows specifying any whitelisted beneficiary while assigning 100% of rewards to the principal. Since the beneficiary can be a contract, this enables non-whitelisted users to effectively bypass the whitelist by using a whitelisted contract as a proxy. The cause is insufficient validation of reward share distribution during staking. An attacker could exploit this to gain unauthorized access to the staking mechanism by leveraging a whitelisted contract beneficiary. The impact is circumvention of access controls, allowing unapproved participants to stake and earn rewards, undermining the security model.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAWhitelistedStaking::stakeForAddress"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Principal withdrawal may be blocked by insufficient rewards wallet balance in DIAWhitelistedStaking",
+            "description": "The unstake() and unstakePrincipal() functions in DIAWhitelistedStaking require transferring rewards from an external rewardsWallet before allowing principal withdrawal. If the rewardsWallet has insufficient balance or revoked allowances, the safeTransferFrom() call reverts, blocking the entire transaction and preventing principal withdrawal. The cause is tight coupling between reward payout and principal release. An attacker could exploit this by draining or revoking the rewardsWallet to freeze user withdrawals. The impact is permanent lockout of user principal funds despite the principal being available in the contract, leading to loss of user assets and trust.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAWhitelistedStaking::unstake",
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect event emission in updatePrincipalPayoutWallet in DIAStakingCommons",
+            "description": "The updatePrincipalPayoutWallet() function in DIAStakingCommons incorrectly emits the PrincipalPayoutWalletUpdated event by using the updated value of currentStore.principalPayoutWallet instead of the previously stored oldWallet variable. This occurs because the storage is updated before the event is emitted, causing the event to log the same address for both old and new wallet fields, making it impossible to track the actual change. The root cause is improper ordering of state update and event emission. An attacker or observer cannot rely on event logs to detect wallet changes, leading to incorrect off-chain indexing and reduced transparency. The impact is limited to incorrect event data, as core functionality remains intact.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::updatePrincipalPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Lack of slippage protection in unstake function in DIAExternalStaking",
+            "description": "The unstake() function in DIAExternalStaking calculates withdrawal amounts based on real-time pool state without allowing users to specify a minimum output amount. The calculation depends on variables like totalPoolSize and totalShareAmount, which can change between the requestUnstake() call and the actual unstake execution due to other users' actions or reward additions. The root cause is the absence of a slippage protection mechanism. An attacker or market participant could manipulate the pool state to reduce the amount a user receives upon unstaking. The impact is that users may receive less than expected, leading to potential economic loss, though the contract remains functional.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Missing tokensStaked update in unstakePrincipal causing accounting drift in DIAWhitelistedStaking",
+            "description": "The unstakePrincipal() function in DIAWhitelistedStaking decreases the individual principal amount but fails to decrement the global tokensStaked counter. This causes a growing discrepancy between the sum of individual stakes and the global accounting variable. The root cause is the omission of the tokensStaked -= amount operation. While tokensStaked is not currently used in DIAWhitelistedStaking logic, the inconsistency could mislead external systems that rely on this variable for analytics or integration. The impact is inaccurate accounting data, which could affect protocol monitoring and third-party services.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing zero-address validation and boundaries check in DIARewardsDistribution constructor",
+            "description": "The constructor of DIARewardsDistribution does not validate that rewardsTokenAddress or newRewardsWallet are non-zero addresses, allowing deployment with invalid parameters that would render the contract non-functional. Additionally, the rewardRatePerDay parameter lacks bounds checking, enabling it to be set to excessively high values. The root cause is missing input validation. An attacker or mistaken deployment could set zero addresses or extreme reward rates, leading to failed transactions or disproportionate reward claims. The impact includes potential denial of service from zero addresses and economic imbalance from excessive rewards.\n",
+            "severity": "Low",
+            "location": [
+                "DIARewardsDistribution::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Redundant zero check for unsigned integer in setDailyWithdrawalThreshold",
+            "description": "The setDailyWithdrawalThreshold() function performs a check if (newThreshold <= 0) on a uint256 parameter, which is redundant because unsigned integers cannot be negative. The condition is functionally equivalent to == 0 but is misleading and suggests a misunderstanding of Solidity types. The root cause is poor code clarity due to incorrect comparison logic. While it does not introduce a direct security flaw, it can confuse developers and auditors. The impact is reduced code readability and potential for future bugs during maintenance.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::setDailyWithdrawalThreshold",
+                "DIAStakingCommons::setDailyWithdrawalThreshold"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused logic related to the daily withdrawal threshold in DIAStakingCommons",
+            "description": "The setDailyWithdrawalThreshold() function and related storage variables (withdrawalCap, totalDailyWithdrawals, etc.) are present but unused in DIAStakingCommons. The root cause is dead code from incomplete refactoring or feature removal. This increases contract size, deployment cost, and potential confusion. An attacker could attempt to interact with these functions if they were mistakenly exposed, though they are not callable in the current state. The impact is bloat and reduced maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::setDailyWithdrawalThreshold"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing zero amount validation in token transfers in DIAWhitelistedStaking",
+            "description": "The unstakePrincipal() function performs token transfers without checking if the amount is zero, leading to unnecessary gas costs and misleading events when beneficiaryReward is zero. The root cause is lack of input validation before safeTransferFrom calls. While the transfer succeeds, it wastes gas and pollutes event logs. The impact is inefficiency and noise in transaction data, which could affect indexing and analytics.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Multiple legacy and safety issues in WDIA inherited from WETH9",
+            "description": "The WDIA contract inherits several issues from WETH9, including silent fallback behavior, lack of overflow protection, unrestricted compiler version, missing zero address checks, and front-running risk in approve(). The root cause is outdated code patterns. These issues collectively reduce security and compatibility. An attacker could exploit the silent fallback to trick users into unintended deposits, or front-run approve calls to drain allowances. The impact includes potential fund loss and reduced interoperability.\n",
+            "severity": "Low",
+            "location": [
+                "WDIA::fallback",
+                "WDIA::deposit",
+                "WDIA::withdraw",
+                "WDIA::transfer",
+                "WDIA::transferFrom",
+                "WDIA::approve"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/WDIA.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Staking Limit Cannot Be Updated in Case of Incorrect Value",
+            "description": "The stakingLimit parameter in DIAExternalStaking is set only during deployment and cannot be changed afterward. The root cause is the absence of a setter function. If an incorrect value is set, the contract must be redeployed. This reduces operational flexibility. The impact is reduced upgradability and potential need for migration, though no direct security breach occurs.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of checks in the DIAExternalStaking and DIAWhitelistedStaking constructors",
+            "description": "The constructors of DIAExternalStaking and DIAWhitelistedStaking do not validate unstakingDuration or stakingTokenAddress against zero. The root cause is missing input validation. Setting invalid values could lead to unusable contract states. The impact is potential misconfiguration, though the severity is low as it does not directly enable attacks.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::constructor",
+                "DIAWhitelistedStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
+                ]
+            },
+            "title": "Unused REWARDS_TOKEN Variable",
+            "description": "The REWARDS_TOKEN variable in DIARewardsDistribution is declared but never used. The root cause is leftover code from prior development. This increases contract size and may confuse auditors. The impact is minimal, limited to code clarity and gas efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "DIARewardsDistribution"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Unlimited reward rate enables overflow DoS attack in DIARewardsDistribution",
+            "description": "The updateRewardRatePerDay() function allows setting arbitrarily high reward rates, which can cause arithmetic overflow in reward calculations. The root cause is missing upper bounds validation. An attacker or malicious owner could set rewardRatePerDay to type(uint256).max, causing getRewardForStakingStore() to overflow and revert. This leads to a denial-of-service where reward-dependent functions become unusable. The impact is temporary disruption of core functionality until the rate is lowered.\n",
+            "severity": "Low",
+            "location": [
+                "DIARewardsDistribution::updateRewardRatePerDay",
+                "DIARewardsDistribution::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Wrong role checked in onlyBeneficiaryOrPayoutWallet modifier in DIAExternalStaking",
+            "description": "The onlyBeneficiaryOrPayoutWallet modifier checks principalUnstaker instead of principalPayoutWallet, preventing the correct address from calling authorized functions. The root cause is a logic error in access control. This denies legitimate users access to unstake functions, contradicting the modifier's intent. The impact is a denial-of-service for rightful payout recipients when roles are separated.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::onlyBeneficiaryOrPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Principal payout wallet can be set to zero address causing permanent fund loss in DIAStakingCommons",
+            "description": "The updatePrincipalPayoutWallet() function allows setting the payout wallet to address(0) without validation. The root cause is missing zero address check. When set, all future withdrawals send funds to the zero address, resulting in irreversible token loss. The impact is permanent destruction of both principal and reward tokens, though the issue is mitigated by role restrictions.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::updatePrincipalPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Duplicate IERC20 import in DIAExternalStaking",
+            "description": "DIAExternalStaking imports IERC20 from two different OpenZeppelin paths, one of which is redundant. The root cause is unnecessary code duplication. This can cause confusion and compilation inconsistencies. The impact is reduced code clarity and potential for version mismatches.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Replace hardcoded 24 * 60 * 60 with SECONDS_PER_DAY in DIAWhitelistedStaking",
+            "description": "The DIAWhitelistedStaking contract uses a hardcoded 24 * 60 * 60 instead of the defined SECONDS_PER_DAY constant. The root cause is inconsistent coding practices. This reduces readability and maintainability. The impact is minor, limited to code quality and consistency.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Potential out-of-gas risk in _removeStakingIndexFromAddressMapping with large stake counts",
+            "description": "The _removeStakingIndexFromAddressMapping function uses a linear search to remove a staking index, which could exceed the block gas limit if a user has many stakes. The root cause is inefficient data structure usage. An attacker could force high gas costs by creating many stakes, preventing removal. The impact is denial of service for users with large stake counts.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::_removeStakingIndexFromAddressMapping"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Shadowed variables in DIAWhitelistedStaking constructor",
+            "description": "The constructor parameters rewardsWallet and rewardRatePerDay shadow state variables of the same name. The root cause is poor naming practice. This can confuse developers and lead to bugs during maintenance. The impact is reduced code clarity and increased risk of human error.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unnecessary update of stakingStartTime after full principal withdrawal in unstakePrincipal() and unstake()",
+            "description": "The unstakePrincipal() and unstake() functions unconditionally update stakingStartTime even when the principal is fully withdrawn. The root cause is redundant state update. This wastes gas and may confuse interpretation of stake history. The impact is inefficiency and potential misinterpretation of contract state.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal",
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event emission in updatePrincipalUnstaker() in DIAExternalStaking and DIAStakingCommons",
+            "description": "The updatePrincipalUnstaker() function updates the principalUnstaker address but does not emit an event. The root cause is lack of transparency mechanism. This makes it difficult for off-chain systems to track role changes. The impact is reduced auditability and integration challenges.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::updatePrincipalUnstaker",
+                "DIAStakingCommons::updatePrincipalUnstaker"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Parameters in Claimed Event",
+            "description": "The Claimed event in the unstake function of DIAExternalStaking is emitted after state variables are reset to zero, resulting in zero values being logged. The root cause is incorrect event emission order. This leads to inaccurate historical data. The impact is incorrect off-chain tracking and analysis of unstaking events.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-571"
+                ]
+            },
+            "title": "Redundant Return Value from _updateRewardAccumulator",
+            "description": "The _updateRewardAccumulator function always returns true, making the return value and subsequent conditional checks meaningless. The root cause is unnecessary code design. This leads to redundant logic throughout the contract. The impact is reduced code clarity and wasted gas from unnecessary variable assignments.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::_updateRewardAccumulator"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        }
+    ]
+}

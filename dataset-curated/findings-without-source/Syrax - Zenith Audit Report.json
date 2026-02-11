@@ -1,0 +1,87 @@
+{
+    "path": "dataset-curated/reports/Zenith/Syrax - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Syrax-AI/evm-router"
+        ],
+        "commit_id": [
+            "c43f9e723ca69a1cdb73449ddd2acf46b9faace8"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-20",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Compromised signer can drain user funds breaking security guarantee",
+            "description": "The vulnerability allows a compromised signer to drain user funds despite the project's security guarantee that user funds should remain safe even if the admin is compromised. The root cause lies in the design of the `buy` function, which allows arbitrary calls to external contracts via `targetContract.call(params.data)`. An attacker can craft malicious calldata to directly call `transferFrom` on a token the user has approved to the router, thereby stealing funds. The function does not restrict dangerous operations or validate the target, enabling the exploit. As a result, user funds can be stolen if the signer's private key is compromised, undermining the core security model of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapRouter.sol#L247"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Potential fee theft via Reentrancy",
+            "description": "This vulnerability arises from the balance-delta accounting mechanism in the `buy` and `sell` functions, which is susceptible to manipulation during reentrant calls. If a reentrant call uses the same token as both `tokenIn` (in the reentrant call) and `tokenOut` (in the original call), the fee left in the contract from the reentrant call is incorrectly included in the original call's output amount. The cause is the lack of a reentrancy guard and the reliance on external calls that can be exploited via hooks (e.g., UniswapV4). An attacker can trigger a reentrant swap that leaves fees in the router, causing the original swap to overpay the user by including those fees in the balance delta. This leads to fee theft, where users can effectively bypass paying their full fee.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapRouter.sol#L286"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "User fund may be stuck during an exact-output swap",
+            "description": "During an exact-output swap, users must approve and transfer the maximum possible input amount (`amountInMaximum`) to the router. However, if the actual amount used in the swap is less than this maximum, the unused portion remains in the router contract and is not refunded to the user. The root cause is the absence of a refund mechanism after the swap completes. This violates the stated invariant that \"contract balance always equals accumulated fees only \u2014 no user tokens stuck.\" An attacker is not required; the issue occurs under normal operation when using exact-output paths. The impact is that user funds can become permanently stuck in the contract, leading to loss of user assets and reduced trust in the platform.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapRouter.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Sell fee is taken from input instead of output",
+            "description": "The vulnerability is a logic inconsistency between the documented behavior and the actual implementation of the fee calculation in the `sell` function. According to the documentation and invariants, the sell fee should be taken from the output amount (`tokenOut`), but the code instead calculates and deducts the fee from the input amount (`tokenIn`). The cause is incorrect fee math in the implementation, specifically on line 302 where `feeAmount` is calculated from `params.amountIn`. This allows the router to take more value from the user than intended, as the fee is effectively charged twice \u2014 once from input and not adjusted in output. The impact is economic loss for users and a deviation from expected behavior, undermining transparency and correctness.\n",
+            "severity": "Medium",
+            "location": [
+                "SwapRouter::sell"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "EIP-712 Type Hash Mismatch with Struct Definition",
+            "description": "The `BUY_TYPEHASH` and `SELL_TYPEHASH` constants used for EIP-712 signature verification do not match the actual `BuyParams` and `SellParams` struct definitions. Specifically, the type hash includes a `user` field that is missing from the struct, while the struct includes a `signature` field that is not part of the hash. This violates EIP-712 compliance, which requires exact correspondence between the type hash and the struct. The contract works around this by passing `msg.sender` separately and excluding `signature` from hashing, but this creates ambiguity about what data is being signed and weakens security guarantees. The impact is reduced interoperability and potential for signature misinterpretation, though no direct exploit is immediate.\n",
+            "severity": "Low",
+            "location": [
+                "SwapRouter.sol#L29",
+                "SwapRouter.sol#L34"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Signature replay attack breaks one-time use guarantee",
+            "description": "The contract does not prevent signature replay attacks, allowing users to reuse the same signature multiple times before the deadline expires. The root cause is the absence of a nonce or on-chain state to track whether a signature has already been used. Functions like `buy` and `sell` verify the signature and deadline but do not mark the signature as consumed. An attacker can replay a valid signature for a discounted fee swap multiple times, abusing reward programs and gaining unintended economic benefits. This breaks the one-time use guarantee and enables economic exploits. While mitigated by short deadlines and backend tracking, the lack of on-chain protection remains a design limitation.\n",
+            "severity": "Informational",
+            "location": [
+                "SwapRouter.sol#L374-L385"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,783 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_liminal_oct2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Lmnal/liminal-contracts",
+            "https://github.com/Lmnal/xtokens-spearbit"
+        ],
+        "commit_id": [
+            "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae",
+            "760e1420",
+            "2e4efc3d",
+            "b1483def"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-12",
+        "project_path": {
+            "liminal-contracts": "dataset-curated/contracts/cantina_liminal_oct2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Custom Fees Settable up to 100% in fulfillFastRedeems Can Seize Redemptions",
+            "description": "The fulfillFastRedeems function allows a caller with the FULFILL_MANAGER_ROLE to specify a customFees array. While the code checks that the fee does not exceed 100% (feeBps <= BASIS_POINTS), it lacks a stricter, more reasonable upper bound. This allows a privileged manager to set a punitive fee of up to almost 100%, which could be used to unfairly seize the majority or almost all of a user's redemption value.\nThe root cause is the absence of a configurable or hardcoded sane maximum fee limit enforced on-chain. An attacker with the FULFILL_MANAGER_ROLE could exploit this by setting an excessively high fee during redemption processing.\nThe exploitation would occur when the attacker calls fulfillFastRedeems with a near-100% fee, causing users to lose most of their redemption value to the fee recipient.\nThe impact is financial loss for users during fast redemption, undermining trust in the system's fairness and potentially enabling abuse by privileged actors.\n",
+            "severity": "Medium",
+            "location": [
+                "RedemptionPipe.sol#L439-L466"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-179"
+                ]
+            },
+            "title": "Unsafe Type Conversion for Refund Recipient Can Lead to Funds Lost to 0xdead Address",
+            "description": "In the lzCompose function's catch block, the logic to determine the refund recipient contains an unsafe type conversion. The code extracts a bytes32 value (extractedRecipient) and checks if it is non-zero before converting it to an address. However, a bytes32 value can be non-zero while its lower 20 bytes (used for address conversion) are zero, resulting in address(0). This causes refunded assets to be sent to LayerZero's null address (0xdead), leading to permanent loss of funds.\nThe root cause is validating the bytes32 value before conversion instead of validating the resulting address after conversion.\nAn attacker could craft a malicious payload where the upper bytes of the bytes32 are non-zero but the lower 20 bytes are zero, triggering the vulnerability.\nThe impact is permanent loss of user funds during cross-chain refund operations, reducing recoverability of assets in failure scenarios.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultComposerBase.sol#L101-L105"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultComposerBase.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Critical Oracle Parameters Lack Timelock Protection",
+            "description": "The setPriceId and setPriceIds functions in PythPriceOracle.sol, which configure Pyth price feed IDs and decimals, are only protected by PRICE_MANAGER_ROLE and lack timelock protection. A compromised or malicious price manager could instantly change price feed configurations, enabling manipulation of all price conversions within the system.\nThe root cause is the absence of the onlyTimelock modifier on critical configuration functions, deviating from security best practices used elsewhere in the system.\nAn attacker with PRICE_MANAGER_ROLE could change price feeds to manipulated ones or set incorrect decimals, leading to incorrect share calculations and enabling fund siphoning from DepositPipe and RedemptionPipe.\nThe impact includes systemic financial manipulation, incorrect valuation of assets, and potential draining of protocol funds through frontrunning or artificial price manipulation.\n",
+            "severity": "Medium",
+            "location": [
+                "PythPriceOracle.sol#L101-L117",
+                "PythPriceOracle.sol#L119-L143"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Timelock Admin Can Instantly Change Delays, Bypassing Governance Safeguards",
+            "description": "The VaultTimelockController's setFunctionDelay and setDefaultFunctionDelay functions are protected only by DEFAULT_ADMIN_ROLE without any timelock, allowing immediate changes to delay periods. This undermines the entire purpose of the timelock as a governance safeguard.\nThe root cause is the lack of self-enforced timelocking on the timelock's own configuration functions, enabling an admin to reduce delays instantly.\nAn attacker with DEFAULT_ADMIN_ROLE could reduce the delay of a critical function (e.g., contract upgrade) from 7 days to 1 hour and execute a malicious upgrade within that short window, leaving users no time to react.\nThe impact is complete bypass of governance safeguards, enabling rapid malicious upgrades and potential theft of all protocol funds, effectively negating the security model.\n",
+            "severity": "Medium",
+            "location": [
+                "VaultTimelockController.sol#L314-L350"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Privileged Role Can Arbitrarily Set NAV and Drain Instant Redeemable Funds Due to Circumventable & Missing Safeguards",
+            "description": "The NAVOracle contract allows the VALUATION_MANAGER_ROLE to call setTotalAssets and directly overwrite the Net Asset Value (NAV). While a maxPercentageIncrease check exists, it can be bypassed via sequential calls in the same block or by setting NAV to zero first (which skips the check), then inflating it.\nThe root cause is the lack of downside protection (maxPercentageDecrease) and intra-block cooldown mechanisms, making the safeguard easily circumventable.\nAn attacker could set NAV to near-zero, deposit a small amount to mint nearly all shares, then reset NAV to steal all assets. Alternatively, they could inflate NAV before redeeming to extract excessive assets.\nThe impact includes total loss of funds for depositors and redemption holders, enabling complete vault draining by a privileged role.\n",
+            "severity": "Medium",
+            "location": [
+                "NAVOracle.sol#L182-L205"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/NAVOracle.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Oracle Manipulation Enables Attackers Unfair Share Minting and Inflated Redemptions",
+            "description": "The protocol uses spot prices from PythPriceOracle for asset valuation, making it vulnerable to price manipulation via flash loans or other means. Attackers can exploit this during deposits (to mint excessive shares) or redemptions (to withdraw inflated amounts).\nThe root cause is reliance on volatile spot prices without using time-averaged prices (like EMA) or confidence interval checks, which are necessary defenses against manipulation.\nIn Attack Vector 1, an attacker manipulates the price upward, deposits a small amount, and receives disproportionately high shares. In Attack Vector 2, they inflate NAV before redeeming to extract more assets than deserved.\nThe impact includes unfair dilution of existing holders, loss of funds from the vault, and systemic risk from oracle manipulation, undermining the integrity of share pricing and redemption.\n",
+            "severity": "Medium",
+            "location": [
+                "PythPriceOracle.sol#L219-L237"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Refund Logic Fails in Multi-Hop Scenarios, Risking Stuck Funds",
+            "description": "The _refund function in VaultComposerBase refunds failed cross-chain messages to the immediate source (_message.srcEid()), not the original sender's chain. In multi-hop scenarios (e.g., Chain A \u2192 Chain B \u2192 Chain C), if the final leg fails, funds are refunded to the intermediate chain (B), not the origin (A).\nThe root cause is the lack of origin chain tracking in the message payload, causing incorrect refund routing.\nAn attacker or user error could result in funds being stranded on an intermediate chain where the user has no access, requiring manual recovery.\nThe impact is temporary or permanent loss of user funds due to incorrect refund routing in complex cross-chain paths, increasing operational risk and user friction.\n",
+            "severity": "Low",
+            "location": [
+                "VaultComposerBase.sol#L133-L142"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultComposerBase.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Potential Value Leakage and Over-Approval Due to OFT Dedusting",
+            "description": "The depositAssetAndSend and redeemAndSend functions approve and transfer the full calculated amount of an asset, but LayerZero's OFT performs dedusting (handling decimal differences), resulting in slightly less arriving at the destination. The dust remains in the contract, and the full amount is over-approved.\nThe root cause is not pre-calculating the actual bridged amount using IOFT.quoteOFT() before approval and transfer.\nOver many transactions, accumulated dust represents lost user value, and over-approval increases security risk if the OFT contract is compromised.\nThe impact includes gradual value leakage from users and unnecessary approval exposure, reducing capital efficiency and increasing attack surface.\n",
+            "severity": "Low",
+            "location": [
+                "OVaultComposerMulti.sol#L139-L162",
+                "OVaultComposerMulti.sol#L164-L192"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Null Address Can Be Set as Receiver in Cross-Chain Deposits",
+            "description": "The _handleDepositAsset function in OVaultComposerMulti decodes a receiver address from the payload but does not validate that it is non-zero. If a malformed message sets the receiver to address(0), the mint operation will revert due to ERC20 safeguards, triggering a refund process.\nThe root cause is missing input validation for the receiver address in the cross-chain message handler.\nWhile the mint reverts, this results in unnecessary cross-chain refund transactions, increasing gas costs and complexity.\nThe impact is inefficient use of gas and potential user confusion due to failed deposits and refunds, though funds are not permanently lost.\n",
+            "severity": "Low",
+            "location": [
+                "OVaultComposerMulti.sol#L344-L347"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Management fee accrues over zero-supply periods",
+            "description": "In FeeManager.sol, when currentSupply == 0, the function returns early without updating lastManagementFeeTimestamp. If the vault remains empty and later receives a deposit, fees may be accrued for the entire idle period, charging for time when no assets under management existed.\nThe root cause is failure to update the timestamp during zero-supply periods, leading to stale state.\nThis could result in retroactive fee accrual upon deposit, unfairly charging users for periods with no supply.\nThe impact is potential overcharging of management fees, leading to unfair distribution of fees and reduced transparency in fee calculation.\n",
+            "severity": "Low",
+            "location": [
+                "FeeManager.sol#L208"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Unsafe ERC20 approval pattern",
+            "description": "OVaultComposerMulti directly calls approve on ERC20 tokens without first resetting the allowance to zero. This can fail on tokens that require a zero-approval before setting a new allowance (e.g., USDT, USDC).\nThe root cause is using an unsafe approval pattern that does not comply with the requirements of certain ERC20 tokens.\nAn attacker or user could be affected if a previous non-zero allowance blocks a new approval, preventing intended transfers.\nThe impact is potential transaction failure for certain tokens, reducing interoperability and reliability of cross-chain operations.\n",
+            "severity": "Low",
+            "location": [
+                "OVaultComposerMulti.sol#L159"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Incorrect upgrade function selectors in timelock",
+            "description": "VaultTimelockController configures delays for upgradeProxy(address,address) and upgradeProxyAndCall(address,address,bytes), but these selectors do not match standard upgrade patterns like Transparent Proxy (upgrade(address,address)) or UUPS (upgradeTo(address)).\nThe root cause is misconfiguration of function selectors in the timelock, leading to potential gaps in protection.\nIf the actual upgrade functions use standard selectors, they would not be subject to the timelock delay, allowing instant upgrades by the admin.\nThe impact is a critical governance bypass risk, where contract upgrades can occur without delay, undermining the security model.\n",
+            "severity": "Low",
+            "location": [
+                "VaultTimelockController.sol#L159-L160"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing validation of decimals against token metadata",
+            "description": "The PythPriceOracle contract stores the number of decimals for an asset based on external input without validating that it matches the actual value returned by IERC20Metadata(asset).decimals(). This lack of validation can result in a mismatch between the stored and actual decimals.\nThe root cause is the absence of a validation check against the token's metadata, relying instead on potentially incorrect external input.\nAn attacker or misconfiguration could supply an incorrect decimals value, which would skew the scaling logic used for price normalization.\nThis would lead to incorrect price calculations, affecting downstream systems that rely on accurate normalized prices, potentially causing financial loss or incorrect state transitions.\n",
+            "severity": "Low",
+            "location": [
+                "PythPriceOracle.sol#L114"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Missing setter for timeLockController",
+            "description": "The PythPriceOracle contract declares a timeLockController address but does not provide a function to set or update it after deployment. This prevents necessary governance operations such as rotating the timelock, fixing misconfigurations, or aligning with other protocol components.\nThe root cause is the omission of a setter function for the timeLockController state variable, despite its critical role in access control.\nAn attacker cannot directly exploit this, but it creates operational risk if the current timelock becomes compromised or needs updating.\nThe impact is reduced system flexibility and inability to perform essential maintenance or security updates, potentially leading to permanent lock-in of a compromised or outdated timelock address.\n",
+            "severity": "Low",
+            "location": [
+                "PythPriceOracle.sol#L22"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-570"
+                ]
+            },
+            "title": "Unreachable Code in Decimal Normalization Logic",
+            "description": "The DepositPipe contract includes a require(underlyingDecimals <= 18) check in its initializer, which ensures that the contract cannot be deployed with more than 18 decimals. However, helper functions _normalizeToDecimals18 and _normalizeFromDecimals18 contain else branches that handle cases where underlyingDecimals > 18, which are unreachable due to the initializer check.\nThe root cause is redundant logic that was not removed after the deployment guard was implemented.\nAn attacker cannot exploit this, but it represents dead code that increases deployment cost and reduces code clarity.\nThe impact is higher gas costs for deployment due to larger bytecode size and increased cognitive load for auditors and developers, potentially leading to confusion about intended behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositPipe.sol#L385-L388",
+                "DepositPipe.sol#L405-L408"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositPipe.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Various Gas Optimizations",
+            "description": "Multiple gas inefficiencies were identified across several contracts. These include: redundant manual refund logic in VaultComposerBase.sol, suboptimal storage packing in NAVOracle.sol and RedemptionPipe.sol, inefficient use of external self-calls in VaultComposerBase.sol, an unused constant in VaultTimelockController.sol, and redundant replay protection in OVaultComposerMulti.sol that duplicates LayerZero's built-in mechanism.\nThe root causes vary: some stem from using larger data types than necessary (e.g., uint256 instead of uint96), others from architectural decisions like manual refund handling when LayerZero already provides it, and some from unused or redundant code patterns.\nWhile not directly exploitable, these inefficiencies increase transaction costs and deployment overhead.\nThe impact is higher gas consumption for users and operators, increased deployment costs, and unnecessarily complex code that could obscure real vulnerabilities.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultComposerBase.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/NAVOracle.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "PythPriceOracle duplicates positivity check on price",
+            "description": "The PythPriceOracle contract performs two equivalent checks on the positivity of a fetched price: `price.price > 0` and `int256(price.price) > 0`. Since `price.price` is already a signed integer (int64), casting it to int256 and rechecking positivity adds no additional safety.\nThe root cause is redundant validation logic that fails to recognize type equivalence during comparison.\nThis does not create a security vulnerability but represents wasted computation.\nThe impact is unnecessary gas consumption during price validation, slightly increasing the cost of every price update operation.\n",
+            "severity": "Informational",
+            "location": [
+                "PythPriceOracle.sol#L232-L234"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Encapsulate authorization check in a modifier",
+            "description": "The DepositPipe contract repeats the same authorization logic (`controller == msg.sender || shareManager.isOperator(controller, msg.sender)`) in multiple locations (e.g., L202, L289), leading to code duplication.\nThe root cause is the lack of a dedicated modifier or internal function to encapsulate this common access control pattern.\nWhile not directly exploitable, duplicated logic increases the risk of inconsistent checks or errors during future modifications.\nThe impact is increased bytecode size, higher maintenance burden, and potential for security drift if one instance is updated while others are not, leading to inconsistent access control behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositPipe.sol#L202-L204"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositPipe.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Remove unused Ownable2StepUpgradeable",
+            "description": "The Ownable2StepUpgradeable contract is imported but not used in multiple files including ShareManager.sol, NAVOracle.sol, FeeManager.sol, DepositPipe.sol, RedemptionPipe.sol, OVaultComposerMulti.sol, PythPriceOracle.sol, and VaultTimelockController.sol.\nThe root cause is unnecessary inheritance or import of a base contract that provides no functional benefit in these contexts.\nThis does not create a direct security risk but increases deployment cost and maintenance surface.\nThe impact is higher gas costs due to larger bytecode and increased complexity in the codebase, making audits and upgrades more difficult than necessary.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositForwarder.sol#L19"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/ShareManager.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/NAVOracle.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/FeeManager.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositPipe.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/PythPriceOracle.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol",
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositForwarder.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused boolean return value",
+            "description": "In ShareManager.sol, the function at line 192 returns a boolean value (true), but this return value is not used by any callers (e.g., in FeeManager). This pattern adds no functional value.\nThe root cause is a design choice to return success indicators instead of using Solidity's revert-on-failure pattern.\nThis does not create a security vulnerability but represents unnecessary complexity.\nThe impact is slightly increased bytecode size and cognitive load for developers, with no benefit since callers do not check the return value.\n",
+            "severity": "Informational",
+            "location": [
+                "ShareManager.sol#L192"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/ShareManager.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1093"
+                ]
+            },
+            "title": "Redundant owner field in pending request structs",
+            "description": "In RedemptionPipe, both PendingRedeemRequest and PendingFastRedeemRequest structs include an owner field, even though the mappings are already keyed by owner. This creates redundant data storage.\nThe root cause is poor data modeling that duplicates information already available via the mapping key.\nThis increases storage costs and introduces the risk of inconsistency if the key and stored value ever diverge.\nThe impact is higher gas costs for storage operations and potential for logic errors if the redundant field is updated independently of the key.\n",
+            "severity": "Informational",
+            "location": [
+                "RedemptionPipe.sol#L88-L98"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ]
+            },
+            "title": "Avoid external self-calls via this for getDelay",
+            "description": "In VaultTimelockController, the pattern `this.getDelay(data)` triggers an external call to the same contract, which is unnecessary for a pure/view function.\nThe root cause is using external visibility and `this.` syntax instead of internal calls for functions that could be accessed internally.\nThis creates unnecessary gas overhead due to the external call frame.\nThe impact is increased gas consumption for time delay checks, which are likely frequent operations in a timelock system.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultTimelockController.sol#L205"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Incompatibility with Non-Standard Tokens Due to Strict Balance Check Upon Transfer",
+            "description": "The redeem function in RedemptionPipe performs a strict balance check that the liquidityProvider's balance decreases by exactly the transferred amount. This makes the protocol incompatible with fee-on-transfer, rebasing, or proxy tokens.\nThe root cause is a design decision to prioritize security against certain token behaviors over flexibility.\nWhile this protects against some malicious token designs, it limits the range of supported assets.\nThe impact is reduced composability and future-proofing of the protocol, potentially excluding legitimate token types from integration.\n",
+            "severity": "Informational",
+            "location": [
+                "RedemptionPipe.sol#L329-L334"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Code Readability Improvements",
+            "description": "Two minor code quality issues were identified: the redeemAndSend function in OVaultComposerMulti.sol is marked virtual with no apparent need for inheritance, and there is incorrect indentation at line 304 in the same file.\nThe root cause is inconsistent coding style and potentially misleading use of the virtual keyword.\nThese do not affect security or functionality.\nThe impact is reduced code clarity and consistency, making the codebase slightly harder to read and maintain.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/omnichain/OVaultComposerMulti.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Inspired ERC-7540 Interface Does Not Strictly Adhere to the Spec",
+            "description": "The RedemptionPipe contract claims to be \"7540 like\" but deviates from the ERC-7540 standard by using a push mechanism (directly sending assets) instead of the required pull pattern (requiring users to claim). It also allows short-circuiting of redemption processes.\nThe root cause is a deliberate design choice that prioritizes user experience over standard compliance.\nThis could mislead developers who expect strict adherence to ERC-7540.\nThe impact is potential integration errors by third parties who assume standard-compliant behavior, leading to incorrect assumptions about the redemption workflow.\n",
+            "severity": "Informational",
+            "location": [
+                "RedemptionPipe.sol#L18"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Maliciously High minMsgValue Can Purposely Make Cross-Chain Transaction Stuck",
+            "description": "The lzCompose function in VaultComposerBase validates that msg.value >= minMsgValue, but there is no upper bound on minMsgValue. A user can set an arbitrarily high value, causing the transaction to consistently revert and become \"stuck\" without refund.\nThe root cause is the lack of an on-chain ceiling for minMsgValue, combined with a short-circuit in the catch block that prevents refund in this specific failure case.\nAn attacker could exploit this to create a denial-of-service condition for specific cross-chain messages.\nThe impact is that affected transactions become permanently stuck, requiring manual administrative intervention via recoverToken to rescue funds, increasing operational burden.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultComposerBase.sol#L89-L96"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultComposerBase.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Function Selector Collision in Timelock Could Weaken Security Guarantees",
+            "description": "The VaultTimelockController uses four-byte function selectors to assign time delays to critical functions. There is a low-probability risk that two different functions could have the same selector (collision), potentially assigning a short delay to a critical function if a non-critical function with the same selector was configured last.\nThe root cause is the inherent limitation of 4-byte selector space and the lack of collision detection in the timelock configuration.\nWhile no collisions exist in the current codebase, future upgrades could introduce them.\nThe impact is a potential weakening of the timelock security model, where critical functions could be executed with shorter delays than intended, increasing risk of unauthorized upgrades or parameter changes.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultTimelockController.sol#L122-L134"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Emit event on state transition functions",
+            "description": "Functions in ShareManager such as setOVaultComposerMulti, setMaxDeposit, setMaxSupply, and setMaxWithdraw modify critical governance state but do not emit events.\nThe root cause is the omission of event emissions for state-changing operations.\nThis reduces on-chain observability and makes it difficult to monitor or audit configuration changes.\nThe impact is reduced transparency and increased difficulty in incident response, as external parties cannot easily track when and how critical parameters were modified.\n",
+            "severity": "Informational",
+            "location": [
+                "ShareManager.sol#L322-L326",
+                "ShareManager.sol#L333-L337",
+                "ShareManager.sol#L343-L347",
+                "ShareManager.sol#L353-L357"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/ShareManager.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "NAVOracle does not support underlying tokens with decimals > 18",
+            "description": "The _normalizeToDecimals18 function in NAVOracle.sol only handles cases where underlyingDecimals < 18, leaving == 18 and > 18 unhandled. This means tokens with more than 18 decimals are not supported.\nThe root cause is incomplete logic in the normalization function that fails to account for all possible decimal values.\nThis limits the range of supported assets and could lead to incorrect normalization if such tokens were somehow used.\nThe impact is reduced flexibility in asset selection and potential for incorrect NAV calculations if the constraint is not properly enforced or documented.\n",
+            "severity": "Informational",
+            "location": [
+                "NAVOracle.sol#L140-L145"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/NAVOracle.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ]
+            },
+            "title": "Non compliant ERC4626 deposit event",
+            "description": "The deposit function in DepositPipe emits the controller as the sender in the ERC-4626 Deposit event, but the standard requires msg.sender to be the first parameter. This divergence can mislead indexers and aggregators.\nThe root cause is incorrect event emission that does not follow ERC-4626 semantics.\nThis could cause indexing services to incorrectly attribute deposits to the controller rather than the actual transaction sender.\nThe impact is reduced compatibility with DeFi infrastructure tools that rely on standard event patterns, potentially leading to incorrect analytics or user interface displays.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositPipe.sol#L234"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositPipe.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Non-upgradeable deployments due to proxy/implementation mismatch",
+            "description": "Contracts are deployed behind ERC1967Proxy but do not inherit UUPSUpgradeable or expose upgrade functions. The proxy is also not a Transparent proxy, resulting in effectively non-upgradeable deployments.\nThe root cause is a mismatch between proxy type and implementation pattern, where the infrastructure assumes upgradeability but the contracts lack the necessary entrypoints.\nThis eliminates the intended benefit of using proxies for upgradeability.\nThe impact is that the contracts are permanently immutable after deployment, removing the ability to fix bugs or add features through upgrades.\n",
+            "severity": "Informational",
+            "location": [
+                "DepositForwarder.sol#L18"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/DepositForwarder.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Request redeem payout forced to owner",
+            "description": "In RedemptionPipe, the queued redemption functions (requestRedeemFast and requestRedeem) always pay proceeds to the owner, unlike instant paths which allow specifying a receiver. This creates inconsistent semantics.\nThe root cause is the lack of a receiver parameter in the request functions and fulfillment logic.\nThis limits custody and payment routing use cases, forcing funds to go to the owner regardless of intent.\nThe impact is reduced flexibility in fund routing and asymmetric behavior between instant and queued redemption paths.\n",
+            "severity": "Informational",
+            "location": [
+                "RedemptionPipe.sol#L410-L437",
+                "RedemptionPipe.sol#L507-L535"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Redundant controller parameter in queued requests",
+            "description": "The controller parameter in requestRedeemFast and requestRedeem is used only for authorization but is not stored or used for custody or payout. Shares are taken from and paid to the owner, making the controller parameter semantically misleading.\nThe root cause is an unnecessary parameter that adds complexity without functional benefit.\nThis increases friction for users and creates confusion about the role of the controller in queued redemptions.\nThe impact is a more complex interface than necessary and potential for misuse or misunderstanding of the parameter's purpose.\n",
+            "severity": "Informational",
+            "location": [
+                "RedemptionPipe.sol#L418-L421",
+                "RedemptionPipe.sol#L515-L518"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/RedemptionPipe.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Mis-targeted function selector in timelock config",
+            "description": "VaultTimelockController sets a delay for setOVaultComposerMulti(address,address) using a hard-coded selector string. This is fragile because if the target signature changes or the intent was to gate a function on this contract, the configuration will silently drift.\nThe root cause is the use of magic strings for function selectors instead of deriving them from ABI or using constants.\nThis creates a risk of misconfiguration that could leave critical functions unprotected or apply delays to unintended functions.\nThe impact is potential security gaps due to incorrect timelock configuration, especially during future upgrades or refactors.\n",
+            "severity": "Informational",
+            "location": [
+                "VaultTimelockController.sol#L149"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/VaultTimelockController.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "High-Water Mark Logic Penalizes Performance Fee Collection",
+            "description": "The collectPerformanceFee function in FeeManager updates the lastSupplyForPerformance state variable before minting fee shares. This causes the high-water mark to be set pre-dilution, so the next fee calculation interprets the dilution as a performance loss.\nThe root cause is incorrect ordering of state updates relative to share minting, violating the intended economic model.\nThis unfairly penalizes the fee recipient by requiring performance to \"recover\" the value of previously taken fees before new fees can accrue.\nThe impact is a disincentive for fee collection and potential misalignment of economic incentives, even when underlying strategies are profitable net of fees.\n",
+            "severity": "Medium",
+            "location": [
+                "FeeManager.sol#L135-L190"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Client-Identified Flaw in Performance Fee Calculation Under Rework",
+            "description": "A flaw was identified in the performance fee calculation logic in FeeManager.sol where the high-water mark is updated before minting fee shares, leading to incorrect performance tracking.\nThe root cause is the same as in finding 4.1 \u2014 improper sequencing of state updates in the fee collection process.\nThis results in the protocol requiring recovery of previously taken fees before accruing new ones, distorting the performance fee mechanism.\nThe impact is economic inefficiency and misaligned incentives in the fee structure, potentially affecting protocol sustainability and participant rewards.\n",
+            "severity": "Medium",
+            "location": [
+                "FeeManager.sol#L135-L143"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/FeeManager.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Performance Fee Calculation",
+            "description": "1. **Description:** The collectPerformanceFee function in the FeeManager contract fails to differentiate between actual yield generated by the vault's investment strategies and new capital deposited by users. This leads to inaccurate performance fee calculations.\n2. **Cause:** The root cause is a logical flaw in the fee calculation mechanism, which uses a metric that does not isolate real gains from simple inflows of new capital.\n3. **Exploitation:** An attacker or large depositor could potentially manipulate the timing and size of deposits to artificially inflate the perceived performance, thereby either avoiding fair fee payments or causing the system to overcharge other users.\n4. **Impact:** The impact includes economic unfairness, misallocation of fees, potential loss of user funds due to incorrect fee distribution, and erosion of trust in the vault's financial integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "FeeManager.sol::collectPerformanceFee"
+            ],
+            "files": [
+                "55346a53cccfbaa5ef9d3ec8e73a1ab2e40a9aae/liminal-contracts/src/FeeManager.sol"
+            ]
+        }
+    ]
+}

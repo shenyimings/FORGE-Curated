@@ -1,0 +1,195 @@
+{
+    "path": "dataset-curated/reports/Zellic/Hyperbeat Pay - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/0xhyperbeat/Liquid-Bank"
+        ],
+        "commit_id": [
+            "431de44bc37ea1b647da376bee1a3031affff435",
+            "b0a7e5e9baea45da85ce52f4c3b767efc311235f",
+            "582d51b520ce0ed0a0b73cdcb77c10e2d9e1e145"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-10-24",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "The owner can self-assign the operator role",
+            "description": "This vulnerability arises from an inconsistency in how the ManagementAccount contract resolves the operator address. While the `operator()` function retrieves the operator from the factory, access control checks (`_checkOperator` and `_checkOwnerOrOperator`) rely on role-based permissions. The contract grants the initial owner DEFAULT_ADMIN_ROLE during initialization, which allows them to assign themselves the OPERATOR_ROLE. This enables the owner to bypass intended access controls and perform privileged operations such as settling payments, changing modes, and approving withdrawals without proper authorization.\n\nThe root cause is the dual mechanism for operator identification\u2014using both a factory-derived address and role-based access\u2014without ensuring they are synchronized. An attacker (the owner) can exploit this by assigning themselves the OPERATOR_ROLE, thereby gaining full operator privileges.\n\nExploitation would involve the owner calling `grantRole(OPERATOR_ROLE, owner)` and then invoking operator-only functions like `approveWithdrawal()` or `settle()`. This breaks the trust model where only the designated operator should perform these actions.\n\nThe impact is critical: it allows the owner to bypass all operator-level restrictions, potentially leading to unauthorized fund movements, mode changes, and service approvals, undermining the entire security model of the system.\n",
+            "severity": "Critical",
+            "location": [
+                "core/ManagementAccount.sol::operator#",
+                "core/ManagementAccount.sol::_checkOperator#",
+                "core/ManagementAccount.sol::_checkOwnerOrOperator#",
+                "core/ManagementAccount.sol::initialize#"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Operator change prevents revocation of prior authorizations",
+            "description": "When the factory updates its operator address, account owners cannot revoke authorizations previously granted to the old operator. This occurs because both `revokeOperatorBorrowing` and `approveAuthorizationRevocation` fetch the current operator address from the factory at the time of revocation, rather than using the address that was originally authorized.\n\nThe root cause is the lack of state persistence for the authorized operator address. Instead of storing the operator address at the time of authorization, the system dynamically reads it from the factory during revocation, leading to incorrect targeting.\n\nAn attacker (the previous operator) could exploit this by retaining borrowing rights on lending protocols even after being replaced. Users attempting to revoke access will believe the revocation succeeded, but the call will target the new (unauthorized) operator, leaving the old permissions intact.\n\nThe impact is medium: previous operators retain indefinite borrowing rights on user collateral, creating a persistent security risk. Users are not alerted to the failure, leading to a false sense of security.\n",
+            "severity": "Medium",
+            "location": [
+                "core/ManagementAccount.sol::revokeOperatorBorrowing#",
+                "core/ManagementAccount.sol::approveAuthorizationRevocation#",
+                "core/ManagementAccount.sol::authorizeOperatorBorrowing#"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Service removal prevents revocation of prior authorizations",
+            "description": "When a service is removed from the ServiceRegistry, users lose the ability to revoke authorizations previously granted to that service. The `revokeOperatorBorrowing` function includes a validation step `_validateServiceInRegistry`, which reverts if the service is not currently registered or active.\n\nThe root cause is the overzealous validation that checks registry status even for revocation of historical authorizations. This prevents cleanup of permissions for decommissioned or compromised services.\n\nAn attacker (a removed but previously authorized service) could continue to borrow against user collateral indefinitely, as there is no mechanism to revoke its permissions once it's removed from the registry.\n\nThe impact is medium: authorizations to removed services remain active, posing a lingering risk of unauthorized borrowing. Users have no way to remediate this, and the system provides no indication of the issue.\n",
+            "severity": "Medium",
+            "location": [
+                "core/ManagementAccount.sol::revokeOperatorBorrowing#",
+                "core/ManagementAccount.sol::_validateServiceInRegistry#"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Credit mode changes bypass the timelock mechanism",
+            "description": "The `requestCreditMode` function in ManagementAccount directly updates `_creditService` and `_creditCollateralToken` instead of setting pending state variables. This bypasses the intended timelock mechanism, which requires mode changes to be queued and only applied after a cooldown period via `executeModeChange`.\n\nThe root cause is the incorrect assignment to active state variables instead of pending ones, likely due to a logic error in the implementation.\n\nAn attacker (the owner) can exploit this by calling `requestCreditMode` to instantly change credit parameters without waiting for the cooldown. This eliminates the security window intended for operators to review and potentially block malicious changes.\n\nThe impact is medium: it undermines the timelock's protective function, allowing immediate and potentially risky mode changes without oversight, increasing the risk of unauthorized or harmful configuration updates.\n",
+            "severity": "Medium",
+            "location": [
+                "core/ManagementAccount.sol::requestCreditMode#"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Incorrect selector extraction always returns zero",
+            "description": "The `extractSelector` function in ManagementAccountLib uses an unnecessary `shr(224, ...)` operation in inline assembly, which shifts the first four bytes of calldata out of the `bytes4` range, resulting in `bytes4(0)` being returned regardless of input.\n\nThe root cause is a coding mistake where the shift operation is redundant\u2014casting a `bytes32` to `bytes4` naturally takes the first four bytes, making the right-shift incorrect and destructive.\n\nThis bug affects event emission in `_executeServiceCalls` and `executeApprovedServiceAction`, where the `ServiceCallExecuted` event always logs a zero selector.\n\nThe impact is low: off-chain monitoring tools and analytics platforms cannot correctly track which functions are executed during service actions, impairing observability and auditability. However, on-chain behavior is unaffected.\n",
+            "severity": "Low",
+            "location": [
+                "libraries/ManagementAccountLib.sol::extractSelector#",
+                "core/ManagementAccount.sol::_executeServiceCalls#",
+                "core/ManagementAccount.sol::executeApprovedServiceAction#"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Spending limit can exceed available settlement balance",
+            "description": "The `increaseSettlementAllowance` function allows owners to set a spending limit that exceeds their available settlement token balance in SPENDING mode. While `executeModeChange` enforces a balance >= allowance check when entering SPENDING mode, no such check exists when increasing the allowance while already in that mode.\n\nThe root cause is inconsistent validation logic\u2014protection exists at mode entry but not during allowance updates, creating a state inconsistency.\n\nAn attacker (the owner) could exploit this by setting an allowance higher than their balance, potentially causing off-chain payment processors to approve transactions that will later fail on-chain due to insufficient funds.\n\nThe impact is low: it leads to payment failures and poor user experience, but does not result in fund loss. It violates a key protocol invariant and creates confusion about account state.\n",
+            "severity": "Low",
+            "location": [
+                "core/ManagementAccount.sol::increaseSettlementAllowance#",
+                "core/ManagementAccount.sol::executeModeChange#"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Balance calculation in MorphoService does not account for loan market assets",
+            "description": "The `getBalance` function in MorphoService only returns the collateral balance from Morpho positions and ignores assets supplied to loan markets for earning interest. This causes `ManagementAccount::getBalance` to underreport the total balance when aggregating across services.\n\nThe root cause is incomplete implementation of balance aggregation\u2014only collateral is considered, while supply positions (interest-earning deposits) are omitted.\n\nThis affects any off-chain system or UI that relies on `getBalance` for display purposes, showing users an inaccurately low balance.\n\nThe impact is low: users are misled about their total holdings, but critical on-chain operations use direct balance checks and are unaffected. The issue is primarily one of incorrect information display.\n",
+            "severity": "Low",
+            "location": [
+                "services/morpho/MorphoService.sol::getBalance#",
+                "core/ManagementAccount.sol::getBalance#"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Incorrect debt and health-factor calculations in MorphoService",
+            "description": "The `getDebt` function uses `totalBorrowAssets` without accounting for accrued interest, leading to underestimated debt. The `getHealthFactor` function incorrectly calculates collateral value by using raw collateral amounts instead of converting to loan-token terms using oracle prices.\n\nThe root cause is the use of outdated or simplified calculations that do not reflect real-time debt accrual or proper valuation via price oracles.\n\nAn attacker could exploit the incorrect health factor to maintain riskier positions than would be allowed under accurate calculations, or users may be misled about their true risk exposure.\n\nThe impact is low: the inaccuracies affect only UI and monitoring systems. Since these values are not used in on-chain logic, there is no direct financial impact, but user trust and risk assessment are compromised.\n",
+            "severity": "Low",
+            "location": [
+                "services/morpho/MorphoService.sol::getDebt#",
+                "services/morpho/MorphoService.sol::getHealthFactor#"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "ManagementAccount returns a stale owner after ownership transfer",
+            "description": "The `owner()` view function returns a cached `_owner` variable set only during initialization, while access control checks use `hasRole(OWNER_ROLE, msg.sender)`. Since `OWNER_ROLE` can be reassigned via `DEFAULT_ADMIN_ROLE`, the actual owner can change, but `owner()` continues to return the original address.\n\nThe root cause is the inconsistency between a stored owner variable and role-based ownership, leading to a mismatch between the reported and actual owner.\n\nThis affects any system relying on the `owner()` function to determine current ownership, potentially causing authorization failures or incorrect UI displays.\n\nThe impact is low: it results in incorrect owner information being exposed, which can lead to operational issues or confusion, but does not directly enable unauthorized access.\n",
+            "severity": "Low",
+            "location": [
+                "core/ManagementAccount.sol::owner#",
+                "core/ManagementAccount.sol::_checkOwner#",
+                "core/ManagementAccount.sol::initialize#"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Morpho authorization ignores the amount parameter",
+            "description": "The `authorizeOperatorBorrowing` function accepts an `amount` parameter intended to limit borrowing, but `MorphoService::buildAuthorization` ignores this and grants unlimited borrowing rights via `setAuthorization(delegate, true)`.\n\nThe root cause is a mismatch between the interface expectation (amount-limited delegation) and Morpho Blue's binary authorization model, which does not support amount restrictions.\n\nUsers may believe they are limiting borrowing to a specific amount, but in reality, they grant full borrowing rights up to collateral capacity.\n\nThe impact is low: it creates a false sense of security and misleads users about the scope of authorization. While the operator is trusted, the lack of transparency about unlimited access is a usability and trust issue.\n",
+            "severity": "Low",
+            "location": [
+                "core/ManagementAccount.sol::authorizeOperatorBorrowing#",
+                "services/morpho/MorphoService.sol::buildAuthorization#"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Missing access control on createAccount enables unlimited proxy-deployment spam",
+            "description": "The `createAccount` function in `ManagementAccountFactory` lacks access control, allowing any external caller to create new `ManagementAccount` instances. The function is marked as `external` but does not have a role-based restriction (e.g., `onlyRole`), unlike other administrative functions in the contract.\n\nAn attacker can call `createAccount` repeatedly to create an unlimited number of accounts for arbitrary addresses without authorization. This enables spam attacks that can cause database bloat, denial-of-service on indexing services, and griefing attacks where users are associated with unwanted accounts without consent.\n\nThe impact is low: while it could lead to network bloat or increased gas costs for legitimate users, it does not directly compromise fund security. However, it may affect system performance and operational costs.\n",
+            "severity": "Low",
+            "location": [
+                "core/ManagementAccountFactory.sol::createAccount#",
+                "ManagementAccountFactory::createAccount"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Functions allow interaction with services removed from registry",
+            "description": "Several functions in `ManagementAccount` (e.g., `getBalance`, `requestCreditMode`) only check the local `_approvedServices` mapping and do not validate whether the service is still active in the `ServiceRegistry`.\n\nThe root cause is the failure to call `_validateRegisteredService`, which is used elsewhere (e.g., in `executeServiceAction`) to ensure the service is currently registered and active.\n\nUsers can continue interacting with services that have been delisted or removed from the registry, potentially including compromised or deprecated ones.\n\nThe impact is low: this undermines the `ServiceRegistry` as a centralized control point and introduces security risks if removed services had vulnerabilities. It creates inconsistent validation logic across functions.\n",
+            "severity": "Low",
+            "location": [
+                "ManagementAccount::getBalance",
+                "ManagementAccount::requestCreditMode",
+                "ManagementAccount::requestCreditModeChange"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Double-spend attack in CREDIT mode through collateral-withdrawal race condition",
+            "description": "A race condition exists in CREDIT mode where a user can withdraw collateral between card authorization and settlement, causing the operator's borrowing attempt to fail.\n\nThe cause is that the contract allows a user to initiate a collateral withdrawal via `executeServiceAction` and then immediately finalize it with `executeApprovedServiceAction`, creating a window where the operator cannot borrow funds to settle the payment.\n\nThe attacker can exploit this by supplying collateral, requesting withdrawal, making a card payment, withdrawing the collateral before settlement, and then requesting a direct withdrawal of funds. The operator fails to borrow, and the payment goes unsettled.\n\nThe impact is critical: this enables a double-spend attack where users receive goods/services without payment. The financial loss depends on backend controls; if absent, the impact is critical. The contract design relies on off-chain safeguards, which is a security weakness.\n",
+            "severity": "Critical",
+            "location": [
+                "ManagementAccount::executeServiceAction",
+                "ManagementAccount::executeApprovedServiceAction",
+                "ManagementAccount::requestWithdrawal"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Conflicting authorization-revocation flows",
+            "description": "Two inconsistent authorization-revocation mechanisms exist: one requiring operator approval (`requestRevokeServiceAuthorization`) and another allowing immediate revocation (`revokeOperatorBorrowing`).\n\nThe cause is the presence of `revokeOperatorBorrowing` which bypasses the intended two-step revocation process, creating ambiguity in the access control model.\n\nA user can bypass operator oversight by directly calling `revokeOperatorBorrowing`, potentially disrupting settlement processes if the operator assumes authorization remains active.\n\nThe impact is indeterminate and depends on design intent. If operator approval is meant to ensure safe revocation, this flaw undermines it. If unilateral revocation is allowed, the two-step flow is redundant. The inconsistency risks incorrect assumptions and security gaps.\n",
+            "severity": "Informational",
+            "location": [
+                "ManagementAccount::requestRevokeServiceAuthorization",
+                "ManagementAccount::approveAuthorizationRevocation",
+                "ManagementAccount::revokeOperatorBorrowing"
+            ],
+            "files": []
+        }
+    ]
+}

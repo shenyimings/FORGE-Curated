@@ -1,0 +1,128 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-aave-umbrella-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/aave/umbrella"
+        ],
+        "commit_id": [
+            "a2ad2ff56917861e9c3bbe23010c5f0164d41ac3"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-18",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Possible shares inflation",
+            "description": "The UmbrellaStakeToken is an ERC-4626 compatible vault, which is inherently susceptible to share inflation when the conversion rate between assets and shares becomes significantly skewed. The root cause lies in the interaction between the standard's conversion mechanism and the slashing functionality, which can drastically alter the share-to-asset ratio. Each full slashing event recalculates the conversion rate, leading to exponential growth in the number of shares required to represent a single unit of underlying asset. This can rapidly inflate share balances to near-maximum integer values, eventually causing arithmetic overflows or underflows that render the vault inoperable.\n\nThe cause of this vulnerability is the design of the conversion rate calculation, inherited from OpenZeppelin's ERC-4626 implementation, which does not account for extreme state changes induced by slashing. Because slashing can be triggered permissionlessly and repeatedly within a single transaction, an attacker can exploit this by depositing small amounts, triggering full slashing, and repeating the process. This leads to a denial-of-service state where users can no longer deposit, withdraw, or interact with the vault due to arithmetic errors.\n\nExploitation requires an attacker to perform a sequence of deposits and slashing actions, which can be executed in one transaction. The cost of such an attack can be minimal\u2014potentially just a few cents worth of the underlying token\u2014making it economically feasible. The impact is severe: once the share inflation reaches critical levels, the entire vault becomes unusable, disrupting staking and reward distribution for all users.\n\nAlthough the likelihood is rated as low due to specific configuration requirements (e.g., small liquidity, repeated slashing), the potential for a complete denial of service makes the impact high. The system's reliance on correct configuration and off-chain monitoring increases operational risk.\n",
+            "severity": "Medium",
+            "location": [
+                "UmbrellaStakeToken.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Frequent claiming of rewards can lead to losses",
+            "description": "Users who stake in the Umbrella system may receive fewer rewards than expected due to precision loss in the reward calculation logic. The vulnerability arises in the EmissionMath library, specifically in the calculation of accrued rewards, where integer division is performed before multiplication, leading to rounding errors. The function calculateAccrued uses (userBalance * (newRewardIndex - oldUserIndex)) / SCALING_FACTOR, which truncates precision during division.\n\nThe root cause is the order of operations in arithmetic calculations and the small magnitude of emission rates relative to the total supply. When a malicious actor repeatedly sends minimal amounts (e.g., 1 wei) of StakeToken to a victim, it triggers the _updateUserData function on every deposit, forcing frequent index updates. Due to the low emission rate and high total supply, the index increase per block becomes so small that it is lost during integer division, resulting in no effective reward accrual for that period.\n\nAn attacker can exploit this by continuously gifting tiny amounts of tokens to stakers, thereby forcing frequent index recalculations. This griefing attack does not require significant funds and can be automated. The impact is financial loss for all stakers in the affected pool, as their accrued rewards are systematically reduced. The loss percentage increases with higher total supply and lower emission rates, reaching up to nearly 10% in extreme test cases.\n\nWhile the individual loss per user may seem small, the cumulative effect across all users and the erosion of trust in fair reward distribution constitute a meaningful impact. The issue is exacerbated in pools with high liquidity but low emissions, making it a realistic threat under certain configurations.\n",
+            "severity": "Low",
+            "location": [
+                "EmissionMath.sol::calculateAccrued#103-109"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "The latestAnswer function reverts after slashing configuration removal",
+            "description": "The `latestAnswer` function in `UmbrellaStakeToken.sol` reverts when the slashing configuration is removed because the `removeSlashingConfigs` function in `UmbrellaConfiguration` deletes the entire `stakesData` entry, including the `underlyingOracle` address. This causes `latestUnderlyingAnswer()` to revert when called due to a missing oracle address. The root cause is the deletion of critical data (oracle address) during configuration removal. An attacker or admin could exploit this by removing the slashing configuration, causing dependent protocols that rely on `latestAnswer()` to malfunction. The impact is low, as the token remains functional for core operations, but integrations relying on price data may fail.\n",
+            "severity": "Low",
+            "location": [
+                "UmbrellaConfiguration.sol::removeSlashingConfigs#135",
+                "UmbrellaStakeToken.sol::latestAnswer#39-41"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Inconsistent usage of _msgSender() over msg.sender",
+            "description": "The codebase uses `_msgSender()` for sender address retrieval in most places but inconsistently falls back to `msg.sender` in certain internal functions and modifiers, such as `_checkRescueGuardian` in `UmbrellaConfiguration` and multiple functions in `RewardsDistributor`. The root cause is inconsistent coding practices across the inheritance chain. While currently not exploitable because `_msgSender()` returns `msg.sender` in the current context, this inconsistency could lead to security issues if the behavior of `_msgSender()` changes in the future (e.g., in a proxy or meta-transaction context). An attacker could potentially exploit this if future modifications alter sender resolution logic. The impact is low, primarily affecting code maintainability and future extensibility.\n",
+            "severity": "Informational",
+            "location": [
+                "UmbrellaConfiguration.sol::_checkRescueGuardian#310-312",
+                "RewardsDistributor.sol::onlyAuthorizedClaimer#57-58",
+                "RewardsDistributor.sol::claimAllRewards#74",
+                "RewardsDistributor.sol::(anonymous)#94-96",
+                "RewardsDistributor.sol::_claimSelectedRewards#109",
+                "RewardsDistributor.sol::(anonymous)#140",
+                "RewardsDistributor.sol::(anonymous)#154",
+                "RewardsDistributor.sol::(anonymous)#166"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Missing validation of the upper bound in validateTargetLiquidity",
+            "description": "The `validateTargetLiquidity` function in `EmissionMath.sol` only checks the lower bound of the target liquidity (\u2265 10^decimals) but does not validate the upper bound. This allows the `targetLiquidity` value to be set up to the maximum `uint160` value in `RewardsController.sol`. The root cause is the absence of an upper limit check in the validation function. An attacker or malicious admin could set an extremely high target liquidity, potentially leading to incorrect emission calculations or overflow risks in downstream logic. Although the documentation implies an upper bound (~1e35), it is not enforced in code. The impact is low to medium, primarily affecting economic model integrity.\n",
+            "severity": "Informational",
+            "location": [
+                "EmissionMath.sol::validateTargetLiquidity#174-176",
+                "RewardsController.sol::_updateTarget#540-550"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Typos",
+            "description": "A typo exists in a comment within `Umbrella.sol` where the word \"then\" is incorrectly used instead of \"than\" in the phrase \"receive some wei less then expected\". The root cause is a simple spelling mistake. This issue is purely textual and does not affect code functionality or security. There is no exploit vector, as it only affects developer readability. The impact is purely informational, with no security or operational consequences.\n",
+            "severity": "Informational",
+            "location": [
+                "Umbrella.sol#172"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Unused using-for directive",
+            "description": "The `ERC4626StakeTokenUpgradeable.sol` contract contains an unused `using Math for uint256;` directive on line 30. The root cause is leftover code from development that is no longer referenced. This does not introduce any security risk or functional issue but contributes to code bloat and reduces code clarity. There is no exploitation method, as it does not affect runtime behavior. The impact is purely on code quality and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC4626StakeTokenUpgradeable.sol#30"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Permit error handling",
+            "description": "The `permit` function in `StakeToken.sol` uses a try/catch block to handle permit calls, but if the call fails, no error is emitted, and execution continues. The root cause is insufficient error handling in the catch block. If the permit call fails (e.g., due to invalid signature or expired deadline) and no prior allowance exists, the transaction will later revert due to insufficient allowance without indicating the true cause. This can mislead users into thinking the issue is with allowance rather than the permit call itself. While the transaction would revert anyway, better error messaging would improve user experience. The impact is low, affecting usability rather than security.\n",
+            "severity": "Informational",
+            "location": [
+                "StakeToken.sol#77-89"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "The same suffix is used for name and symbol",
+            "description": "The `_getStakeNameAndSymbol` function in `UmbrellaStkManager.sol` uses the same suffix for both the token name and symbol, which can lead to awkward or non-standard symbol formatting (e.g., \"stkwaUSDC.Version 1.0\"). The root cause is the lack of separate parameters for name and symbol suffixes. While not a security issue, this affects token usability and marketability, as symbols are expected to be short and concise. No exploitation is possible, but it may reduce user trust or integration compatibility. The impact is purely informational, relating to configuration and branding.\n",
+            "severity": "Informational",
+            "location": [
+                "UmbrellaStkManager.sol::_getStakeNameAndSymbol#270-279"
+            ],
+            "files": []
+        }
+    ]
+}

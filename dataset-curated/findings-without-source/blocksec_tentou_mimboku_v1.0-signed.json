@@ -1,0 +1,145 @@
+{
+    "path": "dataset-curated/reports/BlockSec/blocksec_tentou_mimboku_v1.0-signed.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/tentou-tech/aggregator-router-contracts"
+        ],
+        "commit_id": [
+            "7cad7d861a9c3638fa63162b1788eee4e77d40c3"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-26",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Lack of the access control in the executePath() function",
+            "description": "The executePath() function in the MimbokuExecutor contract lacks access control, allowing any user to directly invoke it. This issue arises because the function does not restrict callers to only the MimbokuRouter contract. As a result, attackers can bypass the fee mechanism implemented in the router, perform swaps without paying fees, and potentially execute sandwich attacks due to missing slippage protection. Additionally, malicious users can manipulate the input token to be any ERC20 token held by the MimbokuExecutor contract, effectively stealing those tokens. The impact includes loss of protocol fees, user fund losses from front-running, and potential theft of ERC20 tokens held in the executor contract, leading to significant financial damage to both users and the protocol.\n",
+            "severity": "High",
+            "location": [
+                "contracts/MimbokuExecutor.sol::executePath"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Inconsistent handling of the output tokens in the contract MimbokuRouter",
+            "description": "The MimbokuRouter contract inconsistently handles output tokens when NATIVE_TOKEN is involved. The swapMultiroutes() function replaces NATIVE_TOKEN with WIP to ensure compatibility with the MimbokuExecutor, which only handles ERC20 tokens. However, the swap() function does not apply this logic, causing it to revert when NATIVE_TOKEN is specified as the output token. This inconsistency stems from a lack of uniform handling across both swap functions. An attacker could exploit this by crafting a transaction that relies on NATIVE_TOKEN output via the swap() function, causing the transaction to fail and resulting in a denial of service for users attempting to receive native tokens. The impact is reduced functionality and reliability of the swap feature, limiting user experience and potentially causing failed transactions.\n",
+            "severity": "High",
+            "location": [
+                "contracts/MimbokuRouter.sol::swap",
+                "contracts/MimbokuRouter.sol::swapMultiroutes"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Potential DoS due to the improper use of ERC20 interfaces",
+            "description": "The _swap() function in the MimbokuRouter contract uses the standard IERC20 interface from OpenZeppelin, which assumes that the transfer() function returns a boolean value. However, some tokens like USDT do not return a value upon transfer, making them non-compliant with this interface. When such tokens are used as output tokens in a swap path, the call to transfer() reverts due to the mismatch in expected return data. This issue is caused by relying on a strict interface definition that does not account for legacy tokens with different signatures. As a result, any swap involving these tokens will fail, leading to a denial of service for users attempting to swap into or out of such tokens. The impact includes transaction failures and reduced token compatibility, undermining the router's utility.\n",
+            "severity": "High",
+            "location": [
+                "contracts/MimbokuRouter.sol::_swap",
+                "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol::transfer"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Inconsistent access control over funds transfer functions",
+            "description": "The MimbokuRouter contract implements access control for the transferRouterFunds() function using the onlyApproved modifier, restricting it to approved addresses. However, other fund transfer functions such as refundIp() and sweepTokens(), inherited from PeripheryPayments, are publicly accessible without any access restrictions. This inconsistent design creates a security gap where any external user can call these unprotected functions to drain funds from the contract. The root cause is the failure to apply uniform access control across all sensitive functions. An attacker can exploit this by invoking refundIp() or sweepTokens() to withdraw native or ERC20 tokens held in the contract. The impact is complete loss of funds held in the MimbokuRouter contract, posing a critical risk to asset security.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/MimbokuRouter.sol::transferRouterFunds",
+                "contracts/PeripheryPayments.sol::refundIP",
+                "contracts/PeripheryPayments.sol::sweepTokens"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Insufficient checks on a swap path",
+            "description": "The _swap() function in the MimbokuRouter contract only checks that the first route\u2019s tokenIn and tokenOut are different but does not validate the entire swap path. This leads to several issues: intermediate routes with identical tokenIn and tokenOut will cause the swap to fail; paths involving NATIVE_TOKEN are not properly handled and may revert; and malicious users can insert mismatched routes where tokenIn does not match the previous tokenOut, forcing the contract to use its own token balance, potentially leading to fund theft. The root cause is inadequate path validation logic. Attackers can construct malicious paths to either cause denial of service or drain tokens from the MimbokuExecutor contract. The impact includes failed swaps, user fund loss, and potential theft of protocol-held assets.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/MimbokuRouter.sol::_swap"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Potential DoS due to the incorrect check in the swapMultiroutes() function",
+            "description": "The swapMultiroutes() function contains a flawed condition at Line 112 that checks msg.value == 0, which fails when the input includes mixed token types (both NATIVE_TOKEN and ERC20 tokens). This causes the function to revert even when valid, leading to a denial of service for users attempting to use heterogeneous input tokens. The issue arises from an overly restrictive check that assumes all input tokens must be of the same type. While the project considers this behavior intentional, it limits the flexibility of the function and prevents valid use cases. The impact is reduced functionality and user frustration, as legitimate transactions are rejected due to type mixing, despite being economically sound.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/MimbokuRouter.sol::swapMultiroutes"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Lack of implementations for modifying the approved list",
+            "description": "The MimbokuRouter contract uses an OnlyApproved mechanism to restrict access to certain functions like transferRouterFunds(). However, while the internal functions _addApprovedAddress() and _removeApprovedAddress() exist, there are no external or public functions exposed to modify the approved list. This makes the list immutable after deployment, defeating the purpose of having a dynamic access control system. The root cause is the omission of management functions for the approval list. As a result, if the owner needs to update the list (e.g., revoke access), they cannot do so without deploying a new contract. The impact is reduced operational flexibility and potential lock-in of outdated permissions, affecting governance and emergency response capabilities.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/OnlyApproved.sol::_addApprovedAddress",
+                "contracts/OnlyApproved.sol::_removeApprovedAddress",
+                "contracts/MimbokuRouter.sol::transferRouterFunds"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Lock of funds due to the improper check between the variable msg.value and totalNativeValue",
+            "description": "In the swapMultiroutes() function, a check ensures msg.value >= totalNativeValue, but excess native tokens sent by the user are not refunded. Instead, they remain locked in the MimbokuRouter contract indefinitely. This occurs because the contract does not return the difference between msg.value and totalNativeValue. The root cause is the lack of a refund mechanism for overpayment. Users who accidentally or intentionally send more ETH than required will lose the excess amount. The impact is permanent loss of user funds, leading to financial damage and reduced trust in the protocol's handling of native assets.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/MimbokuRouter.sol::swapMultiroutes"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Potential fee miscalculation in the getPlatformFee() function",
+            "description": "The getPlatformFee() function contains a misleading comment stating that a fee value of 3000 corresponds to 0.3%. However, since the denominator used in the calculation is 10000, 3000 actually represents 30%, not 0.3%. This discrepancy arises from incorrect documentation and could lead developers or users to misunderstand the fee structure. Although the code itself performs the math correctly, the annotation may result in incorrect configuration or assumptions during integration or audits. The impact is potential misconfiguration of fees, leading to either excessive charges or unintended revenue loss, depending on how the value is interpreted.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/MimbokuRouter.sol::getPlatformFee"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Potential lock of funds",
+            "description": "The executePath() function in the MimbokuExecutor contract performs swaps across Uniswap V2 or V3-like pools based on a provided path. However, if a V3 pool lacks sufficient liquidity, the input tokens may only be partially consumed, leaving residual tokens in the contract. Since there is no mechanism to sweep or return these unconsumed tokens, they become permanently locked. The root cause is the absence of a post-swap cleanup or recovery function. Users bear the risk of fund loss due to poor path selection or low liquidity conditions. The impact is irreversible loss of user funds, especially in edge cases involving illiquid pools, reducing confidence in the protocol's safety.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/MimbokuExecutor.sol::executePath"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Improper fee deductions in the function _swap()",
+            "description": "In the _swap() function, the slippage check is performed before the fee deduction. This means the amountOutMinimum parameter is compared against the gross output amount, but the fee is deducted afterward. As a result, the final amount received by the user may fall below the expected minimum after the fee is taken. The root cause is incorrect ordering of operations: fee deduction should occur before the slippage check to ensure the net amount meets the user's minimum. An attacker or front-runner could exploit this by manipulating execution timing to maximize fee impact. The impact is users receiving less than the guaranteed amount, violating expected behavior and potentially leading to financial loss.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/MimbokuRouter.sol::_swap"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,196 @@
+{
+    "path": "dataset-curated/reports/Sherlock/2025.05.29 - Final - Native Smart Contract V2 Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Native-org/v2-core",
+            "https://github.com/sherlock-audit/2025-05-native-smart-contract-v2"
+        ],
+        "commit_id": [
+            "6ee5ef69f8a7f2e0435e1fc65dc3f34786a177f7",
+            "6745b1deb50eda266ebcc4d724cff0c79448df83",
+            "0872a93073063d7c7a05a2226a04d22a5923a3fe"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-23",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Users will be charged 2x fees and during multiHop swaps will lose tokens to the router",
+            "description": "The vulnerability arises because the _chargeWidgetFee function in the NativeRouter contract both transfers a fee from the user via safeTransferFrom and deducts the same fee from the amount being swapped (amountIn). This results in a double charge on the user's input tokens. The root cause is flawed fee logic that applies two deductions for a single intended fee. An attacker does not need to perform a complex attack; the issue manifests whenever a non-zero widgetFee.feeRate is set, affecting all users. As a result, users receive fewer output tokens than expected, are effectively charged twice, and in multi-hop swaps, leftover tokens corresponding to the over-deducted fee remain stuck in the router contract. This leads to loss of user funds and reduced output, undermining trust and usability of the protocol.\n",
+            "severity": "High",
+            "location": [
+                "NativeRouter.sol::_chargeWidgetFee",
+                "NativeRouter.sol::tradeRFQT#112-116",
+                "NativeRouter.sol::tradeRFQT#263-270",
+                "NativeRouter.sol::tradeRFQT#281-290"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Exploit of yield mechanism",
+            "description": "The yield distribution mechanism in the CreditVault contract distributes yield to all LPs every 8 hours via epochUpdate(), without considering the deposit timing of individual LPs. The root cause is the lack of time-weighted yield allocation, which allows an attacker to deposit just before an epoch update and withdraw after the minimum redeem interval (8 hours), thereby receiving full yield for two epochs while only locking capital for slightly over one. There are no external preconditions other than the default configuration of minRedeemInterval and EPOCH_UPDATE_INTERVAL. The attacker can repeatedly execute this front-running strategy every ~16 hours. The impact is that honest LPs suffer from yield dilution, as the attacker receives a disproportionate share of yield relative to their capital commitment, effectively doubling their yield-to-capital ratio.\n",
+            "severity": "High",
+            "location": [
+                "CreditVault.sol::epochUpdate#146",
+                "NativeLPToken.sol::redeem#378-383"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Inflation Attack possible through redeem function",
+            "description": "When users redeem shares early, a penalty fee is deducted from their withdrawn amount, but this fee remains in the CreditVault and increases the total underlying assets without burning corresponding shares. The root cause is that the penalty is not transferred out or burned, thus inflating the per-share value. This allows an attacker to deposit, redeem all but one share (keeping the fee inside), and thereby poison the share price. Subsequent depositors receive fewer shares than expected due to rounding down in share calculations. The internal precondition is that earlyWithdrawFeeBips must be non-zero. The attacker can front-run a large deposit, inflate the pool, and cause the victim to receive only 1 share despite a large deposit, enabling the attacker to later redeem a disproportionately large amount. The impact is significant loss of funds for honest users and potential theft of capital from new LPs.\n",
+            "severity": "High",
+            "location": [
+                "NativeLPToken.sol::_redeem#378-383",
+                "NativeLPToken.sol::deposit#354-358"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Users can avoid earlyWithdrawFee with small sharesToBurn",
+            "description": "The _redeem function in NativeLPToken does not enforce a minimum redemption amount, and due to integer division, very small underlying amounts result in zero fee deduction when earlyWithdrawFeeBips is applied. The root cause is the lack of a minimum threshold or ceiling in fee calculation, allowing users to split their shares into tiny portions and redeem them individually to avoid the early withdrawal fee entirely. On chains with low gas costs (e.g., Arbitrum, Mantle), this can be profitable, especially for high-value tokens like WBTC. The internal precondition is the use of a high-decimal, high-value token such as WBTC, and the external precondition is deployment on a low-gas L2. The impact is a loss of protocol revenue from fees and potential exploitation at scale, undermining the economic model designed to discourage short-term LP behavior.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLPToken.sol::_redeem#382"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "quote.nonce is not checked and updated in NativeRouter.tradeRFQT",
+            "description": "The NativeRouter.tradeRFQT function verifies the RFQ signature but does not check or increment the quote.nonce, allowing the same signed quote to be replayed multiple times if the pool is an external router. The root cause is the omission of nonce state management in the tradeRFQT function for external swaps. While the protocol argues that external swaps are real-time and do not require nonces, the lack of nonce enforcement breaks the documented invariant that each nonce must be used exactly once. The external precondition is the use of an external pool for swapping. The impact is potential replay attacks where a user or market maker can reuse a valid signature to execute multiple trades, leading to unexpected losses, double spending, or manipulation of market maker positions, especially if slippage or market conditions change.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeRouter.sol::tradeRFQT#293-323"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "_calculateTokenAmount doesn\u2019t adjust the buyer amount when the effective amount is larger than the initial seller amount",
+            "description": "The _calculateTokenAmount function in the ExternalSwap library fails to adjust the buyerAmount when the effectiveSellerTokenAmount exceeds the original sellerTokenAmount, unlike the native pool logic which correctly scales both directions. The root cause is inconsistent handling of flexible amounts between native and external swaps, where only the native pool uses a proportional adjustment for both increases and decreases. When a user increases the seller amount beyond the original quote (within 10%), the expected buyer amount remains unchanged, leading to either transaction failure due to slippage protection (if amountOutMinimum is set) or the user receiving less output than deserved (if no slippage is enforced). The impact is degraded user experience, failed transactions, and potential financial loss for users who are unable to receive fair output for increased input, undermining the flexibility feature of the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "ExternalSwap.sol::_calculateTokenAmount",
+                "NativeRFQPool.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Native won\u2019t be able to Operate on Mantle Chain Because of Transient Storage Usage",
+            "description": "The protocol uses the ReentrancyGuardTransient.sol library, which relies on EIP-1153's transient storage opcodes (TLOAD and TSTORE) for the nonReentrant modifier. The root cause is the dependency on transient storage, which is not supported on the Mantle Chain as of the audit date. Since all critical functions (deposit, redeem, tradeRFQT, etc.) use this modifier, any call to these functions on Mantle will revert due to invalid opcode. The internal precondition is the use of ReentrancyGuardTransient across entry points, and there are no external preconditions. The impact is that the protocol cannot be deployed or operated on Mantle Chain despite stating support in the README, leading to a critical compatibility issue that prevents deployment on a target network.\n",
+            "severity": "Medium",
+            "location": [
+                "ReentrancyGuardTransient.sol::nonReentrant#43-55"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Unable to sell native token using external router",
+            "description": "This vulnerability arises when a user attempts to sell a native token (e.g., ETH) via an external router in the NativeRouter contract. The root cause is that while the native token is correctly wrapped into WETH during the trade process, the order's sellerToken field is not updated to reflect this change when using an external router. As a result, the ExternalSwap::externalSwap function attempts to make a contract call to address(0), which reverts because it cannot interact with the zero address. This leads to the failure of the entire trade transaction. The impact is that users are unable to complete swaps involving native tokens when routed through external AMMs, limiting the protocol\u2019s functionality and potentially leading to failed transactions and user frustration.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeRouter.sol::tradeRFQT#L124",
+                "ExternalSwap.sol::externalSwap#L29"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Tokens will be stuck in NativeRouter in a multihop swap with non-native pool",
+            "description": "In a multihop swap involving a non-native pool (such as an external DEX), the actual output amount from the first leg of the swap cannot be precisely predicted due to slippage. The NativeRouter contract fails to adjust the effectiveSellerTokenAmount based on the actual amount received from the previous swap. This causes a discrepancy between the expected and actual token balances used in subsequent hops. For example, if 20 WETH is swapped for DAI via an external router and only 49900 DAI is received instead of the estimated 50000, the second hop still uses 49500 DAI as per the quote, leaving 400 DAI stranded in the contract. The root cause is the lack of dynamic adjustment of input amounts in multihop trades involving external swaps. The impact is that users may lose access to part of their funds, which remain locked in the NativeRouter contract, leading to financial loss and inefficient use of capital.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeRouter.sol::tradeRFQT#L78-L144"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "OpenZeppelin v4.9.6 safeIncreaseAllowance incompatibility leads to USDT external swaps failure",
+            "description": "The ExternalSwap::externalSwap function uses OpenZeppelin's safeIncreaseAllowance from version 4.9.6, which is incompatible with certain \"weird\" ERC-20 tokens like USDT. USDT reverts when attempting to change an allowance from a non-zero value to another non-zero value, a behavior intended to prevent front-running attacks. The safeIncreaseAllowance function attempts to set the allowance to the sum of the current allowance and the new amount, triggering a revert if any prior allowance exists. Since the protocol explicitly supports USDT, this creates a critical usability issue. The root cause is the use of an outdated or incompatible version of OpenZeppelin's library that does not handle such edge cases. The impact is that all external swaps using USDT as the input token will fail, undermining user trust and contradicting the project's stated support for USDT.\n",
+            "severity": "Medium",
+            "location": [
+                "ExternalSwap.sol::externalSwap#L46"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "buyerToken and sellerToken Fields Mutated Before Signature Verification, Causing Legitimate Quotes to Fail in In NativeRFQPool.tradeRFQT()",
+            "description": "In the NativeRFQPool.tradeRFQT function, the buyerToken and sellerToken fields are modified before the signature verification step. Specifically, address(0) is replaced with WETH9 to handle native token representation. However, this mutation occurs before _verifyPMMSignature is called, meaning the data being verified no longer matches the original signed message. EIP-712 signature verification requires exact data integrity between signing and verification. If a market maker signed a quote using address(0) for ETH, the on-chain hash will differ due to the replacement with WETH9, causing signature validation to fail. The root cause is improper ordering of operations\u2014mutation should occur after verification. The impact is that valid off-chain quotes are rejected on-chain, preventing legitimate trades and disrupting the RFQ system.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeRFQPool.sol::tradeRFQT#L87C2-L102C36"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Native swap transactions will revert in NativeRouter on new chains with strict WETH9 implementations",
+            "description": "The _chargeWidgetFee function in NativeRouter uses safeTransferFrom to deduct fees, even when the user has already paid in native tokens (e.g., ETH, BERA, MNT). On certain chains like Arbitrum, Berachain, and Mantle, the wrapped token implementations (WETH, wBERA, wMNT) enforce strict allowance checks and do not bypass them when the sender is the same as the message sender. This means that calling safeTransferFrom from the contract\u2019s own balance (address(this)) to the fee recipient will revert if no prior approval was given. The root cause is the incorrect use of safeTransferFrom instead of safeTransfer when the tokens are already held by the contract. The impact is a denial of service for RFQ trades involving native tokens on these chains, preventing users from completing transactions and reducing cross-chain compatibility.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeRouter.sol::NativeRouter#L259",
+                "NativeRouter.sol::NativeRouter#L282-L284"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Valid trades will fail due to incorrect slippage validation",
+            "description": "The ExternalSwap.externalSwap function incorrectly validates the received amount against the full buyerTokenAmount rather than the user-specified amountOutMinimum. This means that even if the received amount exceeds the minimum acceptable threshold set by the user, the trade will revert if it is less than the quoted buyerTokenAmount. The root cause is a flawed validation logic in the externalSwap function, which does not account for slippage tolerance defined by the trade initiator. For example, a user setting amountOutMinimum to 1.9e18 for a 2e18 quote would have their trade reverted if 1.99e18 is received, despite being above the minimum. The impact is that valid and economically sound trades are unnecessarily reverted, degrading user experience and reducing the reliability of the routing system.\n",
+            "severity": "Medium",
+            "location": [
+                "ExternalSwap.sol::externalSwap#L73"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Some collateral can be locked in the Credit Vault contract",
+            "description": "The CreditVault contract tracks collateral amounts in terms of underlying token quantities rather than shares, which becomes problematic when dealing with rebasing tokens like NativeLPToken. When a user adds collateral, the amount is recorded directly, but since the token rebases, the actual balance in the contract increases over time due to yield accrual. When the user attempts to withdraw, only the originally deposited amount is transferred out, leaving the excess (from rebasing) behind in the contract. The root cause is the failure to account for dynamic supply changes inherent in rebasing tokens. The impact is that users cannot fully withdraw their accrued yield, resulting in locked funds within the CreditVault and a loss of user assets, undermining trust in the protocol's collateral management.\n",
+            "severity": "Medium",
+            "location": [
+                "CreditVault.sol::addCollateral#L319",
+                "CreditVault.sol::removeCollateral#L203-L225"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Yield Loss Due to Incomplete Share Withdrawal in CreditVault",
+            "description": "1. **Description:** When traders deposit and later withdraw rebasing, yield-bearing tokens (like NativeLPToken) as collateral, the system uses underlying amount-based transfers instead of share-based transfers. This causes only the equivalent underlying amount to be withdrawn, while leftover shares representing accrued yield remain in the CreditVault contract.\n\n2. **Cause:** The _transfer function in NativeLPToken.sol converts the requested underlying amount into shares at the current exchange rate, but does not account for the fact that the same number of shares originally deposited may now represent more underlying value due to yield accrual. The removeCollateral function uses this amount-based transfer, which results in fewer shares being withdrawn than were originally deposited.\n\n3. **Exploitation:** After multiple epochs during which the exchange rate increases (e.g., from 1.0 to 1.1), a trader withdrawing their full original collateral amount receives the correct underlying value but leaves behind residual shares. These shares remain locked in the CreditVault contract and cannot be easily recovered.\n\n4. **Impact:** The accrued yield represented by the leftover shares is effectively locked forever in the CreditVault, leading to permanent loss of value. While individual losses may be small, the cumulative effect across many users could be significant. Additionally, there is no convenient mechanism to rescue these leftover shares, and doing so manually could corrupt internal state mappings.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLPToken.sol::_transfer#422-425",
+                "CreditVault.sol::removeCollateral"
+            ],
+            "files": []
+        }
+    ]
+}

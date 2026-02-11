@@ -1,0 +1,244 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/EVM Emulator and Semi-abstracted Nonces Update Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/matter-labs/era-contracts"
+        ],
+        "commit_id": [
+            "cc1619cfb03cc19adb21a2071c89415cab1479e8"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-20",
+        "project_path": {
+            "era-contracts": "dataset-curated/contracts/EVM Emulator and Semi-abstracted Nonces Update Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Byte-to-Bit Mismatch in Shift Operations",
+            "description": "The vulnerability arises in the `modexpGasCost` and `mloadPotentiallyPaddedValue` functions where shift amounts are calculated in bytes but applied directly as bit shifts in Yul, which operates on bits. Since 1 byte equals 8 bits, failing to multiply the byte-based shift amount by 8 results in incorrect bit shifting, leading to partial or inaccurate data masking.\n\nThe root cause is the lack of conversion from byte units to bit units before performing EVM-level shift operations. This mismatch stems from a misunderstanding or oversight in aligning high-level byte arithmetic with low-level bit-level EVM semantics.\n\nAn attacker could exploit this by crafting inputs (e.g., in `modexp` precompile calls) that trigger incorrect shifts, leaving residual bits in the resulting values. This could distort parameter reads, such as base, exponent, or modulus sizes, and manipulate gas cost calculations.\n\nThe impact includes potential gas metering inaccuracies, corrupted numerical values, and possible bypass of boundary checks, which could lead to undefined behavior or denial of service in the EVM emulator.\n",
+            "severity": "Critical",
+            "location": [
+                "EvmEmulatorFunctions.template.yul::modexpGasCost#985",
+                "EvmEmulatorFunctions.template.yul::mloadPotentiallyPaddedValue#1052"
+            ],
+            "files": [
+                "era-contracts/system-contracts/evm-emulator/EvmEmulatorFunctions.template.yul"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-705"
+                ]
+            },
+            "title": "Inner Variable Shadowing Causes Incorrect Return in `mloadPotentiallyPaddedValue`",
+            "description": "The `mloadPotentiallyPaddedValue` function is designed to read a 32-byte memory word and zero out bytes beyond a specified memory boundary. However, within the conditional block, a new local variable named `value` is declared using `let`, which shadows the outer return variable `value`.\n\nThe cause is improper use of variable scoping in Yul, where inner `let` declarations silently shadow outer variables despite being disallowed by Yul specification. The compiler does not enforce this rule, leading to subtle logic errors.\n\nAn attacker could supply memory access patterns that exceed the boundary, expecting proper zeroing. However, due to the shadowing, the modified `value` inside the `if` block does not affect the returned value, so the full unmasked memory word is returned.\n\nThis leads to downstream issues in functions like `modexpGasCost` that rely on properly bounded values, resulting in incorrect parameter sizes, flawed exponent iteration counts, and inaccurate gas metering, potentially enabling DoS or resource exhaustion attacks.\n",
+            "severity": "High",
+            "location": [
+                "EvmEmulatorFunctions.template.yul::mloadPotentiallyPaddedValue#1052"
+            ],
+            "files": [
+                "era-contracts/system-contracts/evm-emulator/EvmEmulatorFunctions.template.yul"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Missing Docstrings",
+            "description": "Multiple contracts and interfaces lack proper NatSpec documentation, including function arguments, return values, and state variables. For example, `ContractDeployer`, `INonceHolder`, and `IContractDeployer` are missing detailed docstrings.\n\nThe root cause is insufficient code documentation practices, which reduce code readability and maintainability. This omission makes it harder for developers and auditors to understand the intended behavior of functions and interfaces.\n\nWhile not directly exploitable, the absence of documentation increases the risk of misinterpretation during development or auditing, potentially leading to incorrect integrations or missed vulnerabilities.\n\nThe impact is reduced code transparency and increased long-term maintenance burden, especially for complex systems like L2 protocols where precise understanding is critical.\n",
+            "severity": "Low",
+            "location": [
+                "ContractDeployer.sol",
+                "INonceHolder.sol",
+                "IContractDeployer.sol"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/ContractDeployer.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Deprecation of Arbitrary Ordering Is Not Explicit",
+            "description": "The `Arbitrary` nonce ordering has been deprecated and replaced with `KeyedSequential`, but the deprecation is not clearly reflected in the code. The `IContractDeployer` interface still includes the `Arbitrary` enum value without marking it as deprecated, and documentation still references the old default.\n\nThis inconsistency stems from incomplete updates across the codebase after the design change, leaving legacy references that may mislead developers.\n\nIntegrators might assume `Arbitrary` is still a valid option and attempt to use it, only to find it is blocked at runtime. This could lead to failed deployments or unexpected reverts.\n\nThe impact is confusion and potential integration errors, undermining developer experience and trust in the API's clarity.\n",
+            "severity": "Low",
+            "location": [
+                "IContractDeployer.sol",
+                "ContractDeployer.sol",
+                "docs/l2_system_contracts/system_contracts_bootloader_description.md"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/interfaces/IContractDeployer.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Lack of Input Validation",
+            "description": "The `increaseMinNonce` function in `NonceHolder.sol` accepts a `_value` parameter without validating that it is greater than zero. This allows callers to pass zero, which would result in no change to the nonce but consume gas.\n\nThe cause is missing input validation logic, which violates secure coding practices that require all user inputs to be checked for validity.\n\nAn attacker could exploit this by calling `increaseMinNonce(0)` repeatedly to waste gas or disrupt expected behavior, although no direct fund loss occurs.\n\nThe impact is inefficient gas usage and potential for denial-of-service-like behavior through unnecessary transactions, reducing system efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "NonceHolder.sol::increaseMinNonce#82"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/NonceHolder.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unreachable Code",
+            "description": "The `modexpGasCost` function contains a `switch` branch that handles the case where `Esize > 32`, but this condition is impossible due to an earlier check that enforces a maximum input size of 32 bytes via `MAX_MODEXP_INPUT_FIELD_SIZE`.\n\nThe cause is leftover or prematurely added code intended for future expansion, but currently not reachable under any valid execution path.\n\nWhile not exploitable, this dead code adds unnecessary complexity and may confuse auditors or developers into thinking larger exponents are supported.\n\nThe impact is reduced code clarity and maintainability, increasing the risk of future bugs if the code is mistakenly believed to be functional.\n",
+            "severity": "Low",
+            "location": [
+                "EvmEmulatorFunctions.template.yul::modexpGasCost#1031"
+            ],
+            "files": [
+                "era-contracts/system-contracts/evm-emulator/EvmEmulatorFunctions.template.yul"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Unused Event",
+            "description": "The `ValueSetUnderNonce` event is declared in the `INonceHolder` interface but is never emitted anywhere in the codebase.\nThe cause is the inclusion of an event definition without any corresponding emit statements, likely due to refactoring or oversight.\nWhile this does not pose a direct security risk, it can mislead developers into thinking the event is used for tracking state changes.\nThe impact is limited to reduced code clarity and maintainability, potentially leading to incorrect assumptions during future development.\n",
+            "severity": "Low",
+            "location": [
+                "INonceHolder.sol#L14"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/interfaces/INonceHolder.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Return Statements",
+            "description": "Several functions in the codebase use explicit return statements even though they use named return variables, which is redundant and harms readability.\nThis is caused by inconsistent coding patterns, where developers return values explicitly instead of relying on named returns, defeating the purpose of that Solidity feature.\nAn attacker cannot exploit this directly, but it increases the risk of logic errors during future modifications due to unclear control flow.\nThe impact is on code maintainability and readability, making audits and reviews more difficult and error-prone.\n",
+            "severity": "Low",
+            "location": [
+                "ContractDeployer.sol::getAccountInfo#41",
+                "ContractDeployer.sol::precreateEvmAccountFromEmulator#217",
+                "ContractDeployer.sol::_evmDeployOnAddress#417",
+                "ContractDeployer.sol::_performDeployOnAddressEVM#473-480",
+                "NonceHolder.sol::getDeploymentNonce#180"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/ContractDeployer.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Implicit Casting",
+            "description": "In the `_combineKeyedNonce` function, a `uint64` value (`nonceValue`) is implicitly cast to `uint256`, which can lead to confusion and potential bugs if type expectations change.\nThe root cause is the lack of explicit type casting, relying on the compiler to handle the conversion, which reduces code clarity.\nWhile this is currently safe, it could introduce vulnerabilities in future updates if the context changes and the implicit behavior is misunderstood.\nThe impact is primarily on code maintainability and safety, increasing the risk of subtle bugs during future development or refactoring.\n",
+            "severity": "Low",
+            "location": [
+                "NonceHolder.sol::_combineKeyedNonce#119"
+            ],
+            "files": [
+                "era-contracts/system-contracts/contracts/NonceHolder.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Inconsistent Variable Naming",
+            "description": "In the EVM emulator Yul code, variables `Bsize`, `Esize`, and `Msize` violate the project's camelCase naming convention, using uppercase first letters inconsistently.\nThis is caused by a deviation from the established naming standard, likely due to copy-paste from external sources or lack of linting enforcement.\nThis has no direct security impact but reduces code consistency and readability, especially for developers expecting uniform style.\nThe impact is on code quality and maintainability, potentially slowing down audits and increasing the chance of human error.\n",
+            "severity": "Low",
+            "location": [
+                "EvmEmulatorFunctions.template.yul#999-1001"
+            ],
+            "files": [
+                "era-contracts/system-contracts/evm-emulator/EvmEmulatorFunctions.template.yul"
+            ]
+        }
+    ]
+}

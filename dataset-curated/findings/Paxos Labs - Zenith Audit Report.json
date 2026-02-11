@@ -1,0 +1,343 @@
+{
+    "path": "dataset-curated/reports/Zenith/Paxos Labs - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Ion-Protocol/nucleus-boring-vault/pull/188",
+            "https://github.com/Ion-Protocol/nucleus-boring-vault/pull/187"
+        ],
+        "commit_id": [
+            "0x7032978ef1fc44271145bb593be45be1c7a0b6c5",
+            "0x5b615c65fcdd17f8dfaa693e5dcc754f92df504a"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-14",
+        "project_path": {
+            "Paxos Labs - Zenith Audit Report.pdf-source": "dataset-curated/contracts/Paxos Labs - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "lastProcessedOrder incorrectly set, causing processOrders to break",
+            "description": "1. **Description:** The `processOrders` function incorrectly increments `lastProcessedOrder` instead of setting it to the actual processed `orderIndex`. This leads to incorrect state tracking, causing `getOrderStatus` to return wrong statuses and eventually breaking the `processOrders` function when it attempts to reprocess already-processed orders.\n\n2. **Cause:** The root cause is the use of `++lastProcessedOrder` instead of directly assigning `lastProcessedOrder = orderIndex` after processing an order. This results in `lastProcessedOrder` not reflecting the true last processed order index.\n\n3. **Exploitation:** An attacker can force process earlier orders, leaving `lastProcessedOrder` unchanged. When `processOrders` is later called, it skips over already-processed orders and attempts to process order 3, which may have already been fulfilled. This leads to a revert when trying to burn an already-burned NFT.\n\n4. **Impact:** The impact is critical, as it can cause a complete denial of service for the order processing mechanism, preventing any further orders from being processed and freezing the system.\n",
+            "severity": "Critical",
+            "location": [
+                "OneToOneQueue.sol#L467"
+            ],
+            "files": [
+                "src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "forceRefund() fails to return the fee amount when feeAsset /= wantAsset",
+            "description": "1. **Description:** The `forceRefund()` function only refunds the `amountOffer` to the user and does not include the fee amount when `feeAsset` is different from `wantAsset`. Since users pay fees in `feeAsset`, they are not compensated for these fees during a refund.\n\n2. **Cause:** The function does not check whether a fee was collected in a different asset and therefore omits the transfer of the fee amount back to the user.\n\n3. **Exploitation:** An attacker can submit orders using a `feeAsset` different from `wantAsset`, then trigger a refund. The system will only return the principal amount, effectively stealing the fee from the user.\n\n4. **Impact:** Users lose their paid fees during refunds, leading to financial loss. This is a high-severity issue due to direct financial impact on users.\n",
+            "severity": "High",
+            "location": [
+                "OneToOneQueue.sol#L564-L575"
+            ],
+            "files": [
+                "src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "DoS on order processing/refunds when using tokens with blacklist feature",
+            "description": "1. **Description:** If an order's `refundReceiver` or NFT owner is blacklisted by the ERC20 token being transferred, the `processOrders`, `forceRefund`, and `forceProcess` functions will revert during token transfer, blocking further order processing.\n\n2. **Cause:** The contract uses a push-based transfer mechanism without handling transfer failures. Tokens with blacklist functionality can cause silent reverts on transfer.\n\n3. **Exploitation:** An attacker can create an order and set the `refundReceiver` to a blacklisted address. Once the order is processed or refunded, the transfer will fail, reverting the entire transaction and halting the queue.\n\n4. **Impact:** This results in a denial of service for the entire order queue, preventing legitimate orders from being processed. The impact is medium due to the dependency on specific token features.\n",
+            "severity": "Medium",
+            "location": [
+                "OneToOneQueue.sol#L572",
+                "OneToOneQueue.sol#L587",
+                "OneToOneQueue.sol#L464"
+            ],
+            "files": [
+                "src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Signature hash lacks domain separation, enabling cross-chain replay attacks",
+            "description": "1. **Description:** The signature hash used in `_verifyDepositor` does not include the chain ID or contract address, making it possible for a signature valid on one chain to be replayed on another chain where the same contract is deployed.\n\n2. **Cause:** The `keccak256` hash for EIP-2612 style signatures omits critical context variables like `block.chainid` and `address(this)`, violating best practices for domain separation.\n\n3. **Exploitation:** An attacker can capture a valid signature from one network and replay it on a different network, potentially executing unauthorized order submissions if the parameters match.\n\n4. **Impact:** This allows cross-chain replay attacks, undermining the integrity of order submissions across multiple deployments. The impact is medium due to the need for identical contract states and parameters.\n",
+            "severity": "Medium",
+            "location": [
+                "OneToOneQueue.sol#L484-L494"
+            ],
+            "files": [
+                "src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "CommunityCodeDepositor does not support share lock mechanism in teller",
+            "description": "1. **Description:** The `CommunityCodeDepositor` contract does not support the share lock mechanism in the `TellerWithMultiAssetSupport` contract. If the share lock is enabled, deposits via `CommunityCodeDepositor` will fail.\n\n2. **Cause:** The contract directly transfers shares after deposit without accounting for locked shares, which are not immediately transferable.\n\n3. **Exploitation:** Users attempting to deposit via `CommunityCodeDepositor` when share lock is active will have their transactions reverted, preventing access to the system.\n\n4. **Impact:** This results in a denial of service for users relying on `CommunityCodeDepositor` when share locking is enabled. The impact is low as it only affects a specific configuration.\n",
+            "severity": "Low",
+            "location": [
+                "CommunityCodeDepositor.sol#L181-L182"
+            ],
+            "files": [
+                "src/helper/DistributorCodeDepositor.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "DoS risk due to unhandled permit reverts",
+            "description": "1. **Description:** The `_verifyDepositor` function calls `permit` without error handling. If the permit signature has already been used, the call reverts, blocking the entire operation.\n\n2. **Cause:** Lack of `try/catch` or pre-check for used nonces makes the function vulnerable to front-running attacks where an attacker uses the permit signature first.\n\n3. **Exploitation:** An attacker can monitor the mempool and front-run a transaction by calling `permit` with the same parameters, causing the original transaction to revert.\n\n4. **Impact:** This leads to a denial of service for order submission or processing that relies on permit. The impact is low due to the requirement of timely front-running.\n",
+            "severity": "Low",
+            "location": [
+                "OneToOneQueue.sol#L513-L522",
+                "CommunityCodeDepositor.sol#L151"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Minimum order size check before fees",
+            "description": "1. **Description:** The minimum order size check is performed on the gross `amountOffer` before fees are deducted. After fee calculation, the net amount received by the user may fall below the intended minimum.\n\n2. **Cause:** The check `if (params.amountOffer < minimumOrderSize)` is executed before `calculateOfferFees`, which reduces the amount sent to the receiver.\n\n3. **Exploitation:** An attacker can submit an order just above the minimum threshold, but after fees, the actual amount delivered is below minimum, potentially distorting economic incentives.\n\n4. **Impact:** This undermines the intended minimum order size policy, possibly enabling spam or economically inefficient trades. The impact is low as it does not lead to fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "OneToOneQueue.sol#L374-L382"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "processOrders() should perform external call after state updates",
+            "description": "1. **Description:** The `processOrders` function performs an external call to `safeTransfer` before updating the `lastProcessedOrder` state variable, violating the Checks-Effects-Interactions (CEI) pattern.\n\n2. **Cause:** The state update `++lastProcessedOrder` occurs after the external call, creating a reentrancy window if the recipient is a malicious contract.\n\n3. **Exploitation:** A malicious `wantAsset` that supports callbacks (e.g., ERC777) could reenter `processOrders`, reprocessing the same order and draining funds.\n\n4. **Impact:** This could lead to reentrancy-based fund loss. The impact is low due to the specific token requirements and decreasing prevalence of such tokens.\n",
+            "severity": "Low",
+            "location": [
+                "OneToOneQueue.sol#L464"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "setFeeModule() will apply new fee structure retroactively and affect refunds",
+            "description": "1. **Description:** The `setFeeModule` function allows updating the fee module, which affects fee calculations for existing orders. Refunds for these orders use the new fee structure, potentially returning incorrect fee amounts.\n\n2. **Cause:** The fee amount is not stored at order creation; instead, it is recalculated during refund using the current fee module.\n\n3. **Exploitation:** An admin could change the fee module to reduce or eliminate fees, then trigger refunds, returning less than originally paid in fees.\n\n4. **Impact:** Users may receive incorrect refunds, leading to financial loss. The impact is low due to the requirement of admin privilege to change the fee module.\n",
+            "severity": "Low",
+            "location": [
+                "OneToOneQueue.sol#L177-L187"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "calculateOfferFees() should round up fee amount",
+            "description": "1. **Description:** The `calculateOfferFees` function uses integer division that truncates downward, potentially resulting in a fee amount of zero for very small deposits.\n\n2. **Cause:** The calculation `feeAmount = (amount * offerFeePercentage) / ONE_HUNDRED_PERCENT` truncates instead of rounding up.\n\n3. **Exploitation:** An attacker can submit many small orders with fees that round down to zero, effectively avoiding fees entirely.\n\n4. **Impact:** This allows fee avoidance for micro-transactions, reducing protocol revenue. The impact is low due to minimal financial loss per transaction.\n",
+            "severity": "Low",
+            "location": [
+                "SimpleFeeModule.sol#L31-L44"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/SimpleFeeModule.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1285"
+                ],
+                "4": [
+                    "CWE-129"
+                ]
+            },
+            "title": "getOrderStatus returns misleading status for non-existent orders",
+            "description": "1. **Description:** The `getOrderStatus` function returns `PENDING` for non-existent order indices (e.g., `orderIndex > latestOrder`), which is misleading as no such order was ever created.\n\n2. **Cause:** The function does not validate whether the `orderIndex` corresponds to a submitted order before returning a status.\n\n3. **Exploitation:** An attacker can query non-existent orders and misinterpret them as pending, leading to incorrect off-chain logic or user confusion.\n\n4. **Impact:** This leads to incorrect state interpretation by off-chain systems or users. The impact is informational, as it does not affect on-chain behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "OneToOneQueue.sol#L357-L359"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "uint128 truncation without bounds check",
+            "description": "1. **Description:** The `submitOrder` function casts `params.amountOffer` (uint256) to `uint128` without bounds checking, causing silent truncation if the value exceeds `type(uint128).max`.\n\n2. **Cause:** Direct unsafe casting using `uint128(params.amountOffer)` without prior validation.\n\n3. **Exploitation:** A user submitting an order with `amountOffer > uint128.max` would have their amount truncated, leading to incorrect order size and potential loss of funds.\n\n4. **Impact:** Users may deposit more than intended due to truncation, resulting in financial loss. The impact is informational as it's a known Solidity anti-pattern, but could be more severe in practice.\n",
+            "severity": "Informational",
+            "location": [
+                "OneToOneQueue.sol#L407-L410"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Lack of Order expiry can cause issue",
+            "description": "1. **Description:** Orders do not have an expiration deadline. If a stablecoin depegs after order submission but before processing, users receive devalued assets without the ability to cancel.\n\n2. **Cause:** No timestamp or deadline is included in the order struct or validated during processing.\n\n3. **Exploitation:** In the event of a depeg, users are forced to accept devalued tokens, with no opt-out mechanism.\n\n4. **Impact:** Users may suffer financial loss due to receiving depegged assets. The impact is informational as the team acknowledges this as a design choice.\n",
+            "severity": "Informational",
+            "location": [
+                "OneToOneQueue.sol#L368-L424"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "_verifyDepositor doesn\u2019t handle permit for feeAsset",
+            "description": "1. **Description:** The `_verifyDepositor` function only handles permit approval for `offerAsset`, but the fee module may return a different `feeAsset`. Transferring `feeAsset` without approval causes reverts.\n\n2. **Cause:** The permit logic is only applied to `params.offerAsset`, not the actual `feeAsset` used in the fee transfer.\n\n3. **Exploitation:** If `feeAsset != offerAsset`, the contract will attempt to transfer `feeAsset` from the depositor without allowance, causing the transaction to fail.\n\n4. **Impact:** This leads to failed transactions when fee and offer assets differ. The impact is informational as the team has removed support for different fee assets.\n",
+            "severity": "Informational",
+            "location": [
+                "OneToOneQueue.sol#L397"
+            ],
+            "files": [
+                "0x7032978ef1fc44271145bb593be45be1c7a0b6c5/nucleus-boring-vault/src/helper/one-to-one-queue/OneToOneQueue.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "CommunityCodeDepositor do not support fee-on-transfer tokens",
+            "description": "1. **Description:** The `CommunityCodeDepositor` contract assumes the full `depositAmount` is received from the user. For fee-on-transfer tokens, the actual received amount is less due to transfer fees, causing subsequent transfers to fail.\n\n2. **Cause:** The contract uses the input `depositAmount` instead of checking the actual balance change after transfer.\n\n3. **Exploitation:** A user depositing a fee-on-transfer token will cause the contract to attempt to deposit more than it received, leading to a revert.\n\n4. **Impact:** Deposits fail for fee-on-transfer tokens. The impact is informational as the team does not intend to support such tokens.\n",
+            "severity": "Informational",
+            "location": [
+                "CommunityCodeDepositor.sol"
+            ],
+            "files": []
+        }
+    ]
+}

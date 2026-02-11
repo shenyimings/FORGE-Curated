@@ -1,0 +1,250 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_centrifuge_may2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/centrifuge/protocol-v3"
+        ],
+        "commit_id": [
+            "814ea57bcfea2385cd0c9ee3ed1bbad59a71e156"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "protocol-v3": "dataset-curated/contracts/cantina_centrifuge_may2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-172"
+                ],
+                "3": [
+                    "CWE-173"
+                ]
+            },
+            "title": "AxelarAdapter.execute will fail to process any incoming message",
+            "description": "The vulnerability exists in the AxelarAdapter.execute function, which fails to process any incoming cross-chain message due to an incorrect string-to-address conversion in CastLib.toAddress. The root cause is that CastLib.toAddress(string) incorrectly assumes the input string's length must match the address length in bytes, when in reality, Axelar's infrastructure provides a hex string of fixed length (42 characters including '0x'). As a result, the require condition bytes(addr).length == 20 always evaluates to false because the string is not properly decoded from hex. This allows no valid cross-chain message to be processed, leading to a complete failure of inbound message handling. The impact is a denial of service for all cross-chain functionality relying on Axelar, preventing any external calls or state updates triggered by incoming messages.\n",
+            "severity": "Medium",
+            "location": [
+                "AxelarAdapter.sol::execute#60-75",
+                "CastLib.sol::toAddress#15-18"
+            ],
+            "files": [
+                "protocol-v3/src/common/adapters/AxelarAdapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-116"
+                ],
+                "3": [
+                    "CWE-838"
+                ]
+            },
+            "title": "AxelarAdapter.send sets incorrect destinationAddress for every cross chain transaction",
+            "description": "The AxelarAdapter.send function sets an incorrect destination address when relaying cross-chain transactions because it uses CastLib.toString to encode an address as a string. The current implementation uses string(abi.encodePacked(addr)), which produces a UTF-8 representation of the raw hex bytes rather than a proper hex string. This results in malformed addresses when decoded on the destination chain. The root cause is the misuse of low-level encoding without proper hex formatting. An attacker could potentially exploit this by crafting transactions that appear to target one address but are misrouted due to the corrupted string encoding. The impact is that cross-chain contract calls are sent to unintended recipients, potentially leading to loss of funds or unintended state changes if those addresses are active or malicious.\n",
+            "severity": "Medium",
+            "location": [
+                "AxelarAdapter.sol::send#82-99",
+                "CastLib.sol::toString#15-18"
+            ],
+            "files": [
+                "protocol-v3/src/common/adapters/AxelarAdapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Edge case in request handling can cause deposits/redemptions to be broken",
+            "description": "Due to the asynchronous nature of Centrifuge V3, a race condition in request handling can cause deposits and redemptions to fail. The vulnerability arises when a deposit request is canceled before it is fully relayed and processed. If the cancellation occurs before the pending user order is updated, and due to rounding errors in balance calculations, the pending amount may not be fully zeroed out. Later, when the original deposit is processed, the system expects pendingCancelDepositRequest to be false, but it remains true, blocking further processing. The root cause is improper state synchronization and lack of handling for edge cases involving rounding in fractional balances. This can be exploited by timing cancellation and deposit requests strategically. The impact is that users may be unable to complete deposits or redemptions, leading to a denial of service for affected accounts.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "BytesLib.sliceZeroPadded adds non-zero bytes in padding",
+            "description": "The BytesLib.sliceZeroPadded function can incorrectly add non-zero bytes when padding a byte slice. The function is intended to extract a slice of bytes and pad it with zeros if the requested length exceeds the available data. However, due to improper memory management or incorrect assumptions about the input data layout, it may copy non-zero bytes from adjacent memory regions into the padding area. The root cause is flawed low-level byte manipulation logic in the assembly code. An attacker could exploit this by crafting malicious byte arrays that trigger the incorrect padding behavior, potentially leading to data corruption or misinterpretation of critical payload data. The impact includes incorrect state updates, failed cross-chain message decoding, or unintended logic execution due to corrupted data.\n",
+            "severity": "Low",
+            "location": [
+                "BytesLib.sol::sliceZeroPadded#12-72"
+            ],
+            "files": [
+                "protocol-v3/src/misc/libraries/BytesLib.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "ERC20.burn requires wards to have been granted an allowance to burn tokens",
+            "description": "The ERC20.burn function, although protected by an auth modifier implying only authorized addresses can call it, still consumes the token allowance mechanism when burning. This means that even authorized wards must first have an allowance set before they can burn tokens, which is redundant and counterintuitive. The root cause is the unnecessary inclusion of the _spendAllowance call in the burn function despite the authorization check. While this does not create a direct security risk, it introduces operational friction and potential confusion for system operators. An attacker could potentially exploit this by blocking burn operations through allowance manipulation, though only if they can interfere with the allowance state. The impact is limited to usability and gas inefficiency, but it violates the principle of least surprise.\n",
+            "severity": "Low",
+            "location": [
+                "ERC20.sol::burn#151-173"
+            ],
+            "files": [
+                "protocol-v3/src/misc/ERC20.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "VaultRouter.enableLockDepositRequest can revert when wrapping underlying tokens",
+            "description": "The VaultRouter.enableLockDepositRequest function can revert when attempting to wrap underlying tokens if the user's balance is less than the requested amount. The function calls VaultRouter.wrap, which wraps the minimum of the request amount and the user's balance, but then proceeds to use the full requested amount when calling lockDepositRequest. This discrepancy causes the contract to attempt to pull more funds than were actually wrapped, leading to a revert. The root cause is the failure to capture and use the actual amount of tokens wrapped. An attacker could exploit this by initiating partial wrap operations and triggering reverts during deposit locking, potentially disrupting user flows or causing failed transactions. The impact is transaction failure and denial of service for deposit functionality in edge cases.\n",
+            "severity": "Low",
+            "location": [
+                "VaultRouter.sol::enableLockDepositRequest#130-144",
+                "VaultRouter.sol::wrap#156-157",
+                "VaultRouter.sol::lockDepositRequest#272-282"
+            ],
+            "files": [
+                "protocol-v3/src/vaults/VaultRouter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Holding amounts may be updated erroneously when queueing asset amounts",
+            "description": "The BalanceSheet contract may update holding amounts incorrectly when processing queued assets if PoolManager.updatePricePoolPerShare is called while assets are queued. The issue arises because submitQueuedAssets uses the current pricePoolPerAsset, which may have changed since the deposit was approved. This leads to inaccurate valuation of queued deposits. The root cause is the lack of snapshotting or locking the price at the time of queueing. While the system allows manual adjustments via Hub.updateHoldingValue, this introduces reliance on operator intervention. An attacker could potentially exploit price volatility windows to manipulate holding valuations, though the risk is mitigated by the need for precise timing. The impact is potential mispricing of assets and incorrect share calculations, affecting fairness and accuracy.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "protocol-v3/src/vaults/BalanceSheet.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Non-batched Hub transactions may fail to relay payload data to adapters",
+            "description": "Non-batched transactions in the Hub contract, specifically notifyDeposit and notifyRedeem, may fail to relay payload data correctly due to incorrect gas handling in the internal _pay function. The function attempts to subsidize multiple Gateway.send() calls but refunds gas after the first call, causing subsequent sends to be underpaid and fail. The root cause is improper gas budgeting and refund logic in a multi-call context. An attacker could exploit this by forcing non-batched execution paths and causing partial transaction failures, leading to inconsistent state. The impact is incomplete execution of cross-chain messages, resulting in failed updates on destination chains and poor user experience.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "protocol-v3/src/hub/Hub.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "BytesLib.sliceZeroPadded reverts with panic instead of custom error",
+            "description": "The BytesLib.sliceZeroPadded function reverts with a low-level panic error instead of a custom, descriptive error when an overflow occurs during the length check. The function checks _length + 31 >= _length to detect overflow, but because this is done in checked arithmetic, an overflow causes a panic (0x11) rather than the intended SliceOverflow custom error. The root cause is the absence of an unchecked block around the overflow detection logic. While this does not introduce a security vulnerability, it makes debugging and error handling more difficult for integrators. There is no direct exploit path, but it reduces the robustness of the system. The impact is limited to degraded error reporting and increased operational complexity during failure analysis.\n",
+            "severity": "Informational",
+            "location": [
+                "BytesLib.sol::sliceZeroPadded#17"
+            ],
+            "files": [
+                "protocol-v3/src/misc/libraries/BytesLib.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "System assumes ERC6909 tokens cannot have tokenId = 0",
+            "description": "The system assumes that when tokenId == 0 is provided, the token must be an ERC-20, not an ERC-6909. However, the ERC-6909 standard does not prohibit tokenId = 0, so this assumption may lead to compatibility issues with valid ERC-6909 tokens. The root cause is a design decision to use tokenId == 0 as a discriminator between token standards, which is not guaranteed by the specification. An attacker could potentially deploy an ERC-6909 token with tokenId = 0 and exploit the incorrect handling to bypass intended logic or cause misrouting. The impact is limited to interoperability problems and potential logic errors when integrating with certain token implementations.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "protocol-v3/src/misc/interfaces/IERC6909.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Gateway contract deployment fails when deployer != msg.sender",
+            "description": "The Gateway contract fails to deploy when the deployer parameter differs from msg.sender because the constructor makes an internal call to setRefundAddress, which is protected by an auth modifier. The auth mechanism grants privileges only to the deployer argument, but the runtime msg.sender during construction is the actual transaction sender. If they differ, the internal call reverts. The root cause is a mismatch between the authorization model and constructor execution context. This could be exploited by a malicious deployment proxy or factory that manipulates the deployer parameter, preventing successful deployment. The impact is denial of deployment in proxy-based or forwarded deployment scenarios, limiting deployment flexibility.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "protocol-v3/src/common/Gateway.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Gateway repay and retry actions do not adhere to Checks-Effects-Interactions guidelines",
+            "description": "The Gateway contract's repay and retry functions do not follow the Checks-Effects-Interactions (CEI) pattern. They perform external calls before updating internal state, which deviates from secure Solidity practices. While there is no immediate exploit because the state is eventually updated and the functions are permissioned, this pattern increases risk in case of unexpected reentrancy or future code changes. The root cause is improper function design. An attacker would need to compromise the Gateway contract first to exploit this, so the risk is low. The impact is reduced code safety and maintainability, making the system more vulnerable to future bugs.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "protocol-v3/src/common/Gateway.sol"
+            ]
+        }
+    ]
+}

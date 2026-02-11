@@ -1,0 +1,603 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-let's-get-hai-new-core-features-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/hai-on-op/core"
+        ],
+        "commit_id": [
+            "be45f6c67d2b8557750e4a2c5e661c58f0f03dfb",
+            "1db979f16ebd90441ee1d282067b8a3f4f13cb58"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm/optimism",
+        "compiler_version": "n/a",
+        "audit_date": "2025-04-25",
+        "project_path": {
+            "core": "dataset-curated/contracts/ackee-blockchain-let's-get-hai-new-core-features-report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "User can claim all rewards, that StakingManager received from RewardPool",
+            "description": "The StakingManager contract uses a reward accounting mechanism based on the `rewardIntegralFor` mapping to track per-user reward integrals. However, this mapping is only updated when users check their rewards via the `earned` function, not when they claim rewards via `getReward`. As a result, after claiming rewards, the integral remains unchanged, allowing a malicious user to repeatedly call `getReward` and drain all accumulated rewards from the StakingManager. This flaw stems from incorrect state management in the reward claiming logic. An attacker can exploit this by staking a minimal amount and repeatedly calling `getReward` after rewards are distributed, thereby claiming all available rewards before other legitimate stakers can claim theirs. The impact is severe, leading to complete loss of distributed rewards for honest users and undermining the fairness and integrity of the staking system.\n",
+            "severity": "Critical",
+            "location": [
+                "StakingManager.sol::getReward",
+                "StakingManager.sol::earned"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "User can inflate number of rewards by staking additional amount of rewards right before claiming them",
+            "description": "The `StakingManager.sol` contract calculates rewards using the `rewardIntegral` and `rewardIntegralFor` variables, but it fails to update the `rewardIntegralFor` mapping before modifying the user's staked balance during stake or withdraw operations. This allows a user to manipulate the reward calculation by staking additional tokens just before claiming rewards. The root cause is incorrect ordering of operations in the reward calculation logic. An attacker can exploit this by staking a large amount of tokens right before claiming, thereby inflating their reward integral and receiving disproportionately high rewards. The impact is significant, as it can lead to substantial reward token inflation and financial loss for the protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "StakingManager.sol::stake",
+                "StakingManager.sol::withdraw"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Front-running RewardDistributor.updateMerkleRoots allows double claim",
+            "description": "The `updateMerkleRoots` function in the RewardDistributor contract does not prevent front-running attacks because it updates the active Merkle root without any safeguards. Since the contract maintains only one active root at a time, a malicious user can monitor the mempool for an upcoming root update transaction and front-run it by claiming rewards from the old root, then immediately claim again from the new root once the update is confirmed. This double claim is possible due to the lack of access control or pausing mechanism during root updates, despite such functionality existing in the contract. The root cause is the absence of a required pause-unpause procedure around root updates, despite such functionality existing in the contract. An attacker with sufficient capital and MEV infrastructure can exploit this by timing their claims around root updates, potentially draining the contract of funds and preventing other users from claiming their rightful rewards if the balance is exhausted. The impact includes financial loss and disruption of fair reward distribution.\n",
+            "severity": "High",
+            "location": [
+                "RewardDistributor.sol::updateMerkleRoots",
+                "RewardDistributor.sol::multiClaim"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "External interface IPessimisticVeloLpOracle is outdated",
+            "description": "The `IPessimisticVeloLpOracle` interface defines a function `getCurrentPoolPrice`, but the actual implementation at the provided address uses `getCurrentPrice`, making the two incompatible. This mismatch causes any call to `_getPriceValue` through the interface to revert, breaking functionality in dependent contracts such as `BeefyVeloVaultRelayer` and `YearnVeloVaultRelayer`. The root cause is a failure to synchronize the interface definition with the deployed implementation, likely due to a refactor that was not reflected in the audited codebase. An attacker cannot directly exploit this for financial gain, but any user or protocol component relying on these oracle functions will experience failed transactions, leading to a denial of service. The impact is high in terms of system usability, as core oracle functionality becomes non-operational, potentially halting dependent processes in the protocol.\n",
+            "severity": "High",
+            "location": [
+                "IPessimisticVeloLpOracle.sol::getCurrentPoolPrice",
+                "BeefyVeloVaultRelayer.sol::getResultWithValidity",
+                "YearnVeloVaultRelayer.sol::read"
+            ],
+            "files": [
+                "core/src/interfaces/external/IPessimisticVeloLpOracle.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "RewardPool._totalStaked variable updates incorrectly",
+            "description": "The RewardPool contract maintains a _totalStaked variable to track the total amount of staked tokens in the StakingManager contract. This variable is updated when StakingManager stakes or withdraws tokens via the stake, increaseStake, and decreaseStake functions. However, when a new RewardPool contract connects to StakingManager after tokens are already staked, the _totalStaked variable in the new pool starts at zero and does not reflect the correct total staked amount. This leads to two potential exploit scenarios: first, a user's withdrawal may revert due to an incorrect balance check (when _wad > _totalStaked), and second, users may receive zero rewards from the new pool because reward calculations depend on _totalStaked being accurate. The root cause is the lack of initialization of _totalStaked with the actual total supply from the StakingToken contract upon deployment. This results in incorrect state tracking and potential denial of service for withdrawals or incorrect reward distribution.\n",
+            "severity": "Medium",
+            "location": [
+                "RewardPool.sol::stake#100-104",
+                "RewardPool.sol::increaseStake#107-110",
+                "RewardPool.sol::decreaseStake#114-119"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardPool.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "stakeToken can be transferred to any other address while it is still assumed staked",
+            "description": "The `StakingManager.sol` contract tracks staked balances using the `stakedBalances` mapping, but it does not update this mapping when a user transfers their `stakeToken`. This creates a logic flaw where a user can sell or transfer their staked tokens while still retaining their staked balance record. The root cause is the lack of integration between token transfer events and staking balance updates. An attacker could exploit this by staking tokens, transferring them to another address (e.g., via a DEX), and still claiming rewards based on the original staked amount. This could lead to reward inflation and unfair distribution, allowing malicious actors to collect more rewards than they are entitled to.\n",
+            "severity": "Medium",
+            "location": [
+                "StakingManager.sol"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Miscalculation of rewardToken distribution after withdrawal initiation in StakingManager",
+            "description": "When a user initiates a withdrawal, their tokens enter a cooldown period during which they should no longer earn rewards. However, the reward distribution calculation still includes the total supply of staking tokens, including those in cooldown. This causes an incorrect distribution where part of the reward pool is not allocated and remains stuck in the contract. The root cause is the failure to exclude tokens in the withdrawal process from the reward calculation. While the impact is partially mitigated by the `emergencyWithdrawReward` function, this flaw still leads to inefficient reward distribution and potential loss of rewards for honest users.\n",
+            "severity": "Medium",
+            "location": [
+                "StakingManager.sol"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect reward calculation when reward token is the same as staking token",
+            "description": "When the staking token (KITE) is also used as a reward token, the `StakingManager.sol` contract fails to distinguish between staked tokens and reward tokens in its accounting. This leads to an inflation of rewards because the reward calculation erroneously includes staked tokens in the reward pool. The root cause is the lack of separate accounting for staked and reward balances when the tokens are the same. An attacker can exploit this by staking tokens and then claiming rewards, receiving a much larger amount than deserved due to the flawed calculation. This results in unfair reward distribution and potential depletion of the reward pool.\n",
+            "severity": "Medium",
+            "location": [
+                "StakingManager.sol"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Queued rewards in RewardPool can become stuck",
+            "description": "The RewardPool contract includes a queueNewRewards function that can place rewards into a queuedRewards state when the new reward ratio is less than or equal to the calculated _queuedRatio. These queued rewards are only moved into active distribution when a subsequent call to queueNewRewards occurs with a higher ratio. If no such call is made after existing rewards are fully distributed, the queued rewards remain permanently stuck in the contract and are never distributed to users. The root cause is the absence of an automatic mechanism to release queued rewards when the current reward period ends or when the reward balance is depleted. This creates a dependency on external intervention to release funds, which may never happen, leading to permanent loss of reward funds for users. Although the team acknowledged this as intentional, it still represents a logic flaw that could result in user funds being locked indefinitely.\n",
+            "severity": "Low",
+            "location": [
+                "RewardDistributor.sol::queueNewRewards#172-177"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-672"
+                ]
+            },
+            "title": "A user can received rewards after withdrawal process has been initiated",
+            "description": "In the StakingManager contract, users can initiate a withdrawal using initiateWithdrawal, wait for the cooldown period, and then call withdraw to retrieve their tokens. However, the contract continues to accrue rewards for a user's staked balance even after the withdrawal has been initiated and the tokens are eligible for withdrawal. This allows a user to stake tokens, immediately initiate withdrawal, and continue earning rewards indefinitely while still being able to withdraw their principal at any time after the cooldown. The root cause is the lack of logic to pause or stop reward accrual upon initiation of the withdrawal process. This undermines the intended staking mechanism by allowing users to effectively earn rewards without maintaining long-term stake, potentially leading to unfair reward distribution and reduced economic security of the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "StakingManager.sol::initiateWithdrawal",
+                "StakingManager.sol::withdraw"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "StakingToken.burnFrom function does not emit StakingTokenBurn event",
+            "description": "The StakingToken contract emits a StakingTokenBurn event in the burn function when tokens are burned by the owner, but fails to emit the same event in the burnFrom function, which allows approved spenders to burn tokens on behalf of another account. This inconsistency in event emission leads to incomplete off-chain tracking of token burns, as external systems relying on events will miss burns performed via burnFrom. The root cause is the omission of the event emission statement in the burnFrom function, despite calling _burn internally. This can result in inaccurate reporting of total burned supply and reduced transparency, potentially causing external services or users to lose trust in the protocol's data integrity.\n",
+            "severity": "Low",
+            "location": [
+                "StakingToken.sol::burnFrom#77-80"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingToken.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Reward calculation state variables not updated in critical functions",
+            "description": "The RewardPool contract uses several state variables\u2014rewardPerTokenStored, lastUpdateTime, rewards, and rewardsPerTokenPaid\u2014to calculate and distribute rewards accurately. However, these variables are not updated in the increaseStake and decreaseStake functions, which modify the staked balance and thus affect reward calculations. The root cause is the absence of the updateReward modifier on these functions, which is used elsewhere to synchronize reward state before balance changes. As a result, reward calculations may be based on outdated timestamps and reward rates, leading to incorrect or unfair reward distributions. This can cause users to receive less or more than their fair share of rewards, especially when stakes are increased or decreased between reward periods.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardPool.sol::increaseStake#107-110",
+                "RewardPool.sol::decreaseStake#114-119"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardPool.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-191"
+                ]
+            },
+            "title": "Potential underflow in math operations leads to unspecified errors",
+            "description": "The RewardPool and StakingManager contracts contain arithmetic operations that are susceptible to underflow. In RewardPool, the expression `block.timestamp - (periodFinish - _params.duration)` can underflow if `block.timestamp + _params.duration < periodFinish`, which could occur if duration is decreased too much. In StakingManager, the line `stakedBalances[msg.sender] -= _wad` can underflow if `_wad` exceeds the user's balance during a withdrawal. The root cause is the lack of input validation and safe math checks before performing subtraction operations. Successful exploitation could lead to transaction reverts, denial of service, or in extreme cases, incorrect state updates if wrapped arithmetic is not enforced. This represents a data validation flaw that could disrupt normal contract operation.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardPool.sol#168",
+                "StakingManager.sol#143"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardPool.sol",
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Oracle vault relayers lack non-zero price validation",
+            "description": "The _getPriceValue function in both YearnVeloVaultRelayer and BeefyVeloVaultRelayer contracts computes a price using _veloLpBalance and _veloLpPrice, which are fetched from external sources. However, the function does not validate that these values are non-zero before using them in multiplication and division. If either value is zero due to a change in the external contract implementation or an oracle failure, the resulting price will be zero, which could lead to incorrect valuations and potentially catastrophic consequences for the protocol, such as incorrect collateral valuation or reward distribution. The root cause is the absence of a require() check ensuring that the final computed price is greater than zero. This is a data validation issue that increases reliance on external contracts' behavior without proper defensive programming.\n",
+            "severity": "Informational",
+            "location": [
+                "YearnVeloVaultRelayer.sol::_getPriceValue#53-59",
+                "BeefyVeloVaultRelayer.sol::_getPriceValue#53-59"
+            ],
+            "files": [
+                "core/src/contracts/oracles/YearnVeloVaultRelayer.sol",
+                "core/src/contracts/oracles/BeefyVeloVaultRelayer.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Unchecked return value of ERC20.transfer in RewardDistributor",
+            "description": "The RewardDistributor contract calls ERC20.transfer in both the _claim and emergencyWithdraw functions but does not check the boolean return value. While most ERC-20 tokens revert on failure, some non-compliant tokens may return false instead of reverting. In such cases, the contract would proceed as if the transfer succeeded, emit a claim event, and mark the claim as completed, even though no tokens were transferred. This could result in permanent loss of user funds and prevent them from retrying the claim. The root cause is the lack of a return value check or use of a safe transfer library. Although a partial fix was implemented in _claim, the emergencyWithdraw function still lacks this check, leaving a critical function vulnerable.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardDistributor.sol::_claim",
+                "RewardDistributor.sol::emergencyWithdraw"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event emission for reward pool token staking",
+            "description": "When users stake tokens through the StakingManager contract, the stake amount is distributed across active reward pools via internal calls to _rewardPool.stake(_wad). While the StakingManager emits a StakingManagerStaked event, it does not emit any event indicating which specific reward pools received the stake. This makes it difficult for off-chain services and users to track where their staked tokens are allocated. The root cause is the lack of an event emission after each _rewardPool.stake call. Although this does not affect on-chain functionality, it reduces transparency and complicates integration with external tools such as dashboards and analytics platforms.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardPool.sol::stake",
+                "StakingManager.sol#127-135"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol",
+                "core/src/contracts/tokens/RewardPool.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "RewardDistributor._claim leaf is double hashed",
+            "description": "In the RewardDistributor._claim function, the Merkle leaf is computed using double keccak256 hashing: `keccak256(bytes.concat(keccak256(abi.encode(...))))`. This is redundant because the Merkle proof verification only requires a single hash. The double hashing increases gas costs and requires off-chain systems to perform an extra hashing step, reducing computational efficiency. The root cause is unnecessary nesting of hash functions. While this does not introduce a security vulnerability, it represents a gas optimization and performance issue that could be improved by simplifying the leaf construction to a single hash.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardDistributor.sol::_claim#116"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Magic numbers",
+            "description": "The codebase contains multiple instances of magic numbers, such as 1e18 and 1000, used in calculations without explanatory context. For example, 1e18 is used as a fixed-point precision multiplier in reward calculations, and 1000 is used as a ratio multiplier in _queuedRatio. These values are not defined as named constants, making the code harder to read and maintain. The root cause is the direct use of numeric literals instead of symbolic constants. Although fixes were applied in later commits to replace 1e18 with WAD and 1000 with RATIO_MULTIPLIER, the initial code lacked this clarity, representing a code quality issue that could lead to errors during future modifications.\n",
+            "severity": "Informational",
+            "location": [
+                "StakingManager.sol#335",
+                "StakingManager.sol#351",
+                "StakingManager.sol#367",
+                "RewardPool.sol#150",
+                "RewardPool.sol#155",
+                "RewardPool.sol#170"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingManager.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1116"
+                ]
+            },
+            "title": "Typos and missing documentation",
+            "description": "The codebase contains several typos and documentation issues. Notably, the function emergencyWidthdraw in RewardDistributor contains a typo in its name and should be emergencyWithdraw. Additionally, the constructor parameter _cooldownPeriod is incorrectly documented as \"Address of the StakingToken contract\". Other issues include missing NatSpec documentation for struct fields, incorrect function names (e.g., authorizedAccounts instead of isAccountAuthorized), and missing source references in interface files. The root cause is insufficient code review and documentation hygiene. These issues reduce code readability and maintainability, and could mislead developers or auditors.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardDistributor.sol::emergencyWidthdraw",
+                "StakingManager.sol#99",
+                "Authorizable.sol::authorizedAccounts",
+                "IStakingManager.sol::StakingManagerParams"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Code style inconsistencies",
+            "description": "The codebase exhibits inconsistent style practices, such as unnecessary variable assignments (e.g., _uint256 = _data.toUint256()) when the value is used only once, and inconsistent use of curly braces for single-line if statements. Additionally, some _modifyParameters functions lack an else branch to revert on unrecognized parameters. The root cause is a lack of unified style guidelines across the team. While these do not affect functionality, they reduce code readability and maintainability. The issue was partially addressed by inlining variables in a later commit, but initial inconsistencies remained.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardDistributor.sol::_modifyParameters#130-136",
+                "WrappedToken.sol::_modifyParameters#85",
+                "StakingManager.sol::_modifyParameters#418-421"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Optimization of function _getPriceValue",
+            "description": "The _getPriceValue function is duplicated in both BeefyVeloVaultRelayer and YearnVeloVaultRelayer contracts, despite them sharing a common parent contract AbstractVeloVaultRelayer. This leads to code duplication and maintenance overhead. Furthermore, the function performs unnecessary multiplication and division (via wmul) when the price per share could be used directly. The root cause is failure to abstract shared logic into the parent contract and over-engineering of arithmetic operations. Although the team initially argued for readability, the function was later moved to the parent contract and optimized, confirming it as a valid code quality improvement.\n",
+            "severity": "Informational",
+            "location": [
+                "BeefyVeloVaultRelayer.sol::_getPriceValue",
+                "YearnVeloVaultRelayer.sol::_getPriceValue"
+            ],
+            "files": [
+                "core/src/contracts/oracles/BeefyVeloVaultRelayer.sol",
+                "core/src/contracts/oracles/YearnVeloVaultRelayer.sol",
+                "core/src/contracts/oracles/AbstractVeloVaultRelayer.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused errors",
+            "description": "Several custom errors are defined but never used in the codebase, including StakingManager_WithdrawNegativeAmount, StakingManager_InactiveRewardType, and relayer-specific InvalidPriceSource errors. These unused errors increase code bloat and may confuse developers. The root cause is either incomplete implementation or failure to remove deprecated code. Static analysis tools detected these issues. The errors were later removed in a commit, confirming they were unnecessary.\n",
+            "severity": "Informational",
+            "location": [
+                "IStakingManager.sol#101",
+                "IStakingManager.sol#116",
+                "IBeefyVeloVaultRelayer.sol#14",
+                "IYearnVeloVaultRelayer.sol#15"
+            ],
+            "files": [
+                "core/src/interfaces/tokens/IStakingManager.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused using-for directives",
+            "description": "The RewardPool and AbstractVeloVaultRelayer contracts include `using Math for uint256` directives, but the Math library functions are not used in these contracts. Similarly, a `using SafeERC20 for IERC20` directive was added to RewardDistributor but not used. These unused directives clutter the code and may mislead developers into thinking the library functions are being utilized. The root cause is incomplete cleanup after refactoring. Although some were removed in commits, new unused directives were introduced due to architectural changes, indicating an ongoing code hygiene issue.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardPool.sol#24",
+                "AbstractVeloVaultRelayer.sol#15",
+                "RewardDistributor.sol#23"
+            ],
+            "files": [
+                "core/src/contracts/tokens/RewardPool.sol",
+                "core/src/contracts/tokens/RewardDistributor.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused functions",
+            "description": "The `assertGt(int256, int256)` function in the `Assertions.sol` library is not used anywhere in the codebase, while its `uint256` overload is used. This leads to unnecessary code bloat and potential confusion during maintenance or review. The root cause is the inclusion of an unused function variant without a clear use case. Although the function is not exploited directly, its presence increases code complexity and maintenance burden. The impact is limited to code quality and readability, with no direct security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "Assertions.sol::assertGt#43-46"
+            ],
+            "files": [
+                "core/src/libraries/Assertions.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Variables should be immutable",
+            "description": "Several state variables across multiple contracts (e.g., `protocolToken`, `rewardToken`, `factory`, `veloPool`, `veloLpOracle`) are declared as public but not marked as immutable, even though they are intended to remain constant after deployment. The root cause is the omission of the `immutable` keyword, which is a best practice for such variables. While these variables are not intended to be changed, not marking them as immutable may mislead developers into thinking they are mutable, and it also misses optimization opportunities. The impact is primarily on code clarity and gas efficiency, with no direct exploit path.\n",
+            "severity": "Informational",
+            "location": [
+                "StakingToken.sol::protocolToken#39",
+                "StakingManager.sol::protocolToken#35",
+                "StakingManager.sol::stakingToken#38",
+                "RewardPool.sol::rewardToken#30",
+                "FactoryChild.sol::factory#14",
+                "AbstractVeloVaultRelayer.sol::veloPool#20",
+                "AbstractVeloVaultRelayer.sol::veloLpOracle#23"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingToken.sol"
+            ]
+        }
+    ]
+}

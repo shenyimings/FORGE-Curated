@@ -1,0 +1,173 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Across Protocol Diff Audit -Arbitrum CustomGasToken & ExclusivityPeriod.md",
+    "project_info": {
+        "url": [
+            "https://github.com/across-protocol/contracts/"
+        ],
+        "commit_id": [
+            "f56146a01ca9c62e6206a2c23c55dbe01a25a912"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2024-08-28",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/Across Protocol Diff Audit -Arbitrum CustomGasToken & ExclusivityPeriod.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Wrong Scaling for Amount of Gas Tokens",
+            "description": "The `Arbitrum_CustomGasToken_Adapter` contract incorrectly calculates the amount of custom gas tokens needed for L1-to-L2 operations by using an 18-decimal scale in the `getL1CallValue` function, regardless of the actual decimals of the custom gas token. This is a critical vulnerability because the formula `L2_MAX_SUBMISSION_COST + L2_GAS_PRICE * l2GasLimit` returns a value scaled to 18 decimals, which is then directly used to withdraw tokens from the `CUSTOM_GAS_TOKEN_FUNDER` contract and passed to Arbitrum's `createRetryableTicket`. If the custom gas token (e.g., USDC with 6 decimals) has fewer than 18 decimals, the contract will withdraw and attempt to use an amount inflated by a factor of 10^12, leading to a massive overcharge. The root cause is the lack of decimal scaling adjustment based on the token's actual precision. An attacker could exploit this by initiating a relay that forces the contract to pull excessive funds, potentially draining the funder contract. The impact includes significant financial loss due to over-withdrawal of gas tokens and failure of transactions due to insufficient balance after over-allocation.\n",
+            "severity": "Critical",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol::getL1CallValue#285",
+                "Arbitrum_CustomGasToken_Adapter.sol::_pullCustomGas#284",
+                "Arbitrum_CustomGasToken_Adapter.sol::relayTokens#221",
+                "Arbitrum_CustomGasToken_Adapter.sol::relayMessage#195"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1357"
+                ]
+            },
+            "title": "Outdated `SafeERC20` Contract Does Not Approve to Zero First",
+            "description": "The `Arbitrum_CustomGasToken_Adapter` contract uses an outdated version of OpenZeppelin's `SafeERC20` library that does not set an ERC-20 spender's allowance to zero before calling `approve` with a new value. This creates a potential issue with tokens like USDT that require the allowance to be reset to zero before being increased, as they may revert if the current allowance is non-zero. The root cause is the use of an older version of the library that lacks this safety check. An attacker could potentially exploit this by manipulating the allowance state to cause a revert during a legitimate operation, leading to a denial of service for certain token transfers. The impact is limited to transaction failure for tokens with strict approval logic, which could disrupt protocol operations but does not lead to direct fund loss.\n",
+            "severity": "Medium",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol#255"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Backward Compatibility Concern with `exclusivityPeriod` Update",
+            "description": "1. **Description:** The update replaced the `exclusivityDeadline` input with an `exclusivityPeriod`, changing the semantics from a fixed future timestamp to a relative time period based on the mining time of the origin chain transaction.\n2. **Cause:** This change breaks backward compatibility because integrators must now pass a time duration instead of an absolute deadline, which alters expected input behavior without automatic safeguards.\n3. **Exploitation:** If an integrator continues to pass a future timestamp (as before) instead of a period, the system may interpret it as an extremely large duration, effectively locking funds for an unintended long period.\n4. **Impact:** Funds could be locked for extended, unintended durations, leading to user fund accessibility issues and potential financial loss or service disruption.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "contracts/contracts/SpokePool.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "Multiple contracts in the codebase, including `Arbitrum_CustomGasToken_Adapter.sol` and `Arbitrum_CustomGasToken_Funder.sol`, use a floating pragma directive (`^0.8.0`), which allows compilation with any minor version of Solidity 0.8.x. This introduces risk because different compiler versions may produce different bytecode or introduce unexpected behavior due to changes in the compiler. The root cause is the lack of a fixed compiler version specification. An attacker could potentially exploit this by targeting a known vulnerability in a specific Solidity version that the contract might be compiled with. The impact includes potential deployment of vulnerable bytecode or inconsistent behavior across environments, though no immediate exploit is likely if the deployment environment is controlled.\n",
+            "severity": "Low",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol#2",
+                "Arbitrum_CustomGasToken_Funder.sol#2"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol",
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Funder.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Missing Docstrings",
+            "description": "Several functions, interfaces, and state variables in the `Arbitrum_CustomGasToken_Adapter.sol` and `Arbitrum_CustomGasToken_Funder.sol` contracts lack NatSpec documentation. This includes critical components such as the `FunderInterface`, `withdraw` function, and various state variables like `L2_CALL_VALUE` and `CUSTOM_GAS_TOKEN_FUNDER`. The root cause is insufficient code documentation practices. While this does not introduce a direct security vulnerability, it reduces code readability and maintainability, increasing the risk of future bugs during development or audits. The impact is primarily on developer experience and long-term codebase integrity, making it harder to understand contract behavior and security assumptions.\n",
+            "severity": "Low",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol#11-L13",
+                "Arbitrum_CustomGasToken_Adapter.sol#12",
+                "Arbitrum_CustomGasToken_Adapter.sol#144",
+                "Arbitrum_CustomGasToken_Adapter.sol#146",
+                "Arbitrum_CustomGasToken_Adapter.sol#147",
+                "Arbitrum_CustomGasToken_Adapter.sol#152",
+                "Arbitrum_CustomGasToken_Adapter.sol#154",
+                "Arbitrum_CustomGasToken_Adapter.sol#159",
+                "Arbitrum_CustomGasToken_Funder.sol#8-L19"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol",
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Funder.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Replace `require` Statements with Custom Errors",
+            "description": "The contract uses standard `require` statements for error handling instead of custom errors introduced in Solidity 0.8.4. Custom errors are more gas-efficient because they use less bytecode and reduce deployment and runtime costs. The root cause is the use of outdated error handling patterns. While this does not pose a direct security risk, it results in higher transaction costs and less informative revert messages. The impact is increased gas consumption for failed transactions and reduced clarity in debugging, which could indirectly affect user experience and economic efficiency of the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol#183"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Potential Locked ETH in `Arbitrum_CustomGasToken_Adapter`",
+            "description": "The `relayMessage` and `relayTokens` functions in the `Arbitrum_CustomGasToken_Adapter` contract are marked as `payable`, but they do not use `msg.value` since gas fees are paid in a custom ERC-20 token. This creates a risk that ETH sent to these functions will become permanently locked in the contract, as there is no mechanism to withdraw or refund it. The root cause is the unnecessary `payable` modifier inherited from the `AdapterInterface`. Although the team acknowledges this, they cannot remove the modifier due to interface compatibility requirements. The impact is the potential loss of ETH if users accidentally send it, though the risk is mitigated by the fact that the contract is delegatecalled by the `HubPool`, which has a fallback function.\n",
+            "severity": "Low",
+            "location": [
+                "Arbitrum_CustomGasToken_Adapter.sol::relayMessage#195",
+                "Arbitrum_CustomGasToken_Adapter.sol::relayTokens#221"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/Arbitrum_CustomGasToken_Adapter.sol"
+            ]
+        }
+    ]
+}

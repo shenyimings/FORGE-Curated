@@ -1,0 +1,259 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_impossible_cloud_may2025.pdf",
+    "project_info": {
+        "url": [],
+        "commit_id": [],
+        "address": [
+            null
+        ],
+        "chain": null,
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Not updating nodeIndex when removing scalar nodes can cause future removals to revert",
+            "description": "1. **Description:** When a scalar node is removed, the last node in the array is moved to the index of the removed node, but the index mapping for the moved node is not updated. This can lead to incorrect state tracking.\n2. **Cause:** The `scalerNodeIndexes` mapping for the moved node is not adjusted to reflect its new position in the `scalerNodeIds` array.\n3. **Exploitation:** Future operations that rely on correct indexing (e.g., removal of another node) may access the wrong node or revert due to invalid array access.\n4. **Impact:** This could result in denial of service for node removal operations, preventing legitimate maintenance or updates to the network.\n",
+            "severity": null,
+            "location": [
+                "removeScalerNode#nodeIndex"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Unstaked link can be re-unstaked multiple times due to missing validation",
+            "description": "1. **Description:** In the `completeUnstaking` function, if a link stake has pending rewards, it is marked as unstaked but not removed from the array. However, the function does not prevent subsequent calls for the same unstaked link.\n2. **Cause:** The function fails to validate whether the link stake is already marked as unstaked before proceeding with array manipulation.\n3. **Exploitation:** An attacker could repeatedly call `completeUnstaking` on the same unstaked link, causing excessive reduction in staker counts and potentially corrupting array state.\n4. **Impact:** This could lead to incorrect staker accounting and potential reverts in future staking operations due to inconsistent state.\n",
+            "severity": null,
+            "location": [
+                "completeUnstaking#stakeIndex"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "settleHpRewardsDelegatorShare reverts when node status is not Validated",
+            "description": "1. **Description:** The `settleHpRewardsDelegatorShare` function reverts if the scaler node's status is not `ScalerNodeStatus.Validated`, which occurs during delegation changes even after a node has been removed.\n2. **Cause:** The function enforces a strict status check without considering lifecycle states such as removal or decommissioning.\n3. **Exploitation:** Users attempting to undelegate or claim rewards from a removed node will face reverts, blocking access to their funds.\n4. **Impact:** This creates a denial-of-service condition for delegators trying to withdraw rewards from nodes that have been removed but not yet fully settled.\n",
+            "severity": null,
+            "location": [
+                "settleHpRewardsDelegatorShare#scalerNode.status"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Commitment end not handled in _processAddCollateralFromNodeRewards causing underflow",
+            "description": "1. **Description:** The `_processAddCollateralFromNodeRewards` function calculates remaining commitment time without checking if the commitment has already ended, leading to potential underflow.\n2. **Cause:** The calculation `scalerNode.commitmentStart + scalerNode.commitmentDuration - block.timestamp` can become negative if the current block timestamp exceeds the commitment end.\n3. **Exploitation:** When the commitment has ended, this function will revert due to arithmetic underflow, halting reward processing.\n4. **Impact:** This prevents proper handling of collateral additions from node rewards, potentially locking user funds or disrupting reward distribution.\n",
+            "severity": null,
+            "location": [
+                "_processAddCollateralFromNodeRewards#commitmentRemaining"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Incorrect nodeId used to update existing delegation inside delegateUnclaimedRewards function",
+            "description": "1. **Description:** Inside the `delegateUnclaimedRewards` function, the wrong `nodeId` is used when updating an existing delegation, leading to incorrect state updates.\n2. **Cause:** The function uses a to-be-delegated `nodeId` instead of the existing delegation\u2019s `nodeId` when modifying the storage reference.\n3. **Exploitation:** This could allow incorrect reward distribution or delegation tracking, potentially misallocating rewards.\n4. **Impact:** Delegators may receive incorrect rewards or lose track of their delegations due to corrupted state.\n",
+            "severity": null,
+            "location": [
+                "delegateUnclaimedRewards#nodeId"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Lack of validation for nodeRewardShare allows a malicious node to DoS delegator withdrawals",
+            "description": "1. **Description:** The `nodeRewardShare` parameter, set by a node operator, is not validated to be within a valid range (e.g., <= 100%), allowing it to be set to extremely high values.\n2. **Cause:** No upper bound check is performed on `nodeRewardShare` during `updateScalerNodeNodeRewardShare`.\n3. **Exploitation:** A malicious node can set `nodeRewardShare` to `uint256.max`, causing arithmetic overflow in reward calculations like `settleHpRewardsDelegatorShare`.\n4. **Impact:** This would cause critical functions to revert, effectively denying delegators the ability to claim or withdraw their rewards.\n",
+            "severity": "High",
+            "location": [
+                "updateScalerNodeNodeRewardShare#nodeRewardShare"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Link associated collateral is computed incorrectly inside getScalerNodeTotalCollateral",
+            "description": "1. **Description:** The `getScalerNodeTotalCollateral` function uses `getNftCumCurvePoint` with incorrect start and end points, leading to inaccurate reward and collateral calculations.\n2. **Cause:** The function assumes the curve starts from index 0 rather than the actual activation timestamp, misaligning the reward schedule.\n3. **Exploitation:** This miscalculation can be exploited to understate or overstate collateral values depending on curve shape and timing.\n4. **Impact:** Incorrect collateral computation affects staking economics, potentially leading to under-collateralization or unfair reward distribution.\n",
+            "severity": null,
+            "location": [
+                "getScalerNodeTotalCollateral#getNftCumCurvePoint"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Performing reward curve updation from (currentMonth + 1) can cause some portion of rewards to be lost",
+            "description": "1. **Description:** Updating the reward curve starting from `currentMonth + 1` means that rewards for the current month are not accounted for in the new curve.\n2. **Cause:** The update logic skips the current period, assuming it's already finalized, but users may not have claimed rewards yet.\n3. **Exploitation:** Users may receive fewer rewards than expected if the curve is updated before they claim, especially near month boundaries.\n4. **Impact:** This results in permanent loss of claimable rewards for users, undermining trust and fairness in the reward system.\n",
+            "severity": null,
+            "location": [
+                "getPendingRewards#rewardsActivationTs"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Not capping t2 to basis + ProtocolConstants.RELEASE_SCHEDULE_DURATION will cause lost rewards due to negative value addition",
+            "description": "1. **Description:** The reward calculation function does not cap the end timestamp (`t2`) to `basis + RELEASE_SCHEDULE_DURATION`, allowing it to extend beyond the defined reward schedule.\n2. **Cause:** Without capping, the linear decrease region continues beyond its intended end, producing negative contributions that are clamped to zero.\n3. **Exploitation:** This leads to incorrect aggregation of rewards, especially when calculating over long periods crossing the schedule boundary.\n4. **Impact:** Users may receive fewer rewards than expected due to miscalculations in the release schedule.\n",
+            "severity": null,
+            "location": [
+                "_calculateAggregateBootstrapReleaseInLinearDecreaseRegion#t2"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "initiateHpRewardsClaim should always be manually invoked before node removal",
+            "description": "1. **Description:** The `removeScalerNode` function does not automatically process pending HP rewards, requiring `initiateHpRewardsClaim` to be called manually beforehand.\n2. **Cause:** There is no internal call to settle pending rewards before removing the node.\n3. **Exploitation:** If the operator forgets to call `initiateHpRewardsClaim`, pending rewards may be lost or incorrectly distributed.\n4. **Impact:** This creates an operational risk where node operators could lose out on earned rewards due to missing manual steps.\n",
+            "severity": null,
+            "location": [
+                "removeScalerNode#commitHpRewards"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "unclaimedHpRewards doesn't handle the case of 0 delegations causing incorrect reward re",
+            "description": "1. **Description:** The `unclaimedHpRewards` function calculates delegator rewards using `nodeRewardShare` even when there are zero delegations.\n2. **Cause:** The function does not check whether `nodeTotalDelegatedICNT` is zero before computing `delegatorRewards`.\n3. **Exploitation:** This can result in non-zero delegator rewards being calculated even when no delegations exist.\n4. **Impact:** This leads to incorrect reward accounting and potential inflation or misallocation of rewards.\n",
+            "severity": null,
+            "location": [
+                "unclaimedHpRewards#delegatorRewards"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Excessively high capacity permitted when marketAdjustmentFactor or minCollateralPercent are at or near 0",
+            "description": "1. **Description:** When `marketAdjustmentFactor` or `minCollateralPercent` are set to zero or very low values, the capacity validation logic can be bypassed, allowing excessively high capacity bookings.\n2. **Cause:** These parameters are used in calculations that scale required collateral; if near zero, the required collateral becomes negligible.\n3. **Exploitation:** An attacker could exploit this to book large amounts of capacity with minimal collateral, overcommitting the network.\n4. **Impact:** This risks network stability and financial loss due to under-collateralized commitments.\n",
+            "severity": null,
+            "location": [
+                "_calculateCapacityRewardsCheckPointIncreaseSinceLastUpdate#marketAdjustmentFactor"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Separately calculating xSlope causes lower precision and possible revert due to rounding",
+            "description": "1. **Description:** The `xSlope` value is precomputed using integer division, which truncates precision and can lead to incorrect index calculations.\n2. **Cause:** Storing `xSlope` as a rounded-down value reduces accuracy in subsequent calculations like `lowIndex`.\n3. **Exploitation:** This imprecision can cause `lowIndex + 1` to exceed array bounds, leading to out-of-bounds access and reverts.\n4. **Impact:** Functions like `calculateMaxApy` may fail unexpectedly, disrupting protocol functionality.\n",
+            "severity": null,
+            "location": [
+                "calculateMaxApy#xSlope"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "The overloaded updateModule (without initdata argument) applies the onlyAdmin modifier",
+            "description": "1. **Description:** The overloaded version of `updateModule` that does not take `initdata` applies the `onlyAdmin` modifier and then delegates to the other version.\n2. **Cause:** This may create confusion about access control expectations or lead to inconsistent permission checks.\n3. **Exploitation:** If the internal logic assumes different authorization levels, this could lead to privilege escalation or unexpected behavior.\n4. **Impact:** Potential inconsistency in access control enforcement across module update paths.\n",
+            "severity": null,
+            "location": [
+                "updateModule#onlyAdmin"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Enforce a reasonable maximum on minWaitPeriodForClaimsWithdrawal to prevent admin er",
+            "description": "1. **Description:** The `minWaitPeriodForClaimsWithdrawal` parameter controls how long users must wait before withdrawing claims, but no upper limit is enforced.\n2. **Cause:** The setter function lacks validation to prevent excessively large values.\n3. **Exploitation:** An admin could set an unreasonably long wait period, effectively freezing user withdrawals.\n4. **Impact:** This creates a risk of governance abuse, where users are denied access to their funds indefinitely.\n",
+            "severity": null,
+            "location": [
+                "setMinWaitPeriodForClaimsWithdrawal#minWaitPeriodForClaimsWithdrawal"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "removeScalerNode sets the timestamp of nil regionId",
+            "description": "1. **Description:** When `removeScalerNode` is called on a rejected node with nil `regionId`, it still calls `commitHpRewards`, which updates the last updated timestamp for a non-existent region.\n2. **Cause:** The function unconditionally invokes `commitHpRewards` without checking the node's status or the validity of `regionId`.\n3. **Exploitation:** This pollutes the state with timestamps for non-existent regions, potentially affecting reward calculations.\n4. **Impact:** Incorrect state tracking and potential side effects in region-based reward logic.\n",
+            "severity": null,
+            "location": [
+                "removeScalerNode#commitHpRewards"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "regionId based deposits overwrite previous amount",
+            "description": "1. **Description:** The `deposit(string calldata regionId, uint256 baseReward)` function overwrites the `baseReward` value for a given `regionId` without preserving prior deposits.\n2. **Cause:** The function directly assigns `$.regionReward[regionId].baseReward = baseReward`, erasing any previous value.\n3. **Exploitation:** A user can overwrite a previously set higher `baseReward` with a lower one, potentially violating intended economic parameters.\n4. **Impact:** This can disrupt regional reward distribution models and lead to loss of expected incentives for participants.\n",
+            "severity": "Medium",
+            "location": [
+                "ReservePool.deposit#regionId"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Users can DoS future node bookings by keeping < minBookingPeriod leftover",
+            "description": "1. **Description:** A user can book capacity for a period just below `minBookingPeriod`, preventing others from making valid bookings on that node.\n2. **Cause:** The `bookCapacity` function only checks that the requested period is at least `minBookingPeriod`, but does not prevent short leftover periods after a booking.\n3. **Exploitation:** An attacker can fragment available booking windows with short durations, making it impossible to schedule longer valid bookings.\n4. **Impact:** This enables a denial-of-service attack on the booking system, reducing network utilization and fairness.\n",
+            "severity": "Medium",
+            "location": [
+                "bookCapacity#period"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Avoid duplicate sloads by using the expression's evaluated value",
+            "description": "1. **Description:** The code performs redundant storage loads (sloads) when the value has already been computed or can be passed forward.\n2. **Cause:** Inefficient code patterns, such as incrementing a storage value without using the post-increment result, lead to extra sloads.\n3. **Exploitation:** While not directly exploitable, this increases gas costs for all users.\n4. **Impact:** Higher transaction costs and reduced efficiency in contract execution.\n",
+            "severity": "Low",
+            "location": [
+                "linkStake.stakeIdCounter++",
+                "ds.delegations[_delegator].push()"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Node registration reservationPrice is a maximum price not a minimum",
+            "description": "1. **Description:** The term `reservationPrice` suggests a minimum price, but in practice it functions as a maximum price a user can pay to book capacity.\n2. **Cause:** Misleading naming convention leads to confusion in interpretation and usage.\n3. **Exploitation:** Developers or users may incorrectly assume it sets a floor rather than a ceiling, leading to economic model errors.\n4. **Impact:** This can result in incorrect pricing logic and user confusion about booking costs.\n",
+            "severity": "Informational",
+            "location": [
+                "bookCapacity#reservationPrice"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "getCluster function doesn't return hwClass",
+            "description": "1. **Description:** The `getCluster` view function omits the `hwClass` field in its return values, despite it being a critical attribute of a cluster.\n2. **Cause:** The function signature and implementation do not include `hwClass` in the returned tuple.\n3. **Exploitation:** Frontends or external systems relying on this function will lack essential hardware classification data.\n4. **Impact:** Reduced usability and potential misrepresentation of cluster capabilities in UIs or integrations.\n",
+            "severity": "Low",
+            "location": [
+                "getCluster#hwClass"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "registerScalerNode doesn't validate hwClass",
+            "description": "1. **Description:** The `registerScalerNode` function accepts any `hwClass` string without verifying that it corresponds to a valid hardware class.\n2. **Cause:** No validation is performed against a registry or list of allowed `hwClass` values.\n3. **Exploitation:** A malicious actor could register a node with a non-existent `hwClass`, potentially bypassing restrictions or misleading users.\n4. **Impact:** This undermines the integrity of the hardware classification system and could enable spoofing or incorrect resource allocation.\n",
+            "severity": "Medium",
+            "location": [
+                "registerScalerNode#hwClass"
+            ],
+            "files": []
+        }
+    ]
+}

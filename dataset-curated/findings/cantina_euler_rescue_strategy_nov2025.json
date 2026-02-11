@@ -1,0 +1,155 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_euler_rescue_strategy_nov2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/euler-xyz/euler-earn"
+        ],
+        "commit_id": [
+            "f5bd06fd"
+        ],
+        "address": [],
+        "chain": "n/a",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-07",
+        "project_path": {
+            "euler-earn": "dataset-curated/contracts/cantina_euler_rescue_strategy_nov2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-654"
+                ]
+            },
+            "title": "Missing enough flashloan avenues can make the rescue impossible",
+            "description": "The rescue operation for affected vaults relies on only three flashloan avenues: direct Euler vault loan, batched Euler loan, and Morpho loan. This limited set of flashloan sources may not be sufficient on chains where Euler has low liquidity or where Morpho is not deployed, rendering the rescue operation impossible in those environments.\nThe root cause is the lack of diversification in flashloan providers integrated into the rescue strategy. An attacker or adverse market condition that disables access to all three current avenues on a given chain would prevent any rescue.\nAn attacker could exploit this by manipulating liquidity on the supported platforms or by targeting chains where alternative flashloan providers are not available, thereby preventing the rescue of funds.\nThe impact is that users' funds in affected vaults may become permanently stranded if a rescue is needed but cannot be executed due to lack of flashloan liquidity, leading to potential loss of user funds.\n",
+            "severity": "Low",
+            "location": [
+                "RescueStrategy.sol"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ],
+                "4": [
+                    "CWE-638"
+                ]
+            },
+            "title": "Relaying on EOA as a rescuer is dangerous",
+            "description": "The rescue mechanism relies on a single Externally Owned Account (EOA) as the rescuer, which poses significant operational risks. Once a vault opts into the rescue strategy and the cap is set, the fundsReceiver (EOA) can withdraw the vault's liquidity without further on-chain authorization checks.\nThe vulnerability stems from the fact that the isStrategyAllowed check is only performed during _setCap, and after that, no additional protections exist. Since the rescuer must be an EOA to satisfy tx.origin checks, it becomes a single point of failure.\nAn attacker who compromises the private key of the EOA or a malicious operator could trigger unauthorized rescues, execute arbitrary calls via the call() function, or exfiltrate assets. Additionally, permit approvals set in the constructor increase the attack surface.\nThe impact includes potential loss of all funds in vaults that have enabled the rescue strategy, as well as a complete compromise of the rescue mechanism's integrity.\n",
+            "severity": "Low",
+            "location": [
+                "RescueStrategy.sol#L26"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Invariant not enforced in a pool that is in Rescue mode",
+            "description": "When a vault is in Rescue mode, certain invariants should be enforced: the supplyQueue[0] and withdrawalQueue[0] should both be the RescueStrategy, and the supplyQueue length should be 1. However, these invariants are not checked during the rescue flow (flashloan and callback), allowing a vault to be in rescue mode while having a different strategy as the primary supplier.\nThe cause is the absence of validation logic in the rescue functions to verify the expected queue configuration before proceeding.\nAn attacker or misconfigured vault could exploit this by manipulating the strategy queue to include another strategy, leading to unexpected behavior during the rescue process, such as funds being routed incorrectly or the rescue failing silently.\nThe impact includes potential loss of rescued funds or failure of the rescue operation due to unexpected interactions with other strategies, undermining the reliability of the rescue mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "RescueStrategy.sol#L188-L203"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Performance fee should be set to 0 during rescue state",
+            "description": "Vaults in rescue mode currently still incur a performance fee, which reduces the amount of assets that can be rescued and sent to the fundsReceiver.\nThe issue arises because the performance fee is not automatically set to zero when a vault enters rescue mode, despite the fact that the rescue operation is not a performance-generating event.\nWhile not directly exploitable by an attacker, this design choice results in suboptimal fund recovery, as a portion of the rescued assets is unnecessarily deducted as fees.\nThe impact is a reduction in the total amount of user funds recovered during a rescue, which could affect user trust and the effectiveness of the rescue operation.\n",
+            "severity": "Informational",
+            "location": [
+                "RescueStrategy.sol#L199"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "The deposit returns the amount of assets deposited",
+            "description": "The deposit function in the RescueStrategy returns the amount of assets deposited instead of the amount of shares, which deviates from the standard ERC4626 deposit behavior.\nThis is caused by the function's implementation not adhering to the ERC4626 specification, which expects deposit to return shares = assets * exchangeRate.\nWhile this does not pose a direct security risk in the current rescue context\u2014where the goal is to extract liquidity\u2014it could lead to confusion or incorrect integration if the strategy is reused in other contexts.\nThe impact is primarily on code clarity and future maintainability, as developers might expect standard ERC4626 behavior, potentially leading to integration errors if the strategy is repurposed.\n",
+            "severity": "Informational",
+            "location": [
+                "RescueStrategy.sol#L100"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Emit event with rescued amount for easier offchain accounting",
+            "description": "The rescue process does not emit an event containing the amount of assets rescued, making it difficult to track and account for rescued funds off-chain.\nThis is due to the absence of an explicit event emission in the _processFlashLoan function or related rescue steps.\nWhile not a security vulnerability, this omission complicates monitoring, auditing, and reporting of rescue operations by external tools and stakeholders.\nThe impact is reduced transparency and operational visibility, which could hinder post-incident analysis and accountability.\n",
+            "severity": "Informational",
+            "location": [
+                "RescueStrategy.sol#L189-L202"
+            ],
+            "files": [
+                "euler-earn/src/RescueStrategy.sol"
+            ]
+        }
+    ]
+}

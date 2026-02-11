@@ -1,0 +1,53 @@
+{
+    "path": "dataset-curated/reports/Zellic/Maia DAO Partner Vault - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Maia-DAO/partner-vault"
+        ],
+        "commit_id": [
+            "6d31e703332a87094cf71be24023a1e92c3dc99d"
+        ],
+        "address": [],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-12",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Value updates have no effect",
+            "description": "The EnumerableAddressToUint92MapLib library's addOrUpdate function fails to properly check whether an existing key matches the key being updated. It only checks if the storage slot is empty (zero), not whether the stored key equals the input key. This causes updates to existing keys to be ignored, as the function treats every operation as an insert into an empty slot.\n\nThe root cause lies in the inline assembly code within addOrUpdate, which incorrectly assumes that a non-zero value in the root slot implies the key is already present and skips further checks. However, it does not compare the actual key values, leading to incorrect behavior when attempting to update an existing key-value pair.\n\nAn attacker or user attempting to update a gauge's voting share via manageVotingStrategies will find that the update has no effect. The function returns the previous value incorrectly, and the totalShares calculation uses this stale value, potentially leading to underflow in the unchecked arithmetic block.\n\nThe impact includes loss of functionality for updating voting strategies and potential underflow in totalShares, which could result in extremely large values due to integer wraparound. This undermines the correctness of voting weight distribution and could disrupt governance operations.\n",
+            "severity": "High",
+            "location": [
+                "EnumerableAddressToUint92MapLib.sol::addOrUpdate",
+                "PartnerVault.sol::_addOrUpdateVotingStrategy"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Missing bounds checks",
+            "description": "The joinKeyValue function in EnumerableAddressToUint92MapLib combines an address and a uint256 value into a bytes32 by shifting the address left by 96 bits and OR-ing it with the value. While there are checks against MIN_SHARES_PER_GAUGE and MAX_SHARES_PER_GAUGE, these do not guarantee that the value fits within 96 bits. Values larger than 2^96 could overflow and corrupt the key-value encoding.\n\nThe root cause is the lack of explicit validation that the value is within the 96-bit range. Although current constants (MIN and MAX shares) are within safe bounds, there is no enforcement or documentation indicating that these must remain below 2^96. If reused in another context or with modified constants, this could lead to data corruption.\n\nAn attacker or misconfigured deployment could exploit this by setting MAX_SHARES_PER_GAUGE above 2^96, allowing insertion of values that overflow and result in incorrect key-value mappings. This would corrupt the internal state of the map.\n\nThe impact is potential state corruption in the EnumerableAddressToUint92MapLib data structure if values exceed 96 bits. This could lead to incorrect voting weights, governance power miscalculations, or denial of service in functions relying on accurate share values.\n",
+            "severity": "Low",
+            "location": [
+                "EnumerableAddressToUint92MapLib.sol::joinKeyValue"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Multiple spelling mistakes",
+            "description": "Several spelling errors exist in the codebase that affect readability and maintainability. The library EnumerableAddressToUint92MapLib is incorrectly named, as it stores 96-bit values, not 92-bit. The correct name should be EnumerableAddressToUint96MapLib. Additionally, the error selector BellowMinShares is misspelled and should be BelowMinShares.\n\nThe root cause is typographical errors during development. While these do not introduce direct runtime vulnerabilities, they create confusion for developers and auditors. The naming mismatch between \"Uint92\" and the actual 96-bit usage may mislead users about the data type and storage layout.\n\nThese spelling mistakes are permanent due to their inclusion in the contract bytecode. The error selector hash and storage slot seed derived from the constant name cannot be changed without breaking compatibility.\n\nThe impact is reduced code clarity, increased risk of developer error, and potential confusion when integrating or auditing the system. It also reflects poorly on code maturity and attention to detail, especially for a library intended for reuse.\n",
+            "severity": "Informational",
+            "location": [
+                "EnumerableAddressToUint92MapLib.sol",
+                "GaugeWeightVotingLib.sol::BellowMinShares"
+            ],
+            "files": []
+        }
+    ]
+}

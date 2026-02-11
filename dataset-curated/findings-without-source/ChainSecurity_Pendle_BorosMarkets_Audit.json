@@ -1,0 +1,335 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_Pendle_BorosMarkets_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/pendle-finance/pendle-core-v3"
+        ],
+        "commit_id": [
+            "a905b3788f13edba3bbdb7e49b5594ae51f28b31"
+        ],
+        "address": [],
+        "chain": "evm/arbitrum/base",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-08",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "High Priced Buy Order on Empty Orderbook Can Generate Bad Debt",
+            "description": "This vulnerability allows an attacker to place a highly priced buy order on an empty orderbook with minimal collateral, resulting in the system incurring bad debt when the order is filled. The root cause is the use of the fixed rate of the order instead of the mark rate in the margin calculation, which fails to prevent the creation of insolvent positions. An attacker can self-fill the order from another account, extracting profit while leaving the system with a loss. The impact includes immediate insolvency of the market upon order fill, leading to financial loss for the protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "MarketRiskManagement.forcePurgeOobOrders()"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Weak Margin Check Allows Creating Bad Debt",
+            "description": "The margin check system performs a \"weak check\" before a more comprehensive \"strong check\", allowing users below initial margin requirements to exploit the weak check and create bad debt. The cause is an insufficient margin validation logic that allows a user to close a position at a negative cash balance if they were already below initial margin. An attacker can manipulate mark price changes via TWAP delays and execute OTC trades to extract value. The impact is the creation of bad debt, where the system loses funds due to uncollectible negative balances.\n",
+            "severity": "High",
+            "location": [
+                "MarginManager._isEnoughIMWeak"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "TWAP Manipulation by Orderbook Clearing",
+            "description": "The Time-Weighted Average Price (TWAP) oracle can be manipulated by an attacker who clears the orderbook and fills an order at an extreme rate, causing a sudden shift in the implied rate in the next block. This is possible due to the centralized sequencer design on Arbitrum and Base, which allows transaction ordering control. The attacker can then back-run this manipulation to trigger liquidations or overvalue their own positions. The impact includes forced liquidations of healthy positions and potential protocol draining if tick spacing is high.\n",
+            "severity": "Medium",
+            "location": [
+                "TickBitmap.sol::wordSlot"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Unsafe Use of Narrow Type in Inline Assembly",
+            "description": "The function `wordSlot()` in `TickBitmap.sol` uses a `uint8` value in inline assembly without clearing its high-order bits, which may be dirty due to Solidity's lazy cleanup behavior. This can lead to incorrect memory slot calculations. The root cause is improper handling of narrow types in assembly, which bypasses Solidity's automatic cleanup. An attacker could potentially exploit this if dirty bits influence slot arithmetic, though in practice the current usage may not be immediately exploitable. The impact is undefined behavior or incorrect state access, which could compromise system integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "TickBitmap.sol::wordSlot"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Force Cancel Risky Users Can Be Blocked",
+            "description": "The `forceCancelAllRiskyUser()` function reverts if a user is in an expired market, allowing an attacker to block the cancellation of their risky open orders by remaining in such a market. The cause is the lack of error handling when iterating over markets, leading to a denial-of-service condition. While the admin can manually cancel orders in non-expired markets, the batch operation is disrupted. The impact is limited but includes reduced operational efficiency and potential persistence of risky positions.\n",
+            "severity": "Low",
+            "location": [
+                "MarketHubRiskManagement.forceCancelAllRiskyUser()"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Fee Can Make Liquidations Unprofitable",
+            "description": "The fee charged to liquidators may render liquidations unprofitable under realistic parameter settings. The liquidation incentive is proportional to position size and rate, but the OTC fee is applied directly, potentially exceeding the incentive. The cause is an imbalance between incentive and fee structure. An attacker could create undercollateralized positions knowing they won't be liquidated, leading to bad debt accumulation. The impact is reduced protocol solvency due to untimely liquidations.\n",
+            "severity": "Low",
+            "location": [
+                "MarketHubRiskManagement.forceCancel()"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Main Account Has Priority When Increasing Collateral",
+            "description": "When increasing collateral, the system requires the main account to meet initial margin before allowing transfers to subaccounts. This creates a priority issue where a subaccount in urgent need of collateral cannot receive funds if the main account is undercollateralized. The cause is the order of margin checks during collateral movement. An attacker could exploit this by manipulating account states to prevent timely collateralization of subaccounts, potentially leading to avoidable liquidations. The impact is operational inefficiency and potential loss of user funds.\n",
+            "severity": "Low",
+            "location": [
+                "MarketHub.exitMarket()"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Margin Rounding Allows Exiting With Open Positions",
+            "description": "In Version 1, the `_getIMPostProcess()` function rounds down the initial margin calculation, potentially resulting in a zero margin for very small positions. Since `exitMarket()` uses zero margin as a condition to allow market exit, users could exit while still having open orders. The cause is truncating multiplication operations in margin calculation. This could lead to insolvency of a few weis and break internal invariants. The impact is minor financial loss and potential state inconsistency.\n",
+            "severity": "Low",
+            "location": [
+                "MarketHub.exitMarket()"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "No Minimum Position Size Requirement",
+            "description": "Users can create positions of arbitrarily small size (e.g., a few wei), which may be unprofitable to liquidate due to gas costs. The liquidation incentive is proportional to size, so tiny positions yield negligible rewards. The cause is the absence of a minimum size threshold. An attacker could spam the system with many tiny insolvent positions, creating cumulative bad debt. While individual gains are minimal, the collective impact could degrade protocol health.\n",
+            "severity": "Low",
+            "location": [
+                "SweepProcessUtils.__sweepFOneSide()"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "PREVRANDAO Opcode Behavior on L2 Chains",
+            "description": "The `__sweepFOneSide()` function uses the PREVRANDAO opcode for randomness in sorting algorithms, but on L2 chains like Arbitrum and Base, this opcode behaves predictably (Arbitrum returns 1, Base returns stale L1 values). This makes the algorithm's behavior deterministic and exploitable. An attacker could craft orders that trigger worst-case performance in quicksort, increasing gas costs for liquidations or matches. The impact is potential denial-of-service via gas exhaustion.\n",
+            "severity": "Low",
+            "location": [
+                "SweepProcessUtils.__sweepFOneSide()"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "forceDeleverage() Does Not Follow Specification",
+            "description": "The `forceDeleverage()` function does not enforce the specification that requires a healthy winner and an unhealthy loser. The code applies no health checks, deviating from the whitepaper. The cause is missing validation logic in the function. This could allow unfair or unintended deleveraging outcomes. The impact is a mismatch between expected and actual behavior, potentially affecting fairness and system integrity.\n",
+            "severity": "Low",
+            "location": [
+                "forceDeleverage()"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "signedSize Internal Method Returns Incorrect Result",
+            "description": "The `signedSize()` function in `MarketTypes.sol` incorrectly returns the lower 128 bits of `AccountData2`, while the actual `signedSize` is stored in bits 191..64. This leads to incorrect value interpretation. However, the function is unused, so the system remains unaffected. The cause is a coding error in bitfield access. The impact is low since the function is not called, but it represents a correctness issue.\n",
+            "severity": "Low",
+            "location": [
+                "MarketTypes.sol::signedSize"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Finalize Withdrawal Violates CEI Pattern",
+            "description": "The `finalizeVaultWithdrawal()` function sends tokens to the user before updating the state (setting balance to zero), violating the Checks-Effects-Interactions (CEI) pattern. If a reentrant token (e.g., ERC-777) were used, an attacker could re-enter and withdraw multiple times. The cause is incorrect ordering of state updates and external calls. Although the system currently disallows reentrant tokens, this is a potential security risk if that restriction is lifted.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginManager.finalizeVaultWithdrawal()"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Inconsistent Specification",
+            "description": "The code comments for `UserResult.finalVM` suggest that the value should be ZERO when `isStrictIM` is false, but the code never returns ZERO in that case. This creates a discrepancy between documentation and implementation. The cause is outdated or incorrect comments. The impact is low, limited to confusion for developers and auditors, but it affects code maintainability and trust in documentation.\n",
+            "severity": "Informational",
+            "location": [
+                "MarketTypes.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "TWAP Instability Due to Bid-Ask Spread",
+            "description": "The mark price is calculated as a TWAP of recent matched trades, but due to the bid-ask spread, even small trades can influence the TWAP based on direction. An attacker can spam tiny trades in a desired direction to manipulate the mark price, especially when the spread is large. This can trigger liquidations of risky positions. The cause is the sensitivity of TWAP to trade direction in the presence of spread. The impact includes potential price manipulation and unfair liquidations, though the risk has been accepted by the team with mitigation plans.\n",
+            "severity": "Low",
+            "location": [
+                "impliedRate.getCurrentRate()"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "replaceWindow() Makes the Mark Rate Oracle Value Jump",
+            "description": "When the market administrator calls `replaceWindow()`, the mark rate can suddenly jump toward either the last traded rate (if window is shortened) or the previous oracle rate (if lengthened). This abrupt change can make healthy positions suddenly liquidatable. The cause is the lack of smooth transition or snapshotting of the implied rate before parameter change. The impact is unfair liquidations and profit opportunities for back-runners, though the risk has been accepted with expectation of rare use.\n",
+            "severity": "Low",
+            "location": [
+                "replaceWindow()",
+                "impliedRate.getCurrentRate()"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Misnamed Variables and Functions",
+            "description": "The contract code contains several misnamed variables and functions that can lead to confusion during code review and integration. For example, the variable `maxMarginIndexRate` actually represents a minimum value and should be renamed to `minMarginIndexRate`. Similarly, the variable `totalIM` in `_settleProcessGetHealth()` represents maintenance margin (MM), not initial margin (IM), which contradicts its name and comments. The function `canSettle()` returns true even for settled or cancelled orders, and `tryRemove()` reverts with `MarketOrderFilled()` even when an order was cancelled, which misrepresents the error condition. These naming inconsistencies and misleading error messages could lead to incorrect assumptions by developers or integrators, potentially resulting in logic errors in external systems or misinterpretation of contract behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginManager::_settleProcessGetHealth#",
+                "MarketHub::_settleProcess#",
+                "MarketOrderAndOtc::tryRemove#",
+                "MarginManager::totalIM",
+                "maxMarginIndexRate"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "_getRateAtTick Does Not Function Over Its Whole Domain",
+            "description": "The internal function `_getRateAtTick()` accepts an int24 tick parameter but does not return correct results over the full int24 range. For example, it returns 0 for tick == 2**19, which is incorrect. However, within the actual usage context of the codebase, the function is only called within a restricted and valid range of ticks: tick ∈ [−2**16 * 15, 2**16 * 15]. Despite correct operational use, the lack of documentation about this valid range poses a risk if the function is reused in other contexts or if the tick spacing parameters are changed in the future. This could lead to incorrect rate calculations and potential financial discrepancies if used outside its intended domain without awareness.\n",
+            "severity": "Informational",
+            "location": [
+                "_getRateAtTick#"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "coverLength of Maximum Index Node Is Incorrect",
+            "description": "The `coverLength()` function in the Fenwick tree implementation returns an incorrect value (0) when given the maximum possible node ID (2**40 - 1). The correct cover length for this node should be 4**9. This is due to an off-by-one or overflow issue in the function's logic when handling the highest node ID. Although this edge case may not be commonly encountered during normal operation, it could lead to incorrect tree behavior or miscalculations in order management if the maximum node ID is ever used. This undermines the correctness and robustness of the data structure, especially in edge-case scenarios involving large order volumes or deep order books.\n",
+            "severity": "Informational",
+            "location": [
+                "coverLength#"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Force Deleverage and Liquidate Can Be Frontrun",
+            "description": "The `forceDeleverage()` and `liquidate()` functions are vulnerable to frontrunning attacks where an attacker monitors the mempool and reduces their position size just before the transaction executes. This causes the `_isReducedOnly` check to fail because the trade size would exceed the current position size or flip its sign, leading to transaction reversion. While the protocol is intended for deployment on L2s without public mempools—reducing the practical risk—the behavior still poses a theoretical threat to the reliability of risk management operations. Repeated reversion of liquidations or deleveraging could delay necessary risk mitigation, potentially increasing bad debt exposure. The issue stems from the lack of atomicity between position size checks and execution.\n",
+            "severity": "Informational",
+            "location": [
+                "forceDeleverage#",
+                "liquidate#",
+                "MarginManager::_isReducedOnly#"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Gas Optimizations",
+            "description": "Several gas inefficiencies were identified in the codebase. These include redundant zero-initialization of arrays using `new` in `ArrayLib.sol` and `LibOrderIdSort.sol`, which wastes gas since the arrays are immediately overwritten. In `MarketEntry.liquidate()`, `_coreRemoveAll()` is called before sweeping orders, which is less efficient than removing after sweeping due to higher storage access costs. In `_matchOrder()`, both sides of OTC counterparties are swept unnecessarily when only the matching side needs to be updated. In `__matchPartialInner()`, `subtreeSum` is set to 0 even for leaf nodes, which is redundant. Additionally, `_shouldPlaceOnBook()` could return early for SOFT_ALO orders if all have been matched, avoiding unnecessary processing. These inefficiencies increase transaction costs and reduce scalability, especially under high load.\n",
+            "severity": "Informational",
+            "location": [
+                "ArrayLib.sol::extend#",
+                "ArrayLib.sol::concat#",
+                "ArrayLib.sol::sliceFrom#",
+                "LibOrderIdSort.sol::makeTempArray#",
+                "MarketEntry.liquidate#",
+                "MarketOrderAndOtc::_matchOrder#106",
+                "MarketOrderAndOtc::__matchPartialInner#192",
+                "CoreOrderUtils::_shouldPlaceOnBook#"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Margin Rounds Down",
+            "description": "The function `_getIMPostProcess()` rounds down the initial margin (IM) calculation, which can allow users to maintain slightly more leverage than intended, particularly for very small positions. This rounding down can result in dust amounts of undercollateralization, potentially leading to negligible but non-zero bad debt in extreme cases. While the impact is minimal due to the small magnitude (up to 1 wei), it introduces a deviation from expected margin requirements. Pendle acknowledged this and chose to keep the behavior to avoid complicating the code with exact partial margin computations. This design decision trades minor financial accuracy for code simplicity and gas efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "_getIMPostProcess#"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Packed Variables in Events",
+            "description": "Several events such as `FIndexUpdated`, `ForceDeleverage`, `MarketOrdersFilled`, `OtcSwap`, and `Liquidate` emit packed data types (`FIndex`, `Trade`) that are not human-readable when decoded from logs. This makes it difficult for front-end applications and debugging tools to interpret event data without additional off-chain decoding logic. While this does not pose a direct security risk, it increases integration complexity and reduces transparency for users and developers. The team acknowledged the issue but chose to retain the packed format for gas efficiency and internal consistency.\n",
+            "severity": "Informational",
+            "location": [
+                "FIndexUpdated",
+                "ForceDeleverage",
+                "MarketOrdersFilled",
+                "OtcSwap",
+                "Liquidate"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Unnecessary Unchecked Block in makeTempArray()",
+            "description": "The function `makeTempArray()` wraps its loop in an `unchecked` block, but the only arithmetic operation is `++i` in the for-loop. Since Solidity 0.8.22, such loop increments are automatically unchecked, making the explicit `unchecked` block redundant. This does not introduce a security vulnerability but is a code clarity and consistency issue. The team acknowledged the redundancy but decided to keep it for consistency with other parts of the codebase, prioritizing uniformity over minimal gas savings.\n",
+            "severity": "Informational",
+            "location": [
+                "makeTempArray#"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Unpacking OrderId Can Access Dirty Bits",
+            "description": "The `OrderIdLib.unpack()` function extracts fields from a 64-bit `OrderId` without validating the initialized marker or reserved bits. This means that different `OrderId` values with dirty or uninitialized bits could unpack to the same logical values, potentially leading to ambiguous interpretations. While `OrderId` is typically created via `OrderIdLib.from()` which ensures clean bits, the `getOrder()` function accepts any `OrderId` from external callers without validation. Integrators might pass invalid IDs, leading to unexpected behavior. The team acknowledged this but decided against validation to avoid gas overhead, deeming the risk negligible.\n",
+            "severity": "Informational",
+            "location": [
+                "OrderIdLib.unpack#",
+                "getOrder#"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "cashTransferAll Executes the onlyAllowed Modifier Twice",
+            "description": "The `cashTransferAll()` function in `MarginManager` applies the `onlyAllowed` modifier, and internally calls `cashTransfer()`, which also uses the same modifier. This results in the modifier's checks being executed twice for the same transaction, leading to unnecessary gas consumption. While this does not compromise security, it is an inefficiency in the control flow design. The team is aware of this behavior but has chosen to retain it, likely for code reuse or consistency reasons.\n",
+            "severity": "Informational",
+            "location": [
+                "MarginManager::cashTransferAll#",
+                "MarginManager::cashTransfer#"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "getOrderStatusAndSize() Does Not Distinguish Cancelled From Non-Existing Orders",
+            "description": "The view function `getOrderStatusAndSize()` returns `NOT_EXIST` for both non-existent orders and orders that have been explicitly cancelled. This lack of distinction can mislead external callers about the state of an order, making it impossible to differentiate between an order that was never created and one that was cancelled. This could affect user interface logic or off-chain monitoring systems that rely on accurate order state tracking. The team acknowledged this limitation but decided not to change the behavior, likely to keep the function simple and gas-efficient.\n",
+            "severity": "Informational",
+            "location": [
+                "getOrderStatusAndSize#"
+            ],
+            "files": []
+        }
+    ]
+}

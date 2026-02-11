@@ -1,0 +1,624 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_stryke_aug2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/marginzero-xyz/contracts/"
+        ],
+        "commit_id": [
+            "e3c913ad"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-05",
+        "project_path": {
+            "contracts": "dataset-curated/contracts/cantina_stryke_aug2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "In-range settlement refunds are computed with boundary formulas, leaking free tokens to the settler",
+            "description": "The contract incorrectly uses boundary-based liquidity amount calculations (getAmount0ForLiquidity and getAmount1ForLiquidity) when settling in-range options, which overestimates the required token amounts. The correct in-range amounts should be calculated based on the current price within the tick range, not the boundary extremes. The root cause is the misuse of Uniswap V3 helper functions that assume liquidity is provided at range edges, not inside the range. An attacker (the settler) can exploit this by settling in-range options and receiving excess refunds due to the overestimated required amounts. This results in free tokens being siphoned from the liquidity pool, directly harming LPs by eroding their position value. The impact is a continuous economic drain on LPs whenever in-range settlement occurs, especially pronounced in wide tick ranges.\n",
+            "severity": "High",
+            "location": [
+                "OptionMarketOTMFE.sol#L538-L564"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Users can exercise other user's options",
+            "description": "The exerciseOption function in ExerciseOptionFirewall.sol performs ownership and validation checks using the top-level optionId parameter but uses settleParams.optionId for the actual settlement. There is no validation ensuring these two IDs are identical, allowing a malicious user to pass a different optionId in the settleParams struct. The root cause is the lack of an explicit equality check between the two IDs. An attacker who owns any option can force the settlement of another user's option by setting settleParams.optionId to the victim's option ID. This leads to premature exercise of the victim's option, potentially destroying its time value and preventing the rightful owner from exercising it later under better conditions. The impact includes economic loss for option holders due to forced early exercise and loss of optionality, undermining user trust in the protocol's authorization model.\n",
+            "severity": "Medium",
+            "location": [
+                "ExerciseOptionFirewall.sol#L71-L84"
+            ],
+            "files": [
+                "contracts/src/periphery/firewalls/ExerciseOptionFirewall.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-369"
+                ]
+            },
+            "title": "DoS near expiry: Division by zero in pricing when expiry - block.timestamp < 864",
+            "description": "The _getOptionPrice function divides the remaining time to expiry by 864 seconds to bucket time, which results in zero when less than 864 seconds remain. This zero value is then used in downstream pricing calculations that involve division, causing a division-by-zero revert. The root cause is the use of floor division without a minimum time threshold, leading to a zero value that breaks pricing math. Users attempting to mint options in the final 864 seconds before expiry will face transaction failures, resulting in wasted gas. This creates a denial-of-service condition at the end of every epoch, preventing valid mints during a predictable time window. The impact is degraded user experience and potential loss of business during the final moments of an epoch, especially if the time buffer is not properly communicated.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L262-L266"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Premiums & AMM fees are custody-routed to feeReceiver with no on-chain entitlement for LPers",
+            "description": "Option premiums and AMM fees are sent directly to a centralized feeReceiver address without on-chain accounting or attribution to individual LPs. The root cause is the lack of a trustless, on-chain reward distribution mechanism. Although the project claims to distribute rewards off-chain via Merkle claims, this introduces custodial risk and availability dependency, as LPs must rely on an external operator to claim their rewards. An attacker or malicious operator could delay, censor, or misappropriate distributions. The impact is that LPs' earnings exist only as an off-chain promise, reducing transparency and increasing counterparty risk. This undermines the decentralized ethos of DeFi and could lead to disputes or loss of funds if the off-chain system fails.\n",
+            "severity": "Medium",
+            "location": [
+                "V3BaseHandler.sol#L442-L472"
+            ],
+            "files": [
+                "contracts/src/handlers/V3BaseHandler.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Partial reliance on slot0 spot price can enable single-block price manipulation",
+            "description": "The protocol uses Uniswap V3's slot0 spot price for critical operations like premium calculation, OTM checks, and settlement, which is vulnerable to transient price manipulation within a single block. The root cause is the direct reliance on an instantaneous, unguarded spot price that can be moved and reverted at low cost. An attacker can manipulate the spot price to underprice options, bypass range checks, or influence settlement amounts, then let the price revert, profiting from the mispricing. This is especially feasible on thinner pools. While the protocol uses a firewall with off-chain oracles as a mitigation, the on-chain logic remains vulnerable. The impact includes unfair pricing, potential arbitrage losses for honest users, and erosion of market integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L659-L665",
+                "PoolSpotPrice.sol#L9-L17"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-240"
+                ]
+            },
+            "title": "Last-element hook is used for the whole option, ignoring earlier entries",
+            "description": "During option minting, the contract only uses the hook from the last element of the optionTicks array, silently ignoring hooks from all prior entries. The root cause is the design choice to read opTick.hook only from the final tick. If hooks are ever used for pricing or risk modeling (e.g., different IV models), this could allow users to underpay premiums by appending a final tick with a low-IV hook while sourcing most liquidity from high-IV hooks. Even reordering the same ticks could change the outcome, which is non-intuitive and dangerous. The impact is potential systematic underpricing of options and unfair advantage to sophisticated users who exploit the ordering, leading to losses for LPs if such a scenario is implemented in the future.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L370"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Strike tick validation bypass through incorrect distance calculation",
+            "description": "When validating tick ranges that straddle zero (one negative, one positive tick), the contract adds the tick values instead of subtracting them, leading to an incorrect distance calculation. For example, a range from -1000 to 1000 would incorrectly compute a distance of 0 instead of 2000. The root cause is flawed arithmetic in the validation logic. This allows attackers to create positions with up to twice the allowed tick width when crossing zero, enabling excessively wide options that could be mispriced or increase LP risk. The impact is potential market manipulation and unfair pricing, undermining the protocol's risk controls. This was fixed by using proper subtraction for distance calculation.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L293"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ]
+            },
+            "title": "Unsafe ERC20 operations can cause transaction failures with non-standard tokens",
+            "description": "The protocol uses raw ERC20 transfer, transferFrom, and approve calls without handling tokens that do not return a boolean (e.g., USDT). The root cause is the absence of safe wrappers that account for non-compliant token behavior. When interacting with such tokens, the contract will revert due to Solidity's expectation of a boolean return value, even if the transfer succeeded. This affects multiple functions across the codebase. The impact is transaction failures when using common non-standard tokens, leading to a poor user experience and potential loss of funds if users are unaware. This was fixed by adopting OpenZeppelin's SafeERC20 library.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L509",
+                "OptionMarketOTMFE.sol#L577",
+                "MintOptionFirewall.sol#L128",
+                "MintOptionFirewall.sol#L131",
+                "MultiSwapRouter.sol#L78",
+                "MultiSwapRouter.sol#L81",
+                "OnSwapReceiver.sol#L93"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Premium/exercise mismatch within Uniswap V3 tick bands",
+            "description": "The protocol computes call option premiums using the upper tick as the strike price but only allows early exercise when the spot price falls below the lower tick. This creates a structural mismatch where the option behaves like a down-and-in barrier call but is priced as a vanilla call. The root cause is inconsistent use of tick boundaries for pricing versus exercise logic. This systematically overcharges buyers, especially on wide tick bands or high-tick-spacing pools, as the barrier reduces the option's fair value. The impact is a persistent value transfer from buyers to writers, reducing market fairness and user trust. This was fixed by aligning the pricing strike with the exercise condition (using tickLower for calls).\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "_getPrice can silently return zero at extreme ticks due to integer flooring",
+            "description": "The _getPrice helper function uses integer arithmetic that can underflow to zero for extreme sqrtPriceX96 values, particularly at very low or very high prices. The root cause is the use of unchecked integer division and multiplication that floors toward zero. This silent failure can cause downstream issues such as zero premium quotes, incorrect OTM evaluations, or division-by-zero errors when a non-zero price is assumed. The risk is higher for tokens with unusual decimal configurations. The impact is potential mispricing and transaction failures under extreme market conditions, though the likelihood is low. The recommendation is to enforce safe tick bounds to prevent zero-price returns.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L693-L710",
+                "PoolSpotPrice.sol#L19-L37"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "EIP-712 RangeCheck typehash/struct mismatch breaks signature verification",
+            "description": "The declared EIP-712 typehash for RangeCheck in the firewall contracts does not match the actual data encoded during signature verification. The type string is missing the 'market' field and contains a typo ('maxSprtPriceX96' instead of 'maxSqrtPriceX96'), while the on-chain encoding includes the correct fields. The root cause is a mismatch between the declared and actual struct layout. This causes valid signatures to be rejected, leading to a denial-of-service for users trying to mint or exercise options. The impact is functional disruption of critical user flows, undermining the reliability of the protocol's off-chain signing system. This was fixed by aligning the type string with the encoded fields.\n",
+            "severity": "Low",
+            "location": [
+                "ExerciseOptionFirewall.sol#L55-L57",
+                "MintOptionFirewall.sol#L59-L61"
+            ],
+            "files": [
+                "contracts/src/periphery/firewalls/ExerciseOptionFirewall.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-628"
+                ],
+                "4": [
+                    "CWE-688"
+                ]
+            },
+            "title": "Incorrect argument passed to LogWithdrawReserveLiquidity event",
+            "description": "The LogWithdrawReserveLiquidity event is emitted with amount1 passed twice instead of amount0 and amount1. The root cause is a coding error in the event emission. This leads to incorrect data being logged, making it difficult to debug or audit reserve withdrawals. The impact is reduced observability and potential confusion during monitoring or forensic analysis, though it does not affect the core logic or security of the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "V3BaseHandler.sol#L533"
+            ],
+            "files": [
+                "contracts/src/handlers/V3BaseHandler.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Unsafe downcast from in liquidity calculations",
+            "description": "The contract performs unchecked downcasts from uint256 to uint128 when handling liquidity amounts, which can silently overflow if the value exceeds 2^128 - 1. The root cause is the use of direct type casting without overflow checks. While Uniswap V3 imposes limits that make overflow unlikely, the lack of safeguards leaves the protocol vulnerable to edge cases, especially with ultra-deep liquidity positions. The impact is potential incorrect liquidity calculations, leading to wrong token amounts being transferred or settled. This was acknowledged but not fixed, with reliance on Uniswap V3's internal checks.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L466",
+                "OptionMarketOTMFE.sol#L493",
+                "OptionMarketOTMFE.sol#L498",
+                "OptionMarketOTMFE.sol#L519",
+                "OptionMarketOTMFE.sol#L524",
+                "OptionMarketOTMFE.sol#L545",
+                "OptionMarketOTMFE.sol#L558",
+                "V3BaseHandler.sol#L414",
+                "V3BaseHandler.sol#L550",
+                "V3BaseHandlerVe33Shadow.sol#L420",
+                "V3BaseHandlerVe33Shadow.sol#L559"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Incorrect tick boundary validation allows option minting at exact boundary",
+            "description": "The validation logic for preventing in-range option minting uses a strict less-than comparison for the lower tick, allowing minting when the current price is exactly equal to tickLower. The root cause is the use of '<' instead of '<=' in the boundary check. This allows users to mint options when the price is at the lower boundary, which should be considered inside the range and thus invalid for OTM requirements. The impact is potential violation of the OTM guarantee, leading to options being minted with intrinsic value, which could harm LPs by exposing them to immediate settlement risk. This undermines the protocol's risk model for option pricing.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L300-L306",
+                "OptionMarketOTMFE.sol#L473"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "No per-account pro-rata withdrawal cap lets fast LPs drain the \u201dfree bucket\u201d",
+            "description": "The V3BaseHandler contract aggregates liquidity for a given (pool, hook, tickLower, tickUpper) into a single tokenId and allows applications to consume liquidity from this shared bucket. When LPs withdraw, the contract only checks aggregate liquidity availability without enforcing a per-account cap based on their pro-rata share. This allows the first LP to withdraw all newly freed liquidity, even if it exceeds their fair share, creating a race condition. The root cause is the lack of per-user accounting for free liquidity. An attacker (or fast actor) can exploit this by being the first to submit a withdrawal after liquidity is freed, thereby draining more than their share. The impact is unfair distribution of liquidity and potential temporary stranding of slower LPs, though no direct fund loss occurs.\n",
+            "severity": "Low",
+            "location": [
+                "V3BaseHandler.sol#L315-L319"
+            ],
+            "files": [
+                "contracts/src/handlers/V3BaseHandler.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event emission on critical parameter updates",
+            "description": "Several admin setter functions across the codebase modify critical parameters affecting pricing, permissions, and payouts but do not emit events. This includes functions in OptionPricingLinearV2, MintOptionFirewall, ExerciseOptionFirewall, OpenSettlement, V3BaseHandler, and others. The root cause is the absence of event emission in these functions. Without events, external systems such as indexers, UIs, and risk monitors cannot detect changes, reducing transparency. An attacker could exploit governance changes without detection, though the direct impact is limited to reduced observability. The impact is weakened protocol transparency and potential delayed response to risky parameter changes.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "contracts/src/apps/options/pricing/OptionPricingLinearV2.sol",
+                "contracts/src/periphery/firewalls/MintOptionFirewall.sol",
+                "contracts/src/periphery/firewalls/ExerciseOptionFirewall.sol",
+                "contracts/src/periphery/OpenSettlement.sol",
+                "contracts/src/handlers/V3BaseHandler.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "View functions can be declared as pure",
+            "description": "In OptionMarketOTMFE, the name() and symbol() functions are declared as view but return constant strings without reading storage or state. The root cause is suboptimal function modifier usage. These functions can be marked as pure to enable better compiler optimization and reduce gas costs for external calls. Exploitation is not applicable, as this is a gas optimization issue. The impact is slightly higher gas consumption than necessary for external callers, with no security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L226-L236"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Remove vestigial references to \u201ddelegate\u201d",
+            "description": "The code contains outdated references to a \"delegate\" concept, including an error named NotOwnerOrDelegator and an unused event LogUpdateExerciseDelegate. The root cause is incomplete cleanup after removing delegate functionality. These remnants do not affect functionality but create confusion. No exploitation is possible, but the impact is reduced code clarity and potential misunderstanding for auditors or developers.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L83",
+                "OptionMarketOTMFE.sol#L108",
+                "OptionMarketOTMFE.sol#L589"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Remove unused event",
+            "description": "The SwapperWhitelisted event is defined but never emitted in the codebase, found in V3BaseHandler.sol and OnSwapReceiver.sol. The root cause is leftover code from prior development. This has no runtime impact, but increases contract size unnecessarily. No exploitation is possible. The impact is minor bloat in the deployed bytecode.\n",
+            "severity": "Informational",
+            "location": [
+                "V3BaseHandler.sol#L135",
+                "OnSwapReceiver.sol#L41"
+            ],
+            "files": [
+                "contracts/src/handlers/V3BaseHandler.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect comment",
+            "description": "In BlackScholes.sol, comments incorrectly state that time is in days, while the implementation uses centidays (1/100 of a day). The root cause is outdated or inaccurate documentation. This could mislead developers or integrators into passing incorrect values. No direct exploitation, but the impact is potential miscalculations in pricing logic if external systems rely on the comment.\n",
+            "severity": "Informational",
+            "location": [
+                "BlackScholes.sol#L28",
+                "BlackScholes.sol#L45"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/external/BlackScholes.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Prefer custom error to raw revert",
+            "description": "In OptionPricingLinearV2.sol, a raw revert is used without a message, making debugging difficult. The root cause is lack of descriptive error handling. While not exploitable, this reduces transparency during failures. The impact is harder debugging and less informative reverts for users and developers.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionPricingLinearV2.sol#L257"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/OptionPricingLinearV2.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-282"
+                ],
+                "3": [
+                    "CWE-283"
+                ]
+            },
+            "title": "Lack of a double-step transfer ownership pattern",
+            "description": "Multiple contracts use OpenZeppelin's Ownable, which allows single-step ownership transfer. The root cause is the absence of a two-step process. If the owner mistakenly sets ownership to an invalid address, control is permanently lost. The recommended fix is to use Ownable2Step, requiring the new owner to accept ownership. This prevents accidental lockout. The impact is risk of accidental ownership loss, though no active exploitation is implied.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L29",
+                "OptionPricingLinearV2.sol#L11",
+                "BoundedTTLHook_0Day.sol#L12",
+                "BoundedTTLHook_1Week.sol#L12",
+                "ExerciseOptionFirewall.sol#L15",
+                "MintOptionFirewall.sol#L17",
+                "OpenSettlement.sol#L13",
+                "PositionManager.sol#L18",
+                "OnSwapReceiver.sol#L14"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "ExerciseOptionFirewall.settleOption reverts in-range due to missing allowances",
+            "description": "The settleOption function in ExerciseOptionFirewall is gated by whitelisted executors but does not enforce price-range or expiry checks. When called for in-range options, it delegates to the market, which attempts to pull funds from the firewall. However, the firewall has no balance or allowance, causing the call to revert. The root cause is missing preconditions and funding setup. This is expected behavior per the team, but the impact is that the function cannot be used for in-range settlements, which may confuse users if not documented.\n",
+            "severity": "Informational",
+            "location": [
+                "ExerciseOptionFirewall.sol#L109-L131"
+            ],
+            "files": [
+                "contracts/src/periphery/firewalls/ExerciseOptionFirewall.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading option-type flag comment contradicts BlackScholes interface",
+            "description": "In OptionPricingLinearV2.sol, the comment for the option-type flag incorrectly states \"0 - Put, 1 - Call\", while the BlackScholes library uses 0 = Call, 1 = Put. The root cause is an inaccurate inline comment. Although the code correctly maps _params.isPut ? 1 : 0, the misleading comment could confuse developers. The impact is potential misunderstanding during maintenance or integration, leading to logic errors if the comment is trusted.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionPricingLinearV2.sol#L187"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/OptionPricingLinearV2.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect comment in minOptionPricePercentage",
+            "description": "The minOptionPricePercentage variable is documented as using 1e8 precision, but the implementation divides by 1e10. The root cause is a mismatch between documentation and code. This could lead operators to set values 100x smaller than intended, resulting in a much lower price floor. The impact is potential underpricing of options if governance relies on the incorrect comment.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionPricingLinearV2.sol#L20"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/OptionPricingLinearV2.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Incorrect use of shadow variable",
+            "description": "In LiquidityManager.sol, the function accepts a _factory parameter but ignores it, using the state variable factory instead. The root cause is a coding inconsistency. While it works currently because the correct value is passed, it creates confusion and risks breakage if reused. The impact is reduced code clarity and potential bugs in future modifications or reuse.\n",
+            "severity": "Informational",
+            "location": [
+                "LiquidityManager.sol#L121"
+            ],
+            "files": [
+                "contracts/src/handlers/sushi-v3/LiquidityManager.sol",
+                "contracts/src/handlers/uniswap-v3/LiquidityManager.sol",
+                "contracts/src/handlers/wagmi-v3/LiquidityManager.sol",
+                "contracts/src/handlers/shadow-v3/LiquidityManager.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "MintOptionFirewall over-collects maxCostAllowance and doesn\u2019t refund the unused amount",
+            "description": "MintOptionFirewall.mintOption transfers the full maxCostAllowance from the user to itself but only uses part of it (premium + fee) when calling the market. The remainder is not refunded and stays in the firewall. The root cause is lack of refund logic after cost reconciliation. An attacker can exploit this by backrunning mint transactions to use stranded funds. Users are overcharged, and excess funds can be used by others to mint options for free. The team acknowledges this and relies on a sweep function, but the impact is user fund loss and potential abuse.\n",
+            "severity": "Informational",
+            "location": [
+                "MintOptionFirewall.sol#L126-L132"
+            ],
+            "files": [
+                "contracts/src/periphery/firewalls/MintOptionFirewall.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing validation in PoolSpotPrice._getPrice function",
+            "description": "The _getPrice function in PoolSpotPrice accepts a callAsset address but does not verify it is one of the pool's tokens. The root cause is missing input validation. If a wrong asset is passed, the function returns a price in incorrect units, leading to miscalculations in premiums and fees. The impact is silent propagation of wrong prices, potentially causing over- or under-charging, though the team claims it's only called internally with correct values.\n",
+            "severity": "Informational",
+            "location": [
+                "PoolSpotPrice.sol#L19"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/PoolSpotPrice.sol"
+            ]
+        }
+    ]
+}

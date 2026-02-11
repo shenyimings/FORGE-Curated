@@ -1,0 +1,321 @@
+{
+    "path": "dataset-curated/reports/Cantina/report_cantinacode_eco_may2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/eco/eco-routes"
+        ],
+        "commit_id": [],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": {
+            "eco-routes": "dataset-curated/contracts/report_cantinacode_eco_may2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Incorrect IPROVER_INTERFACE_ID constant allows malicious solvers to steal funds during fulfillment",
+            "description": "The IPROVER_INTERFACE_ID constant in Inbox.sol is hardcoded to an incorrect value (0xd8e1f34f), which is intended to represent the interface ID of the IProver contract. The root cause is the manual assignment instead of deriving it via `type(IProver).interfaceId`, leading to a mismatch in interface identification. An attacker could deploy a malicious contract that mimics the prover interface but bypasses the check, allowing unauthorized calls to be treated as legitimate prover interactions. This could result in the theft of funds from solvers during intent fulfillment, as the system fails to correctly identify and block non-prover contracts.\n",
+            "severity": "High",
+            "location": [
+                "Inbox.sol#L29"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Incorrect equivalence assumption on chain IDs and prover domain IDs may lead to loss of solver funds",
+            "description": "The protocol incorrectly assumes that chain IDs are equivalent to prover domain IDs in HyperProver.sol and MetaProver.sol, using them interchangeably when formatting prover calls. This is a flawed assumption because cross-chain frameworks like Hyperlane and Metalayer use distinct domain ID systems that do not always align with EVM chain IDs. An attacker could exploit this by crafting a malicious fulfillment request on a chain where the domain ID and chain ID differ, causing incorrect routing or execution. This leads to the loss of solver funds used to fulfill intents, as the system may reject valid proofs or route them incorrectly.\n",
+            "severity": "High",
+            "location": [
+                "HyperProver.sol#L297",
+                "MetaProver.sol#L251"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/HyperProver.sol",
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ]
+            },
+            "title": "Assumed instant finality may lead to loss of intent creator funds in reorg scenarios",
+            "description": "The MetaProver contract assumes instant finality by using FinalityState.INSTANT when verifying proofs, without accounting for blockchain reorganizations. The root cause is the lack of delay or confirmation checks before accepting a proof as valid. In the event of a chain reorg, a previously accepted proof could become invalid, but the system has already processed the fulfillment on the destination chain. This allows a solver to receive rewards on the source chain while the corresponding fulfillment is rolled back, resulting in a loss of funds for the intent creator. While deep reorgs are rare on chains like Ethereum, the impact is high when they occur.\n",
+            "severity": "Medium",
+            "location": [
+                "MetaProver.sol#L143-L150"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Incorrect check for prover calls may lead to DoS for intent fulfillment",
+            "description": "The current logic in Inbox.sol to prevent direct calls to prover contracts uses a low-level `.call` to check for `supportsInterface`, but does not properly handle the return data or potential reverts. The cause is the incorrect handling of the success boolean and return data from the external call, which can lead to false negatives. If an intent target contract implements IERC165 but reverts during the interface check, the entire fulfillment may be blocked. This creates a denial-of-service vector where valid intents fail to execute, especially when interacting with legitimate IERC165-compliant contracts that do not support arbitrary interface queries.\n",
+            "severity": "Medium",
+            "location": [
+                "Inbox.sol#L211-L220"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Front-running intent fulfillment transactions result in the loss of solver-approved funds",
+            "description": "The Inbox.sol contract executes intent calls using a low-level `.call` without prior validation of the call's safety, particularly for ERC20 `transferFrom` operations. The vulnerability arises because solvers must pre-approve token transfers, and a malicious actor can monitor the mempool for pending fulfillments and front-run them by fulfilling the same intent with a higher gas fee. Once the front-runner executes the intent, the original solver's approval is drained without benefit. The impact is the loss of approved funds by the solver, although the overall protocol integrity remains intact.\n",
+            "severity": "Low",
+            "location": [
+                "Inbox.sol#L158"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Prover address mismatch between source and destination chains can lead to DoS",
+            "description": "The Eco7683DestinationSettler contract uses `intent.reward.prover` as the prover address during the `fill()` function, which is set on the source chain. However, the prover address may differ on the destination chain due to deployment differences or chain-specific configurations. The root cause is the lack of a mapping mechanism to translate prover addresses across chains. This mismatch can cause the fulfillment to fail when validating proofs, leading to a denial of service for valid intents. The issue is mitigated by using a local prover address mapping, which ensures correct address resolution on the destination chain.\n",
+            "severity": "Low",
+            "location": [
+                "Eco7683DestinationSettler.sol#L42"
+            ],
+            "files": [
+                "eco-routes/contracts/ERC7683/DestinationSettler.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ],
+                "4": [
+                    "CWE-940"
+                ]
+            },
+            "title": "Missing chain-specific prover authorizations may allow spoofed proofs from unsupported chains to compromise all protocol intents",
+            "description": "The protocol does not enforce chain-specific authorization for prover contracts, allowing any prover that can be deployed at a predictable address (e.g., via CREATE3) to submit proofs. The root cause is the absence of a whitelist or domain-specific validation for provers. If an attacker compromises the prover deployer's credentials or predicts the deployment address on an unsupported chain, they could spoof proofs and claim rewards for all intents. While the likelihood is very low due to the required compromise, the impact is high because it undermines the trust model of the entire protocol.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "eco-routes/contracts/prover/HyperProver.sol",
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant code constructs reduce readability",
+            "description": "Several contracts contain unused imports, unused variables, and redundant error definitions that do not contribute to functionality. The cause is poor code hygiene during development, likely due to iterative changes without cleanup. While this does not introduce direct security risks, it reduces code readability and maintainability, increasing the likelihood of future bugs during upgrades or audits. The presence of dead code can also confuse auditors and developers, potentially leading to incorrect assumptions about contract behavior.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "eco-routes/contracts/ERC7683/DestinationSettler.sol",
+                "eco-routes/contracts/prover/HyperProver.sol",
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing source chain prover validation may lead to lost messages",
+            "description": "Both HyperProver.sol and MetaProver.sol do not validate that the source chain prover address is legitimate or authorized before accepting proofs. The root cause is the lack of explicit checks against a known set of valid provers per domain. This could allow a misconfigured or malicious solver to provide an invalid prover address, resulting in lost messages or failed fulfillments. While the solver is expected to ensure correctness, the protocol should enforce basic validation to prevent accidental errors or integration issues.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperProver.sol#L300",
+                "MetaProver.sol#L95"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/HyperProver.sol",
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Stale prover documentation reduces integration due-diligence",
+            "description": "The documentation for prover integrations with Hyperlane and Metalayer is outdated or inconsistent with the current implementation. The root cause is a lack of synchronization between code changes and documentation updates. This creates risks during integration, as developers may rely on incorrect assumptions from the docs, leading to insecure or faulty implementations. While not a direct code vulnerability, it reduces the effectiveness of due diligence and increases the chance of misconfiguration in downstream applications.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "eco-routes/localprover_flows.md"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-74"
+                ],
+                "3": [
+                    "CWE-94"
+                ]
+            },
+            "title": "Allowing arbitrary custom hooks to be specified by the solver/prover may be risky",
+            "description": "The HyperProver contract allows solvers or provers to specify custom post-dispatch hooks in Hyperlane, which are executed during message relaying. The root cause is the lack of validation or sandboxing of these hooks. If a malicious or compromised solver specifies a harmful hook, it could interfere with the relayer's operation or perform unauthorized actions. While the risk is mitigated by trust in solvers and ongoing work on a custom relayer, the open-ended hook mechanism introduces potential attack surface that should be carefully reviewed before production use.\n",
+            "severity": "Informational",
+            "location": [
+                "HyperProver.sol#L144-L155",
+                "HyperProver.sol#L160-L166",
+                "HyperProver.sol#L308-L311"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/HyperProver.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Assuming that all solvers will be sophisticated to perform detailed security checks on intents may be risky",
+            "description": "The protocol assumes that solvers are capable of performing thorough security analysis on intent data before fulfillment. The root cause is the lack of built-in safeguards against malicious or malformed intents. While some defensive checks exist, they only cover common pitfalls and do not prevent all forms of exploitation. This assumption increases the burden on solvers and may lead to losses if a solver fails to detect a sophisticated attack. The protocol should consider additional validation layers or risk mitigation mechanisms to reduce reliance on solver sophistication.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Return bomb during fulfillment may grief solvers",
+            "description": "A malicious contract can return an excessively large data payload when called during intent fulfillment in Inbox.sol. The root cause is the use of a low-level `.call` without limiting the size of the return data. This can cause the calling transaction to consume excessive gas or even revert due to memory allocation limits, effectively grieving the solver who pays for the execution. While this does not result in direct fund theft, it can be used to disrupt solver operations and increase costs, especially in automated systems.\n",
+            "severity": "Informational",
+            "location": [
+                "Inbox.sol#L221"
+            ],
+            "files": [
+                "eco-routes/contracts/Inbox.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Incorrect enforcement of minimum gas limit override in MetaProver may lead to message delays/failures",
+            "description": "The MetaProver.sol contract allows a custom gas limit to be set via the `_data` parameter, but does not enforce a minimum value. The root cause is the lack of validation to ensure that the provided gas limit is sufficient for successful message processing. If a solver sets a gas limit that is too low, the message may fail to be relayed or processed, leading to delays or dropped messages. This can be exploited to cause denial of service or force repeated attempts, increasing operational costs for solvers and users.\n",
+            "severity": "Informational",
+            "location": [
+                "MetaProver.sol#L125"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/MetaProver.sol"
+            ]
+        }
+    ]
+}

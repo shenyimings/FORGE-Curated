@@ -1,0 +1,228 @@
+{
+    "path": "dataset-curated/reports/Zenith/Morpheus - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/MorpheusAIs/SmartContracts"
+        ],
+        "commit_id": [
+            "091b6f7ecbb2933c9d1a805bd4e4c926a02f38a6"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "n/a",
+        "compiler_version": "n/a",
+        "audit_date": "2025-07-22",
+        "project_path": {
+            "SmartContracts": "dataset-curated/contracts/Morpheus - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "withdraw functionality will not work with the Aave strategy",
+            "description": "The vulnerability arises in the `DepositPool.sol` contract during the withdrawal process, where the contract checks the available `depositToken` balance in the `Distributor` before allowing a withdrawal. However, when the strategy is set to AAVE, all deposited tokens are supplied to Aave via `AaveIPool.supply`, leaving zero balance of `depositToken` in the `Distributor` contract. Since there is no mechanism in the `Distributor` to withdraw funds back from Aave before the balance check, the `depositToken` balance remains zero, causing the withdrawal amount to be capped at zero. This results in users being unable to withdraw their funds when using the Aave strategy. An attacker could exploit this by depositing into a pool using the Aave strategy and then attempting to withdraw, only to find their funds stuck indefinitely. The impact is critical as it leads to permanent loss of user funds due to inability to withdraw.\n",
+            "severity": "Critical",
+            "location": [
+                "DepositPool.sol#L455",
+                "Distributor.sol#L273-L275"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/DepositPool.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Updating rewardPoolLastCalculatedTimestamp early allows a griefer to deny reward distribution",
+            "description": "In the `distributeRewards` function of `Distributor.sol`, the `rewardPoolLastCalculatedTimestamp` is updated to the current block timestamp before validating whether the minimum reward distribution period (`minRewardsDistributePeriod`) has passed. This creates a race condition where an attacker can repeatedly call `distributeRewards` before the period elapses, thereby updating the timestamp and resetting the cooldown. As a result, legitimate reward distributions are blocked because the condition `block.timestamp <= lastCalculatedTimestamp_ + minRewardsDistributePeriod` remains true, causing the function to return early without distributing rewards. The root cause is improper ordering of state updates and validation checks. An attacker can exploit this by front-running or spamming calls to `distributeRewards`, leading to a denial-of-service on reward distribution. The impact is high as it disrupts the economic incentive model of the protocol, potentially affecting user trust and participation.\n",
+            "severity": "High",
+            "location": [
+                "Distributor.sol#L322"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/Distributor.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Attackers can potentially halt staking in some deposit pools",
+            "description": "The `stake` function in `DepositPool.sol` lacks a reentrancy guard, and it performs an external call to `safeTransferFrom` before updating internal accounting. If the deposited token implements a callback (e.g., via a malicious contract or reentrant-friendly token), an attacker can reenter the `stake` function during the transfer. During this reentrant call, the `_getCurrentPoolRate` function calculates rewards based on the difference between the current distributed rewards and the previously recorded value. Because the state has not yet been updated in the original call, the same reward delta is calculated again, leading to double incrementing of `distributedRewards`. This causes the internal accounting to exceed the actual distributed amount from the `Distributor`, making subsequent calls to `_getCurrentPoolRate` revert due to negative reward calculations. The cause is the absence of reentrancy protection and improper state update ordering. An attacker can exploit this by crafting a reentrant token or contract to trigger the double-counting, ultimately bricking the staking functionality for the affected pool. The impact is medium, as it results in a denial-of-service for staking, though it may affect only specific pools.\n",
+            "severity": "Medium",
+            "location": [
+                "DepositPool.sol"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/DepositPool.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Using the same token in multiple DepositPools causes incorrect yield accounting",
+            "description": "The `distributeRewards` function in `Distributor.sol` calculates yield for each deposit pool based on the change in token balance (either `token` or `aToken`) held by the `Distributor`. However, if the same token (or aToken) is used in multiple `DepositPool` instances, their balances are not tracked separately, leading to incorrect aggregation of yield. Specifically, the `lastUnderlyingBalance` is updated per-pool, but the total balance query does not account for overlapping tokens, resulting in double-counting or undercounting of yield. This leads to inaccurate reward distribution across pools. The root cause is the lack of validation in `addDepositPool` to ensure token uniqueness. An attacker or misconfigured deployment could register multiple pools with the same token, distorting yield calculations. The impact is medium, as it affects the fairness and accuracy of reward distribution, potentially disadvantaging honest stakers.\n",
+            "severity": "Medium",
+            "location": [
+                "Distributor.sol#L358",
+                "Distributor.sol#L172-L225"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/Distributor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Chainlink may return stale prices leading to incorrect token valuation",
+            "description": "The `getChainLinkDataFeedLatestAnswer` function in `ChainLinkDataConsumer.sol` retrieves price data from Chainlink oracles but does not validate the freshness of the data by checking the `updatedAt` timestamp. If the oracle has not updated within its heartbeat period, the returned price may be stale, leading the protocol to use outdated values for critical operations such as valuation or collateral calculations. The cause is the absence of a staleness check in the price retrieval logic. An attacker could exploit network congestion or oracle downtime to manipulate the system using old prices, especially in volatile market conditions. The impact is low, as it may lead to temporary mispricing, but the likelihood is also low due to Chainlink's generally reliable uptime.\n",
+            "severity": "Low",
+            "location": [
+                "ChainLinkDataConsumer.sol#L75-L89"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/ChainLinkDataConsumer.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Updating rewardPoolLastCalculatedTimestamp with zero rewards enables griefing attack",
+            "description": "In `Distributor.sol`, the `distributeRewards` function updates `rewardPoolLastCalculatedTimestamp` even when the calculated `rewards_` is zero, which occurs when the time interval is too short or due to low token decimals. This allows an attacker to call the function repeatedly with zero rewards, advancing the timestamp and effectively resetting the cooldown for future reward distributions. Since the timestamp is updated regardless of reward issuance, it prevents legitimate distributions until the next valid period. The root cause is the unconditional update of the timestamp before checking for non-zero rewards. An attacker can exploit this by calling `distributeRewards` in rapid succession to block reward distribution windows. The impact is low, as it only enables a griefing attack with no direct fund loss, but it can disrupt protocol operations.\n",
+            "severity": "Low",
+            "location": [
+                "Distributor.sol#L322-L323"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/Distributor.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Migration will fail if the pool has no yield",
+            "description": "The `migrate` function in `DepositPool.sol` requires that `remainder_` (the difference between the contract's token balance and total deposited amount) must be greater than zero before proceeding. This check is intended to ensure yield is transferred during migration, but it causes the migration to revert if the yield is zero, such as when yield was recently collected. The cause is a strict `require(remainder_ > 0)` condition that does not allow for zero-yield scenarios. An attacker or unfortunate timing could trigger a situation where migration fails despite correct setup, blocking protocol upgrades. The impact is low, as it results in a temporary operational halt, but the migration can be retried when yield accrues. However, it introduces fragility in the migration process.\n",
+            "severity": "Low",
+            "location": [
+                "DepositPool.sol#L152"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/DepositPool.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Self-referring is possible and can potentially be abused by users",
+            "description": "The referral system in `DepositPool.sol` allows users to specify any address as a referrer, including their own. When a user refers themselves, they gain a 1% bonus on their staking multiplier and increased virtual staked amount, which amplifies their reward share. This creates an unfair advantage compared to users who do not refer anyone or use a legitimate referrer. The root cause is the lack of validation to prevent self-referrals. A user can exploit this by setting their own address as the referrer, effectively gaming the incentive system. While this does not lead to direct fund loss, it distorts the reward distribution and undermines the intended referral economy. The impact is low, as it affects fairness rather than security, but it can erode trust in the incentive model.\n",
+            "severity": "Low",
+            "location": [
+                "DepositPool.sol#L403-L411",
+                "DepositPool.sol#L758-L762"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/DepositPool.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Calculation method can be improved to eliminate any chance of overflow",
+            "description": "In `RewardPool.sol`, the `_calculateFullPeriodReward` function performs a calculation that multiplies `decreaseAmount_` by `(ip_ * (ip_ - 1))` before dividing by 2. While mathematically correct, this order increases the risk of integer overflow for large values of `decreaseAmount_`. However, since `ip_` and `ip_ - 1` are consecutive integers, one of them is always even, guaranteeing that `(ip_ * (ip_ - 1))` is divisible by 2. Therefore, dividing by 2 first reduces the intermediate value and mitigates overflow risk. The root cause is suboptimal arithmetic ordering. Although no immediate exploit is likely, in edge cases with very large parameters, this could lead to arithmetic overflow and reverted transactions. The impact is informational, as it is a code quality improvement rather than a direct vulnerability, but it enhances robustness.\n",
+            "severity": "Informational",
+            "location": [
+                "RewardPool.sol"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/RewardPool.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Missing claim for Aave incentives inside Distributor leads to unclaimed rewards",
+            "description": "The `Distributor.sol` contract supplies tokens to Aave but does not implement functionality to claim Aave incentive rewards (e.g., AAVE tokens distributed to liquidity providers). These incentives are separate from yield and must be explicitly claimed via Aave's `RewardsController`. The absence of a claim mechanism means that the protocol and its users forgo potential additional rewards. The root cause is a missing feature in the contract design. While not a security vulnerability, it represents a missed economic opportunity. An attacker cannot exploit this directly, but the protocol loses value over time. The impact is informational, as it suggests an enhancement rather than a risk, but implementing incentive claims would improve capital efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "Distributor.sol"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/Distributor.sol"
+            ]
+        }
+    ]
+}

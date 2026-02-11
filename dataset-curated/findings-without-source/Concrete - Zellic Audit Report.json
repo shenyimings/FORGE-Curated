@@ -1,0 +1,361 @@
+{
+    "path": "dataset-curated/reports/Zellic/Concrete - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Blueprint-Finance/sc_earn-v1"
+        ],
+        "commit_id": [
+            "c68890cea19b88b3360f306d1f5a37ebb7679f64"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "EVM-compatible",
+        "compiler_version": "n/a",
+        "audit_date": "2025-05-16",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Incorrect performance-fee calculation can lead to a denial-of-service condition",
+            "description": "The calculateTieredFee function in the FeesHelper library incorrectly divides by 10 ** underlayingDecimals instead of shareValue when calculating performance fees, leading to an overestimated fee. This miscalculation can result in the calculated fee exceeding the vault's totalAssets. When this occurs, the takeFees modifier reverts due to an underflow in the expression _totalAssets - totalFee. Since takeFees is applied before critical user functions such as deposit, mint, withdraw, and redeem, a successful exploit can permanently block these functions. As a result, the vault enters a denial-of-service state, freezing all user funds and preventing any interaction with the contract.\n",
+            "severity": "Critical",
+            "location": [
+                "FeesHelper.sol::calculateTieredFee",
+                "ConcreteMultiStrategyVault.sol::takeFees"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Unhandled code path in WithdrawalQueueHelper._withdrawStrategyFunds could result in users receiving less assets than they are entitled to",
+            "description": "The _withdrawStrategyFunds function in WithdrawalQueueHelper fails to revert when the vault's float balance is insufficient to cover the remaining withdrawal amount after partial withdrawals from strategies. It attempts to withdraw the difference from the vault balance only if the remaining amount is less than or equal to the float, but does not enforce that the transfer succeeds. If the balance is insufficient, the function proceeds silently, resulting in the user receiving fewer assets than expected. This flaw arises from improper handling of edge cases in withdrawal logic and lack of validation after transfer attempts. An attacker could exploit this by manipulating the vault's balance state, but even honest users may be affected under normal conditions. The impact is financial loss for users who burn shares corresponding to a full withdrawal but receive only a partial amount.\n",
+            "severity": "High",
+            "location": [
+                "WithdrawalQueueHelper.sol::_withdrawStrategyFunds",
+                "WithdrawalQueueHelper.sol::_calculateWithdrawalAmount"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Potential underflow in MorphoVaultStrategy._protocolWithdraw could lead to withdrawal failure",
+            "description": "The _protocolWithdraw function in MorphoVaultStrategy performs an unchecked subtraction of _assetBalance from assets_ without verifying that assets_ is greater than or equal to _assetBalance. This can result in an arithmetic underflow if _assetBalance exceeds assets_, which reverts the transaction. The _assetBalance can exceed the requested withdrawal amount either due to auto-compounding of rewards that increases the contract's asset balance or from direct token transfers by an attacker. This vulnerability blocks user withdrawals when the condition is met, effectively freezing funds until the balance is reduced by other withdrawals. The root cause is the lack of input validation and failure to handle edge cases where internal balance exceeds requested withdrawal. The impact is temporary denial of access to funds, which could persist depending on user activity.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoVaultStrategy.sol::_protocolWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "The feesUpdatedAt state variable is used before initialization",
+            "description": "The takeFees modifier in ConcreteMultiStrategyVault uses the feesUpdatedAt state variable to calculate accrued protocol fees, but this variable is initialized only during the first deposit or mint via _validateAndUpdateDepositTimestamps. However, takeFees executes before this initialization in both deposit and mint functions, meaning feesUpdatedAt is zero on the first call. This causes accruedProtocolFee to interpret the entire block.timestamp as the elapsed time, leading to an inflated fee calculation. If the vault holds any assets at the time of the first deposit or mint, this results in an excessive number of shares being minted to the feeRecipient. The root cause is incorrect execution order of initialization and fee logic. The impact is economic dilution of user shares and unjust enrichment of the feeRecipient with unearned rewards.\n",
+            "severity": "High",
+            "location": [
+                "ConcreteMultiStrategyVault.sol::takeFees",
+                "ConcreteMultiStrategyVault.sol::_validateAndUpdateDepositTimestamps"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "The protectStrategy state variable is not updated during emergencyRemoveStrategy call",
+            "description": "The emergencyRemoveStrategy function in ConcreteMultiStrategyVault passes the protectStrategy state variable to the StrategyHelper library as a memory copy rather than a storage reference. As a result, when the library function attempts to clear protectStrategy (set to address(0)) after removing the protected strategy, the change does not persist in the contract's state. This leaves the protectStrategy variable pointing to a removed strategy. Since access control checks (e.g., onlyProtect) still validate against this stale address, the removed strategy retains privileged access to sensitive functions like requestFunds. The root cause is improper data handling across contract-library boundaries. An attacker who gains control of the removed strategy contract could exploit this to extract funds. The impact is unauthorized access and potential loss of vault assets.\n",
+            "severity": "High",
+            "location": [
+                "ConcreteMultiStrategyVault.sol::emergencyRemoveStrategy",
+                "StrategyHelper.sol::emergencyRemoveStrategy",
+                "StrategyHelper.sol::removeStrategy"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Incorrect L2 sequencer uptime feed integration",
+            "description": "The getAssetPrice function in ConcreteOracle checks the freshness of the L2 sequencer feed using _isSequencerOracleFresh, which only verifies that the feed's latest update is within a grace period. However, this is incorrect according to Chainlink's recommended integration pattern. The proper method requires checking the sequencer's current status (active/inactive) rather than data freshness. If the sequencer is down but the last update was recent, the price is considered fresh when it should be considered stale. Conversely, if the sequencer is operational but hasn't updated recently, the feed is incorrectly deemed stale. This leads to fallback oracle usage or price reverts. The root cause is misunderstanding of Chainlink's L2 sequencer feed design. The impact includes reliance on stale prices during sequencer downtime and potential oracle failure, leading to incorrect valuations and transaction reverts.\n",
+            "severity": "High",
+            "location": [
+                "ConcreteOracle.sol::getAssetPrice",
+                "ConcreteOracle.sol::_isSequencerOracleFresh"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Unclaimed withdrawal requests may be incorrectly finalized",
+            "description": "The prepareWithdrawal function in WithdrawalQueue fails to initialize the returned avaliableAssets when the available assets are less than the requested withdrawal amount. This causes the batchClaim function to receive a zero value for newAvaliableAssets, which differs from the previous availableAssets, leading it to incorrectly consider the request as processed. As a result, the request ID is advanced and marked as finalized even though the full amount was not withdrawn. Due to the interaction with the flaw in _withdrawStrategyFunds (Finding 3.2), partial withdrawals may succeed without reverting, but the request remains unclaimed. This creates a state inconsistency where unclaimed requests are skipped in future batch claims. The root cause is missing variable initialization in a conditional branch. The impact is that users may permanently lose access to unclaimed portions of their withdrawals.\n",
+            "severity": "Medium",
+            "location": [
+                "WithdrawalQueue.sol::prepareWithdrawal",
+                "WithdrawalQueue.sol::batchClaim",
+                "WithdrawalQueue.sol::claimWithdrawal"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Incorrect Uniswap Quote Function Used in _protocolWithdraw",
+            "description": "The _protocolWithdraw function in MorphoVaultStrategy incorrectly uses UniswapV3HelperV1.getExpectedOutput, which internally calls quoteExactInputSingle, to simulate a swap. However, the intended behavior requires calculating the input amount of _backgroundSwap tokens needed to receive a specific output amount of _asset tokens, which should use quoteExactOutputSingle instead.\n\nThe root cause is the misuse of Uniswap V3's quoter function: quoteExactInputSingle is used when quoteExactOutputSingle is required for output-based calculations. This leads to incorrect simulation of required input tokens.\n\nAn attacker or front-runner could potentially exploit this by manipulating the swap execution path, although the primary issue is economic inefficiency. The function proceeds with an incorrect expected output, leading to suboptimal or failed swaps.\n\nThe impact is that each background swap withdraws an extra MAX_SLIPPAGE percentage of tokens from the vault unnecessarily. These excess tokens remain idle in the strategy, reducing yield potential and capital efficiency.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoVaultStrategy::_protocolWithdraw",
+                "UniswapV3HelperV1::getExpectedOutput"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Unnecessary Slippage Padding in _protocolWithdraw",
+            "description": "The _protocolWithdraw function adds a MAX_SLIPPAGE percentage to the input token amount using mulDiv, under the assumption that slippage protection is needed between simulation and execution. However, both the quote and the actual swap occur within the same transaction, making slippage between them impossible.\n\nThe root cause is a misunderstanding of on-chain execution atomicity. Since the quote and swap are executed atomically, there is no need to over-withdraw tokens based on slippage. Instead, the function should use a minAmountOut parameter in the actual swap to enforce minimum output.\n\nThis could be exploited by a malicious strategy operator to extract excess tokens from the vault under the guise of slippage protection, although the current implementation likely results in self-inflicted inefficiency rather than direct exploitation.\n\nThe impact is that excess tokens are withdrawn from the vault unnecessarily, remaining idle and reducing the overall yield. This represents a loss of economic efficiency and misallocation of capital.\n",
+            "severity": "Medium",
+            "location": [
+                "MorphoVaultStrategy::_protocolWithdraw#swapAssets",
+                "MorphoVaultStrategy::_swapExactTokenToToken"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "VaultManager Lacks Code to Call emergencyRemoveStrategy",
+            "description": "The emergencyRemoveStrategy function in the ConcreteMultiStrategyVault contract is restricted to the owner, which is the VaultManager contract. However, the VaultManager contract does not implement any function to call emergencyRemoveStrategy on the vault.\n\nThe root cause is a missing function in the VaultManager contract that would delegate the call to the vault's emergencyRemoveStrategy function. This creates a deadlock where the only authorized caller cannot invoke the function.\n\nAn attacker cannot directly exploit this, but in an emergency scenario (e.g., a compromised strategy), the protocol would be unable to remove the malicious strategy through the intended owner-based mechanism.\n\nThe impact is that the emergency removal functionality is effectively disabled unless the VaultManager is upgraded or ownership is transferred to an externally owned account, reducing the protocol's ability to respond to critical issues.\n",
+            "severity": "Low",
+            "location": [
+                "VaultManager",
+                "ConcreteMultiStrategyVault::emergencyRemoveStrategy"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Incorrect Transfer Amount in rescueFunds",
+            "description": "The rescueFunds function in the MultiSigStrategyV1 contract transfers the balance of the underlying asset instead of the specified asset_ when rescuing funds. This is due to a hardcoded asset() call instead of using the parameter asset_ for the balance check.\n\nThe root cause is a typo or logic error in the function where asset() is used instead of asset_ in the balanceOf call, leading to the wrong token balance being transferred.\n\nA malicious owner could exploit this by calling rescueFunds for a token they do not hold in balance, potentially draining the underlying asset instead. However, since only the owner can call this function, it is more likely a usability issue.\n\nThe impact is that when the owner attempts to rescue a specific asset, they may inadvertently transfer the underlying asset balance instead, leading to unexpected loss of funds if the balances are significant.\n",
+            "severity": "Low",
+            "location": [
+                "MultiSigStrategyV1::rescueFunds"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Function redeem Lacks Dust-Amount Check",
+            "description": "The redeem function in the ConcreteMultiStrategyVault contract does not check if the amount of shares being redeemed is greater than the DUST threshold, unlike deposit, mint, and withdraw functions which include such checks.\n\nThe root cause is an inconsistency in input validation logic across similar functions. The absence of a dust check in redeem exposes users to potential loss when redeeming very small amounts.\n\nAn attacker could exploit this by redeeming dust amounts of shares repeatedly to drain small balances, although the primary risk is to legitimate users who may lose funds unknowingly.\n\nThe impact is that users redeeming a dust amount of shares may receive zero assets due to rounding, resulting in a complete loss of the redeemed shares.\n",
+            "severity": "Low",
+            "location": [
+                "ConcreteMultiStrategyVault::redeem"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Inconsistent Handling of Infinite Allowance in _withdraw",
+            "description": "The _withdraw function in ConcreteMultiStrategyVault manually reduces the allowance using _approve without checking for infinite allowance (type(uint256).max), unlike the standard _spendAllowance function from OpenZeppelin which preserves infinite allowances.\n\nThe root cause is bypassing the standard allowance handling mechanism and implementing custom logic that does not account for the infinite allowance sentinel value.\n\nA user who has granted infinite allowance could have their allowance reduced to a finite value after a withdrawal, breaking integrations with third-party services that expect the allowance to remain unchanged.\n\nThe impact is inconsistent behavior with ERC20 standards, potentially breaking wallet or DeFi platform integrations and causing unexpected transaction failures after withdrawals.\n",
+            "severity": "Low",
+            "location": [
+                "ConcreteMultiStrategyVault::_withdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "Lack of Support for 0.01% Fee Tier in UniswapV3HelperV1",
+            "description": "The validateFeeTier function in UniswapV3HelperV1 only allows 0.05%, 0.3%, and 1% fee tiers, excluding the 0.01% (100 bps) fee tier introduced in Uniswap V3, which is optimal for stablecoin pairs.\n\nThe root cause is a hardcoded list of allowed fees that does not include the 0.01% tier, likely due to oversight during development.\n\nThis limitation could be exploited by competitors offering better rates on 0.01% pools, but it is not directly exploitable in a malicious way.\n\nThe impact is that the MorphoVaultStrategy cannot execute swaps on Uniswap pools with the 0.01% fee tier, potentially missing optimal trading routes and resulting in worse execution prices for stablecoin swaps.\n",
+            "severity": "Low",
+            "location": [
+                "UniswapV3HelperV1::validateFeeTier"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "getAvailableAssetsForWithdrawal Should Return Zero When withdrawEnabled is False",
+            "description": "The getAvailableAssetsForWithdrawal function in MultiSigStrategyV1 returns _vaultDepositedAmount even when withdrawEnabled is false, despite _protocolWithdraw reverting in that case. This provides an incorrect view of withdrawable assets.\n\nThe root cause is a logical inconsistency between the read and write functions regarding withdrawal availability.\n\nWhile not directly exploitable, this could mislead external systems (e.g., frontends, aggregators) into believing funds are withdrawable when they are not, potentially causing user confusion or failed transactions.\n\nThe impact is that off-chain systems may display incorrect withdrawal estimates, leading to poor user experience and potential failed transactions when users attempt to withdraw based on inaccurate data.\n",
+            "severity": "Low",
+            "location": [
+                "MultiSigStrategyV1::getAvailableAssetsForWithdrawal",
+                "MultiSigStrategyV1::_protocolWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "changeAllocations Does Not Check vaultIdle Status Before Redistributing Assets",
+            "description": "The changeAllocations function allows redistribution of assets to strategies even when vaultIdle is true, bypassing the intended restriction that vaultIdle should prevent deposits into strategies.\n\nThe root cause is the absence of a vaultIdle check before calling distributeAssetsToStrategies when redistribute is true.\n\nA privileged user (owner) could exploit this to deposit funds into strategies even when the vault is supposed to be idle, potentially violating operational assumptions or security policies.\n\nThe impact is that the vaultIdle flag fails to enforce its intended restriction, allowing asset redistribution when it should be disabled, undermining the purpose of the idle state.\n",
+            "severity": "Low",
+            "location": [
+                "ConcreteMultiStrategyVault::changeAllocations"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Incorrect Rounding Direction in previewMint",
+            "description": "The previewMint function uses Math.Rounding.Floor for both grossShares calculation and _convertToAssets, while the actual mint function uses Math.Rounding.Ceil, leading to inconsistent results.\n\nThe root cause is a mismatch in rounding modes between the preview and execution functions, violating the principle that preview functions should accurately reflect actual outcomes.\n\nUsers could be misled by inaccurate previews, potentially leading to unexpected outcomes when minting shares, especially in edge cases involving small amounts.\n\nThe impact is that previewMint returns inaccurate estimates, eroding user trust and potentially causing financial loss due to incorrect expectations about minting costs.\n",
+            "severity": "Low",
+            "location": [
+                "ConcreteMultiStrategyVault::previewMint",
+                "ConcreteMultiStrategyVault::mint"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "Inconsistent Fee Charging Between deposit and mint",
+            "description": "The deposit function waives the deposit fee if the caller is the feeRecipient, while the mint function always charges the fee regardless of the caller, creating inconsistent behavior for the same economic action.\n\nThe root cause is divergent fee logic in two functions that serve similar purposes, likely due to independent development without alignment.\n\nThe feeRecipient could exploit this by using deposit instead of mint when acting on behalf of others to avoid fees, gaining an unfair economic advantage.\n\nThe impact is that users receive different share amounts for the same asset input depending on the function used, leading to unfairness and potential abuse of the system.\n",
+            "severity": "Informational",
+            "location": [
+                "ConcreteMultiStrategyVault::deposit",
+                "ConcreteMultiStrategyVault::mint"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "BTCLinkedPriceFeed Contract Does Not Initialize the Owner",
+            "description": "The BTCLinkedPriceFeed contract inherits from OwnableUpgradeable but does not call __Ownable_init during initialization, leaving the owner as the zero address.\n\nThe root cause is a missing initialization call for the upgradeable ownership module, which is required for contracts using upgradeable patterns.\n\nIf future functions with onlyOwner protection are added, they will be permanently locked, as no account will have ownership privileges.\n\nThe impact is that any future owner-restricted functionality cannot be administered, potentially leading to governance paralysis or inability to perform critical updates.\n",
+            "severity": "Informational",
+            "location": [
+                "BTCLinkedPriceFeed"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "Insufficient Validation of _requestId in prepareWithdrawal",
+            "description": "The prepareWithdrawal function in WithdrawalQueue checks if _requestId is less than lastFinalizedRequestId but does not check for equality, allowing potential reprocessing of the last finalized request if claim status is not properly tracked.\n\nThe root cause is an incomplete bounds check that excludes only lower IDs but not the last finalized one.\n\nIf a request is incorrectly finalized but not marked as claimed, it could be re-executed, leading to double withdrawal of assets.\n\nThe impact is a potential replay vulnerability that could result in double spending of withdrawal funds if combined with other failures in claim tracking.\n",
+            "severity": "Informational",
+            "location": [
+                "WithdrawalQueue::prepareWithdrawal"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "Unchecked Return Value in setParkingLot",
+            "description": "The setParkingLot function does not verify the successfulApproval boolean returned by TokenHelper.attemptForceApprove, potentially leaving the contract with a failed approval that will cause future deposits to revert.\n\nThe root cause is failure to validate the result of an external approval call, violating secure coding practices for critical operations.\n\nAn attacker could force a failed approval (e.g., via a malicious token) and then call setParkingLot to set a new parking lot with invalid approval, blocking all future deposits.\n\nThe impact is that the vault may become unable to deposit into the parking lot if the approval fails, disrupting normal operations and potentially locking funds.\n",
+            "severity": "Informational",
+            "location": [
+                "ConcreteMultiStrategyVault::setParkingLot"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "Incorrect Withdrawable Check in _withdrawStrategyFunds",
+            "description": "The _withdrawStrategyFunds function in WithdrawalQueueHelper compares the proportional diff amount against withdrawable funds instead of the actual amountToWithdraw, and uses previewRedeem instead of the more accurate getAvailableAssetsForWithdrawal.\n\nThe root cause is incorrect logic in the validation check and use of an imprecise method for determining withdrawable amounts.\n\nThis could be exploited in edge cases where diff is significantly less than amount_, allowing withdrawal attempts that should fail due to insufficient funds.\n\nThe impact is that the function may proceed with withdrawal attempts that will later fail, wasting gas and potentially causing transaction failures during critical operations.\n",
+            "severity": "Informational",
+            "location": [
+                "WithdrawalQueueHelper::_withdrawStrategyFunds"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "ConcreteMultiStrategy Should Inherit from ReentrancyGuardUpgradeable",
+            "description": "The ConcreteMultiStrategy contract inherits from ReentrancyGuard but is deployed via clone and initialized via an initialize function, which requires using ReentrancyGuardUpgradeable for proper initialization of the _status variable.\n\nThe root cause is using a non-upgradeable version of ReentrancyGuard in an upgradeable deployment pattern.\n\nAlthough the _status is set after first use, relying on this behavior is unsafe and deviates from best practices for upgradeable contracts.\n\nThe impact is a potential reentrancy risk if the contract is upgraded or if initialization is called in an unexpected context, though the immediate risk is low due to post-initialization correction.\n",
+            "severity": "Informational",
+            "location": [
+                "ConcreteMultiStrategy"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "Incorrect Implementation of max Functions in ConcreteMultiStrategy",
+            "description": "The max function family in ConcreteMultiStrategy deviates from ERC-4626 standards: maxMint returns assets instead of shares, maxDeposit ignores paused status and deposit limits, maxWithdraw subtracts all pending fees instead of proportional shares, and there is inconsistency in fee handling between maxWithdraw and maxRedeem.\n\nThe root cause is non-compliant implementation of the ERC-4626 interface, likely due to custom business logic overriding standard behavior.\n\nIntegrating protocols may rely on standard max function behavior and could miscalculate allowable actions, leading to failed transactions or incorrect user expectations.\n\nThe impact is integration issues with DeFi platforms and wallets expecting standard ERC-4626 behavior, potentially causing user errors and reduced interoperability.\n",
+            "severity": "Informational",
+            "location": [
+                "ConcreteMultiStrategy::maxMint",
+                "ConcreteMultiStrategy::maxDeposit",
+                "ConcreteMultiStrategy::maxWithdraw",
+                "ConcreteMultiStrategy::maxRedeem"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Strategy Rewards Accrue After Share Price Calculation",
+            "description": "In the withdrawal process, rewards are accrued via _handleRewardsOnWithdraw after the assets_ and shares_ amounts are calculated, meaning newly accrued rewards are not reflected in the current withdrawal's share price.\n\nThe root cause is the ordering of operations in the withdrawal flow, where reward harvesting occurs after asset conversion.\n\nUsers withdrawing immediately after a reward accrual may receive fewer assets than expected, as the increased totalAssets from rewards are not factored into their withdrawal.\n\nThe impact is that users may receive less value than expected during withdrawals, leading to unfair distribution and potential loss of funds due to timing-dependent outcomes.\n",
+            "severity": "Informational",
+            "location": [
+                "StrategyBase::_withdraw",
+                "StrategyBase::_handleRewardsOnWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "Incorrect Use of _getRewardTokens to Initialize rewardTokens",
+            "description": "The MorphoVaultStrategy constructor calls _getRewardTokens during initialization, but this function relies on the storage variable rewardTokens.length, which is empty at deployment time, resulting in an empty reward token array.\n\nThe root cause is a circular dependency where the initialization logic depends on storage state that has not yet been set.\n\nThis forces the owner to manually call addRewardToken after deployment, which should not be necessary if initialization were correct.\n\nThe impact is that the contract cannot be fully operational after deployment without manual intervention, increasing deployment complexity and risk of misconfiguration.\n",
+            "severity": "Informational",
+            "location": [
+                "MorphoVaultStrategy::constructor",
+                "MorphoVaultStrategy::_getRewardTokens",
+                "MorphoVaultStrategy::getRewardTokenAddresses"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "The ConcreteOracle.getAssetPrice should ensure the returned price uses eight decimals",
+            "description": "The getAssetPrice function in ConcreteOracle has three execution paths: primary oracle, base currency, and fallback oracle. While the primary path normalizes the returned price to eight decimals using _normalizePrice, the base currency and fallback oracle paths do not perform such normalization. This inconsistency could lead to downstream systems incorrectly interpreting price values if they assume all prices are in eight decimals. The root cause is the lack of uniform decimal handling across all return paths. An attacker could potentially exploit this by manipulating or influencing the use of the fallback oracle or base currency path with non-eight-decimal values, leading to incorrect valuation, incorrect collateral calculations, or unfair liquidations. The impact includes potential financial loss due to mispriced assets and violation of system invariants relying on consistent price formatting.\n",
+            "severity": "Medium",
+            "location": [
+                "ConcreteOracle::getAssetPrice",
+                "ConcreteOracle::_normalizePrice"
+            ],
+            "files": []
+        },
+        {
+            "id": 27,
+            "category": {},
+            "title": "Unused _decimals variable in strategies",
+            "description": "The StrategyBase contract declares and initializes a _decimals variable intended to be nine decimals higher than the base asset's decimals via DECIMAL_OFFSET. However, in the actual strategy implementations reviewed (AaveV3Strategy, MorphoVaultStrategy, MultiSigStrategyV1), this variable is never used because the relevant conversion functions (_convertToShares, _convertToAssets) are not overridden to utilize it. The root cause is incomplete implementation or abandonment of a planned decimal adjustment mechanism. Although this does not directly enable exploitation, it creates code confusion and increases maintenance burden, potentially leading developers to incorrectly assume the offset is being applied. This could result in incorrect share/asset conversions in future modifications. The impact is limited to code clarity and long-term maintainability, posing no immediate financial risk but increasing the likelihood of future bugs.\n",
+            "severity": "Low",
+            "location": [
+                "StrategyBase::_decimals",
+                "StrategyBase::__StrategyBase_init"
+            ],
+            "files": []
+        },
+        {
+            "id": 28,
+            "category": {},
+            "title": "Test suite uses deprecated testFail prefix",
+            "description": "The project's test suite uses the testFail prefix to handle negative test cases, which was removed in Foundry V1.0. This means the tests may not correctly validate that certain transactions revert as expected, potentially allowing invalid behavior to go undetected during testing. The root cause is outdated testing practices not updated for modern Foundry versions. If these tests are relied upon for verification, critical reverts (e.g., access control checks or validation failures) might not be properly enforced, leading to a false sense of security. An attacker could exploit functions that should revert but do not due to insufficient test coverage. The impact is reduced test reliability and potential undetected vulnerabilities in production code due to ineffective negative testing.\n",
+            "severity": "Informational",
+            "location": [
+                "Test suite::testFail prefix usage"
+            ],
+            "files": []
+        }
+    ]
+}

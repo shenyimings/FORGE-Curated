@@ -1,0 +1,104 @@
+{
+    "path": "dataset-curated/reports/Zellic/Solera - Zellic Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/SoleraMarkets/solera-staking"
+        ],
+        "commit_id": [
+            "280badbfcc472cd486982094e528008da888d678"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-03",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Vesting admin can manipulate price ratio",
+            "description": "The price ratio in the SoleraStaking contract, defined as the ratio of assets to shares, can be manipulated by the vesting admin through depositing or withdrawing vesting assets during the vesting period. This occurs because the totalAssets() function subtracts the full vesting deposit and adds back only the vested portion, making the ratio sensitive to admin actions. The root cause is the lack of isolation between vesting deposits and the main vault's accounting. An attacker with the vesting admin role can exploit this by depositing a large amount of assets as a vesting deposit to artificially inflate the price ratio, then redeeming shares at the inflated rate, effectively draining the vault. Additionally, if the admin withdraws during or after the vesting period, it can cause the vault to become insolvent, especially if users have already initiated redemptions based on the inflated ratio. This leads to a critical impact where user funds are at risk and the vault's solvency is compromised.\n",
+            "severity": "Critical",
+            "location": [
+                "SoleraStaking.sol::totalAssets"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Vesting admin can take advantage of open approvals",
+            "description": "The vesting admin can exploit the vestingDeposit and vestingWithdraw functions to perform unauthorized transfers of assets from any approved address. The vestingDeposit function uses safeTransferFrom, allowing the admin to pull funds from any address that has granted approval to the contract. By calling vestingDeposit with a victim's address and then immediately withdrawing to their own address, the admin can effectively steal approved funds. The root cause is the design decision to allow the vesting admin to specify the 'from' address in vestingDeposit, combined with the contract's ERC-20 implementation-agnostic nature, which may bypass the self-transfer allowance check present in OpenZeppelin's ERC20. This is particularly dangerous if users leave open approvals or approve and deposit in separate transactions. The impact is high, as it allows theft of user funds or even draining the entire vault if the vault itself has open approvals, though the likelihood is low as it requires a malicious or compromised admin.\n",
+            "severity": "Critical",
+            "location": [
+                "SoleraStaking.sol::vestingDeposit",
+                "SoleraStaking.sol::vestingWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Race condition allows admin to drain the vault",
+            "description": "A race condition exists between the requestRedeem and redeem functions due to the fee percentage being calculated at redemption time rather than at request time. The root cause is that the fee is applied during the redeem step, while the shares to burn are calculated during requestRedeem without locking in the fee rate. If the admin increases the fee percentage after a user has requested redemption but before they redeem, the user will receive fewer assets than expected, and the vault will lose additional assets to cover the increased fee. A malicious admin can exploit this by depositing a large amount of assets, setting the fee to 0%, requesting redemption of all shares, then immediately increasing the fee to 100% in the same transaction. After the timelock, the admin redeems, causing all vault assets to be sent as fees to the fee receiver (which they control), effectively draining the vault. The impact is high, as it allows complete loss of vault assets, though the likelihood is low due to the need for admin compromise.\n",
+            "severity": "Critical",
+            "location": [
+                "SoleraStaking.sol::requestRedeem",
+                "SoleraStaking.sol::redeem",
+                "SoleraStaking.sol::_withdraw",
+                "SoleraStaking.sol::_feeOnRaw"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Fee is not limited to 100%",
+            "description": "The setFeeBasisPoints function allows the admin to set a fee greater than 100% (i.e., feeBasisPoints >= 10,000). The root cause is the absence of a validation check in the function. This leads to a potential integer underflow in the _feeOnRaw function when calculating fees, as the multiplication and division using mulDiv with Math.Rounding.Ceil can result in a value larger than the input assets, causing the subtraction in _withdraw to underflow. The impact is that the admin can effectively block all redemptions by setting a fee >100%, as any call to _withdraw would revert due to the underflow, leading to a denial of service for users. While this is a centralization risk, the severity is rated as High due to the potential to freeze user funds.\n",
+            "severity": "High",
+            "location": [
+                "SoleraStaking.sol::setFeeBasisPoints",
+                "SoleraStaking.sol::_feeOnRaw"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Consider overriding obselete OpenZeppelin ERC4626 functions",
+            "description": "The SoleraStaking contract disables certain ERC4626 functions like withdraw, redeem, and mint by reverting, but fails to override other obsolete functions such as maxMint, maxWithdraw, previewMint, and previewWithdraw. The root cause is incomplete cleanup of inherited functionality from OpenZeppelin's ERC4626. Additionally, the contract unnecessarily overrides previewWithdraw despite withdraw being disabled. The impact is not directly security-related but affects code maturity, leading to reduced readability, maintainability, and increased deployment cost due to unnecessary bytecode. While not exploitable, it represents a code quality issue that could confuse developers and increase gas costs. The severity is Informational.\n",
+            "severity": "Informational",
+            "location": [
+                "SoleraStaking.sol::maxMint",
+                "SoleraStaking.sol::maxWithdraw",
+                "SoleraStaking.sol::previewMint",
+                "SoleraStaking.sol::previewWithdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Integer underflow on redeemRequest(0)",
+            "description": "Calling redeemRequest with 0 shares causes an integer underflow in the previewRedeem function. The root cause is that previewRedeem calculates the fee using _feeOnTotal with Math.Rounding.Ceil, which rounds up even for 0 assets, resulting in a non-zero fee. When this fee is subtracted from 0, it causes an underflow. Although this does not have a direct security impact because the function reverts, it could be confusing to users. Interestingly, if the underflow were not to occur, it would expose a different bug where users could repeatedly redeem 0 shares to burn one base unit of asset each time, potentially leading to a griefing attack. The severity is Informational as it does not lead to fund loss or critical failure.\n",
+            "severity": "Informational",
+            "location": [
+                "SoleraStaking.sol::previewRedeem",
+                "SoleraStaking.sol::_feeOnTotal"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Vesting withdrawals emit the wrong event",
+            "description": "The vestingWithdraw function incorrectly emits a VestingDeposit event instead of a VestingWithdraw event. The root cause is a copy-paste error in the function where emit VestingDeposit(to, amount) is used instead of emit VestingWithdraw(to, amount). This leads to misleading event logs, which can confuse users, developers, and off-chain monitoring tools that rely on events to track vesting withdrawals. While there is no direct financial impact or security vulnerability, it reduces the reliability of the contract's audit trail and can lead to incorrect interpretations of on-chain activity. The severity is Informational.\n",
+            "severity": "Informational",
+            "location": [
+                "SoleraStaking.sol::vestingWithdraw"
+            ],
+            "files": []
+        }
+    ]
+}

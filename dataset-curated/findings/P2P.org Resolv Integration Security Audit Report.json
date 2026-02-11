@@ -1,0 +1,207 @@
+{
+    "path": "dataset-curated/reports/MixBytes/P2P.org Resolv Integration Security Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/p2p-org/p2p-lending-proxy"
+        ],
+        "commit_id": [
+            "4a986871444ef82f1db2d49421fac046f45e9c3d",
+            "983694efac1e31a06e5c6bd1a86b263757533282"
+        ],
+        "address": [
+            "0x3e9f065cdf0a0c597c5bb5719feab059c23f359d",
+            "0xa156ec23898de504b847ad247934231ef332ecd8"
+        ],
+        "chain": "EVM",
+        "compiler_version": "v0.8.30+commit.73712a01",
+        "audit_date": "2025-11-12",
+        "project_path": {
+            "P2P.org Resolv Integration Security Audit Report.pdf-source": "dataset-curated/contracts/P2P.org Resolv Integration Security Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "StakedTokenDistributor Immutability Breaks Claim Functionality",
+            "description": "The P2pResolvProxy contract stores the StakedTokenDistributor address as an immutable variable, which prevents it from being updated after deployment. The StakedTokenDistributor contract uses an immutable Merkle root set at deployment, which must include the claiming address. However, since the P2pResolvProxy is deployed after StakedTokenDistributor, its address cannot be included in the original Merkle root. As a result, any claim attempt via P2pResolvProxy will fail due to invalid Merkle proof verification. Furthermore, even if a new StakedTokenDistributor is deployed with an updated Merkle root, the proxy cannot point to it due to the immutability of the distributor address. This renders the airdrop claim functionality permanently unusable for clients.\nThe root cause is the combination of two immutable dependencies: the proxy's hardcoded distributor address and the distributor's fixed Merkle root. An attacker or malicious actor is not required; any legitimate user attempting to claim will be reverted. The impact is that users permanently lose access to their airdropped tokens, which are effectively locked in the StakedTokenDistributor contract with no recovery path on-chain.\n",
+            "severity": "High",
+            "location": [
+                "P2pResolvProxy.sol"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "RESOLV Withdrawal Double Fee When claimEnabled is false",
+            "description": "When withdrawRESOLV() is called while claimEnabled is false, the ResolvStaking contract returns only the principal, not the rewards. However, the P2pYieldProxy calculates accruedRewards before the withdrawal using _getCurrentAssetAmount(), which includes pending rewards. This leads to a profitPortion being calculated and fees applied to rewards that were not actually withdrawn. Later, when claimEnabled is true and the user withdraws again, the same rewards are withdrawn and fees are applied a second time, resulting in a double fee on the same reward amount.\nThe root cause is the incorrect assumption that all accrued rewards are withdrawn during the call, even when claimEnabled is false. An attacker does not need to exploit this maliciously; it occurs under normal user behavior when market conditions or protocol settings disable claiming. The impact is financial loss for users due to double fee deduction on the same rewards, undermining trust in the fee model and causing accounting inconsistencies.\n",
+            "severity": "Medium",
+            "location": [
+                "P2pResolvProxy.sol::withdrawRESOLV",
+                "P2pYieldProxy.sol::_withdraw",
+                "P2pResolvProxy.sol::_getCurrentAssetAmount"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Extra Reward Tokens from ResolvStaking Stuck in P2pResolvProxy",
+            "description": "During a RESOLV withdrawal, the ResolvStaking contract may transfer multiple reward tokens to the proxy if multiple reward tokens are configured. However, the P2pYieldProxy._withdraw() function only tracks the balance delta of the primary _asset (RESOLV) and ignores any additional ERC-20 tokens sent during the withdrawal. These extra reward tokens remain stranded in the proxy contract with no mechanism to retrieve them.\nThe root cause is the lack of handling for secondary reward tokens in the withdrawal logic. While currently only RESOLV is configured, the ResolvStaking contract allows admins to add new reward tokens via addRewardToken(). Once added, any rewards in those tokens will be sent to the proxy but never forwarded to users. The impact is that future reward tokens will be permanently locked in the proxy, leading to user fund loss and reduced protocol functionality.\n",
+            "severity": "Medium",
+            "location": [
+                "P2pResolvProxy.sol::withdrawRESOLV",
+                "P2pYieldProxy.sol::_withdraw"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Profit Misclassification Due to Stale Rewards Calculation",
+            "description": "The _withdraw() function calculates accruedRewards before calling the external withdrawal function. However, in the ResolvStaking contract, the withdrawal triggers a checkpoint() that updates and transfers newly accrued rewards to the proxy. Because the reward snapshot was taken before this update, the newly transferred rewards are not included in the accruedRewards calculation and are instead treated as principal. This results in fees being undercharged on the newly accrued portion, causing revenue loss for the protocol.\nThe root cause is the incorrect ordering of balance measurement and external call execution. An attacker cannot directly exploit this, but all users benefit from reduced fees on checkpoint-triggered rewards. The impact is systematic loss of protocol fees and inaccurate accounting, where s_totalWithdrawn is inflated and getUserPrincipal() is deflated over time.\n",
+            "severity": "Medium",
+            "location": [
+                "P2pYieldProxy.sol::_withdraw",
+                "ResolvStaking.sol::withdraw",
+                "ResolvStaking.sol::checkpoint"
+            ],
+            "files": [
+                "P2pResolvProxy/src/p2pYieldProxy/P2pYieldProxy.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "_getCurrentAssetAmount() Uses effectiveBalance Incorrectly, Causing Wrong Accrued Rewards Calculation",
+            "description": "The _getCurrentAssetAmount() function uses getUserEffectiveBalance(), which includes a time-based boost multiplier, to calculate the current asset amount. However, effectiveBalance is a virtual balance used only for reward distribution and does not represent the actual withdrawable token balance. This leads to an inflated current amount when calculating accrued rewards, as the boost multiplier is effectively counted as part of the rewards.\nThe root cause is the misuse of a boosted virtual balance in a context requiring real token balance. For example, a 2x boost on 1000 tokens results in 2000 effectiveBalance, which when added to 100 pending rewards gives 2100, leading to 1100 calculated as rewards (2100 - 1000 principal), despite only 100 actual rewards. The impact is severe miscalculation of rewards, incorrect fee application, and potential withdrawal failures or over-withdrawals.\n",
+            "severity": "Medium",
+            "location": [
+                "P2pResolvProxy.sol::_getCurrentAssetAmount"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "initiateWithdrawalRESOLVAccruedRewards() Withdraws Both Principal and Rewards Instead of Only Rewards",
+            "description": "The initiateWithdrawalRESOLVAccruedRewards() function calls initiateWithdrawal() on ResolvStaking, which burns stRESOLV tokens (principal) regardless of intent. This means that even when the goal is to withdraw only rewards, principal is still deducted. When withdraw() is later called, it returns both the burned principal and the claimed rewards, effectively withdrawing principal along with rewards.\nThe root cause is the misuse of a principal-withdrawing function for a rewards-only purpose. The ResolvStaking contract provides a claim() function that allows reward-only withdrawal without touching principal, which should be used instead. The impact is that users lose principal when intending to withdraw only rewards, breaking the expected behavior and leading to unintended capital loss.\n",
+            "severity": "Medium",
+            "location": [
+                "P2pResolvProxy.sol::initiateWithdrawalRESOLVAccruedRewards"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "s_totalWithdrawn Can Exceed s_totalDeposited Due to Unaccounted Airdropped Tokens or Direct Transfers",
+            "description": "The vulnerability arises because the P2pResolvProxy._getCurrentAssetAmount() function does not account for staked airdropped RESOLV tokens or stRESOLV tokens received via direct transfers. This leads to an incorrect calculation of the current asset amount, which is based only on getUserPrincipal() and pending rewards, excluding airdropped or externally transferred staked tokens. As a result, the actual contract balance can exceed the accounted balance, allowing s_totalWithdrawn to surpass s_totalDeposited, breaking a critical accounting invariant. An attacker could exploit this by airdropping and staking tokens or directly transferring stRESOLV to the proxy, then withdrawing more than their deposited principal. The impact includes inaccurate accounting, misleading analytics, and potential manipulation of withdrawal logic, although no direct fund loss occurs due to reward miscalculation since accrued rewards are zero in such cases.\n",
+            "severity": "Low",
+            "location": [
+                "P2pResolvProxy.claimStakedTokenDistributor",
+                "P2pResolvProxy._getCurrentAssetAmount",
+                "StakedTokenDistributor"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Code Duplication in claimStakedTokenDistributor() Access Control",
+            "description": "The P2pResolvProxy.claimStakedTokenDistributor() function manually reimplements access control logic that is already defined in the onlyClientOrP2pOperator modifier, leading to code duplication. This duplication increases the deployed bytecode size, reduces code maintainability, and introduces a risk of inconsistency if access control rules are updated in one place but not the other. An attacker could potentially exploit future inconsistencies if the duplicated logic diverges, though no immediate security breach is possible if both implementations remain aligned. The root cause is poor code design and failure to reuse existing modifiers. The impact is primarily on code quality and long-term security maintenance rather than direct fund loss.\n",
+            "severity": "Low",
+            "location": [
+                "P2pResolvProxy.claimStakedTokenDistributor",
+                "P2pResolvProxy.onlyClientOrP2pOperator"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing Zero-Value Validation in withdrawUSR() Leads to No-Op Withdrawals",
+            "description": "The P2pResolvProxy.withdrawUSR() function does not validate that the _amount parameter is non-zero before proceeding with the withdrawal logic. This allows users to initiate zero-value withdrawals, which result in a call to IStUSR.withdraw(0). Since the underlying stUSR contract does not revert on zero amounts, the transaction succeeds silently, triggering full accounting updates and event emissions despite no actual asset transfer. This behavior pollutes monitoring metrics, creates confusion in user experience, and wastes gas. The root cause is the absence of an input validation check at the function's entry point. While no funds are lost, the impact includes degraded system observability and inefficient use of resources.\n",
+            "severity": "Low",
+            "location": [
+                "P2pResolvProxy.withdrawUSR",
+                "P2pYieldProxy._withdraw"
+            ],
+            "files": [
+                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+            ]
+        }
+    ]
+}

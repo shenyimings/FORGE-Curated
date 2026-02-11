@@ -1,0 +1,379 @@
+{
+    "path": "dataset-curated/reports/Zenith/Parallel Protocol - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/parallel-protocol/tokenomics",
+            "https://github.com/parallel-protocol/PRL-token"
+        ],
+        "commit_id": [
+            "cd3992aec0847063c2b979c51f6cac7dd2ff03bd",
+            "0f35481fa57cd217066816fb4fa9318baf67d319"
+        ],
+        "address": null,
+        "chain": "evm/ethereum/polygon/fantom",
+        "compiler_version": "n/a",
+        "audit_date": "2025-02-03",
+        "project_path": {
+            "Parallel Protocol - Zenith Audit Report.pdf-source": "dataset-curated/contracts/Parallel Protocol - Zenith Audit Report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "sPRL2.sol cannot claim extra reward token because of interface mismatch",
+            "description": "The sPRL2 contract attempts to claim extra reward tokens by querying the baseToken from an IAuraStashToken interface, but some extra reward contracts do not implement the baseToken function, causing the call to revert. This occurs because the code assumes all extra reward tokens are wrapped via AuraStashToken, but in reality, some are direct ERC20 tokens like USDC. As a result, when the contract tries to claim rewards, the entire transaction reverts if any extra reward token lacks the baseToken function. This prevents users from claiming valid rewards, leading to loss of access to earned tokens and reduced user trust in the protocol.\n",
+            "severity": "High",
+            "location": [
+                "sPRL2.sol#L248"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "CVX rewards cannot be claimed in sPRL2",
+            "description": "The sPRL2 contract calls AURA_VAULT.getReward(), which mints CVX rewards to the sPRL2 contract, but sPRL2 lacks any mechanism to transfer these tokens out. The CVX tokens remain trapped in the contract because the design assumes no tokens should be held, but CVX is an exception that is minted directly. There is no function to allow administrators or users to recover these tokens, making them permanently inaccessible. An attacker cannot directly exploit this, but users are indirectly harmed as protocol-generated rewards are lost, reducing the economic incentive for staking and potentially leading to fund loss if large amounts accumulate.\n",
+            "severity": "High",
+            "location": [
+                "sPRL2.sol#L241"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The calculation of withdrawable WETH and PRL amounts in the withdrawPRLAndWeth function of sPRL2 is incorrect",
+            "description": "In the _exitPool function, the return values are ordered as (_wethAmount, _prlAmount), but the calling function withdrawPRLAndWeth treats the first returned value as prlAmount and the second as wethAmount, effectively swapping them. This incorrect assignment causes the protocol to attempt transferring WETH amount as PRL and vice versa, which will fail due to insufficient balance or incorrect token addresses. The root cause is a mismatch in return value ordering between the internal function and its caller. This leads to failed withdrawals, preventing users from accessing their funds and resulting in a denial of service for the withdrawal functionality.\n",
+            "severity": "High",
+            "location": [
+                "sPRL2.sol#L232",
+                "sPRL2.sol#L362"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "MainFeeDistributor.sol#swapLzToken function always revert because of interface mismatch",
+            "description": "The swapLzToken function in MainFeeDistributor.sol attempts to call swapLzTokenToPrincipalToken on the bridgeable token contract with only one parameter (swapAmount). However, the actual implementation of swapLzTokenToPrincipalToken in the IBridgeableToken interface requires two parameters: _to and _amount. This mismatch in function signature causes the external call to revert on execution. The root cause is an incorrect assumption about the function's interface, likely due to outdated or incorrect interface definition. As a result, any attempt to use the swapLzToken function will fail, disrupting the intended token swap mechanism. This leads to a loss of functionality and prevents the system from correctly processing lz token swaps, impacting the overall protocol operations dependent on this function.\n",
+            "severity": "High",
+            "location": [
+                "MainFeeDistributor.sol::swapLzToken",
+                "IBridgeableToken::swapLzTokenToPrincipalToken"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/MainFeeDistributor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "The SideChainFeeCollector does not work correctly when the fee token has decimals other than 18",
+            "description": "The SideChainFeeCollector contract uses a fixed constant BRIDGEABLE_CONVERSION_DECIMALS = 1e12 to convert fee token amounts for bridging. This conversion logic assumes the fee token has 18 decimals. If the fee token has more than 18 decimals, precision will be lost during division, resulting in token loss. If the token has fewer than 18 decimals, the calculated bridgeable amount may be incorrect due to integer division truncation. The root cause is the hardcoded conversion factor that does not account for variable token decimals. An attacker could potentially exploit this by using a token with non-standard decimals to manipulate the bridged amount or cause miscalculations. The impact includes incorrect token transfers, loss of user funds, and unreliable fee collection and distribution across chains.\n",
+            "severity": "Medium",
+            "location": [
+                "SideChainFeeCollector.sol#L21",
+                "SideChainFeeCollector.sol#L129",
+                "SideChainFeeCollector.sol::_calcBridgeableAmount"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/SideChainFeeCollector.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Migrating PRL tokens to another chain may fail due to insufficient gas",
+            "description": "The migrateToPRL and migrateToPRLAndBridge functions allow users to migrate tokens across chains using LayerZero, with gas provided via msg.value. However, there is no validation that the provided gas is sufficient for the final step of the migration on the destination chain. The _lzReceive function in PrincipalMigrationContract uses msg.value directly as gas for the LockBox.send call without checking against a minimum required fee. The root cause is the lack of a gas adequacy check before attempting the final token minting and bridging. An attacker cannot directly exploit this, but users may suffer failed migrations if insufficient gas is provided, leading to a poor user experience and potential loss of migration fees. The impact includes failed transactions on the destination chain, stranded funds, and reduced reliability of the cross-chain migration mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "PrincipalMigrationContract.sol#migrateToPRL",
+                "PrincipalMigrationContract.sol#_lzReceive",
+                "LockBox::send"
+            ],
+            "files": [
+                "0f35481fa57cd217066816fb4fa9318baf67d319/PRL-token/contracts/principal/PrincipalMigrationContract.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "The epoch should only be updated once",
+            "description": "The updateMerkleDrop function in RewardMerkleDistributor.sol allows updating the merkle drop data for a given epoch without checking if that epoch has already been set. This could allow an admin to overwrite an existing epoch's configuration, which would break the reward claiming system since totalClaimedPerEpoch and hasClaimed mappings are tied to the epoch. The root cause is the absence of a guard clause preventing re-initialization of an epoch. Although the function is restricted to authorized callers, a mistake or malicious actor could overwrite critical reward data. The impact includes disruption of reward distribution, potential double-distribution or denial of valid claims, and corruption of the reward system state.\n",
+            "severity": "Low",
+            "location": [
+                "RewardMerkleDistributor.sol#L180",
+                "RewardMerkleDistributor.sol::updateMerkleDrop"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/rewardMerkleDistributor/RewardMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Paying fees with LzToken is not allowed in the migrateToPRLAndBridge function of the PrincipalMigrationContract",
+            "description": "The migrateToPRLAndBridge function does not prevent users from specifying a non-zero lzTokenFee in the MessagingFee parameter. However, the function does not transfer LzToken to the endpoint, and the underlying _payLzToken function will revert if msg.sender does not approve or transfer the required LzToken amount. The root cause is the lack of a validation check on _fee.lzTokenFee before proceeding with the transaction. An attacker could craft a call with lzTokenFee > 0 to cause the transaction to revert, potentially as a denial-of-service vector. The impact is transaction failure and wasted gas for users who mistakenly or maliciously set lzTokenFee, reducing the reliability and usability of the migration function.\n",
+            "severity": "Low",
+            "location": [
+                "PrincipalMigrationContract.sol#migrateToPRLAndBridge",
+                "OAppSender.sol::_payLzToken"
+            ],
+            "files": [
+                "0f35481fa57cd217066816fb4fa9318baf67d319/PRL-token/contracts/principal/PrincipalMigrationContract.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Consider use block.timestamp for ERC20Vote token clock mode",
+            "description": "The TimeLockPenaltyERC20 contract inherits from ERC20Votes and uses the default clock mode of block.number. On chains like Arbitrum, block.number reflects L1 block numbers and may not accurately represent time passage, which can distort governance voting periods. The root cause is the reliance on block.number instead of block.timestamp for time-based governance logic. This is particularly problematic for cross-chain deployments where block production rates differ. While not directly exploitable, this could lead to unfair voting windows or confusion about proposal timelines. The impact includes potential governance manipulation, reduced fairness in voting, and user confusion regarding proposal deadlines on non-Ethereum chains.\n",
+            "severity": "Low",
+            "location": [
+                "TimeLockPenaltyERC20.sol::CLOCK_MODE",
+                "sPRL1.sol",
+                "sPRL2.sol"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/TimeLockPenaltyERC20.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "updateMerkleDrop's safety check might end up not checking accurately",
+            "description": "The updateMerkleDrop function checks if the contract has sufficient token balance to cover the new merkle drop amount using TOKEN.balanceOf(address(this)). However, this balance includes unclaimed rewards from current and expired epochs, making the check inaccurate. The root cause is the use of total balance instead of available balance, failing to account for already allocated rewards. This could allow setting a new merkle drop even when insufficient funds are available for new distributions. The impact is potential failure of future reward claims if the contract runs out of tokens, damaging user trust and protocol reliability. Although acknowledged, this remains a risk if forwardExpiredRewards is not called promptly.\n",
+            "severity": "Low",
+            "location": [
+                "RewardMerkleDistributor.sol::updateMerkleDrop"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/rewardMerkleDistributor/RewardMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "A re-org may affect SideChainFeeCollector.sol/:release()",
+            "description": "The release function in SideChainFeeCollector uses mutable storage variables destinationReceiver and bridgeableToken without passing them as parameters. If a reorg occurs, the transaction order could change such that release is executed before an update to these variables, causing funds to be sent to outdated or invalid addresses. The root cause is the reliance on storage state that can be modified in the same block. An attacker could potentially exploit chain reorganizations or frontrun updates to manipulate fund destinations. The impact includes loss of funds, incorrect token distribution, and reduced security of the fee release mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "SideChainFeeCollector.sol::release",
+                "SideChainFeeCollector.sol::updateDestinationReceiver",
+                "SideChainFeeCollector.sol::updateBridgeableToken"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/SideChainFeeCollector.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "unlockingAmount is not updated after the BPT token withdrawal is completed in sPRL2.sol",
+            "description": "The sPRL2 contract fails to update the unlockingAmount state variable after completing withdrawals in the withdraw function. While sPRL1 correctly decrements unlockingAmount by the withdrawn amount, sPRL2 omits this step. The root cause is a missing state update in the withdraw implementation. This leads to an inflated unlockingAmount value that does not reflect actual locked tokens. The impact is incorrect off-chain reporting, misleading analytics, and potential issues with systems that rely on unlockingAmount for decision-making, though it does not directly affect on-chain functionality or fund safety.\n",
+            "severity": "Low",
+            "location": [
+                "sPRL2.sol::withdraw",
+                "TimeLockPenaltyERC20.sol::_withdrawMultiple"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "User might receive less amount then they are willing to accept for withdraw if it clashes with a penalty fee increase",
+            "description": "The _calculateFee function in TimeLockPenaltyERC20 uses startPenaltyPercentage, which can be updated via updateStartPenaltyPercentage. If a user calls withdraw at the same time as a penalty increase, they may receive fewer tokens than expected due to the higher penalty being applied without their consent. The root cause is the lack of slippage protection in the withdrawal function. This creates a race condition where administrative actions can negatively impact user withdrawals. The impact includes reduced user control over withdrawal outcomes, potential financial loss during fee updates, and decreased predictability of the withdrawal mechanism, especially for large withdrawals.\n",
+            "severity": "Informational",
+            "location": [
+                "sPRL1.sol::withdraw",
+                "TimeLockPenaltyERC20.sol::_calculateFee"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL1.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "updateFeeReceivers should check for duplicate fee receiver entries which will cause reward distribution to be wrong for all recipients",
+            "description": "The updateFeeReceivers function does not prevent duplicate fee receiver addresses in the input array. If duplicates are provided, the shares for that address are added multiple times, inflating totalShares and distorting the distribution ratio. The root cause is the absence of a duplicate check during fee receiver registration. This could occur due to user error when calling the function. The impact includes incorrect reward distribution, where some recipients receive more or less than intended, and potential governance issues if fee distribution is skewed. Although low likelihood, it undermines the integrity of the reward system.\n",
+            "severity": "Informational",
+            "location": [
+                "MainFeeDistributor.sol::updateFeeReceivers",
+                "MainFeeDistributor.sol::_addFeeReceiver"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/MainFeeDistributor.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Some rewards may be sent to wrong fee receiver in sPRL2.sol",
+            "description": "The sPRL2 contract updates the feeReceiver without first claiming and sending accumulated rewards to the current fee receiver. When updateFeeReceiver is called, any pending rewards in the contract will be sent to the new fee receiver instead of the one that earned them. The root cause is the lack of a pre-update reward claim in the overridden function. This results in rewards being attributed to the wrong entity, violating the principle of fair distribution. The impact includes misallocation of staking rewards, reduced trust in the protocol's fairness, and potential disputes over reward ownership.\n",
+            "severity": "Informational",
+            "location": [
+                "sPRL2.sol::claimRewards",
+                "sPRL2.sol::updateFeeReceiver"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Underlying rewards that are already sitting in contract may be distributed with the wrong fee distribution ratio",
+            "description": "The updateFeeReceivers function does not process existing rewards in the contract before updating the fee distribution ratios. Any tokens already in the contract will be distributed according to the new shares rather than the old ones under which they were accumulated. The root cause is the failure to settle outstanding rewards before changing distribution rules. This leads to unfair distribution where recipients may receive rewards they did not earn under the previous regime. The impact includes incorrect allocation of accumulated rewards, undermining the fairness and predictability of the fee distribution system.\n",
+            "severity": "Informational",
+            "location": [
+                "MainFeeDistributor.sol::updateFeeReceivers"
+            ],
+            "files": [
+                "contracts/fees/MainFeeDistributor.sol"
+            ]
+        }
+    ]
+}

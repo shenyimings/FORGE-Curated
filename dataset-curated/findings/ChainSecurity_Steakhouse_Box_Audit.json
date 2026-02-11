@@ -1,0 +1,556 @@
+{
+    "path": "dataset-curated/reports/ChainSecurity/ChainSecurity_Steakhouse_Box_Audit.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/Steakhouse-Financial/box"
+        ],
+        "commit_id": [
+            "80a5779f326af2a99fb9ca617701c7057b2f70ff"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-12-15",
+        "project_path": {
+            "box": "dataset-curated/contracts/ChainSecurity_Steakhouse_Box_Audit.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "Stale Total Assets Value During Flash Operation",
+            "description": "The vulnerability arises because during a flash operation, the Net Asset Value (NAV) is cached to prevent read-only reentrancy, and totalAssets() returns this cached value. However, this cached value is not updated during deposit(), mint(), withdraw(), or redeem() operations that may be called during the flash callback. If two such functions are called during a single flash operation, the second call will operate on an outdated totalAssets value. An attacker can exploit this by initiating a flash loan, calling withdraw() twice during the callback: the first call uses the correct cached value, but the cached NAV is not updated; the second call then uses the stale NAV, allowing withdrawal at an inflated price. This enables a liquidity provider (LP) of one VaultV2 to steal liquidity from another VaultV2 sharing the same Box. Although not immediately profitable, the attack can be repeated and is most likely during winddown, though it can also be triggered during normal operations by a malicious allocator.\n",
+            "severity": "High",
+            "location": [
+                "Box.sol::flash",
+                "VaultV2.sol::forceDeallocate"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Funds Can Be Locked in FundingAave During Winddown",
+            "description": "This vulnerability occurs when the Box has an open debt position on Aave during winddown. The Box.repay() function allows repayAmount to exceed the actual debt, but AaveV3 caps the repayment to the debt amount, leaving the excess funds stuck in the FundingAave module. During winddown, an attacker can exploit this by swapping the underlying asset into the debt token in multiple transactions equal to the debt size, then calling Box.repay() with the full contract balance in the debt token\u2014exceeding the debt. The excess amount remains locked in FundingAave. Even without winddown, allocators could accidentally or maliciously cause fund loss by over-repaying. The issue stems from inconsistent handling between Morpho (which reverts on over-repayment) and Aave (which silently caps), combined with winddown logic that doesn't account for existing debt tokens in the Box.\n",
+            "severity": "High",
+            "location": [
+                "Box.sol::repay",
+                "FundingAave.sol"
+            ],
+            "files": [
+                "box/src/Box.sol",
+                "box/src/FundingAave.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Read-only Reentrancy",
+            "description": "The swapping functions allocate(), deallocate(), and reallocate() accept an arbitrary swapper address, creating a read-only reentrancy vector. A malicious swapper can pull tokens out of the Box during a swap, causing the total assets to be undervalued when queried. If BoxAdapterCache is used, calling VaultV2.forceDeallocate() with assets = 0 updates the cached total assets to this lower value. An attacker can then mint cheap shares in a connected VaultV2 due to the artificially low NAV. After the swap completes, the correct total assets are restored, but the newly minted shares retain their artificially low valuation until the maxRate-per-second increase rule allows gradual recovery. This delay allows others to profit from the cheap share price. The attack can be repeated and is most dangerous during winddown, though possible during normal operations via a malicious allocator.\n",
+            "severity": "High",
+            "location": [
+                "Box.sol::allocate",
+                "Box.sol::deallocate",
+                "Box.sol::reallocate",
+                "VaultV2.sol::forceDeallocate"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-1038"
+                ]
+            },
+            "title": "BoxAdapterCached Can Be Arbitraged",
+            "description": "This vulnerability arises from the caching mechanism in BoxAdapterCached, which stores the totalAssets value for up to 24 hours to avoid expensive recalculations. During this period, the cached value may diverge significantly from the actual value returned by Box.totalAssets(). An attacker can exploit this discrepancy by depositing into or withdrawing from the parent VaultV2 when the cached value is stale\u2014depositing after the Box has gained value or withdrawing before a loss is reflected. This allows the attacker to extract value from other investors due to the mispricing of VaultV2 shares. The root cause is the long, fixed caching window without a mechanism to force updates based on significant price movements. While allocators or sentinels can manually trigger updates via updateTotalAssets(), this is not automatic and relies on active monitoring. The impact is economic loss for honest investors due to share price manipulation via arbitrage.\n",
+            "severity": "Medium",
+            "location": [
+                "BoxAdapterCached.sol::realAssets",
+                "BoxAdapterCached.sol::updateTotalAssets"
+            ],
+            "files": [
+                "box/src/BoxAdapterCached.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ]
+            },
+            "title": "Gas Griefing Problems",
+            "description": "Multiple functions in the codebase are vulnerable to gas griefing attacks due to checks that require token balances to be zero before certain operations can proceed. For example, Box.removeToken() reverts if the token balance is non-zero, allowing an attacker to send a minimal amount of the token to block removal and force allocators to perform costly swaps. Similarly, the nav() functions in funding modules perform additional oracle calls and computations if a whitelisted but unused token has a non-zero balance, enabling an attacker to inflate gas costs by sending small amounts to multiple such tokens. Additionally, _isFacilityUsed() in funding modules returns true if a facility has any collateral or debt, which can be manipulated by sending a small aToken balance or opening a minor Morpho position. The root cause is the lack of anti-griefing measures such as token sweeps or gas limits. Exploitation involves low-cost transactions by an attacker to induce high-gas operations for legitimate users. The impact includes increased operational costs, potential denial of service due to gas limits, and degraded system efficiency.\n",
+            "severity": "Medium",
+            "location": [
+                "Box.sol::removeToken",
+                "FundingAave.sol::nav",
+                "FundingMorpho.sol::nav",
+                "FundingAave.sol::_isFacilityUsed",
+                "FundingMorpho.sol::_isFacilityUsed"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Box Cannot Receive Native Currency",
+            "description": "The Box contract lacks a receive() or fallback() function, making it impossible to send native currency (e.g., ETH) directly to the contract. Any attempt to transfer native tokens\u2014such as skimming from a funding module\u2014will revert. This limits functionality and creates operational friction, especially in scenarios where native token recovery is necessary. The issue stems from the absence of required functions to accept native token transfers, violating expected behavior for contracts interacting with native assets.\n",
+            "severity": "Medium",
+            "location": [
+                "Box.sol"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Discrepancy in Cumulated Slippage Computation",
+            "description": "There is an inconsistency in how slippage percentage is calculated depending on whether the system is in a flash operation. Normally, slippage is computed as 100 * PRECISION / (X - 100), where X is the totalAssets before the loss. However, during a flash operation, the cached NAV is used, resulting in 100 * PRECISION / X. This means the slippage percentage is higher in non-flash scenarios for the same loss, leading to inconsistent behavior. The discrepancy arises because the cached NAV used during flash operations does not reflect intermediate changes, while the normal path uses the updated value. This can affect risk assessment and slippage tolerance logic differently based on context.\n",
+            "severity": "Medium",
+            "location": [
+                "Box.sol::_navForSlippage"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-657"
+                ],
+                "3": [
+                    "CWE-637"
+                ]
+            },
+            "title": "Excessive Access Control for addFundingCollateral()",
+            "description": "The function Box.addFundingCollateral() enforces both a timelock and requires msg.sender to be the curator. This dual restriction is overly strict compared to other similar addFundingXYZ() functions, which only require the timelock. Since the timelock mechanism already ensures that only the curator can initiate the action (via governance), the additional msg.sender check is redundant. This excessive access control reduces operational flexibility without adding meaningful security, making the design unnecessarily restrictive and inconsistent with the rest of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "Box.sol::addFundingCollateral"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "FundingMorpho.depledge() Does Not Sanitize collateralToken",
+            "description": "The depledge() function in FundingMorpho allows callers to specify any whitelisted collateral token, not necessarily the one associated with the market. If a different whitelisted token is provided, the function withdraws the correct collateral from Morpho but transfers the specified token (e.g., DAI) to the owner instead. This causes the actual withdrawn collateral (e.g., WETH) to remain stuck in the funding module. During winddown, anyone can exploit this to drain mismatched tokens. In normal mode, only privileged allocators can trigger it. A similar issue exists in borrow(). The root cause is the lack of validation that the supplied collateralToken matches the market's actual collateral token.\n",
+            "severity": "Medium",
+            "location": [
+                "FundingMorpho.sol::depledge",
+                "FundingMorpho.sol::borrow"
+            ],
+            "files": [
+                "box/src/FundingMorpho.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Box Decimals Fixed to 18",
+            "description": "The Box.decimals() function always returns 18 and is never overridden, even when the underlying asset has a different number of decimals (e.g., USDC with 6 decimals). This causes a 1:1 minting of shares relative to assets without proper normalization, leading to incorrect share amounts and potential integration issues with systems expecting correct decimal alignment. The issue stems from the lack of dynamic decimal adjustment based on the underlying asset, violating ERC-20 and ERC-4626 expectations for tokenized vaults.\n",
+            "severity": "Medium",
+            "location": [
+                "Box.sol::decimals"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Effects of Function Abdication Are Not Immediate",
+            "description": "When a function is abdicated using abdicateTimelock(), pending timelocked operations for that function can still be executed, which contradicts the expectation that abdication immediately disables the function. The root cause is that the abdication mechanism does not invalidate already-queued operations, only preventing new ones from being submitted. An attacker or malicious actor who has queued an operation before abdication can still execute it afterward, leading to unexpected behavior. For example, a privileged role could queue a dangerous operation, abdicate to appear to relinquish control, and then execute the operation later. The exception is decreaseTimelock(), which cannot be called on an abdicated function. Exploitation requires prior knowledge of the timelock queue and the ability to execute after abdication. The impact is a potential breach of expected security guarantees, undermining trust in the timelock and abdication system.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol::abdicateTimelock",
+                "Box.sol::decreaseTimelock"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1285"
+                ],
+                "4": [
+                    "CWE-129"
+                ]
+            },
+            "title": "Inconsistency in FundingAave facilities()",
+            "description": "The FundingAave.facilities() function returns empty bytes regardless of input index, even if no facility was added. This behavior is inconsistent with FundingMorpho.facilities(), which reverts on invalid indices. Given that FundingAave supports only one facility, returning empty bytes for any index\u2014including invalid ones\u2014creates ambiguity and breaks expected access patterns. The inconsistency can lead to integration errors or incorrect assumptions by external systems querying the facilities list.\n",
+            "severity": "Low",
+            "location": [
+                "FundingAave.sol::facilities"
+            ],
+            "files": [
+                "box/src/FundingAave.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "ERC-4626 Violations",
+            "description": "The Box contract claims EIP-4626 compliance but violates key requirements. First, maxWithdraw() and maxRedeem() do not consider actual liquidity, returning a user\u2019s full pro-rata share of totalAssets() even if funds are locked in funding modules, which can cause reverts during withdrawal. Second, totalAssets() reverts during flash operations, violating the standard\u2019s requirement that it MUST NOT REVERT. This also causes convertToAssets() and convertToShares() to revert unnecessarily. Additionally, previewMint() and previewDeposit() may return 0 for non-whitelisted addresses (isFeeder), which could be interpreted as a violation depending on whether such restrictions are considered part of user limits or unexpected reverts.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol::maxWithdraw",
+                "Box.sol::maxRedeem",
+                "Box.sol::totalAssets",
+                "Box.sol::previewMint",
+                "Box.sol::previewDeposit"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "The Box contract uses a floating pragma ^0.8.28, which allows compilation with any minor version of Solidity 0.8.x. This introduces risk because different compiler versions may introduce subtle bugs or optimizations that affect contract behavior. Contracts should be locked to a specific compiler version used during testing and auditing to ensure deterministic and predictable deployment. Using a floating pragma increases the chance of deploying with an untested or outdated compiler version, potentially introducing vulnerabilities.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inaccurate Naming, Comments and NatSpec",
+            "description": "Several inaccuracies exist in naming, comments, and NatSpec documentation. The _winddownSlippageTolerance() function's NatSpec claims slippage ranges from 0% to 100%, but implementation limits it to 0%\u20131%. Comments in BoxAdapter and BoxAdapterCached incorrectly claim safe casting due to supply bounds that don\u2019t exist. The _findFundingIndex() parameter is named fundingData but refers to a funding module. A typo exists in Box\u2019s main NatSpec: \"forApprove\" instead of \"forceApprove\". Factory elements refer to BoxAdapter instead of BoxAdapterCached. In Version 2, a typo remains in abdicateTimelock(): \"previsously\" instead of \"previously\". These inaccuracies reduce code clarity and increase the risk of misinterpretation.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol::_winddownSlippageTolerance",
+                "BoxAdapter.sol",
+                "BoxAdapterCached.sol",
+                "Box.sol::_findFundingIndex",
+                "Box.sol",
+                "BoxAdapterCachedFactory.sol",
+                "Box.sol::abdicateTimelock"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Inconsistent and Missing Input Sanitization",
+            "description": "Input validation is inconsistently applied across the codebase. The _curator address is not checked for zero in the constructor. Functions like transferOwnership(), setCurator(), setGuardian(), setIsAllocator(), setIsFeeder(), setMaxSlippage(), and changeTokenOracle() lack checks for unchanged values or zero addresses, leading to spurious events. addToken() does not prevent adding the underlying asset, which would double-count it in NAV. addFunding() does not verify that the Box owns the funding module, potentially adding unusable modules. These omissions result in unnecessary events and potential logic errors.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol::constructor",
+                "Box.sol::transferOwnership",
+                "Box.sol::setCurator",
+                "Box.sol::setGuardian",
+                "Box.sol::setIsAllocator",
+                "Box.sol::setIsFeeder",
+                "Box.sol::setMaxSlippage",
+                "Box.sol::changeTokenOracle",
+                "Box.sol::addToken",
+                "Box.sol::addFunding"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Rounding Direction",
+            "description": "In several places, rounding down exposes the system to insolvency risks. The minTokens value in swapping functions should be rounded up to ensure slippage never exceeds tolerance. Similarly, the value passed to _increaseSlippage() should be rounded up to guarantee sufficient slippage is recorded. Rounding down in these cases allows attackers to exploit small discrepancies, potentially leading to under-collateralization or incorrect accounting during high-volatility events.\n",
+            "severity": "Low",
+            "location": [
+                "Box.sol::allocate",
+                "Box.sol::deallocate",
+                "Box.sol::_increaseSlippage"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unreachable Code",
+            "description": "The condition repayAmount == type(uint256).max in FundingMorpho.repay() is almost never true because the same check is performed in Box.repay(). The only scenario where it could trigger is if debtAmount in Box.repay() returns type(uint256).max, but in that case, debtAmount in FundingMorpho.repay() would also be type(uint256).max, making the assignment redundant. This creates dead code that serves no functional purpose and should be removed to improve code clarity and reduce bytecode size.\n",
+            "severity": "Low",
+            "location": [
+                "FundingMorpho.sol::repay"
+            ],
+            "files": [
+                "box/src/FundingMorpho.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Event",
+            "description": "The Unbox event is declared in EventsLib but is never emitted anywhere in the codebase. Unused events increase contract size unnecessarily and can mislead developers into thinking the event is used for state tracking or monitoring. Removing unused events improves code hygiene and reduces deployment costs.\n",
+            "severity": "Low",
+            "location": [
+                "EventsLib.sol::Unbox"
+            ],
+            "files": [
+                "box/src/libraries/EventsLib.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "Wrong LTV on Total Loss",
+            "description": "The ltv() functions in both FundingMorpho and FundingAave return 0 when there is no collateral, even if there is outstanding debt. An LTV of 0 implies a healthy position, but a position with debt and no collateral is critically undercollateralized and should have an infinite or very high LTV. Returning 0 misrepresents the risk and can mislead risk assessment systems or users relying on this data, potentially leading to financial losses. This is a data integrity issue that provides dangerously incorrect information.\n",
+            "severity": "Low",
+            "location": [
+                "FundingMorpho.sol::ltv",
+                "FundingAave.sol::ltv"
+            ],
+            "files": [
+                "box/src/FundingMorpho.sol",
+                "box/src/FundingAave.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing Constructor Parameter in Event",
+            "description": "The Box constructor emits the BoxCreated event, but this event does not include the shutdownWarmup parameter, despite it being a constructor input. This omission makes it impossible for off-chain systems to track the initial value of shutdownWarmup via events, reducing transparency and auditability. All constructor parameters should be logged in creation events to ensure complete event-based reconstruction of contract state.\n",
+            "severity": "Informational",
+            "location": [
+                "Box.sol::constructor",
+                "EventsLib.sol::BoxCreated"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Unchecked Block for Loop Iterator",
+            "description": "Several functions, including Box.removeToken() and Box._nav(), use explicit unchecked { i++ } blocks for loop counters. Since Solidity 0.8.22, the compiler automatically wraps loop increments in unchecked blocks, making explicit unchecked blocks redundant and less readable. Removing them improves code clarity and aligns with modern Solidity best practices.\n",
+            "severity": "Informational",
+            "location": [
+                "Box.sol::removeToken",
+                "Box.sol::_nav"
+            ],
+            "files": [
+                "box/src/Box.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "LTV of FundingAave Can Report More Than Managed Collateral",
+            "description": "The FundingAave.ltv() function calculates the loan-to-value ratio using collateral and debt values, but the collateral value can be inflated by external donations of aTokens, even for non-whitelisted tokens. Since Aave automatically activates deposited aTokens as collateral, an attacker can donate aToken to artificially increase the reported collateral, thereby inflating the LTV ratio. The root cause is the lack of filtering for only whitelisted or managed collateral in the LTV calculation. An allocator relying on this LTV value might open debt positions under the false assumption of sufficient collateral, exposing the system to higher risk than intended. Exploitation involves donating a small amount of aToken to manipulate risk metrics. The impact is incorrect risk assessment, potential over-leveraging, and deviation from the intended risk profile of the strategy, though no direct fund loss occurs.\n",
+            "severity": "Low",
+            "location": [
+                "FundingAave.sol::ltv"
+            ],
+            "files": [
+                "box/src/FundingAave.sol"
+            ]
+        }
+    ]
+}

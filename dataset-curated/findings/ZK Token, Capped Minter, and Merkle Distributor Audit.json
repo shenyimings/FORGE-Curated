@@ -1,0 +1,304 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/ZK Token, Capped Minter, and Merkle Distributor Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/zksync-association/zk-governance"
+        ],
+        "commit_id": [
+            "08ec4e7548c83572e6f09c8344f6e3390bb1b27a"
+        ],
+        "address": [],
+        "chain": "evm/zksync-era",
+        "compiler_version": "n/a",
+        "audit_date": "2024-03-11",
+        "project_path": {
+            "zk-governance": "dataset-curated/contracts/ZK Token, Capped Minter, and Merkle Distributor Audit.md-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "The Domain of The Permit Functionality Is Not Initialized",
+            "description": "The `initialize` function in the `ZkTokenV1` contract does not call the initializer of the `ERC20PermitUpgradeable` base contract. This omission means that the EIP-712 signing domain used in the permit functionality will lack a human-readable name, which can negatively impact user experience when signing permit messages. The root cause is the missing call to the base contract's initializer. While this does not lead to a direct security exploit, it can cause confusion or failed transactions if users expect a named domain. The impact is limited to usability and clarity of the permit signature.\n",
+            "severity": "Low",
+            "location": [
+                "ZkTokenV1.sol::initialize#42-50"
+            ],
+            "files": [
+                "zk-governance/src/ZkTokenV1.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Claim Cap Is Not Enforced on Merkle Distributor",
+            "description": "The `_claim` function in the `ZkMerkleDistributor` contract is intended to enforce a total claim cap, but instead checks only the individual claim amount rather than the cumulative total claimed. This discrepancy means that the contract may allow more tokens to be claimed than intended if the total cap is not properly tracked. The root cause is incorrect logic in the cap validation check. An attacker could potentially exploit this by making multiple claims if the total cap is not enforced, leading to an oversupply of distributed tokens. The impact is a potential deviation from the intended token distribution plan.\n",
+            "severity": "Low",
+            "location": [
+                "ZkMerkleDistributor.sol::_claim#276"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Claim Can Be Prevented by Anyone if Front-Ran",
+            "description": "The `claim` and `claimOnBehalf` functions perform delegation at the end of execution, making them vulnerable to front-running. An attacker can observe a pending claim transaction, extract the `_delegateInfo` parameter, and call `delegateBySig` directly before the claim executes. This increments the nonce, causing the original claim's delegation to fail and reverting the entire transaction. The root cause is the unprotected use of `delegateBySig` with a shared nonce space. This can be exploited by any observer of the mempool, leading to denial of service for legitimate claimants. The impact is disruption of the airdrop process for affected users.\n",
+            "severity": "Low",
+            "location": [
+                "ZkMerkleDistributor.sol::claim#",
+                "ZkMerkleDistributor.sol::claimOnBehalf#"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Not All Delegation Parameters Are Signed",
+            "description": "In the `ZkMerkleDistributor` contract, only the `delegatee` field of the `DelegateInfo` struct is signed during claim operations. Other parameters like `nonce` and `expiry` are not included in the signature, allowing an attacker to front-run the transaction, reuse the signature with a different delegatee, and claim the airdrop while bypassing the intended delegation. The root cause is incomplete signature coverage of the delegation data. This allows partial fulfillment of claims where tokens are claimed but not correctly delegated, undermining the intended governance distribution. The impact is a misalignment between token ownership and voting power delegation.\n",
+            "severity": "Low",
+            "location": [
+                "ZkMerkleDistributor.sol#166"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Voting Checkpoints Refer to Block Numbers Despite Unstable Block Production Frequency",
+            "description": "The `ZkTokenV1` contract uses block numbers for voting checkpoints, which are used to determine voting power during governance proposals. However, on ZKsync Era, block production is not consistent, making it difficult for users to predict when voting checkpoints occur. The root cause is the reliance on block numbers instead of timestamps for time-based logic. This can lead to user confusion and missed voting opportunities, especially for those unfamiliar with variable block times. The impact is reduced usability and fairness in the governance process.\n",
+            "severity": "Low",
+            "location": [
+                "ZkTokenV1.sol",
+                "VotesUpgradeable.sol::getPastVotes#76-78"
+            ],
+            "files": [
+                "zk-governance/src/ZkTokenV1.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Problematic Edge Cases When Using `delegateBySig`",
+            "description": "The `delegateBySig` function is used during token claims to enable delegation via signature. However, this function only supports EOA signatures and does not support ERC-1271 or account abstraction, which are common on ZKsync Era. The root cause is the use of a legacy signature verification method that does not account for smart contract wallets. This can prevent certain users, especially those using smart accounts, from participating in delegation, limiting governance inclusivity. The impact is reduced accessibility for modern wallet types.\n",
+            "severity": "Low",
+            "location": [
+                "ZkMerkleDistributor.sol::delegateBySig#218"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Initializer Is Not Disabled on Implementation",
+            "description": "The `ZkTokenV1` implementation contract is left in an uninitialized state, meaning its initializer function remains callable. While the deployment process initializes the proxy, the implementation itself could theoretically be reinitialized if someone were to deploy and initialize it independently. The root cause is the absence of a call to `_disableInitializers` in the constructor. This does not pose a direct risk in the current deployment setup, but it is a best practice to disable initializers to prevent misuse. The impact is minimal but represents a deviation from secure upgradeable contract patterns.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkTokenV1.sol"
+            ],
+            "files": [
+                "zk-governance/src/ZkTokenV1.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Same `nonces` Mapping Is Used for Vote Delegation and Permit",
+            "description": "The `ZkTokenV1` contract inherits both `ERC20VotesUpgradeable` and `ERC20PermitUpgradeable`, which share the same `nonces` mapping. This means that a permit and a delegation action cannot use the same nonce value, as it would cause one of the transactions to fail. The root cause is the shared nonce space between two different signature schemes. Users or frontends must carefully coordinate nonce usage across permit and delegation actions to avoid transaction failures. The impact is potential transaction reverts due to nonce collisions, affecting user experience.\n",
+            "severity": "Low",
+            "location": [
+                "ZkTokenV1.sol",
+                "NoncesUpgradeable.sol::nonces#17"
+            ],
+            "files": [
+                "zk-governance/src/ZkTokenV1.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Missing Input Validation",
+            "description": "The `ZkMerkleDistributor` constructor does not validate that the `_windowStart` timestamp is less than `_windowEnd`. If these values are misconfigured, the claim window could be invalid or non-functional. The root cause is the lack of a simple bounds check during initialization. While the team considers misconfiguration unlikely and plans to redeploy if needed, this represents a missing safeguard. The impact is potential operational failure of the airdrop if timestamps are set incorrectly.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkMerkleDistributor.sol#111-112"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Code Clarity Suggestions",
+            "description": "Several code clarity issues were identified in the codebase. These include unnecessary use of static `BitMaps.get` instead of bound methods, failure to use `toTypedDataHash` for cleaner typed data hashing, and use of `verify` instead of `verifyCalldata` for calldata proofs. The root cause is suboptimal use of available Solidity patterns and library functions. While these do not affect security, they reduce code readability and maintainability. The impact is increased cognitive load for auditors and developers reading the code.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkMerkleDistributor.sol#15",
+                "ZkMerkleDistributor.sol#118",
+                "ZkMerkleDistributor.sol#154-173",
+                "ZkMerkleDistributor.sol#207"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstrings",
+            "description": "The `isClaimed` function in `ZkMerkleDistributor.sol` lacks complete NatSpec documentation, particularly for return values. The root cause is incomplete commenting practices. This reduces the clarity of the public API and makes it harder for developers to understand function behavior without reading the implementation. The impact is reduced code maintainability and integration difficulty for external developers.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkMerkleDistributor.sol::isClaimed#117-119"
+            ],
+            "files": [
+                "zk-governance/src/ZkMerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "Several interface files (`IMintable.sol` and `IMintableAndDelegatable.sol`) use floating pragma directives (`^0.8.24`), which can lead to compilation with different compiler versions and potential inconsistencies. The root cause is the use of a version range instead of a fixed version. This increases the risk of unexpected behavior due to compiler differences. The impact is potential compilation inconsistencies across environments.\n",
+            "severity": "Informational",
+            "location": [
+                "IMintable.sol#2",
+                "IMintableAndDelegatable.sol#2"
+            ],
+            "files": [
+                "zk-governance/src/interfaces/IMintable.sol",
+                "zk-governance/src/interfaces/IMintableAndDelegatable.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "The core contracts (`ZkCappedMinter`, `ZkMerkleDistributor`, and `ZkTokenV1`) do not include a `@custom:security-contact` NatSpec tag, making it unclear how to report future vulnerabilities. The root cause is the omission of a standard security disclosure practice. This could delay vulnerability reporting and resolution. The impact is reduced responsiveness to future security issues.\n",
+            "severity": "Informational",
+            "location": [
+                "ZkCappedMinter.sol",
+                "ZkMerkleDistributor.sol",
+                "ZkTokenV1.sol"
+            ],
+            "files": [
+                "zk-governance/src/ZkCappedMinter.sol",
+                "zk-governance/src/ZkMerkleDistributor.sol",
+                "zk-governance/src/ZkTokenV1.sol"
+            ]
+        }
+    ]
+}

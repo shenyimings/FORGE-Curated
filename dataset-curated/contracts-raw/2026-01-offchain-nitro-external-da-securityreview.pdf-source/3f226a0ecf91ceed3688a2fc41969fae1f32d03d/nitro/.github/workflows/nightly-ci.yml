@@ -1,0 +1,46 @@
+---
+name: Nightly CI
+run-name: Nightly CI tests triggered from @${{ github.actor }} of ${{ github.head_ref }}
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run at 00:00 AM UTC
+    - cron: '0 0 * * *'
+
+jobs:
+  # Only run on schedule
+  tests-scheduled:
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [legacychallenge, long, challenge, l3challenge, execution-spec-tests, pebble]
+    uses: ./.github/workflows/_go-tests.yml
+    with:
+      run-name: ${{ matrix.test-mode }}
+      run-legacy-challenge: ${{ matrix.test-mode == 'legacychallenge' }}
+      run-long: ${{ matrix.test-mode == 'long' }}
+      run-challenge: ${{ matrix.test-mode == 'challenge' }}
+      run-l3challenge: ${{ matrix.test-mode == 'l3challenge' }}
+      run-execution-spec-tests: ${{ matrix.test-mode == 'execution-spec-tests' }}
+      run-pebble: ${{ matrix.test-mode == 'pebble' }}
+
+  notify-on-failure:
+    name: Notify Slack on failure
+    needs: [tests-scheduled]
+    runs-on: ubuntu-4
+    if: ${{ failure() }}
+    env:
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          errors: true
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            {
+              "channel": "${{ secrets.SLACK_CHANNEL_ID }}",
+              "text": "⚠️ CI job failed! ${{ env.RUN_URL }}",
+            }

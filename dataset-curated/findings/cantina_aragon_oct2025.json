@@ -1,0 +1,263 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_aragon_oct2025.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/aragon/katana-governance"
+        ],
+        "commit_id": [
+            "5048116b"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2023-10-12",
+        "project_path": {
+            "katana-governance": "dataset-curated/contracts/cantina_aragon_oct2025.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-250"
+                ]
+            },
+            "title": "Auto-compound strategy can have its rewards stolen",
+            "description": "The AragonMerklAutoCompoundStrategy contract sets the Swapper as its operator to allow it to claim rewards on its behalf from the Merkl Distributor. However, this design violates the security principle that the Swapper should not be trusted between transactions and grants it excessive privileges. The root cause is the permanent whitelisting of the Swapper as an operator without limiting the scope of its authority. An attacker can exploit this by calling the Swapper with a valid claim of their own and including malicious actions that re-enter the Distributor to claim rewards on behalf of the auto-compounder and transfer them to the attacker. This allows theft of the strategy\u2019s rewards. The impact is loss of user funds and disruption of the auto-compounding mechanism, which undermines the core functionality and trust in the system.\n",
+            "severity": "High",
+            "location": [
+                "AragonMerklAutoCompoundStrategy.sol#L93"
+            ],
+            "files": [
+                "katana-governance/src/strategies/AragonMerklAutoCompoundStrategy.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "AragonMerklAutoCompoundStrategy does not set Swapper as its recipient for claims",
+            "description": "The AragonMerklAutoCompoundStrategy fails to designate the Swapper as the recipient for reward claims in the Merkl Distributor. The vulnerability arises because the Distributor defaults to sending rewards to the user (i.e., the strategy itself) if no explicit recipient is set, and since the Swapper is the msg.sender during the claim, the strategy is not the direct caller. As a result, the claimed tokens are sent directly to the strategy, bypassing the Swapper, which then sees no token gain and returns zero claimedAmount. This causes the auto-compounding logic to skip depositing rewards into escrow, leaving tokens stranded and disrupting the strategy\u2019s operation. An attacker cannot directly steal funds, but the malfunction leads to loss of gauge voting power and requires a contract upgrade to recover. The root cause is the omission of recipient setup in the strategy\u2019s initialization or before claim execution.\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "katana-governance/src/strategies/AragonMerklAutoCompoundStrategy.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "safeTransferFrom() unecessary to known contracts",
+            "description": "The AvKATVault contract uses safeTransferFrom() when transferring NFTs to known and trusted contracts such as itself or designated strategies. While safeTransferFrom() is appropriate for transfers to untrusted or unknown recipients to prevent loss of funds due to non-compliant receivers, it is unnecessary overhead when the recipient is a known contract that correctly implements the ERC721Receiver interface. The root cause is the lack of optimization in transfer logic based on recipient trust context. Although this does not pose a direct security risk, it results in higher gas costs for every transfer. An attacker cannot exploit this, but users bear increased transaction fees. The impact is inefficient gas usage, which affects user experience and transaction cost, especially in frequent operations.\n",
+            "severity": "Informational",
+            "location": [
+                "AvKATVault.sol#L150",
+                "AvKATVault.sol#L242"
+            ],
+            "files": [
+                "katana-governance/src/AvKATVault.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Avoid redundant storage writes",
+            "description": "In the _setStrategy() function of AvKATVault.sol, the strategy variable is potentially written to storage twice: once unconditionally and again conditionally. This occurs when the logic first assigns strategy = _strategy and later overwrites it with strategy = defaultStrategy if _strategy is zero. The root cause is inefficient state variable assignment without prior validation. This leads to an avoidable storage write, which increases gas consumption because each storage modification is expensive on the EVM. While this does not introduce a security vulnerability, it represents a suboptimal implementation. The impact is higher transaction costs for governance operations that update the strategy, which could be minimized by consolidating the assignment into a single conditional expression.\n",
+            "severity": "Informational",
+            "location": [
+                "AvKATVault.sol#L340-L344"
+            ],
+            "files": [
+                "katana-governance/src/AvKATVault.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-250"
+                ]
+            },
+            "title": "Swapper contract should never hold tokens or allowances between transactions",
+            "description": "The Swapper contract is designed to temporarily execute arbitrary actions on behalf of users during a single transaction, particularly after claiming rewards. However, it is unsafe for the Swapper to hold any tokens or allowances between transactions because it supports delegatecall to an external Executor, allowing arbitrary code execution. The root cause is the high-privilege context in which the Swapper operates. If the contract were to hold tokens or approvals, a malicious action sequence could drain them. Although the design intends for no residual balances, the risk arises if future modifications or incorrect assumptions allow funds to remain. The impact is potential loss of user funds if the Swapper accumulates tokens and is exploited via crafted actions. This is classified as informational to emphasize secure usage patterns.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L64",
+                "Swapper.sol#L70-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Check on executor is insufficent",
+            "description": "The Swapper contract only checks that the _executor address provided during construction is non-zero, but it does not verify that the address contains actual code. The root cause is an incomplete validation that assumes a non-zero address implies a valid contract. In multi-chain deployments or due to configuration errors, a valid-looking address might not have a contract deployed, causing delegatecall to succeed but execute no useful code, leading to silent failures or unexpected behavior. The impact is potential malfunction of the Swapper if initialized with an incorrect executor address, reducing system reliability. This can be mitigated by checking that the address has non-zero code size, ensuring the target is a real contract.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L32-L34"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Low granularity for choosing percentage KAT to lock",
+            "description": "The Swapper contract allows users to specify a percentage of KAT tokens to lock in escrow using whole integer percentages (e.g., 5%, 10%). The root cause is the use of a coarse 1% increment system, which lacks precision. This results in low granularity, especially at the boundaries\u2014for example, choosing between 4% and 5% represents a 25% relative change. The impact is reduced flexibility for users who want fine-grained control over their lock-up ratios, potentially affecting yield optimization and voting power distribution. While not a security risk, it limits usability and precision in financial decisions. The recommendation is to use basis points (1/100th of a percent) for finer control.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L53"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ]
+            },
+            "title": "Ensure no approvals linger unnecessarily",
+            "description": "After calling deposit() in the AvKATVault contract, any remaining ERC20 token approvals may persist if not explicitly reset. The root cause is the absence of an approval revocation step after the transfer. While the immediate risk is low if the target is trusted, lingering approvals represent a potential security liability if the approved contract is later compromised or upgraded maliciously. The impact is an increased attack surface for future exploits, where an attacker could drain remaining or newly deposited funds. This is a defensive programming best practice. The recommendation is to call approve(0) after the deposit to eliminate unnecessary allowances, reducing long-term risk.\n",
+            "severity": "Informational",
+            "location": [
+                "AvKATVault.sol#L301-L304"
+            ],
+            "files": [
+                "katana-governance/src/AvKATVault.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Dangerous delegatecall can be replaced with inheritance",
+            "description": "The Swapper contract uses delegatecall to execute actions through an external Executor contract. The root cause of the risk is the dynamic and potentially unbounded nature of delegatecall, which, if not strictly sanitized, can lead to dangerous state modifications or reentrancy. Although the current setup may be safe, the use of a dynamically set executor increases complexity and trust assumptions. The impact is an elevated risk of logic errors or future vulnerabilities if the executor contract is changed or compromised. A safer alternative is to inherit the executor logic directly or implement it internally, eliminating the need for external delegatecall and reducing attack surface, gas costs, and dependency risks.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L73-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Call _pause() before other initializer settings",
+            "description": "In AvKATVault.sol, the _pause() function is called after other initialization steps, including calls that interact with external contracts like escrow.token(). The root cause is the incorrect ordering of initialization logic. If any of these earlier calls trigger a reentrant call to a function that should be paused, it could lead to unintended behavior, although the risk is low due to the controlled context. The impact is a potential edge-case vulnerability during initialization where a reentrant call bypasses expected paused-state protections. To follow secure initialization patterns, _pause() should be called first to ensure the contract starts in a paused state, minimizing the window for reentrancy or unauthorized access.\n",
+            "severity": "Informational",
+            "location": [
+                "AvKATVault.sol#L101"
+            ],
+            "files": [
+                "katana-governance/src/AvKATVault.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "KAT tokens stuck in the swapper cannot be rescued",
+            "description": "The Swapper contract checks the balance of KAT tokens before and after claiming and swapping, and reverts if the balance decreases, which prevents underflow. However, this design prevents any KAT tokens already present in the Swapper from being included in the compounding process. The root cause is the strict balance check that assumes no pre-existing balance. As a result, if KAT tokens are accidentally sent to the Swapper, they become stuck and cannot be rescued or compounded. The impact is permanent loss of funds if tokens are misrouted, reducing recoverability and user trust. The recommendation is to remove the pre-check and instead use the post-swap balance as the amount to compound, enabling recovery of stranded tokens.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L83"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Actions cannot send native tokens in claimAndSwap() because it is not payable",
+            "description": "The claimAndSwap() function in the Swapper contract is not marked as payable, even though the _actions array includes a value field intended to specify native token amounts for external calls. The root cause is a mismatch between the function\u2019s design and its implementation\u2014while it supports value transfers in actions, it cannot receive native tokens to fund them. This makes it impossible to send ETH (or native tokens) during claim and swap operations. The impact is reduced functionality and potential gas waste if users attempt to pass value, which will revert. Alternatively, if native token transfers are not intended, including the value field is unnecessary and increases calldata cost. The recommendation is to either make the function payable to enable native token use or remove the value parameter to streamline the interface.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L43-L50",
+                "Swapper.sol#L73-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        }
+    ]
+}

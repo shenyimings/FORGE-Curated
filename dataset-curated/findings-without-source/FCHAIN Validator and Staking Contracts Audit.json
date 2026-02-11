@@ -1,0 +1,208 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/FCHAIN Validator and Staking Contracts Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/0xFFoundation/fchain-contracts"
+        ],
+        "commit_id": [
+            "11ffd45bc95747b8d2432a2e8bb120d4a1dc19a2"
+        ],
+        "address": [],
+        "chain": "avalanche",
+        "compiler_version": "n/a",
+        "audit_date": "2025-03-03",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Locked-In Licenses Can Be Transferred",
+            "description": "The StakeManager contract allows validators and delegators to lock their FNode NFTs (ERC-721 tokens) by updating an internal mapping (tokenLockedBy) without transferring the actual tokens to the contract. This design flaw allows the owner to transfer their locked NFT via standard ERC-721 functions (transferFrom or safeTransferFrom), effectively relinquishing their validator eligibility while the staked amount remains active and continues to earn rewards. The new owner cannot restake the token because it remains marked as locked in the contract's state, but the original stake persists in the system. This occurs because the contract does not enforce token escrow by taking ownership of the NFT. An attacker could exploit this by transferring a locked license to another address, potentially to manipulate validator eligibility or create confusion in stake ownership. The impact includes inconsistent state between on-chain staking records and actual license ownership, undermining the integrity of the validator set and potentially enabling reward manipulation or governance attacks.\n",
+            "severity": "Critical",
+            "location": [
+                "StakeManager.sol::_lockLicenses#858",
+                "StakeManager.sol::tokenLockedBy[tokenID]"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Deposited Stakes Can Be Locked in StakeManager if the Validator Is Inactive",
+            "description": "The initializeDeposit function in StakeManager.sol accepts deposits (licenses and value) for a validator without first checking whether the validator is active. This allows users to deposit stakes into inactive validators, initiating a two-phase deposit process that requires a subsequent call to completeDeposit using a message index from the P-chain. However, if the validator is inactive, the P-chain will reject the weight update message, meaning no message index is generated. As a result, the user cannot call completeDeposit, leaving the deposit stuck in the pendingDeposits mapping. Since these pending deposits are not reflected in the user's balance, withdrawal functions that check the balance will revert, permanently locking the user's funds. The root cause is the lack of an active validator check at the start of the deposit flow. An attacker could exploit this by targeting known inactive validators to trap users' funds, or users may inadvertently lock their stakes. The impact is permanent loss of user funds and reduced trust in the staking mechanism.\n",
+            "severity": "Critical",
+            "location": [
+                "StakeManager.sol::initializeDeposit#303",
+                "StakeManager.sol::completeDeposit#328",
+                "StakeManager.sol::pendingDeposits",
+                "StakeManager.sol::createWithdrawalRequest#395-402"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Validators Can Skip createEndRequest and Quickly Re-Register",
+            "description": "Due to a flaw in the validator state management, a validator can bypass the intended de-registration process by rapidly calling initializeEndValidation and completeEndValidation immediately after registration, without first calling createEndRequest. This sequence sets the isValidationEnded flag to true, which permanently blocks future balance updates and uptime proof processing for that validator. Crucially, this allows the validator to re-register using the same message index before the registrationExpiry time, creating a mismatch between the FCHAIN's validator set and the P-chain's authoritative state. The ACP-77 specification requires that once a validator is de-registered, it cannot be re-registered, but this logic is not enforced on-chain. The cause is the absence of a check for isValidationEnded during re-registration and the lack of a requirement to process at least one balance update before ending validation. An attacker could exploit this to maintain an invalid validator status on FCHAIN, potentially disrupting reward distribution and consensus. The impact includes state divergence between chains, potential reward manipulation, and violation of the ACP-77 protocol integrity.\n",
+            "severity": "Critical",
+            "location": [
+                "StakeManager.sol::initializeValidatorRegistration#190",
+                "StakeManager.sol::completeValidatorRegistration#218",
+                "StakeManager.sol::initializeEndValidation#446",
+                "StakeManager.sol::completeEndValidation#467",
+                "StakeManager.sol::isValidationEnded",
+                "ValidatorManager.sol::registrationExpiry"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Insufficient Checks on Warp Messages",
+            "description": "The completeValidatorChange and completeDelegatorRegistration functions in StakeManager.sol perform inadequate validation of incoming Warp messages from the P-chain. In completeValidatorChange, the oldNonceTarget and newNonceTarget parameters are not properly verified against stored nonces, allowing an attacker to use arbitrary message indices and bypass the intended authorization flow. This could enable unauthorized validator changes or manipulation of other users' stakes. In completeDelegatorRegistration, only the validationID is checked, meaning any valid Warp message with the same ID (even if outdated or incorrect) can be used to complete registration, allowing a delegator to register without proper P-chain approval. The root cause is the lack of nonce tracking and message freshness checks. An attacker could replay or forge messages to manipulate delegator assignments and reward accrual. The impact includes unauthorized changes to staking configurations, reward theft, and erosion of trust in the cross-chain messaging system.\n",
+            "severity": "High",
+            "location": [
+                "StakeManager.sol::completeValidatorChange#755",
+                "StakeManager.sol::completeDelegatorRegistration#276",
+                "StakeManager.sol::initializeDelegatorRegistration#255"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "_disableInitializers Not Being Called From Initializable Contract Constructors",
+            "description": "The implementation contracts StakeManager and ValidatorRegistry inherit from OpenZeppelin's Initializable but do not call _disableInitializers() in their constructors. This omission leaves the implementation contracts vulnerable to malicious initialization by any external actor. The root cause is the failure to invoke _disableInitializers() after initialization logic, which is required in upgradeable contract patterns to prevent re-initialization. An attacker could front-run the legitimate initialization or re-initialize the contract if it were ever exposed, potentially taking control of the contract state. While the proxy delegatecall mechanism isolates the live system, compromising the implementation contract could still lead to logic manipulation in future upgrades or misleading analysis of contract behavior.\n",
+            "severity": "High",
+            "location": [
+                "StakeManager.sol#33-L1386",
+                "ValidatorRegistry.sol#20-L127"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Potential Stake Lock and Inconsistency Due to Validator State Transitions",
+            "description": "A race condition exists when a delegator calls initializeDelegatorRegistration on a validator that has called createEndRequest but has not yet updated its balance (so isValidationActive is still true). If the validator updates its balance and exits before the delegator calls completeDelegatorRegistration, the delegator's stake becomes stuck. This is because the P-chain may reject the weight update message (if processed late), leaving no messageIndex to complete the registration, or the registration may complete but the validator's weight is zero, preventing reward accrual. The same issue affects the deposit flow via initializeDeposit and completeDeposit. The cause is the lack of a transitional state (e.g., PendingRemoved) and absence of checks in completion functions to handle validators in the process of exiting. An attacker could exploit this by timing deposits during validator exit periods, or users may lose access to funds due to system delays. The impact includes permanent locking of user funds and inconsistent validator/delegator state.\n",
+            "severity": "Medium",
+            "location": [
+                "StakeManager.sol::initializeDelegatorRegistration#238",
+                "StakeManager.sol::completeDelegatorRegistration#276",
+                "StakeManager.sol::createEndRequest#415",
+                "StakeManager.sol::initializeDeposit#303",
+                "StakeManager.sol::completeDeposit#328"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Resending Failed Set Weight Message Functionality is Needed",
+            "description": "The system relies on Warp messages (L1ValidatorWeightMessage) to update validator weights on the P-chain, but there is no mechanism to resend these messages if they fail (e.g., due to insufficient validator signatures). If a message is dropped, critical functions like completeWithdrawal may become unusable because they depend on the message index. For example, a failed weight message could prevent a withdrawal from being finalized, locking user funds indefinitely. The cause is the absence of a recovery function for failed weight messages, unlike the existing resendRegisterValidatorMessage and resendEndValidatorMessage functions. An attacker could exploit network conditions or validator inactivity to trigger message failure and block user actions. The impact includes frozen user funds and reduced system resilience.\n",
+            "severity": "Medium",
+            "location": [
+                "StakeManager.sol::completeWithdrawal#558-561",
+                "ValidatorManager.sol::L1ValidatorWeightMessage"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Function Visibility Overly Permissive",
+            "description": "Multiple internal functions in the StakeManager and ValidatorRegistry contracts are declared with `internal` visibility when they should be `private`, and one public function could be `external`. The root cause is lax visibility settings during development, which exposes functions to unnecessary access scopes. While `internal` functions can only be accessed within the contract and derived contracts, marking them as `private` reduces the attack surface and clarifies intent. In some cases, changing public to external can save gas on external calls. Although the immediate security impact is low, overly permissive visibility can lead to unintended interactions in complex inheritance trees or future modifications, potentially enabling privilege escalation if inheritance is extended insecurely.\n",
+            "severity": "Low",
+            "location": [
+                "StakeManager.sol::_validateEpoch#584-L601",
+                "StakeManager.sol::_processUptimeProof#603-L634",
+                "StakeManager.sol::_hasGracePeriodPassed#672-L676",
+                "StakeManager.sol::_getEpochEndTime#683-L687",
+                "StakeManager.sol::_getPChainWarpMessage#793-L811",
+                "StakeManager.sol::_getWeight#813-L822",
+                "StakeManager.sol::_getWeightSetLosses#824-L834",
+                "StakeManager.sol::_lockStakesAndLicensesSetTotalStats#836-L851",
+                "StakeManager.sol::_lock#853-L856",
+                "StakeManager.sol::_lockLicenses#858-L893",
+                "StakeManager.sol::_validateStakeAmount#895-L913",
+                "StakeManager.sol::_unlock#915-L917",
+                "StakeManager.sol::_unlockLicenses#919-L926",
+                "StakeManager.sol::_processPendingValidatorChange#928-L968",
+                "StakeManager.sol::_processPendingBalanceChanges#971-L1090",
+                "StakeManager.sol::_getEpochReward#1151-L1170",
+                "StakeManager.sol::_getEpochRewardForValidator#1185-L1240",
+                "StakeManager.sol::_getEpochRewardForDelegator#1252-L1290",
+                "StakeManager.sol::_updateBalances#1293-L1344",
+                "StakeManager.sol::_revertIfDeadlineNotPassed#1373-L1377",
+                "ValidatorRegistry.sol::completeValidatorRegistration#111-L120"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incomplete Docstrings",
+            "description": "Several public functions lack complete NatSpec documentation. In StakeManager.sol, the createWithdrawalRequest function does not document its stakeID, amount, and fNodesTokenIDs parameters. In ValidatorRegistry.sol, the addValidatorAdmin and removeValidatorAdmin functions do not document their account parameter. This reduces code readability and increases the risk of misuse or incorrect integration by developers. The cause is incomplete documentation practices during development. While this does not directly enable exploits, it can lead to integration errors or misunderstandings about function behavior. The impact is reduced maintainability and increased risk of human error during audits or upgrades.\n",
+            "severity": "Low",
+            "location": [
+                "StakeManager.sol::createWithdrawalRequest#366-413",
+                "ValidatorRegistry.sol::addValidatorAdmin#89-93",
+                "ValidatorRegistry.sol::removeValidatorAdmin#99-103"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Insufficient Validation in initializeDeposit",
+            "description": "The initializeDeposit function allows a call with both fNodesTokenIDs empty and msg.value equal to zero, which results in a successful transaction that performs no state changes. This violates the \"fail early and loudly\" principle and wastes gas for the caller. The cause is the absence of input validation to ensure that at least one form of stake (NFT or value) is provided. An attacker could exploit this to drain gas from users or bots that call the function without proper checks. The impact is unnecessary gas costs and reduced user experience.\n",
+            "severity": "Low",
+            "location": [
+                "StakeManager.sol::initializeDeposit#303-306"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Lack of In-line Documentation",
+            "description": "The StakeManager and ValidatorRegistry contracts suffer from a general lack of in-line documentation, with many public and external functions missing docstrings. This makes the code harder to understand, audit, and maintain. The cause is insufficient documentation discipline during development. While not a direct security vulnerability, this increases the risk of misinterpretation and errors during future development or audits. The impact is reduced code clarity and higher long-term maintenance costs.\n",
+            "severity": "Low",
+            "location": [
+                "StakeManager.sol",
+                "ValidatorRegistry.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Lack of Security Contact",
+            "description": "The StakeManager, ValidatorRegistry, and ValidatorManager contracts do not include a proper security contact via NatSpec @custom:security-contact. The root cause is the omission of a standardized security disclosure channel. This increases the risk that vulnerabilities discovered by external researchers may go unreported or be disclosed publicly without coordination. While the ValidatorManager contract references a third-party contact (ava-labs/icm-contracts), it does not specify one for the current project. The impact is not direct fund loss, but it reduces the project's ability to respond to vulnerabilities in a timely and responsible manner, potentially leading to prolonged exposure if a critical flaw is found but not reported effectively.\n",
+            "severity": "Informational",
+            "location": [
+                "StakeManager.sol",
+                "ValidatorRegistry.sol",
+                "ValidatorManager.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Update `initialize...` Function Names to `initiate...`",
+            "description": "The StakeManager contract contains five functions named with the `initialize...` prefix (e.g., initializeValidatorRegistration), which could be confused with the actual `initialize` function used in upgradeable contracts. The root cause is inconsistent naming convention that may mislead developers into thinking these functions are part of the contract initialization process. These functions are actually part of a two-step process with corresponding `complete...` functions, similar to `initiateValidatorChange`. Using `initialize` in non-initialization contexts risks confusion and potential misuse. Renaming them to `initiate...` would align with the existing `initiateValidatorChange` function and improve code clarity.\n",
+            "severity": "Informational",
+            "location": [
+                "StakeManager.sol::initializeValidatorRegistration#190",
+                "StakeManager.sol::initializeDelegatorRegistration#238",
+                "StakeManager.sol::initializeDeposit#303",
+                "StakeManager.sol::initializeEndValidation#446",
+                "StakeManager.sol::initializeWithdraw#475",
+                "StakeManager.sol::initiateValidatorChange#694"
+            ],
+            "files": []
+        }
+    ]
+}

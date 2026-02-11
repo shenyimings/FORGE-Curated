@@ -1,0 +1,76 @@
+{
+    "path": "dataset-curated/reports/Zenith/Gondi - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/pixeldaogg/florida-contracts"
+        ],
+        "commit_id": [
+            "e18f019d3a1fcbb4ea72845056dd8720b6c0bfdf"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-08-25",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Malicious lender can reuse borrower's executionData signature for profit",
+            "description": "1. **Description:** The `refinanceFromLoanExecutionData` function allows a borrower's signature on loan execution data to be reused by a malicious lender to perform unauthorized refinance operations. The signature is not bound to a specific operation or loan ID, enabling replay attacks.\n2. **Cause:** The signature verification in `_checkSignature` only validates that the borrower signed the execution data, but lacks a nonce or domain separator to prevent signature reuse across different operations (e.g., emitLoan vs refinance).\n3. **Exploitation:** A malicious lender can backrun a borrower's loan emission transaction by reusing the same signature to call `refinanceFromLoanExecutionData` multiple times, potentially within the same block before the signature expires.\n4. **Impact:** The borrower is forced to pay lender fees multiple times, leading to direct financial loss. The attack is highly feasible and can be repeated, resulting in significant cumulative losses.\n",
+            "severity": "Critical",
+            "location": [
+                "MultiSourceLoan.sol#L342",
+                "MultiSourceLoan.sol#L324"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "checkValidators for-loop logic is vulnerable to borrower exploit",
+            "description": "1. **Description:** The updated `checkValidators` function removes a critical check for `nftCollateralTokenId != 0`, which previously enforced exact tokenId matching. This change introduces a backward incompatibility that allows borrowers to bypass tokenId validation.\n2. **Cause:** The new logic prioritizes validator length checks over direct tokenId validation. When a loan offer includes multiple empty validators, the for-loop is skipped entirely, bypassing all collateral checks.\n3. **Exploitation:** A borrower can submit a loan using a different tokenId than specified by the lender by providing an offer with empty validators. The contract fails to enforce the intended tokenId restriction.\n4. **Impact:** Lenders may unknowingly accept lower-value NFTs as collateral, increasing their risk exposure. This undermines trust in the lending mechanism and can lead to financial loss for lenders.\n",
+            "severity": "High",
+            "location": [
+                "MultiSourceLoan.sol#L883",
+                "MultiSourceLoan.sol#L889"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Vulnerable _checkSignature due to incorrect ExecutionData Hash",
+            "description": "1. **Description:** The `hash` function for `ExecutionData` does not include the newly added `nftCollateralAddress` field, meaning signatures do not commit to the NFT collection address.\n2. **Cause:** The hashing logic was not updated after adding the `nftCollateralAddress` field to the `ExecutionData` struct, leaving it unhashed and unverified during signature validation.\n3. **Exploitation:** A malicious actor can reuse a valid signature with a different NFT collection address, as long as it is accepted by validators like `MultiAddressValidator`. This allows substitution of higher-value NFTs without borrower consent.\n4. **Impact:** Borrowers risk having more valuable NFTs used as collateral than intended. Malicious lenders could exploit this to extract disproportionate value, leading to financial harm and loss of user trust.\n",
+            "severity": "Medium",
+            "location": [
+                "IMultiSourceLoan.sol#L62"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Vulnerable OfferId check allows DOS pool borrowing",
+            "description": "1. **Description:** The `_validateOfferExecution` function allows a malicious borrower to deny service to others by frontrunning with the same `offerId` and a zero-capacity refinance, marking the offer as cancelled.\n2. **Cause:** The `isOfferCancelled` flag is set when `capacity == 0`, but there is no validation or uniqueness enforcement on `offerId` in pool contexts, allowing reuse.\n3. **Exploitation:** An attacker with an existing loan can front-run a victim's transaction by initiating a refinance using the victim's `offerId`, causing the victim's transaction to revert due to the cancelled offer check.\n4. **Impact:** This enables a denial-of-service attack on other borrowers in the same lending pool. It can also be used strategically to manipulate pool utilization rates and borrowing costs.\n",
+            "severity": "Medium",
+            "location": [
+                "MultiSourceLoan.sol#L794",
+                "MultiSourceLoan.sol#L808"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Redundant code - signature is checked twice",
+            "description": "1. **Description:** The `refinanceFromLoanExecutionData` function performs a signature check via `_checkSignature` before calling `_validateExecutionData`, which performs the same check again.\n2. **Cause:** Redundant validation logic was introduced without removing the initial check, resulting in duplicate signature verification for the same data.\n3. **Exploitation:** While not directly exploitable, this redundancy increases gas costs unnecessarily and complicates code maintenance.\n4. **Impact:** Increased transaction costs for users and reduced code clarity. Though not a security vulnerability per se, it represents inefficient and error-prone design.\n",
+            "severity": "Informational",
+            "location": [
+                "MultiSourceLoan.sol#L324"
+            ],
+            "files": []
+        }
+    ]
+}

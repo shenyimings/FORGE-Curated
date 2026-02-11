@@ -1,0 +1,167 @@
+{
+    "path": "dataset-curated/reports/Cantina/cantina_metastreet_april2025.pdf",
+    "project_info": {
+        "url": [],
+        "commit_id": [],
+        "address": [],
+        "chain": null,
+        "compiler_version": "n/a",
+        "audit_date": null,
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "DoS on removing supportedToken under certain scenarios",
+            "description": "1. **Description:** The StakedUSDai contract can become unusable if a supported token is removed from the price oracle while pending redemptions still reference it. When a token is removed, any operation that attempts to query its price will revert, leading to a denial-of-service condition.\n2. **Cause:** The _priceOracle.price function reverts when querying a token that is no longer supported. However, there is no validation during token removal to ensure that the token is not currently involved in any active operations or pending requests.\n3. **Exploitation:** A malicious or negligent admin could remove a token's price feed even when there are pending redemption requests involving that token. This would cause all subsequent calls to _assets (and other dependent functions) to fail, stalling the system.\n4. **Impact:** Users would be unable to perform any operations (e.g., deposits, withdrawals, redemptions) that depend on asset valuation, resulting in a complete freeze of functionality until the issue is resolved.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::_assets",
+                "ChainlinkPriceOracle::price",
+                "setTokenPriceFeeds"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Unrequired check placed on convertToAssets",
+            "description": "1. **Description:** The convertToAssets function includes a check that restricts shares from exceeding LOCKED_SHARES during the first mint (when totalSupply == 0). However, this check is unnecessary and incorrectly blocks valid user actions in the mint flow.\n2. **Cause:** The same validation logic (shares <= LOCKED_SHARES) is applied to both convertToShares and convertToAssets, but their use cases differ. In convertToShares (used in deposit), the check prevents underflow; however, in convertToAssets (used in mint), the user pays extra (shares + LOCKED_SHARES), so the check serves no purpose and creates an unintended restriction.\n3. **Exploitation:** A legitimate user attempting to mint 1 share during the first deposit would be blocked because 1 <= LOCKED_SHARES evaluates to true, triggering a revert, even though the payment logic is correct.\n4. **Impact:** Prevents valid minting operations during initial setup, potentially blocking protocol initialization or early user participation.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::convertToAssets",
+                "StakedUSDai::convertToShares"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Ensure Price feed decimals are not greater than 18",
+            "description": "1. **Description:** The system does not validate the number of decimals in price feeds when they are set. If a price feed with more than 18 decimals is used, it could lead to miscalculations or overflows in internal arithmetic.\n2. **Cause:** No validation is performed on the decimals() return value of the price feed when setting a new token price feed in the oracle.\n3. **Exploitation:** An admin could accidentally or maliciously set a price feed with more than 18 decimals, which may cause incorrect scaling in price calculations, potentially leading to incorrect valuations or arithmetic overflows.\n4. **Impact:** Could result in incorrect pricing, leading to financial loss, incorrect collateral valuation, or system instability.\n",
+            "severity": null,
+            "location": [
+                "ChainlinkPriceOracle::_setTokenPriceFeed",
+                "priceFeeds_[i].decimals()"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Missing validation for token removal in ChainlinkPriceOracle",
+            "description": "1. **Description:** When removing a token from the ChainlinkPriceOracle via _setTokenPriceFeed, there is no validation to check whether the token exists or whether its removal could impact ongoing operations.\n2. **Cause:** The _tokens.remove() method returns false if the token is not present, but this return value is not checked, and no revert occurs, leading to silent failure. Additionally, no preconditions are enforced to prevent removal of tokens actively used in the system.\n3. **Exploitation:** An admin might attempt to remove a token that is either already removed (silent failure) or still in use, which could lead to inconsistent state or DoS (as seen in other findings).\n4. **Impact:** Silent failures reduce transparency and operability, while removal of in-use tokens can lead to system-wide reverts and denial of service.\n",
+            "severity": null,
+            "location": [
+                "ChainlinkPriceOracle::_setTokenPriceFeed",
+                "_tokens.remove()"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Inflation attack due to missing minting of LOCKED_SHARES to 0xdead",
+            "description": "1. **Description:** During the first mint (when totalSupply == 0), the contract intends to prevent inflation attacks by reserving LOCKED_SHARES. However, these shares are not actually minted to a dead address, allowing a user to effectively bypass the mechanism.\n2. **Cause:** The logic assumes LOCKED_SHARES are already accounted for, but no actual minting to 0xdead occurs. This creates a discrepancy where a user depositing LOCKED_SHARES + 1 units and receives 1 share, which then represents disproportionately high value.\n3. **Exploitation:** An attacker could perform the first deposit/mint with LOCKED_SHARES + 1 units and receive 1 share worth LOCKED_SHARES + 1 assets, gaining disproportionate control over the pool.\n4. **Impact:** Leads to unfair distribution of shares and potential manipulation of the pricing mechanism, especially during initialization.\n",
+            "severity": "Low",
+            "location": [
+                "StakedUSDai::convertToShares",
+                "StakedUSDai::mint",
+                "StakedUSDai::deposit"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Denial-of-service attack via redemption queue stalling",
+            "description": "1. **Description:** The redemption system processes requests in FIFO order, but does not skip blacklisted users. This allows a blacklisted user's pending redemption to block all subsequent valid redemptions.\n2. **Cause:** The serviceRedemptions function processes redemptions sequentially without checking the sender's blacklist status before attempting fulfillment.\n3. **Exploitation:** A malicious user could request redemption and then get blacklisted, causing their request to revert when processed, thereby halting the entire queue and preventing other users from redeeming.\n4. **Impact:** Results in a denial-of-service condition where legitimate users cannot withdraw funds until the blacklisted request is manually resolved.\n",
+            "severity": null,
+            "location": [
+                "RedemptionLogic::_processRedemptions",
+                "StakedUSDai::serviceRedemptions",
+                "StakedUSDai::_requestRedeem"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Missing blacklist checks in bridge mint/burn and transfer functions",
+            "description": "1. **Description:** The contract implements a blacklist mechanism but fails to enforce it in critical functions such as mint/burn via bridge and standard transfers.\n2. **Cause:** The mint and burn functions do not include blacklist checks, and the _transfer or _update functions are not overridden to validate sender, recipient, or operator against the blacklist.\n3. **Exploitation:** A blacklisted user can bypass restrictions by bridging tokens to another chain or transferring directly via transfer/transferFrom, effectively nullifying the blacklist.\n4. **Impact:** Undermines the entire blacklist mechanism, allowing sanctioned users to continue interacting with the system.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::mint",
+                "StakedUSDai::burn",
+                "StakedUSDai::_transfer",
+                "StakedUSDai::_update"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Stale price feed usage due to missing updatedAt validation",
+            "description": "1. **Description:** The contract uses Chainlink's latestRoundData() but does not validate the updatedAt timestamp, risking the use of stale or outdated price data.\n2. **Cause:** No check is implemented to ensure that the returned price is recent, leaving the system vulnerable during periods of network congestion or oracle failure.\n3. **Exploitation:** An attacker could manipulate transactions during a period of stale prices (e.g., during a market event) to execute trades at outdated rates, leading to unfair advantages or loss of funds.\n4. **Impact:** Could result in incorrect valuation of assets, leading to financial losses, unfair liquidations, or manipulation of minting/redemption rates.\n",
+            "severity": null,
+            "location": [
+                "tokenPriceFeed.latestRoundData()",
+                "updatedAt"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Incorrect ERC-7540 and ERC-7575 compliance in StakedUSDai",
+            "description": "1. **Description:** The StakedUSDai contract claims to implement aspects of ERC-7540 but fails to include required methods like share(), and has an incomplete ERC-165 supportsInterface implementation.\n2. **Cause:** The contract does not explicitly inherit from the required interfaces or implement all required functions. The Withdraw event also emits parameters in incorrect order, violating expected standards.\n3. **Exploitation:** Integrating contracts may fail to interact correctly, assuming standard-compliant behavior, leading to failed transactions or incorrect state interpretation.\n4. **Impact:** Reduces interoperability and reliability, potentially breaking integrations with wallets, DEXs, or other protocols expecting standard compliance.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::supportsInterface",
+                "StakedUSDai::share()",
+                "Withdraw event emission"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Rounding down in _unscale() leads to failure in meeting minimum amount requirements",
+            "description": "1. **Description:** The _unscale() function in USDai uses integer division that always rounds down, which can cause the actual base token amount to fall below the user-specified minimum when swapping.\n2. **Cause:** The function does not round up when converting minimum amounts, leading to potential violations of minimum output guarantees.\n3. **Exploitation:** A user setting a precise minimum (e.g., 1.111111555555555555e18) could receive less than expected after rounding, causing the swap to fail or execute at a worse rate than anticipated.\n4. **Impact:** Users may experience failed transactions or receive less value than expected, undermining trust and reliability of the swap mechanism.\n",
+            "severity": null,
+            "location": [
+                "USDai::_unscale",
+                "USDai::_deposit",
+                "USDai::_withdraw"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "Missing whenNotPaused modifier on bridge mint and burn functions",
+            "description": "1. **Description:** When the contract is paused, bridge-based mint and burn functions remain accessible, allowing users to bypass the pause mechanism.\n2. **Cause:** The mint and burn functions via bridge do not include the whenNotPaused modifier, unlike other critical functions.\n3. **Exploitation:** A user could continue to mint or burn tokens through the bridge during a pause, undermining the intended circuit-breaker functionality.\n4. **Impact:** Reduces the effectiveness of the pause mechanism, potentially allowing continued exposure during emergency situations.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::mint",
+                "StakedUSDai::burn",
+                "whenNotPaused"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "Lack of dedicated UNPAUSER_ADMIN_ROLE for unpause operations",
+            "description": "1. **Description:** Both pause and unpause operations are controlled by the same PAUSE_ADMIN_ROLE, increasing risk of accidental or unauthorized unpausing.\n2. **Cause:** No separate role is defined for unpausing, leading to centralized control and reduced operational safety.\n3. **Exploitation:** A compromised PAUSE_ADMIN_ROLE key could allow an attacker to pause and then unpause maliciously, or prevent recovery by blocking unpause.\n4. **Impact:** Weakens the security model of the pause mechanism, which is critical for emergency response.\n",
+            "severity": null,
+            "location": [
+                "StakedUSDai::pause",
+                "StakedUSDai::unpause",
+                "PAUSE_ADMIN_ROLE"
+            ],
+            "files": []
+        }
+    ]
+}

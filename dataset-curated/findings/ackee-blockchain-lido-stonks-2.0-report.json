@@ -1,0 +1,375 @@
+{
+    "path": "dataset-curated/reports/Ackee-Blockchain/ackee-blockchain-lido-stonks-2.0-report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/lidofinance/stonks"
+        ],
+        "commit_id": [
+            "325bfa6b87d081ad4d1369bb92c0b6de8e0af89f"
+        ],
+        "address": [],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-11-17",
+        "project_path": {
+            "stonks": "dataset-curated/contracts/ackee-blockchain-lido-stonks-2.0-report.pdf-source"
+        }
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Flawed ETH/USD routing",
+            "description": "The vulnerability arises in the OracleRouter contract's getPricesAndDecimals function, which reverts when the requested quote denomination (ETH or USD) does not match the configured primary quote for either token in a pair. This flawed logic prevents the use of an ETH/USD bridge to route prices when tokens are configured with different denominations. As a result, when a user attempts to swap tokens where one is USD-quoted and the other is ETH-quoted, the function call reverts. This leads to a denial of service for users trying to create orders for such token pairs, effectively blocking functionality for mixed-denomination swaps. The root cause is the lack of fallback logic to use the ETH/USD price bridge when direct denomination matching fails.\n",
+            "severity": "Medium",
+            "location": [
+                "OracleRouter.sol::getPricesAndDecimals",
+                "AmountConverter.sol::getExpectedOut"
+            ],
+            "files": [
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Order rounding errors",
+            "description": "The vulnerability exists in the Order contract's isValidSignature function, where rounding errors during arithmetic calculations can cause a valid order to be rejected after a partial fill or a small donation of the sell token. The function calculates the current estimated buy amount and compares it to the baseline buy amount derived from the original order parameters. Due to integer division and multiplication in Math.mulDiv, small rounding discrepancies can occur, especially when the sell amount is reduced. In strict tolerance mode (where price changes are not allowed), even a one-unit difference in the calculated buy amount can cause the order validation to fail. This can temporarily block order execution, leading to a denial of service for the order owner. The root cause is the lack of tolerance for minor rounding differences in price comparisons.\n",
+            "severity": "Low",
+            "location": [
+                "Order.sol::isValidSignature#226-250",
+                "Stonks.sol::estimateTradeOutput"
+            ],
+            "files": [
+                "stonks/contracts/Order.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Stonks can be unpaused after killSwitch",
+            "description": "The Stonks contract implements a killSwitch to irreversibly pause all functionality, but the unpauseCreation and unpauseSignatures functions lack a check to prevent their execution after the killSwitch has been activated. While unpauseCreation is harmless due to the notKilled modifier on order creation functions, unpauseSignatures can re-enable the filling of existing orders even after the killSwitch has been engaged. This contradicts the intended irreversible nature of the killSwitch and reintroduces execution risk when the system should be fully disabled. An attacker or malicious agent could exploit this by calling unpauseSignatures after killSwitch, allowing order fulfillment to resume. The root cause is the absence of the whenNotKilled modifier on the unpause functions.\n",
+            "severity": "Low",
+            "location": [
+                "Stonks.sol::unpauseCreation#302-304",
+                "Stonks.sol::unpauseSignatures#322-330"
+            ],
+            "files": [
+                "stonks/contracts/Stonks.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Token decimals used as configured flag",
+            "description": "The OracleRouter contract uses the tokenDecimals field as a flag to determine whether a token is configured, by reverting if the token's decimals are zero. This is based on the explicit prohibition of ERC-20 tokens with zero decimals. However, according to the ERC-20 standard, tokens with zero decimals are technically valid, and the protocol could support them with proper modifications. The root cause is the misuse of tokenDecimals as a configuration flag instead of using a dedicated field such as primaryFeed.aggregator. An attacker or user could be misled into thinking zero-decimal tokens are inherently invalid, when the restriction is implementation-specific. The impact is limited to reduced flexibility in token support, potentially excluding valid use cases, but does not lead to fund loss or critical system failure.\n",
+            "severity": "Informational",
+            "location": [
+                "OracleRouter::_setTokenFeed#623-625",
+                "OracleRouter::setTokenActive#216-218"
+            ],
+            "files": [
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing ETH/USD feed configuration check",
+            "description": "The OracleRouter.syncEthUsdBridge function allows updating the ETH/USD feed metadata without first verifying that the feed has been configured. This can lead to confusion because if the function is called before setEthUsdBridge, the maxStalenessSeconds value remains uninitialized, causing subsequent calculations to revert due to staleness checks. The root cause is the absence of a validation check on the feed's configuration state (e.g., whether the aggregator address is set). An attacker cannot directly exploit this for financial gain, but a legitimate user or system may experience unexpected reverts if the function call order is incorrect. The impact is operational confusion and potential integration issues, but no security breach or loss of funds occurs.\n",
+            "severity": "Informational",
+            "location": [
+                "OracleRouter::syncEthUsdBridge#159-161"
+            ],
+            "files": [
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "PRICE_UNIT and PRICE_SCALE discrepancy",
+            "description": "The Order contract defines PRICE_SCALE as 1e18, intended to match the PRICE_UNIT value in OracleRouter. However, PRICE_UNIT in OracleRouter is derived from a configurable PRICE_DECIMALS parameter, meaning the two values could diverge if PRICE_DECIMALS is set to anything other than 18. The root cause is the lack of synchronization between the two constants, relying on manual configuration rather than enforced consistency. If mismatched, this could lead to incorrect price calculations across the system, potentially causing incorrect trade outputs or miscalibrated routing. The impact is correctness and reliability of price computations, which could result in economic loss if trades are executed at incorrect rates. However, since the fix locks PRICE_DECIMALS to 18, the risk is mitigated.\n",
+            "severity": "Informational",
+            "location": [
+                "Order#46",
+                "OracleRouter"
+            ],
+            "files": [
+                "stonks/contracts/Order.sol",
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Misleading use of errors",
+            "description": "The AmountConverter contract reuses the AmountFromTooLarge error in two distinct contexts: first to check if an input exceeds uint128, and second to prevent overflow during decimal scaling, where the input is compared against a scaled maximum. These are logically separate conditions, and using the same error name misleads callers about the actual cause of failure. Similarly, the Stonks contract uses MarginOverflowsAllowedLimit to validate maxImprovementInBasisPoints_, even though the error name refers to margin. The root cause is poor error naming and reuse across unrelated validation logic. While this does not introduce a direct security vulnerability, it complicates debugging and integration, potentially leading to incorrect assumptions by frontends or off-chain systems. The impact is reduced code clarity and increased risk of misinterpretation during integration or incident response.\n",
+            "severity": "Informational",
+            "location": [
+                "AmountConverter::getExpectedOut#148-150",
+                "AmountConverter::getExpectedOut#226-228",
+                "Stonks::_validateBps#489-497"
+            ],
+            "files": [
+                "stonks/contracts/AmountConverter.sol",
+                "stonks/contracts/Stonks.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Inconsistency in allowing manager to be zero address",
+            "description": "The Stonks contract prevents setting the manager to the zero address during construction via _validateAddresses, but the inherited setManager function in Ownable allows setting the manager to address(0) afterward without validation. This creates an inconsistency in the system's security model\u2014while the constructor enforces a non-zero manager, the upgradeability or management logic does not. The root cause is a mismatch between initialization-time validation and runtime function permissions. An attacker could potentially manipulate governance flows if the manager is cleared post-deployment, leading to a loss of administrative control. The impact is a potential governance disruption, though the fix later removes the constructor restriction, indicating the behavior was reconsidered.\n",
+            "severity": "Informational",
+            "location": [
+                "Stonks::_validateAddresses#431-433",
+                "Ownable::setManager#71-75"
+            ],
+            "files": [
+                "stonks/contracts/Stonks.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "The KillEngaged should not be emitted if the Stonks contract was already killed",
+            "description": "The killSwitch function emits the KillEngaged event every time it is called, even if the contract has already been killed. In contrast, other state-changing functions like pausing signatures emit events only when a state transition occurs. The root cause is the lack of a conditional check before emitting the event. While the function's core logic (setting _killed) is idempotent, the event emission is redundant and misleading. This can cause off-chain monitoring systems to\u8befinterpret repeated events as multiple kill actions, leading to incorrect alerts or analytics. The impact is degraded observability and potential confusion during incident analysis, but no direct security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "Stonks::killSwitch#335-353"
+            ],
+            "files": [
+                "stonks/contracts/Stonks.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "assertQuotable inefficiency",
+            "description": "The Stonks.assertQuotable function is called as a fail-fast check during order initialization, but it performs redundant validations that are repeated in the subsequent estimateTradeOutput call. This results in unnecessary gas costs and computation. Furthermore, in edge cases where both tokens are USD-denominated but USE_ETH_ANCHOR is true, assertQuotable fails to validate the ETH/USD feed, making it an incomplete safeguard. The root cause is the lack of shared state or caching between the two function calls, and the failure to cover all dependency paths. The impact is increased gas consumption and a false sense of security from a check that does not fully prevent failures, reducing system efficiency and reliability.\n",
+            "severity": "Informational",
+            "location": [
+                "Order::initialize#147",
+                "Stonks::assertQuotable"
+            ],
+            "files": [
+                "stonks/contracts/Order.sol",
+                "stonks/contracts/Stonks.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Missing public getters",
+            "description": "The Order contract's allowPartialFill and cancelled state variables are private without public getter functions, making them inaccessible via standard contract interfaces. While allowPartialFill can be derived from the Stonks contract, cancelled is only accessible through low-level storage probing. The root cause is incomplete interface design. This hinders external tools, UIs, and auditors from easily inspecting order states, reducing transparency and integrability. The impact is primarily on developer experience and system observability, with no direct security vulnerability, but it increases the complexity of interacting with the contract.\n",
+            "severity": "Informational",
+            "location": [
+                "Order#65-68"
+            ],
+            "files": [
+                "stonks/contracts/Order.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant MAX_DECIMALS checks",
+            "description": "The AmountConverter contract checks whether the decimal difference between tokens exceeds ROUTER_MAX_DECIMALS, but this check is redundant because the OracleRouter already ensures that no token has more than MAX_DECIMALS. Similarly, OracleRouter performs redundant checks in _computeScaleFactors on upDiff and downDiff, even though both PRICE_DECIMALS and feedDecimals_ are already validated against MAX_DECIMALS during configuration. The root cause is over-defensive programming without considering prior validation layers. The impact is unnecessary gas consumption and code complexity, with no security benefit. Removing these checks improves efficiency without reducing safety.\n",
+            "severity": "Informational",
+            "location": [
+                "AmountConverter::getExpectedOut#201-203",
+                "OracleRouter::_computeScaleFactors#725-727",
+                "OracleRouter::_computeScaleFactors#736-738"
+            ],
+            "files": [
+                "stonks/contracts/AmountConverter.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event emissions",
+            "description": "The Stonks contract does not emit events when maxImprovementInBasisPoints and allowPartialFill parameters are set during construction, and the Order contract does not emit ManagerSet during initialize. This breaks consistency with the rest of the codebase, where state changes typically emit events. The root cause is incomplete event instrumentation. The impact is reduced traceability for off-chain systems, making it harder to track configuration changes or debug issues. While not a security flaw, it weakens the system's auditability and monitoring capabilities.\n",
+            "severity": "Informational",
+            "location": [
+                "Stonks",
+                "Order::initialize"
+            ],
+            "files": [
+                "stonks/contracts/Stonks.sol",
+                "stonks/contracts/Order.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inefficient variable packing",
+            "description": "The TokenConfig and FeedConfig structs in OracleRouter are not optimally packed, leading to higher storage slot usage than necessary. For example, small types like uint8 and bool are not grouped efficiently, causing gaps in storage layout. The root cause is suboptimal struct field ordering. This increases gas costs for storage reads and writes due to additional SLOADs and SSTOREs across multiple slots. The impact is higher transaction costs and reduced efficiency, especially in functions that read or write these structs frequently. Restructuring the fields to pack tightly reduces gas usage and improves performance.\n",
+            "severity": "Informational",
+            "location": [
+                "OracleRouter#41-55"
+            ],
+            "files": [
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing TokenNotConfigured check",
+            "description": "The setTokenEthUsdStalenessOverride function only checks that the token address is not zero but does not verify that the token is actually configured in the tokenConfig mapping. This allows setting overrides for unconfigured tokens, which may lead to unexpected behavior when the token is later configured, as _setTokenFeed resets the override to zero. The root cause is insufficient input validation. The impact is potential configuration drift and confusion for system operators, though no direct exploit path exists. The fix introduces a check on primaryFeed.aggregator to ensure the token is configured before allowing updates.\n",
+            "severity": "Informational",
+            "location": [
+                "OracleRouter::setTokenEthUsdStalenessOverride#186-192",
+                "OracleRouter::_setTokenFeed#648-660"
+            ],
+            "files": [
+                "stonks/contracts/routers/OracleRouter.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading event parameter name",
+            "description": "The AmountConverterFactory emits an event called AmountConverterDeployed with a parameter named allowedStableTokensToBuy, implying that only stablecoins can be bought. However, the protocol supports buying any token, not just stablecoins. The root cause is inaccurate naming that misrepresents functionality. This can mislead developers integrating with the system into assuming restrictions that do not exist, potentially leading to incorrect logic or missed opportunities. The impact is confusion and integration errors, reducing the clarity and usability of the API.\n",
+            "severity": "Informational",
+            "location": [
+                "AmountConverterFactory#19-25"
+            ],
+            "files": [
+                "stonks/contracts/factories/AmountConverterFactory.sol"
+            ]
+        }
+    ]
+}

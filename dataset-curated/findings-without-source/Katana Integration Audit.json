@@ -1,0 +1,138 @@
+{
+    "path": "dataset-curated/reports/OpenZeppelin/Katana Integration Audit.md",
+    "project_info": {
+        "url": [
+            "https://github.com/lombard-finance/smart-contracts",
+            "https://github.com/lombard-finance/ledger"
+        ],
+        "commit_id": [
+            "602502e8f3540230d8dd8693ecf463b7c022e771",
+            "2f18ecef8028b25f4d5ca1f0f582fd938626f2e7"
+        ],
+        "address": null,
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-06",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "Permits Will Break After Calling ChangeNameAndSymbol",
+            "description": "The NativeLBTC contract implements EIP-2612 permit functionality via ERC20PermitUpgradeable, allowing gasless approvals. However, the _changeNameAndSymbol function allows updating the token's name and symbol without updating the EIP712 domain separator's cached name. The domain separator, used in permit signature validation, relies on the initial name value stored in EIP712Storage._name. When the token name is changed via _changeNameAndSymbol, the domain separator remains unchanged, causing all future permit calls to revert due to a mismatch in the expected and actual domain separator. This breaks the gasless approval mechanism for all users after a name change. The root cause is the lack of synchronization between the token's name and the EIP712 domain separator. The impact is a denial of service for the permit functionality, degrading user experience and potentially locking users out of gasless interactions.\n",
+            "severity": "High",
+            "location": [
+                "NativeLBTC.sol::changeNameAndSymbol#100-105",
+                "NativeLBTC.sol#L471"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Incorrect Storage Slot Hash for NATIVE_LBTC_STORAGE_LOCATION",
+            "description": "The NativeLBTC contract defines a constant NATIVE_LBTC_STORAGE_LOCATION intended to point to a specific storage slot using a deterministic hash. However, the current value (0xa9a2395ec4edf6682d754acb293b04902817fdb5829dd13adb0367ab3a26c700) does not match the correct output of the required keccak256 computation based on the contract's storage namespace. The correct value should be derived by computing keccak256(\"lombardfinance.storage.NativeLBTC\"), subtracting one, and masking the last byte, resulting in 0xb773c428c0cecc1b857b133b10e11481edd580cedc90e62754fff20b7c0d6000. The cause is a hardcoded incorrect value. If the storage layout is used for upgrades or cross-contract access, this discrepancy could lead to incorrect or corrupted state access, potentially resulting in loss of funds or unauthorized state modifications.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLBTC.sol#L48"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "Signatures Can Be Reused",
+            "description": "The _mintV1WithFee function in NativeLBTC validates a user-provided signature (userSignature) for a feePayload but does not implement any replay protection mechanism such as a nonce or a used-signature mapping. This allows any address with CLAIMER_ROLE to reuse the same (feePayload, userSignature) pair multiple times within the validity period of the signature. The root cause is the absence of a one-time-use enforcement mechanism. An attacker with claimer privileges could repeatedly deduct fees from a user's allowance across multiple deposits, even if the user only intended a single fee deduction. While the total minted tokens remain correct, this leads to unexpected and potentially excessive fee deductions, violating user expectations and deviating from standard EIP-2612 practices.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLBTC.sol::mintV1WithFee#343-350",
+                "NativeLBTC.sol::_mintV1WithFee#609-617"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Missing Lower Bound on User Specified Fees in Minting",
+            "description": "When minting NativeLBTC with fees, the contract applies the minimum between the user-specified fee in the feePayload and the maximumFee set by the owner. Although the user fee is validated to be non-zero, it can be set to an arbitrarily small value (e.g., 1 wei). The root cause is the lack of a minimum fee threshold enforced by the contract. This allows a claimer to process mints with negligible fees, undermining the fee mechanism's purpose of preventing denial-of-service attacks via spam minting. An attacker could exploit this by submitting many low-fee deposit requests, forcing the system to process them if a claimer accepts the minimal fee, leading to potential resource exhaustion and degraded service availability.\n",
+            "severity": "Medium",
+            "location": [
+                "NativeLBTC.sol::mintV1WithFee#343-350",
+                "NativeLBTC.sol::batchMintV1WithFee#359-389",
+                "Actions.sol#L361-L363"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "Inconsistent and Redundant Storage of Token Metadata",
+            "description": "The NativeLBTC contract defines its own name and symbol fields within NativeLBTCStorage, while also inheriting from ERC20Upgradeable, which maintains its own name and symbol in ERC20Storage. Additionally, the EIP712Upgradeable contract stores the name in _name for domain separation. The root cause is redundant state variable design. The changeNameAndSymbol function updates only the NativeLBTCStorage fields, leaving the inherited ERC20 and EIP712 names unchanged, leading to internal inconsistency. This can cause confusion for users and front-ends relying on different name sources and may break permit functionality if the EIP712 _name is not updated, as it would still reference the old name in the domain separator.\n",
+            "severity": "Low",
+            "location": [
+                "NativeLBTC.sol::NativeLBTCStorage#29-44",
+                "NativeLBTC.sol::changeNameAndSymbol#100-105"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Inadequate Validation of Selector in ValidateBasic",
+            "description": "The ValidateBasic function in selector.go checks if a selector is valid by comparing it against an uninitialized (zero-valued) undefinedType byte array. Since any non-zero selector will differ from the zero array, this check incorrectly passes all non-zero selectors, failing to restrict selectors to the six explicitly allowed types. The root cause is a logical error in validation logic\u2014comparing against an undefined value instead of the allowed set. This could allow invalid or malicious selectors to pass basic validation, potentially leading to unexpected behavior or errors in downstream processing, although the actual risk is mitigated by other module-level checks.\n",
+            "severity": "Low",
+            "location": [
+                "selector.go::ValidateBasic#52"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "Unbounded Batch Loop in batchMint",
+            "description": "The batchMint, batchMintV1, and batchMintV1WithFee functions process an array of deposit actions in a loop without enforcing a maximum batch size. The root cause is the absence of a cap on input length. An attacker could construct a transaction with an extremely large array, causing the loop to consume more gas than the block limit, resulting in a transaction revert. While this does not lead to fund loss, it can be exploited to waste gas, cause service disruption, or degrade user experience through failed transactions. Predictable gas costs are essential for reliable off-chain estimation and user interaction.\n",
+            "severity": "Informational",
+            "location": [
+                "NativeLBTC.sol::batchMint#270",
+                "NativeLBTC.sol::batchMintV1#315",
+                "NativeLBTC.sol::batchMintV1WithFee#359"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "Missing Deposit Version in Error Message",
+            "description": "The calculateDeterministicAddress function generates an error message upon failure but omits the deposit version from the logged context, including only the nonce and referral ID. The root cause is incomplete error logging. This reduces the diagnostic value of the error, making it harder for operators and developers to debug issues, especially when multiple deposit versions are in use. Including the deposit version would clarify which payload format failed, improving operational transparency and incident response efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "service.go::calculateDeterministicAddress#69"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "Type Mismatch for amount in BTC Deposit Message",
+            "description": "The amount field is defined as uint64 in deposit_btc_msg_v0.go (Go code) but as uint256 in Actions.sol (Solidity). The root cause is inconsistent data type usage across codebases. While both can represent BTC amounts, the mismatch increases the risk of truncation, overflow, or parsing errors during cross-language processing. Aligning both to uint256 ensures consistent handling of large values and prevents potential data corruption during serialization or validation.\n",
+            "severity": "Informational",
+            "location": [
+                "deposit_btc_msg_v0.go#L24",
+                "Actions.sol#L8"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "Vout is not explicitly checked in verifyTx Method",
+            "description": "The verifyTx function in deposit_strategy.go retrieves a transaction output from a Bitcoin node using the vout index from the payload but does not explicitly verify that the returned output's Vout field matches the requested index. The root cause is incomplete validation logic. Although the node's response is trusted, an explicit check would improve code clarity, consistency, and defensive programming. Adding this check ensures that the validation logic is self-contained and reduces the risk of bugs if the node behavior changes or if the code is reused in a different context.\n",
+            "severity": "Informational",
+            "location": [
+                "deposit_strategy.go::verifyTx#127"
+            ],
+            "files": []
+        }
+    ]
+}

@@ -1,0 +1,329 @@
+{
+    "path": "dataset-curated/reports/Zenith/VVET Protocol - Zenith Audit Report.pdf",
+    "project_info": {
+        "url": [
+            "https://github.com/luiyongsheng/vvet"
+        ],
+        "commit_id": [
+            "2b5a8d40294483b93dd2ac808cf92d0cf198df9c"
+        ],
+        "address": [
+            null
+        ],
+        "chain": "evm",
+        "compiler_version": "n/a",
+        "audit_date": "2025-06-24",
+        "project_path": "n/a"
+    },
+    "findings": [
+        {
+            "id": 0,
+            "category": {},
+            "title": "xERC20.sol is vulnerable to inflation attacks",
+            "description": "The xERC20.sol contract calculates the amount of shares to mint on deposit based on the current total supply of shares, the balance of stake token in the contract, and the amount of stake token deposited. This calculation is vulnerable to an inflation attack because it does not account for direct transfers of stake tokens to the contract before a deposit.\n\nThe root cause is the reliance on the contract's stake token balance in the getPricePerFullShare() function without considering external inflows of tokens. An attacker can front-run a large deposit by depositing a minimal amount and then directly transferring a large amount of stake tokens to the contract, manipulating the price per share.\n\nAn attacker can exploit this by monitoring the mempool for large deposits, depositing a small amount to gain shares, then transferring a large amount of stake tokens to the contract before the victim's deposit is processed. This causes the victim's deposit to receive zero shares due to rounding down.\n\nAs a result, the attacker becomes the sole shareholder and can withdraw all funds, leading to a complete loss of deposited funds for legitimate users.\n",
+            "severity": "High",
+            "location": [
+                "xERC20.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 1,
+            "category": {},
+            "title": "Each individual FarmPool uses 1 B VVET tokens as maxSupply",
+            "description": "Each FarmPool instance uses 1 billion VVET tokens as the maxSupply for emission calculations, implying that each individual staking pool will distribute the full 1 billion VVET token supply over its lifetime.\n\nThe root cause is the hardcoded or improperly scoped maxSupply value used in emission calculations within each FarmPool instance, without considering that the total VVET token supply is intended to be 1 billion across the entire protocol.\n\nThis can be exploited if multiple FarmPool instances are deployed, as each would attempt to distribute 1 billion VVET tokens, exceeding the total supply. This leads to incorrect emission schedules and potential inflation or reward distribution failure.\n\nThe impact is that the emission mechanics will not function as intended if more than one FarmPool exists, undermining the economic model and potentially rendering staking rewards unusable or unfair.\n",
+            "severity": "High",
+            "location": [
+                "FarmPool.sol#48"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "category": {},
+            "title": "xERC20 rewards can be stolen as soon as they get transferred to the contract",
+            "description": "The xERC20 contract allows staking tokens and earning rewards in the same token. Rewards are distributed by increasing the value of shares based on the contract's stake token balance. However, the getPricePerFullShare() function uses the current stake token balance, including newly transferred rewards, to calculate share value.\n\nThe root cause is the failure to distinguish between staked tokens and reward tokens in the balance calculation. The contract does not subtract undistributed rewards from the balance when calculating share price.\n\nAn attacker can monitor the mempool for reward deposit transactions, front-run them by depositing a large amount of stake tokens to acquire shares at a low price, and then withdraw after the reward deposit increases the share value. This allows the attacker to capture a disproportionate share of the newly added rewards.\n\nThe impact is that legitimate stakers are diluted and lose their expected rewards, while the attacker profits at their expense, leading to unfair distribution and potential loss of user trust.\n",
+            "severity": "High",
+            "location": [
+                "xERC20"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "category": {},
+            "title": "Missing voting functionality in XSwap wastes its aggregate voting power",
+            "description": "The XSwap contract accumulates voting power by locking VIRTUAL tokens on behalf of users to issue liquid xVirtual tokens. However, the contract lacks any voting functionality to utilize this aggregated voting power in the VirtualsProtocolDAOV2 governance system.\n\nThe root cause is the absence of a castVote or similar function in the XSwap contract, despite the protocol's intention to use the collective voting power. The contract owns the locks but cannot interact with the DAO's voting mechanisms.\n\nThis issue cannot be exploited maliciously but represents a critical design flaw. The aggregate voting power remains unused, contrary to the protocol's goals.\n\nThe impact is that the intended governance utility of XSwap is not realized, reducing the value proposition of the protocol and potentially misleading users about the benefits of depositing.\n",
+            "severity": "High",
+            "location": [
+                "XSwap.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "category": {},
+            "title": "New deposits after executeEmergencyWithdrawal() can be stolen by previous depositors",
+            "description": "After executeEmergencyWithdrawal() is called, all active positions are swept, but xVirtual tokens are not burned. The function does not disable deposit() or requestWithdrawal(), allowing new deposits to be made.\n\nThe root cause is the failure to block new deposits and withdrawals after an emergency withdrawal, combined with the reuse of xVirtual balances from previous deposits.\n\nAn attacker who previously deposited and still holds xVirtual tokens can observe a new deposit, call requestWithdrawal(), and successfully withdraw the new deposit because the system considers the new lock as withdrawable due to autoRenew being true.\n\nThe impact is that honest users lose their deposited VIRTUAL tokens to attackers, resulting in direct financial loss and undermining the security of the emergency withdrawal mechanism.\n",
+            "severity": "High",
+            "location": [
+                "XSwap.sol#222"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "category": {},
+            "title": "Executing updateEmissionParameters() leads to incorrect emissions calculations",
+            "description": "The FarmPoolUpgradeable and xERC20 contracts allow updating emission parameters (decayConstant and maxSupply) via updateEmissionParameters(), but they do not cache historical emissions or update internal state variables before the change.\n\nThe root cause is the lack of proper state preservation during parameter updates. The contracts recalculate emissions based on new parameters without accounting for previously emitted amounts, leading to incorrect totals.\n\nAn attacker or malicious admin could manipulate emission schedules by adjusting parameters mid-epoch, causing miscalculations in totalEmitted(), getPricePerFullShare(), and rewardPerToken values.\n\nThe impact includes incorrect reward distribution, potential over-issuance or under-issuance of rewards, and loss of trust in the staking mechanism's fairness and predictability.\n",
+            "severity": "High",
+            "location": [
+                "FarmPoolUpgradeable",
+                "xERC20"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "category": {},
+            "title": "XSwap::_getAvailableLockIds() might skip some available locks",
+            "description": "The _getAvailableLockIds() function in XSwap.sol checks both autoRenew and end > block.timestamp to determine if a lock is available. However, veVirtual.getPositions() returns stale end timestamps for auto-renewing locks, which may appear expired even when active.\n\nThe root cause is the reliance on the end timestamp for availability checks, despite the protocol's behavior that auto-renewing locks should always be considered active regardless of the displayed end time.\n\nThis can lead to a situation where valid auto-renewing locks are not recognized as available, preventing users from withdrawing their funds during emergency operations.\n\nThe impact is a potential denial of service for users trying to access their funds, reducing the reliability and safety of the protocol during critical operations.\n",
+            "severity": "Medium",
+            "location": [
+                "XSwap.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "category": {},
+            "title": "FarmPool.sol and xERC20.sol will never distribute rewards accumulated when the total supply of shares is 0",
+            "description": "Both FarmPool.sol and xERC20.sol continue to accumulate emissions even when no shares are minted (i.e., no users have deposited). Since rewards are distributed based on share ownership, these accumulated rewards remain trapped in the contract forever.\n\nThe root cause is the lack of a mechanism to handle or reclaim rewards accumulated during periods of zero staked supply. The emission calculation runs independently of user activity.\n\nThis results in permanent loss of reward tokens that could have been distributed to users, reducing the effective reward pool and potentially misleading users about total emissions.\n\nThe impact is economic inefficiency and potential misalignment between expected and actual reward distribution, especially during initial phases of pool deployment.\n",
+            "severity": "Medium",
+            "location": [
+                "xERC20.sol",
+                "FarmPool.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "category": {},
+            "title": "FarmPoolUpgradeable and xERC20Upgradeable can't be upgraded",
+            "description": "The FarmPoolUpgradeable and xERC20Upgradeable contracts are designed to be upgradable using UUPSUpgradeable, but they are deployed behind EIP-1167 minimal proxies, which store the implementation address in bytecode rather than a storage slot.\n\nThe root cause is a mismatch between the proxy pattern (EIP-1167) and the upgrade mechanism (UUPS), which expects the implementation address to be stored in a specific storage slot as per ERC-1967.\n\nBecause UUPSUpgradeable attempts to read the implementation address from storage, the upgrade call will revert, rendering the contracts effectively immutable despite being labeled as upgradeable.\n\nThe impact is that critical fixes or improvements cannot be applied to these contracts, undermining the purpose of the upgradeable design and potentially leaving vulnerabilities unpatched.\n",
+            "severity": "Medium",
+            "location": [
+                "FarmPoolUpgradeable.sol",
+                "xERC20Upgradeable.sol",
+                "FarmPoolFactoryUpgradeable.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "category": {},
+            "title": "The function distributeRemainingRewards() doesn't transfer reward tokens",
+            "description": "The distributeRemainingRewards() function in FarmPoolUpgradeable.sol is intended as an emergency mechanism to distribute rewards when the contract is paused, but it does not include any token transfer logic.\n\nThe root cause is the omission of actual reward distribution code in the function implementation, making it non-functional for its intended purpose.\n\nIn an emergency scenario where the contract is paused, users would be unable to claim their accrued rewards, and the function cannot be used to disburse them.\n\nThe impact is that users may permanently lose access to their earned rewards if the contract is paused and this function is relied upon for distribution, reducing the safety net for users during emergencies.\n",
+            "severity": "Medium",
+            "location": [
+                "FarmPoolUpgradeable.sol#204"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "category": {},
+            "title": "xERC20 assumes the amount of rewards to be distributed is always exactly MAX_SUPPLY",
+            "description": "The xERC20 contract assumes that the total amount of rewards to be distributed is exactly equal to MAX_SUPPLY. This assumption can lead to incorrect reward distribution if the actual reward amount differs from MAX_SUPPLY, resulting in either over-distribution or under-distribution of rewards. The root cause is the hardcoded reliance on MAX_SUPPLY without dynamic configuration based on actual reward amounts. Additionally, the contract assumes the stake token has exactly 18 decimals because MAX_SUPPLY is defined with 18 decimal precision. An attacker or incorrect setup could exploit this by depositing a reward amount not matching MAX_SUPPLY, leading to miscalculations. The impact includes economic imbalance, incorrect user rewards, and potential loss of trust in the protocol.\n",
+            "severity": "Medium",
+            "location": [
+                "xERC20.sol::initialize#87"
+            ],
+            "files": []
+        },
+        {
+            "id": 11,
+            "category": {},
+            "title": "No consideration for adminUnlocked in XSwap's lock withdrawal flows",
+            "description": "The XSwap contract does not consider the adminUnlocked status of the veVirtual contract when processing withdrawal requests. The veVirtual contract has an emergency mechanism (adminUnlocked) that allows instant withdrawal of all locks, but XSwap ignores this flag. As a result, even if adminUnlocked is set to true, users must still wait for the claimableTime (block.timestamp + maxWeeks) to elapse before withdrawing. This creates a discrepancy where emergency withdrawals are not truly instant for XSwap users. The cause is the lack of a check for adminUnlocked in _claimWithdrawal() and executeEmergencyWithdrawal(). An attacker or malicious actor could exploit the delay during an emergency, leaving funds locked unnecessarily. The impact is reduced responsiveness during emergencies and potential risk to user funds deposited via XSwap.\n",
+            "severity": "Medium",
+            "location": [
+                "XSwap.sol::claimWithdrawal#436-456",
+                "XSwap.sol::executeEmergencyWithdrawal"
+            ],
+            "files": []
+        },
+        {
+            "id": 12,
+            "category": {},
+            "title": "Use of cached _maxWeeks in XSwap can lead to many problems",
+            "description": "The XSwap contract caches the _maxWeeks value from veVirtual at deployment time and does not update it thereafter. Since veVirtual allows dynamic adjustment of maxWeeks via setMaxWeeks(), a change in that value will cause XSwap to use an outdated value. If maxWeeks is decreased on veVirtual, XSwap.deposit() will revert because it passes the old (higher) value as numWeeks, which exceeds the new limit. Conversely, if maxWeeks increases, XSwap remains restricted to the lower cached value. The root cause is the lack of a synchronization mechanism. This can be exploited by timing deposits after a maxWeeks reduction, effectively bricking the deposit function. The impact includes denial of service for deposit functionality and reduced flexibility in protocol upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "XSwap.sol::_maxWeeks#100",
+                "XSwap.sol::deposit#208"
+            ],
+            "files": []
+        },
+        {
+            "id": 13,
+            "category": {},
+            "title": "xERC20/:stake() rounds up the amount of shares minted",
+            "description": "The xERC20.stake() function calculates the number of shares to mint using getPricePerFullShare() as a divisor. Since getPricePerFullShare() always rounds down and is used in division, the resulting share amount is rounded up, leading to more shares being minted than mathematically precise. This favors the staker at the expense of the protocol\u2019s share pool. The root cause is the interaction between floor division in getPricePerFullShare() and its use as a denominator in mulDiv. An attacker can exploit this by making many small deposits to accumulate excess shares over time. The impact is gradual dilution of existing shareholdings and economic loss to the protocol due to over-minting.\n",
+            "severity": "Low",
+            "location": [
+                "xERC20.sol::stake#122",
+                "xERC20.sol::getPricePerFullShare#227"
+            ],
+            "files": []
+        },
+        {
+            "id": 14,
+            "category": {},
+            "title": "Emergency withdrawal flows lack check for MAX_LOCKS_PER_REQUEST",
+            "description": "The emergency withdrawal functionality in XSwap does not enforce the MAX_LOCKS_PER_REQUEST limit when sweeping active locks. Unlike regular withdrawals, emergency withdrawals can include an unbounded number of locks in a single request, leading to excessively high gas consumption when claimEmergencyWithdrawal() is called. The root cause is the absence of a loop limit or batch processing mechanism. An attacker could force the admin into failed transactions by creating many small locks, making emergency withdrawals impractical. The impact is potential transaction failure due to gas limits, undermining the reliability of emergency procedures.\n",
+            "severity": "Low",
+            "location": [
+                "XSwap.sol::executeEmergencyWithdrawal#360-367"
+            ],
+            "files": []
+        },
+        {
+            "id": 15,
+            "category": {},
+            "title": "Use of unbounded array in _getAvailableLockIDs()",
+            "description": "The _getAvailableLockIds() function in XSwap performs multiple memory operations on unbounded arrays: it copies all positions, iterates to filter active ones, and copies them again to a new array. These operations are gas-intensive and can lead to high transaction costs for users requesting withdrawals. The root cause is inefficient memory handling and lack of bounded iteration. An attacker could exploit this by increasing the number of positions to force gas costs beyond practical limits. The impact is denial of service via gas exhaustion and poor user experience due to high fees.\n",
+            "severity": "Low",
+            "location": [
+                "XSwap.sol::_getAvailableLockIds#302-314"
+            ],
+            "files": []
+        },
+        {
+            "id": 16,
+            "category": {},
+            "title": "Loss of contract ownership on xVirtual and bxVirtual tokens",
+            "description": "The xVirtual and bxVirtual tokens are deployed by XSwap and assign ownership to the deployer (XSwap contract). However, there are no functions in XSwap to call transferOwnership() or setSwapX() on these tokens after deployment. This permanently locks ownership, preventing any future updates or recovery. The root cause is missing proxy functions in XSwap to forward ownership management calls. An attacker cannot directly exploit this, but it represents a critical operational risk: if the XSwap contract is upgraded or compromised, ownership cannot be transferred. The impact is permanent loss of control over token settings and reduced protocol upgradability.\n",
+            "severity": "Low",
+            "location": [
+                "xVirtual.sol#23-27",
+                "bxVirtual.sol#21"
+            ],
+            "files": []
+        },
+        {
+            "id": 17,
+            "category": {},
+            "title": "MIN_STAKE_AMOUNT can be easily bypassed in stxVirtual",
+            "description": "The stxVirtual contract enforces a MIN_STAKE_AMOUNT during staking to prevent dust attacks, but does not enforce it during unstaking. This allows a user to stake the minimum amount and then unstake partially, leaving a dust balance. The root cause is the lack of a check in the unstake() function. An attacker can exploit this to create numerous dust positions, defeating the purpose of the minimum stake rule. The impact is potential bloat in the state and increased gas costs for operations iterating over stakes, though financial impact is minimal.\n",
+            "severity": "Informational",
+            "location": [
+                "stxVirtual.sol::unstake"
+            ],
+            "files": []
+        },
+        {
+            "id": 18,
+            "category": {},
+            "title": "Rewards distribution is 4x faster on Base than it is on Ethereum",
+            "description": "The FarmPool.sol and xERC20.sol contracts distribute rewards per block, but block times differ significantly between Ethereum (~12 seconds) and Base (~3 seconds). This results in rewards being distributed four times faster on Base than on Ethereum for the same nominal rate. The root cause is the lack of chain-specific adjustment in the reward calculation. While not exploitable per se, this creates economic imbalance across chains, potentially leading to unintended inflation on faster chains. The impact is inconsistent tokenomics and possible misalignment with intended emission schedules.\n",
+            "severity": "Informational",
+            "location": [
+                "FarmPool.sol",
+                "xERC20.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 19,
+            "category": {},
+            "title": "VVET token should not be burnable",
+            "description": "The VVET token includes a burn function, which poses a risk if used accidentally by the admin, especially from FarmPool instances holding reward funds. Burning rewards meant for distribution reduces the available pool and harms stakers. The root cause is unnecessary inclusion of burn functionality in a reward distribution token. An attacker with admin privileges could maliciously burn funds, but even accidental burns are dangerous. The impact is irreversible loss of reward tokens and potential disruption of staking incentives.\n",
+            "severity": "Informational",
+            "location": [
+                "VvetToken.sol::burn#44"
+            ],
+            "files": []
+        },
+        {
+            "id": 20,
+            "category": {},
+            "title": "XSwap/:_claimWithdrawal() implements an unnecessary gas check",
+            "description": "The _claimWithdrawal() function in XSwap includes a gas check that reverts if remaining gas is below a threshold. However, this is redundant because requestWithdrawal() already limits the number of locks per request via MAX_LOCKS_PER_REQUEST, inherently bounding gas usage. The root cause is over-engineering without considering existing safeguards. This check adds complexity without benefit and may cause premature reverts. The impact is unnecessary transaction failures and increased code complexity.\n",
+            "severity": "Informational",
+            "location": [
+                "XSwap.sol::_claimWithdrawal#436"
+            ],
+            "files": []
+        },
+        {
+            "id": 21,
+            "category": {},
+            "title": "XSwap/:executeEmergencyWithdrawal() always reverts after changing state variables",
+            "description": "The executeEmergencyWithdrawal() function resets emergencyWithdrawalPending and emergencyWithdrawalTime before reverting when no auto-renewing locks exist. However, because the revert occurs afterward, these state changes are discarded. The root cause is incorrect error handling logic. This renders the state resets ineffective and misleads developers into thinking the cleanup persists. The impact is inconsistent state management and potential confusion during emergency recovery procedures.\n",
+            "severity": "Informational",
+            "location": [
+                "XSwap.sol::executeEmergencyWithdrawal#360"
+            ],
+            "files": []
+        },
+        {
+            "id": 22,
+            "category": {},
+            "title": "Modifier whenNotPaused is not applied consistently to withdrawals in FarmPoolUpgradeable",
+            "description": "The FarmPoolUpgradeable contract uses a whenNotPaused modifier to block interactions during pauses, but this modifier is missing from the exit() function, while present in withdraw(). This allows users to bypass the pause mechanism by calling exit(), which includes withdrawal functionality. The root cause is inconsistent access control application. An attacker could exploit this to withdraw funds during a pause intended to halt all withdrawals. The impact is reduced effectiveness of emergency pause features and potential loss of funds during critical events.\n",
+            "severity": "Informational",
+            "location": [
+                "FarmPoolUpgradeable.sol::exit#329"
+            ],
+            "files": []
+        },
+        {
+            "id": 23,
+            "category": {},
+            "title": "_rewardPerToken() performs multiplication before calling FullMath.mulDiv()",
+            "description": "The _rewardPerToken() functions in FarmPool and FarmPoolUpgradeable perform multiplication (newEmissions * PRECISION) outside the FullMath.mulDiv() call, defeating the purpose of using the library to prevent overflow. If the product exceeds 2^256, it will revert despite using FullMath. The root cause is incorrect usage of the FullMath library. An attacker could trigger a revert during reward calculation by manipulating conditions that increase newEmissions. The impact is potential denial of service in reward distribution functions.\n",
+            "severity": "Informational",
+            "location": [
+                "FarmPool.sol::_rewardPerToken#392",
+                "FarmPoolUpgradeable.sol::_rewardPerToken#492"
+            ],
+            "files": []
+        },
+        {
+            "id": 24,
+            "category": {},
+            "title": "Unused functions and variables in xERC20",
+            "description": "The xERC20 contract contains unused code elements: the internal function totalEmittedAtBlock() and the state variable lastUpdateBlock are never used. The root cause is leftover code from development. While not directly exploitable, this increases deployment cost and reduces code clarity. The impact is higher gas usage for deployment and maintenance burden due to code bloat.\n",
+            "severity": "Informational",
+            "location": [
+                "xERC20.sol::totalEmittedAtBlock#258",
+                "xERC20.sol::lastUpdateBlock#68"
+            ],
+            "files": []
+        },
+        {
+            "id": 25,
+            "category": {},
+            "title": "XSwap should be upgradeable",
+            "description": "The XSwap contract interacts with veVirtual, which is upgradeable. If veVirtual's logic changes, XSwap may become incompatible. The root cause is the lack of upgradeability in XSwap despite depending on an upgradeable contract. This creates technical debt and potential future breakage. The impact is risk of integration failure after veVirtual upgrades, requiring a full redeployment of XSwap.\n",
+            "severity": "Informational",
+            "location": [
+                "XSwap.sol"
+            ],
+            "files": []
+        },
+        {
+            "id": 26,
+            "category": {},
+            "title": "renounceOwnership should be blocked across the codebase",
+            "description": "The XSwap and FarmPoolUpgradeable contracts inherit from OpenZeppelin's Ownable, which includes renounceOwnership(). If called, this would permanently relinquish control, including the ability to perform emergency withdrawals. The root cause is the lack of override to block this dangerous function. An attacker with admin access could renounce ownership, or it could be done accidentally. The impact is permanent loss of administrative control and potential freezing of critical functions.\n",
+            "severity": "Informational",
+            "location": [
+                "XSwap.sol#6",
+                "FarmPoolUpgradeable.sol"
+            ],
+            "files": []
+        }
+    ]
+}
