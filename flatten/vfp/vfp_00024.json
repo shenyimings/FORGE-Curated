@@ -1,0 +1,750 @@
+{
+    "vfp_id": "vfp_00024",
+    "project_name": "Matter Labs Guardian Recovery Validator Audit.md",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Front-Running Scenarios During Key Registration",
+            "description": "The `WebAuthValidator` contract is vulnerable to front-running attacks during key registration because it checks for duplicate `originDomain` and `credentialId` combinations without associating them securely with the initiating account. The root cause is the lack of account-specific binding in the registration check, allowing any user to preempt a pending registration. An attacker can monitor the mempool for registration transactions and submit their own with the same `originDomain` and `credentialId` but a different `publicKey`, thereby occupying the slot. The impact is that legitimate users' transactions will revert, preventing them from attaching their validator to their account. Additionally, the commit-reveal pattern in `GuardianRecoveryValidator` may be weakened if attackers can correlate hashed values with known account data.\n",
+            "severity": "Medium",
+            "location": [
+                "WebAuthValidator.sol::onInstall#63",
+                "WebAuthValidator.sol#104",
+                "GuardianRecoveryValidator.sol#204-206"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Guardian Can Overwrite Recovery Process and Render It Useless",
+            "description": "The `initRecovery` function in the `GuardianRecoveryValidator` contract lacks a check to prevent overwriting an active recovery process. The root cause is the absence of validation for whether a recovery is already in progress. A malicious guardian can repeatedly initiate a new recovery with incorrect data or refresh the timestamp, thereby blocking a legitimate recovery. This is especially critical in multi-guardian setups where a single malicious actor can indefinitely stall recovery. The impact is a denial-of-service on the recovery mechanism, leaving the account owner unable to regain access even with honest guardians, and no way to remove the malicious guardian without a valid transaction.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initRecovery#202-215"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Failure to Clear `pendingRecoveryData` in `onUninstall` Allows Immediate Account Recovery Upon Reconnection",
+            "description": "The `onUninstall` function clears guardian data but fails to clear the `pendingRecoveryData` mapping. The root cause is the omission of a step to reset the recovery state upon uninstallation. An attacker (or former guardian) could exploit this by waiting for the validator to be reconnected and then executing a pending recovery request immediately, bypassing the intended 24-hour delay. The impact is that the security guarantee of the recovery delay is nullified, allowing unauthorized or premature account recovery based on stale state, which contradicts the intended security model.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Incomplete Recovery Process Due to Missing Validator Attachment",
+            "description": "The recovery process fails if the `SsoAccount` is not pre-attached to the `WebAuthValidator`, but no check enforces this dependency. The root cause is the lack of validation during the setup of `GuardianRecoveryValidator` to ensure `WebAuthValidator` is also installed. A guardian can initiate recovery, but the final step (adding a key via `WebAuthValidator`) will revert if the validator is not attached. The impact is that the recovery flow is rendered ineffective, leaving the account unrecoverable despite correct guardian setup. Even after a partial fix requiring `WebAuthValidator` at install time, a user could later uninstall it, breaking recovery again.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onInstall",
+                "SsoAccount.sol#214"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Uninstall Process Might Revert Due to Pending Guardian Acceptance",
+            "description": "The `onUninstall` function reverts if it attempts to remove an account from a guardian's set when the guardian has not yet accepted (i.e., `isReady` is false). The root cause is the failure to check the `isReady` flag before calling `remove` on the `guardedAccounts` set. This prevents users from uninstalling the validator while any guardian requests are pending. The impact is a denial-of-service on the uninstallation process. Additionally, if the user reinstalls the validator later, a previously pending (and now accepted) guardian could initiate recovery without the user's knowledge, potentially leading to account takeover.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84",
+                "GuardianRecoveryValidator.sol#172",
+                "GuardianRecoveryValidator.sol#93",
+                "GuardianRecoveryValidator.sol#96"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Possible Initialization of an Unusable `SsoAccount`",
+            "description": "The `initialize` function allows creation of an `SsoAccount` with empty `initialValidators` and `initialK1Owners` arrays. The root cause is the lack of input validation to ensure at least one owner or validator is provided. An attacker or mistaken user could deploy an account with no way to authorize transactions. The impact is that the account becomes permanently unusable, leading to loss of funds or functionality, as no transaction can be validated or executed due to the absence of any valid signer or validator.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::initialize#59"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Potential Panic During Data Slicing in `_executeCall`",
+            "description": "The `_executeCall` function performs a slice operation on `_data` to extract a function selector without checking that the data is at least 4 bytes long. The root cause is the absence of input length validation before slicing. If a transaction is sent with less than 4 bytes of calldata, the slicing operation will cause a low-level panic (invalid opcode). The impact is a denial-of-service, where the account cannot process the transaction, and execution is abruptly terminated, potentially disrupting critical operations.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::_executeCall#128"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Builtin Getter For `pendingRecoveryData` Does Not Return `rawPublicKey`",
+            "description": "The `pendingRecoveryData` state variable is declared as `public`, which generates a default getter that cannot return the `rawPublicKey` array due to Solidity's limitations on auto-generated getters for complex struct members. The root cause is the misuse of the `public` keyword on a state variable containing a struct with array fields. The impact is that external callers cannot retrieve the full recovery data via the auto-generated getter, leading to incomplete or misleading data exposure. This is a usability and developer experience issue, as the contract already provides a custom getter (`getPendingRecoveryData`) that works correctly.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#68"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ]
+            },
+            "title": "Misleading Error Message in `addValidationKey`",
+            "description": "The `addValidationKey` function in `WebAuthValidator` returns `false` for multiple failure conditions but always triggers the `WEBAUTHN_KEY_EXISTS` error in `onInstall`, which is misleading. The root cause is the lack of differentiated error handling; the function returns `false` for both duplicate keys and invalid inputs (e.g., empty `rawPublicKey`), but the error message only suggests a key conflict. The impact is confusion for users and developers, who may incorrectly believe a key exists when the actual issue is input validation, leading to debugging difficulties and poor user experience.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::addValidationKey#64",
+                "WebAuthValidator.sol#108-111"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "Deviation From Specifications",
+            "description": "The code deviates from documented specifications in two main ways. First, the `onUninstall` function's comment claims it removes all past guardians, but it fails to do so if not all `hashedOriginDomains` are passed, and there is no mechanism to verify complete removal. Second, the `_validateTransaction` function uses `_call`, which allows state changes and context variable access, violating zkSync's AA restrictions that require `staticcall` for validation hooks. The root cause is incorrect implementation and lack of compliance checks. The impact includes potential security violations (e.g., state changes during validation) and unreliable uninstallation behavior, undermining system integrity and predictability.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#83",
+                "GuardianRecoveryValidator.sol#85",
+                "GuardianRecoveryValidator.sol#92-100",
+                "SsoAccount.sol::_validateTransaction",
+                "SsoAccount.sol::_call"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Checks for Function Arguments",
+            "description": "Several functions lack validation for critical input parameters. The `GuardianRecoveryValidator` does not check for zero addresses in `_webAuthValidator`, `newGuardian`, `accountToGuard`, and `accountToRecover`. The `WebAuthValidator.addValidationKey` function does not validate `credentialId` and `originDomain` for emptiness or length. The `AAFactory` constructor lacks checks for `_beaconProxyBytecodeHash`. The root cause is insufficient input validation. The impact includes potential loss of access (if a zero address is set), contract lockups (e.g., factory becoming unusable with empty bytecode hash), and unexpected reverts, reducing reliability and security.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol#77",
+                "GuardianRecoveryValidator.sol#117",
+                "GuardianRecoveryValidator.sol#171",
+                "GuardianRecoveryValidator.sol#208",
+                "WebAuthValidator.sol#94",
+                "AAFactory.sol#32-35"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol",
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "The contracts in the codebase use floating pragma directives (e.g., ^0.8.24), which do not lock the Solidity compiler version. This can lead to contracts being compiled with untested or future compiler versions, potentially introducing undefined behavior or security vulnerabilities due to changes in compiler behavior. The cause is the use of caret (^) versioning in the pragma directive. An attacker could potentially exploit inconsistencies in compiler output if a newer, incompatible compiler version is used. This could result in unexpected runtime behavior, including potential loss of funds or contract malfunction. While the team acknowledges this, they have chosen not to resolve it for flexibility.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol::#2",
+                "IGuardianRecoveryValidator.sol::#2",
+                "TransparentProxy.sol::#2",
+                "WebAuthValidator.sol::#2"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol",
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Lack of Public Key Validation",
+            "description": "In the `addValidationKey` function of `WebAuthValidator.sol`, the public key is only checked for being non-zero, but not validated as a valid point on the elliptic curve. This lack of validation means an invalid public key can be registered, which may prevent the generation of valid signatures later. The root cause is the absence of cryptographic validation logic during key registration. An attacker could register an invalid key, potentially locking out legitimate users or disrupting authentication flows. This could compromise system integrity and availability, especially in recovery or authentication scenarios. The team acknowledged this and plans to resolve it via a follow-up issue.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::addValidationKey#108"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Missing or Incomplete Documentation",
+            "description": "Several functions and contracts, such as `onInstall` and `onUninstall` in `GuardianRecoveryValidator.sol`, lack proper NatSpec documentation for parameters and return values. This omission makes it difficult for developers and auditors to understand the intended behavior and usage of these functions. The cause is incomplete or missing docstrings in the source code. While not directly exploitable, this can lead to incorrect usage, integration errors, or missed vulnerabilities during audits. The impact is reduced code maintainability, increased risk of human error, and hindered security review processes. This issue was resolved in a later pull request.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::onInstall#81",
+                "GuardianRecoveryValidator.sol::onUninstall#84-109",
+                "IGuardianRecoveryValidator.sol",
+                "WebAuthValidator.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Non-Standardized Storage Location for SSO_STORAGE_SLOT",
+            "description": "The `SsoAccount` contract uses a custom formula `keccak256('zksync-sso.contracts.SsoStorage') - 1` to define the storage slot, which deviates from the EIP-7201 standard. This non-standard approach increases the risk of storage collisions with other contracts or future upgrades, especially in environments using storage layout optimizations like Verkle trees. The cause is the use of a non-compliant storage slot calculation method. If a collision occurs, it could lead to data corruption or unauthorized state manipulation. The impact includes potential loss of state integrity and reduced compatibility with future protocol upgrades. This was resolved in a pull request.\n",
+            "severity": "Low",
+            "location": [
+                "SsoStorage.sol::SSO_STORAGE_SLOT#8"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The `GuardianRecoveryValidator` contract declares custom errors (`PasskeyNotMatched`, `CooldownPeriodNotPassed`, `ExpiredRequest`) that are never used. Additionally, the `signature` variable in `SsoAccount.sol` and imports for `BatchCaller` and `Call` are unused. This bloats the contract size and increases deployment cost. The cause is leftover or redundant code from development. While not directly exploitable, it reduces code clarity and increases maintenance burden. The impact is higher gas costs and reduced readability, which can indirectly affect security. This was resolved in multiple pull requests.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#35-37",
+                "SsoAccount.sol::#212",
+                "GuardianRecoveryValidator.sol::#13"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ],
+                "3": [
+                    "CWE-1060"
+                ]
+            },
+            "title": "Redundant Storage Access",
+            "description": "The `validateTransaction` function in `SsoAccount.sol` calls `_transaction.totalRequiredBalance()` twice in the same scope, resulting in unnecessary gas consumption. Since the value does not change between calls, this is an inefficiency. The cause is failure to cache the result of an expensive function call. An attacker could exploit this in a loop or repeated transaction scenario to increase gas costs for users. The impact is higher transaction fees and reduced efficiency. A similar issue exists in `WebAuthValidator.sol`. This was resolved in a pull request.\n",
+            "severity": "Low",
+            "location": [
+                "SsoAccount.sol::validateTransaction#93",
+                "WebAuthValidator.sol::#80-82"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Redundant Getter for publicKeys in WebAuthValidator",
+            "description": "The `publicKeys` mapping is declared as `public`, which automatically generates a getter, but a custom `getAccountKey` function is also provided to return the full array. This creates redundant functionality. The cause is misunderstanding of Solidity's automatic getter behavior for complex types. While not a security risk, it increases code size and confusion. The impact is unnecessary gas costs and reduced code clarity. This was resolved by improving comments and layout.\n",
+            "severity": "Informational",
+            "location": [
+                "WebAuthValidator.sol::publicKeys#37-38",
+                "WebAuthValidator.sol::getAccountKey#40"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inconsistencies Between Interface and Implementation",
+            "description": "The `IGuardianRecoveryValidator` interface has mismatched parameter names (e.g., `externalAccount` vs `newGuardian`), inconsistent function ordering, and missing functions (`discardRecovery`, `guardiansFor`, etc.) compared to its implementation. This can cause integration errors and confusion for developers. The cause is poor synchronization between interface and implementation. The impact includes potential bugs in external integrations and reduced developer experience. This was resolved in a pull request.\n",
+            "severity": "Informational",
+            "location": [
+                "IGuardianRecoveryValidator.sol::#8-10",
+                "GuardianRecoveryValidator.sol::#116-138",
+                "IGuardianRecoveryValidator.sol::#12-19",
+                "GuardianRecoveryValidator.sol::#164-202"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1061"
+                ]
+            },
+            "title": "IGuardianRecoveryValidator Is Not Optimized For Development",
+            "description": "Events, errors, and structs used in `GuardianRecoveryValidator` are not declared in the `IGuardianRecoveryValidator` interface, forcing external contracts to duplicate definitions. This reduces interoperability and developer experience. The cause is poor interface design. The impact is increased complexity for integrators and potential for errors in event decoding or struct handling. This was resolved by moving definitions to the interface.\n",
+            "severity": "Informational",
+            "location": [
+                "IGuardianRecoveryValidator.sol",
+                "GuardianRecoveryValidator.sol::#18-57"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Refactor Opportunity Over Address Casting",
+            "description": "The `GuardianRecoveryValidator` contract uses direct casting from `uint256` to `address` instead of the existing `safeCastToAddress` utility function. This bypasses potential safety checks and reduces code consistency. The cause is failure to reuse existing safe utilities. The impact is reduced code maintainability and potential for unsafe casting in other areas. This was resolved by adopting the safe casting function.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#254-256",
+                "Utils.sol::safeCastToAddress#12"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent Variable Types for Time Measurements",
+            "description": "The `addedAt` and `timestamp` variables in `GuardianRecoveryValidator.sol` use different types for time data, which can lead to confusion and errors in time-based logic. The cause is inconsistent type usage. The impact is potential logic bugs in time comparisons or calculations. This was resolved by standardizing types or documenting the choice.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::Guardian#21",
+                "GuardianRecoveryValidator.sol::RecoveryRequest#27"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Misleading Function Naming in GuardianRecoveryValidator",
+            "description": "Functions like `proposeValidationKey` and `addValidationKey` suggest key management but actually manage guardians, leading to confusion. The cause is inaccurate naming that does not reflect functionality. The impact is increased risk of misuse by developers and auditors. This was resolved by renaming functions to better reflect their purpose.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::proposeValidationKey#116",
+                "GuardianRecoveryValidator.sol::removeValidationKey#138",
+                "GuardianRecoveryValidator.sol::addValidationKey#164",
+                "WebAuthValidator.sol::addValidationKey#79"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The contract uses `require` statements with string messages (e.g., \"Only function calls are supported\", \"Overflow\") instead of custom errors, which are more gas-efficient and cleaner. The cause is outdated error handling practice. The impact is higher gas costs and less readable revert messages. This was resolved by introducing custom errors.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#253",
+                "GuardianRecoveryValidator.sol::#254"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings like `accountGuardians`, `guardedAccounts`, and `pendingRecoveryData` in `GuardianRecoveryValidator.sol` lack named parameters, reducing code clarity. The cause is omission of optional but recommended Solidity syntax. The impact is reduced readability and maintainability. This was resolved by adding named parameters.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::accountGuardians#64-65",
+                "GuardianRecoveryValidator.sol::guardedAccounts#66-67",
+                "GuardianRecoveryValidator.sol::pendingRecoveryData#68",
+                "GuardianRecoveryValidator.sol::accountGuardianData#69-70"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ]
+            },
+            "title": "Lack of Security Contact",
+            "description": "Contracts like `GuardianRecoveryValidator` and `IGuardianRecoveryValidator` do not include a `@custom:security-contact` NatSpec tag, making it difficult for researchers to report vulnerabilities. The cause is missing documentation practice. The impact is delayed or missed vulnerability disclosures, increasing security risk. This was resolved by adding security contact information.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol",
+                "IGuardianRecoveryValidator.sol"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/interfaces/IGuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Prefix Increment Operator Can Save Gas in Loops",
+            "description": "Postfix increment operators (`i++`, `j++`) are used in loops across `GuardianRecoveryValidator.sol` and `WebAuthValidator.sol`, which are less gas-efficient than prefix increments (`++i`). The cause is suboptimal coding practice. The impact is higher gas consumption during loop execution. This was resolved by switching to prefix increment operators.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::#86",
+                "GuardianRecoveryValidator.sol::#89",
+                "GuardianRecoveryValidator.sol::#315",
+                "WebAuthValidator.sol::#73"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol",
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Inconsistent Order Within Contracts",
+            "description": "Contracts like `GuardianRecoveryValidator` and `WebAuthValidator` do not follow the Solidity style guide for element ordering (e.g., modifiers between functions, structs after functions). The cause is inconsistent code organization. The impact is reduced readability and maintainability. This was resolved by reordering elements according to best practices.\n",
+            "severity": "Informational",
+            "location": [
+                "GuardianRecoveryValidator.sol::onlyGuardianOf#188",
+                "GuardianRecoveryValidator.sol::#219-246",
+                "WebAuthValidator.sol::PasskeyId#50-53",
+                "WebAuthValidator.sol::#57-119"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-732"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Multiple functions across the codebase are declared with more permissive visibility than necessary, which violates the principle of least privilege. The root cause is the use of `public` or `internal` when `external` or `private` would suffice. While these functions are not exposed to direct malicious exploitation in most cases, unnecessarily broad visibility can increase attack surface and reduce code clarity. An attacker could potentially interact with `public` functions that were not intended for external use, leading to unexpected behavior or increased gas costs for users. The impact is generally low, but it contributes to poor code hygiene and potential future vulnerabilities if the contract evolves.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initialize#76-78",
+                "GuardianRecoveryValidator.sol::finishRecovery#230-237",
+                "GuardianRecoveryValidator.sol::_discardRecovery#241-243",
+                "GuardianRecoveryValidator.sol::guardiansFor#312-319",
+                "GuardianRecoveryValidator.sol::guardianOf#325-327",
+                "GuardianRecoveryValidator.sol::getPendingRecoveryData#333-338"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Use calldata Instead of memory",
+            "description": "Several parameters in external functions are declared with the `memory` data location when they should use `calldata`. This leads to unnecessary gas costs because `memory` forces a copy of the input data, while `calldata` is a cheaper, read-only location for function arguments. The root cause is suboptimal parameter declaration in external functions. Although this does not pose a direct security risk, it increases transaction costs for users and reduces contract efficiency. An attacker could potentially exploit this by crafting large inputs to increase gas usage in edge cases, though the primary impact is economic inefficiency. The consequence is higher operational costs and reduced scalability.\n",
+            "severity": "Low",
+            "location": [
+                "GuardianRecoveryValidator.sol::rawPublicKey#205",
+                "GuardianRecoveryValidator.sol::dismissed#296"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Typographical Error",
+            "description": "A typographical error exists in the NatSpec comment of the `initialize` function in `SsoAccount.sol`, where an extra closing parenthesis is present in a code snippet (`abi.encode(validatorAddr,validationKey))`). While this does not affect the compiled code, it can mislead developers or auditors reading the documentation. The root cause is a simple syntax error in a comment. This has no direct security impact, but it reduces code quality and can cause confusion during maintenance or review. The impact is limited to documentation clarity and developer experience.\n",
+            "severity": "Informational",
+            "location": [
+                "SsoAccount.sol::initialize#57"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/SsoAccount.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1176"
+                ]
+            },
+            "title": "Redundant Hashing Operations in webAuthVerify",
+            "description": "The `webAuthVerify` function performs redundant hashing operations when comparing constant strings (e.g., \"webauthn.get\", \"false\") using `Strings.equal`, which hashes both operands. Since the constant strings do not change, their hashes should be precomputed and stored. The root cause is inefficient string comparison logic. This leads to higher gas costs for each call to `webAuthVerify`, increasing transaction fees. An attacker could potentially exploit this by triggering repeated calls with valid inputs to increase network load or cost, though the primary impact is economic inefficiency. Optimizing this by caching hash values would reduce execution cost and improve scalability.\n",
+            "severity": "Low",
+            "location": [
+                "WebAuthValidator.sol::webAuthVerify#147"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/WebAuthValidator.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AAFactory.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { DEPLOYER_SYSTEM_CONTRACT } from \"@matterlabs/zksync-contracts/l2/system-contracts/Constants.sol\";\nimport { IContractDeployer } from \"@matterlabs/zksync-contracts/l2/system-contracts/interfaces/IContractDeployer.sol\";\nimport { SystemContractsCaller } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/SystemContractsCaller.sol\";\n\nimport { ISsoAccount } from \"./interfaces/ISsoAccount.sol\";\nimport { Errors } from \"./libraries/Errors.sol\";\n\n/// @title AAFactory\n/// @author Matter Labs\n/// @custom:security-contact security@matterlabs.dev\n/// @dev This contract is used to deploy SSO accounts as beacon proxies.\ncontract AAFactory {\n  /// @notice Emitted when a new account is successfully created.\n  /// @param accountAddress The address of the newly created account.\n  /// @param uniqueAccountId A unique identifier for the account.\n  event AccountCreated(address indexed accountAddress, bytes32 uniqueAccountId);\n\n  /// @dev The bytecode hash of the beacon proxy, used for deploying proxy accounts.\n  bytes32 public immutable beaconProxyBytecodeHash;\n  /// @dev The address of the SsoBeacon contract used for the SSO accounts' beacon proxies.\n  address public immutable beacon;\n\n  /// @notice A mapping from unique account IDs to their corresponding deployed account addresses.\n  mapping(bytes32 accountId => address deployedAccount) public accountMappings;\n\n  /// @notice Constructor that initializes the factory with a beacon proxy bytecode hash and implementation contract address.\n  /// @param _beaconProxyBytecodeHash The bytecode hash of the beacon proxy.\n  /// @param _beacon The address of the UpgradeableBeacon contract used for the SSO accounts' beacon proxies.\n  constructor(bytes32 _beaconProxyBytecodeHash, address _beacon) {\n    beaconProxyBytecodeHash = _beaconProxyBytecodeHash;\n    beacon = _beacon;\n  }\n\n  function getEncodedBeacon() external view returns (bytes memory) {\n    return abi.encode(beacon);\n  }\n\n  /// @notice Deploys a new SSO account as a beacon proxy with the specified parameters.\n  /// @dev Uses `create2` to deploy a proxy account, allowing for deterministic addresses based on the provided unique id.\n  /// @param uniqueId Use to generate a unique account id and deterministic address calculation (create2 salt).\n  /// @param initialValidators An array of initial validators for the new account.\n  /// @param initialK1Owners An array of initial owners of the K1 key for the new account.\n  /// @return accountAddress The address of the newly deployed SSO account.\n  function deployProxySsoAccount(\n    bytes32 uniqueId,\n    bytes[] calldata initialValidators,\n    address[] calldata initialK1Owners\n  ) external returns (address accountAddress) {\n    bytes32 uniqueAccountId = keccak256(abi.encodePacked(uniqueId, msg.sender));\n    address existingAccountAddress = accountMappings[uniqueAccountId];\n    if (existingAccountAddress != address(0)) {\n      revert Errors.ACCOUNT_ALREADY_EXISTS(existingAccountAddress);\n    }\n\n    bytes memory returnData = SystemContractsCaller.systemCallWithPropagatedRevert(\n      uint32(gasleft()),\n      address(DEPLOYER_SYSTEM_CONTRACT),\n      uint128(0),\n      abi.encodeCall(\n        DEPLOYER_SYSTEM_CONTRACT.create2Account,\n        (\n          uniqueAccountId,\n          beaconProxyBytecodeHash,\n          abi.encode(beacon),\n          IContractDeployer.AccountAbstractionVersion.Version1\n        )\n      )\n    );\n    (accountAddress) = abi.decode(returnData, (address));\n\n    accountMappings[uniqueAccountId] = accountAddress;\n\n    // Initialize the newly deployed account with validators and K1 owners.\n    ISsoAccount(accountAddress).initialize(initialValidators, initialK1Owners);\n\n    emit AccountCreated(accountAddress, uniqueAccountId);\n  }\n}\n",
+        "SsoAccount.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport { ACCOUNT_VALIDATION_SUCCESS_MAGIC } from \"@matterlabs/zksync-contracts/l2/system-contracts/interfaces/IAccount.sol\";\nimport { Transaction, TransactionHelper } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\nimport { EfficientCall } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/EfficientCall.sol\";\nimport { NONCE_HOLDER_SYSTEM_CONTRACT, DEPLOYER_SYSTEM_CONTRACT } from \"@matterlabs/zksync-contracts/l2/system-contracts/Constants.sol\";\nimport { INonceHolder } from \"@matterlabs/zksync-contracts/l2/system-contracts/interfaces/INonceHolder.sol\";\nimport { SystemContractsCaller } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/SystemContractsCaller.sol\";\nimport { Utils } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/Utils.sol\";\nimport { Initializable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\n\nimport { HookManager } from \"./managers/HookManager.sol\";\nimport { Utils as SsoUtils } from \"./helpers/Utils.sol\";\n\nimport { TokenCallbackHandler } from \"./helpers/TokenCallbackHandler.sol\";\n\nimport { Errors } from \"./libraries/Errors.sol\";\nimport { SignatureDecoder } from \"./libraries/SignatureDecoder.sol\";\n\nimport { ERC1271Handler } from \"./handlers/ERC1271Handler.sol\";\nimport { BatchCaller } from \"./batch/BatchCaller.sol\";\n\nimport { BootloaderAuth } from \"./auth/BootloaderAuth.sol\";\n\nimport { ISsoAccount } from \"./interfaces/ISsoAccount.sol\";\nimport { IModuleValidator } from \"./interfaces/IModuleValidator.sol\";\n\n/// @title SSO Account\n/// @author Matter Labs\n/// @custom:security-contact security@matterlabs.dev\n/// @notice The implementation is inspired by Clave wallet.\n/// @notice This contract is a modular and extensible account implementation with support of\n/// multi-ownership, custom modules, validation/execution hooks and different signature validation formats.\n/// @dev Contract is expected to be used as Beacon proxy implementation.\ncontract SsoAccount is\n  Initializable,\n  HookManager,\n  ERC1271Handler,\n  TokenCallbackHandler,\n  BatchCaller,\n  ISsoAccount,\n  BootloaderAuth\n{\n  // Helper library for the Transaction struct\n  using TransactionHelper for Transaction;\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  /// @notice Initializer function that sets account initial configuration. Expected to be used in the proxy.\n  /// @dev Sets passkey and passkey validator within account storage\n  /// @param initialValidators An array of module validator addresses and initial validation keys\n  /// in an ABI encoded format of `abi.encode(validatorAddr,validationKey))`.\n  /// @param initialK1Owners An array of addresses with full control over the account.\n  function initialize(bytes[] calldata initialValidators, address[] calldata initialK1Owners) external initializer {\n    address validatorAddr;\n    bytes memory initData;\n    for (uint256 i = 0; i < initialValidators.length; ++i) {\n      (validatorAddr, initData) = abi.decode(initialValidators[i], (address, bytes));\n      _addModuleValidator(validatorAddr, initData);\n    }\n    for (uint256 i = 0; i < initialK1Owners.length; ++i) {\n      _addK1Owner(initialK1Owners[i]);\n    }\n  }\n\n  /// @dev Account might receive/hold base tokens.\n  receive() external payable {}\n\n  /// @notice Called by the bootloader to validate that an account agrees to process the transaction\n  /// (and potentially pay for it).\n  /// @dev The developer should strive to preserve as many steps as possible both for valid\n  /// and invalid transactions as this very method is also used during the gas fee estimation\n  /// (without some of the necessary data, e.g. signature).\n  /// @param _suggestedSignedHash The suggested hash of the transaction that is signed by the signer.\n  /// @param _transaction The transaction data.\n  /// @return magic The magic value that should be equal to the signature of this function.\n  /// if the user agrees to proceed with the transaction.\n  function validateTransaction(\n    bytes32,\n    bytes32 _suggestedSignedHash,\n    Transaction calldata _transaction\n  ) external payable override onlyBootloader returns (bytes4 magic) {\n    // TODO: session txs have their own nonce managers, so they have to not alter this nonce\n    _incrementNonce(_transaction.nonce);\n\n    // If there is not enough balance for the transaction, the account should reject it\n    // on the validation step to prevent paying fees for revertable transactions.\n    if (_transaction.totalRequiredBalance() > address(this).balance) {\n      revert Errors.INSUFFICIENT_FUNDS(_transaction.totalRequiredBalance(), address(this).balance);\n    }\n\n    // While the suggested signed hash is usually provided, it is generally\n    // not recommended to rely on it to be present, since in the future\n    // there may be tx types with no suggested signed hash.\n    bytes32 signedHash = _suggestedSignedHash == bytes32(0) ? _transaction.encodeHash() : _suggestedSignedHash;\n\n    magic = _validateTransaction(signedHash, _transaction);\n  }\n\n  /// @notice Called by the bootloader to make the account execute the transaction.\n  /// @dev The transaction is considered successful if this function does not revert\n  /// @param _transaction The transaction data.\n  function executeTransaction(\n    bytes32,\n    bytes32,\n    Transaction calldata _transaction\n  ) external payable override onlyBootloader runExecutionHooks(_transaction) {\n    address to = SsoUtils.safeCastToAddress(_transaction.to);\n    uint128 value = Utils.safeCastToU128(_transaction.value);\n\n    _executeCall(to, value, _transaction.data);\n  }\n\n  /// @notice Executes a call to a given address with a specified value and calldata.\n  /// @param _to The address to which the call is made.\n  /// @param _value The value to send along with the call.\n  /// @param _data The calldata to pass along with the call.\n  function _executeCall(address _to, uint128 _value, bytes calldata _data) private {\n    uint32 gas = Utils.safeCastToU32(gasleft());\n    bool success;\n\n    if (_to == address(DEPLOYER_SYSTEM_CONTRACT)) {\n      bytes4 selector = bytes4(_data[:4]);\n      // Check that called function is the deployment method,\n      // the other deployer methods are not supposed to be called from the account.\n      // NOTE: DefaultAccount has the same behavior.\n      bool isSystemCall = selector == DEPLOYER_SYSTEM_CONTRACT.create.selector ||\n        selector == DEPLOYER_SYSTEM_CONTRACT.create2.selector ||\n        selector == DEPLOYER_SYSTEM_CONTRACT.createAccount.selector ||\n        selector == DEPLOYER_SYSTEM_CONTRACT.create2Account.selector;\n      // Note, that the deployer contract can only be called with a \"isSystemCall\" flag.\n      success = EfficientCall.rawCall({\n        _gas: gas,\n        _address: _to,\n        _value: _value,\n        _data: _data,\n        _isSystem: isSystemCall\n      });\n    } else {\n      success = EfficientCall.rawCall(gas, _to, _value, _data, false);\n    }\n\n    if (!success) {\n      EfficientCall.propagateRevert();\n    }\n  }\n\n  /// @notice This function allows an EOA to start a transaction for the account. The main purpose of which is\n  /// to have and entry point for escaping funds when L2 transactions are censored by the chain, and only\n  /// forced transactions are accepted by the network.\n  /// @dev It is not implemented yet.\n  function executeTransactionFromOutside(Transaction calldata) external payable override {\n    revert Errors.METHOD_NOT_IMPLEMENTED();\n  }\n\n  /// @notice This function allows the account to pay for its own gas and used when there is no paymaster.\n  /// @param _transaction The transaction data.\n  /// @dev This method must send at least `tx.gasprice * tx.gasLimit` ETH to the bootloader address.\n  function payForTransaction(\n    bytes32,\n    bytes32,\n    Transaction calldata _transaction\n  ) external payable override onlyBootloader {\n    bool success = _transaction.payToTheBootloader();\n\n    if (!success) {\n      revert Errors.FEE_PAYMENT_FAILED();\n    }\n  }\n  /// @notice This function is called by the system if the transaction has a paymaster\n  /// and prepares the interaction with the paymaster.\n  /// @param _transaction The transaction data.\n  function prepareForPaymaster(\n    bytes32,\n    bytes32,\n    Transaction calldata _transaction\n  ) external payable override onlyBootloader {\n    _transaction.processPaymasterInput();\n  }\n\n  /// @dev type(ISsoAccount).interfaceId indicates SSO accounts\n  function supportsInterface(bytes4 interfaceId) public view override(IERC165, TokenCallbackHandler) returns (bool) {\n    return interfaceId == type(ISsoAccount).interfaceId || super.supportsInterface(interfaceId);\n  }\n\n  /// @notice Validates the provided transaction by validating signature of ECDSA k1 owner.\n  /// or running validation hooks and signature validation in the provided validator address.\n  /// @param _signedHash The signed hash of the transaction.\n  /// @param _transaction The transaction data.\n  /// @return The magic value if the validation was successful and bytes4(0) otherwise.\n  function _validateTransaction(bytes32 _signedHash, Transaction calldata _transaction) private returns (bytes4) {\n    // Run validation hooks\n    bool hookSuccess = runValidationHooks(_signedHash, _transaction);\n    if (!hookSuccess) {\n      return bytes4(0);\n    }\n\n    if (_transaction.signature.length == 65) {\n      (address signer, ECDSA.RecoverError err) = ECDSA.tryRecover(_signedHash, _transaction.signature);\n      return\n        signer == address(0) || err != ECDSA.RecoverError.NoError || !_isK1Owner(signer)\n          ? bytes4(0)\n          : ACCOUNT_VALIDATION_SUCCESS_MAGIC;\n    }\n\n    // Extract the signature, validator address and hook data from the _transaction.signature\n    (bytes memory signature, address validator) = SignatureDecoder.decodeSignatureNoHookData(_transaction.signature);\n\n    bool validationSuccess = _isModuleValidator(validator) &&\n      IModuleValidator(validator).validateTransaction(_signedHash, _transaction);\n    if (!validationSuccess) {\n      return bytes4(0);\n    }\n\n    return ACCOUNT_VALIDATION_SUCCESS_MAGIC;\n  }\n\n  /// @dev Increments the nonce value in Nonce Holder system contract to ensure replay attack protection.\n  /// @dev Reverts if the Nonce Holder stores different `_nonce` value from the expected one.\n  /// @param _expectedNonce The nonce value expected for the account to be stored in the Nonce Holder.\n  function _incrementNonce(uint256 _expectedNonce) private {\n    // Allow-listing slither finding as the call's success is checked+revert within the fn\n    // slither-disable-next-line unused-return\n    SystemContractsCaller.systemCallWithPropagatedRevert(\n      uint32(gasleft()),\n      address(NONCE_HOLDER_SYSTEM_CONTRACT),\n      0,\n      abi.encodeCall(INonceHolder.incrementMinNonceIfEquals, (_expectedNonce))\n    );\n  }\n}\n",
+        "GuardianRecoveryValidator.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { Transaction } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\nimport { Initializable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport { EnumerableSetUpgradeable } from \"@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol\";\nimport { WebAuthValidator } from \"./WebAuthValidator.sol\";\nimport { IGuardianRecoveryValidator } from \"../interfaces/IGuardianRecoveryValidator.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { IModule } from \"../interfaces/IModule.sol\";\nimport { TimestampAsserterLocator } from \"../helpers/TimestampAsserterLocator.sol\";\nimport { BatchCaller, Call } from \"../batch/BatchCaller.sol\";\n\ncontract GuardianRecoveryValidator is Initializable, IGuardianRecoveryValidator {\n  using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;\n\n  struct Guardian {\n    address addr;\n    bool isReady;\n    uint64 addedAt;\n  }\n\n  struct RecoveryRequest {\n    bytes32 hashedCredentialId;\n    bytes32[2] rawPublicKey;\n    uint256 timestamp;\n  }\n\n  error GuardianCannotBeSelf();\n  error GuardianNotFound(address guardian);\n  error GuardianNotProposed(address guardian);\n  error AccountAlreadyGuardedByGuardian(address account, address guardian);\n  error AccountNotGuardedByAddress(address account, address guardian);\n  error PasskeyNotMatched();\n  error CooldownPeriodNotPassed();\n  error ExpiredRequest();\n\n  event RecoveryInitiated(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId,\n    address guardian\n  );\n  event RecoveryFinished(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId\n  );\n  event RecoveryDiscarded(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId\n  );\n  event GuardianProposed(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n  event GuardianAdded(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n  event GuardianRemoved(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n\n  uint256 public constant REQUEST_VALIDITY_TIME = 72 * 60 * 60; // 72 hours\n  uint256 public constant REQUEST_DELAY_TIME = 24 * 60 * 60; // 24 hours\n\n  bytes30 private _gap; // Gap to claim 30 bytes remaining in slot 0 after fields layout of Initializable contract\n  WebAuthValidator public webAuthValidator; // Enforced slot 1 in order to be able to access it during validateTransaction step\n  mapping(bytes32 hashedOriginDomain => mapping(address account => EnumerableSetUpgradeable.AddressSet))\n    private accountGuardians;\n  mapping(bytes32 hashedOriginDomain => mapping(address guardian => EnumerableSetUpgradeable.AddressSet))\n    private guardedAccounts;\n  mapping(bytes32 hashedOriginDomain => mapping(address account => RecoveryRequest)) public pendingRecoveryData;\n  mapping(bytes32 hashedOriginDomain => mapping(address account => mapping(address guardian => Guardian)))\n    public accountGuardianData;\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  function initialize(WebAuthValidator _webAuthValidator) public initializer {\n    webAuthValidator = _webAuthValidator;\n  }\n\n  /// @notice Validator initiator for given sso account. This module does not support initialization on creation\n  function onInstall(bytes calldata) external {}\n\n  /// @notice Removes all past guardians when this module is disabled in a account\n  function onUninstall(bytes calldata data) external {\n    bytes32[] memory hashedOriginDomains = abi.decode(data, (bytes32[]));\n    for (uint256 j = 0; j < hashedOriginDomains.length; j++) {\n      bytes32 hashedOriginDomain = hashedOriginDomains[j];\n      address[] memory guardians = accountGuardians[hashedOriginDomain][msg.sender].values();\n      for (uint256 i = 0; i < guardians.length; i++) {\n        address guardian = guardians[i];\n\n        EnumerableSetUpgradeable.AddressSet storage accounts = guardedAccounts[hashedOriginDomain][guardian];\n        bool guardedAccountsRemovalSuccessful = accounts.remove(msg.sender);\n\n        if (!guardedAccountsRemovalSuccessful) {\n          revert AccountNotGuardedByAddress(msg.sender, guardian);\n        }\n        delete accountGuardianData[hashedOriginDomain][msg.sender][guardian];\n\n        bool removalSuccessful = accountGuardians[hashedOriginDomain][msg.sender].remove(guardian);\n\n        if (!removalSuccessful) {\n          revert GuardianNotFound(guardian);\n        }\n\n        emit GuardianRemoved(msg.sender, hashedOriginDomain, guardian);\n      }\n    }\n  }\n\n  /// @notice The `proposeValidationKey` method handles the initial registration of guardians by:\n  ///   1. Taking an external account address and store it as pending guardian\n  ///   2. Enable `addValidationKey` to confirm this account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param newGuardian New Guardian's address\n  function proposeValidationKey(bytes32 hashedOriginDomain, address newGuardian) external {\n    if (msg.sender == newGuardian) revert GuardianCannotBeSelf();\n\n    bool additionSuccessful = accountGuardians[hashedOriginDomain][msg.sender].add(newGuardian);\n\n    if (!additionSuccessful) {\n      return;\n    }\n\n    accountGuardianData[hashedOriginDomain][msg.sender][newGuardian] = Guardian(\n      newGuardian,\n      false,\n      uint64(block.timestamp)\n    );\n    emit GuardianProposed(msg.sender, hashedOriginDomain, newGuardian);\n  }\n\n  /// @notice This method handles the removal of guardians by:\n  ///   1. Accepting an address as input\n  ///   2. Removing the account from the list of guardians\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param guardianToRemove Guardian's address to remove\n  function removeValidationKey(bytes32 hashedOriginDomain, address guardianToRemove) external {\n    bool removalSuccessful = accountGuardians[hashedOriginDomain][msg.sender].remove(guardianToRemove);\n\n    if (removalSuccessful) {\n      bool wasActiveGuardian = accountGuardianData[hashedOriginDomain][msg.sender][guardianToRemove].isReady;\n      delete accountGuardianData[hashedOriginDomain][msg.sender][guardianToRemove];\n\n      if (wasActiveGuardian) {\n        EnumerableSetUpgradeable.AddressSet storage accounts = guardedAccounts[hashedOriginDomain][guardianToRemove];\n        bool accountsRemovalSuccessful = accounts.remove(msg.sender);\n\n        if (!accountsRemovalSuccessful) {\n          revert AccountNotGuardedByAddress(msg.sender, guardianToRemove);\n        }\n      }\n      emit GuardianRemoved(msg.sender, hashedOriginDomain, guardianToRemove);\n      return;\n    }\n\n    revert GuardianNotFound(guardianToRemove);\n  }\n\n  /// @notice This method allows to accept being a guardian of given account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param accountToGuard Address of account which msg.sender is becoming guardian of\n  /// @return Flag indicating whether guardian was already valid or not\n  function addValidationKey(bytes32 hashedOriginDomain, address accountToGuard) external returns (bool) {\n    bool guardianProposed = accountGuardians[hashedOriginDomain][accountToGuard].contains(msg.sender);\n\n    if (guardianProposed) {\n      // We return true if the guardian was not confirmed before.\n      if (accountGuardianData[hashedOriginDomain][accountToGuard][msg.sender].isReady) return false;\n\n      accountGuardianData[hashedOriginDomain][accountToGuard][msg.sender].isReady = true;\n      bool addSuccessful = guardedAccounts[hashedOriginDomain][msg.sender].add(accountToGuard);\n\n      if (!addSuccessful) {\n        revert AccountAlreadyGuardedByGuardian(accountToGuard, msg.sender);\n      }\n\n      emit GuardianAdded(accountToGuard, hashedOriginDomain, msg.sender);\n      return true;\n    }\n\n    revert GuardianNotProposed(msg.sender);\n  }\n\n  /// @notice This modifier allows execution only by active guardian of account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param account Address of account for which we verify guardian existence\n  modifier onlyGuardianOf(bytes32 hashedOriginDomain, address account) {\n    bool isGuardian = accountGuardians[hashedOriginDomain][account].contains(msg.sender) &&\n      accountGuardianData[hashedOriginDomain][account][msg.sender].isReady;\n\n    if (!isGuardian) revert GuardianNotFound(msg.sender);\n    // Continue execution if called by guardian\n    _;\n  }\n\n  /// @notice This method initializes a recovery process for a given account\n  /// @param accountToRecover Address of account for which given recovery is initiated\n  /// @param hashedCredentialId Hashed credential ID of the new passkey\n  /// @param rawPublicKey Raw public key of the new passkey\n  /// @param hashedOriginDomain Hash of origin domain of the new passkey\n  function initRecovery(\n    address accountToRecover,\n    bytes32 hashedCredentialId,\n    bytes32[2] memory rawPublicKey,\n    bytes32 hashedOriginDomain\n  ) external onlyGuardianOf(hashedOriginDomain, accountToRecover) {\n    pendingRecoveryData[hashedOriginDomain][accountToRecover] = RecoveryRequest(\n      hashedCredentialId,\n      rawPublicKey,\n      block.timestamp\n    );\n\n    emit RecoveryInitiated(accountToRecover, hashedOriginDomain, hashedCredentialId, msg.sender);\n  }\n\n  /// @notice This method allows to discard currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function discardRecovery(bytes32 hashedOriginDomain) external {\n    emit RecoveryDiscarded(\n      msg.sender,\n      hashedOriginDomain,\n      pendingRecoveryData[hashedOriginDomain][msg.sender].hashedCredentialId\n    );\n    _discardRecovery(hashedOriginDomain);\n  }\n\n  /// @notice This method allows to finish currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function finishRecovery(bytes32 hashedOriginDomain) internal {\n    emit RecoveryFinished(\n      msg.sender,\n      hashedOriginDomain,\n      pendingRecoveryData[hashedOriginDomain][msg.sender].hashedCredentialId\n    );\n    _discardRecovery(hashedOriginDomain);\n  }\n\n  /// @notice This method allows to discard currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function _discardRecovery(bytes32 hashedOriginDomain) internal {\n    delete pendingRecoveryData[hashedOriginDomain][msg.sender];\n  }\n\n  /// @inheritdoc IModuleValidator\n  function validateTransaction(bytes32, Transaction calldata transaction) external returns (bool) {\n    // Finishing Recovery Process. If the user has a recovery in progress then:\n    //   1. The method will check if the transaction is attempting to modify passkeys\n    //   2. Verify the new passkey matches the one stored in `initRecovery`\n    //   3. Allows anyone to call this method, as the recovery was already verified in `initRecovery`\n    //   4. Verifies that the required timelock period has passed since `initRecovery` was called\n    //   5. If all the above are true, the recovery is finished\n    require(transaction.data.length >= 4, \"Only function calls are supported\");\n    require(transaction.to <= type(uint160).max, \"Overflow\");\n    // Verify the transaction is a call to WebAuthValidator contract\n    address target = address(uint160(transaction.to));\n    if (target != address(webAuthValidator)) {\n      return false;\n    }\n\n    // Verify the transaction is a call to `addValidationKey`\n    bytes4 selector = bytes4(transaction.data[:4]);\n    if (selector != WebAuthValidator.addValidationKey.selector) {\n      return false;\n    }\n\n    // Verify the current request matches pending one\n    bytes calldata transactionData = transaction.data[4:];\n    (bytes memory credentialId, bytes32[2] memory rawPublicKey, string memory originDomain) = abi.decode(\n      transactionData,\n      (bytes, bytes32[2], string)\n    );\n\n    bytes32 hashedOriginDomain = keccak256(abi.encodePacked(originDomain));\n    RecoveryRequest storage storedData = pendingRecoveryData[hashedOriginDomain][msg.sender];\n\n    bytes32 hashedCredentialIdFromTx = keccak256(credentialId);\n    if (hashedCredentialIdFromTx != storedData.hashedCredentialId) {\n      return false;\n    }\n\n    if (rawPublicKey[0] != storedData.rawPublicKey[0] || rawPublicKey[1] != storedData.rawPublicKey[1]) {\n      return false;\n    }\n    // Verify request is in valid time range\n    TimestampAsserterLocator.locate().assertTimestampInRange(\n      storedData.timestamp + REQUEST_DELAY_TIME,\n      storedData.timestamp + REQUEST_VALIDITY_TIME\n    );\n\n    finishRecovery(hashedOriginDomain);\n    return true;\n  }\n\n  /// @inheritdoc IModuleValidator\n  function validateSignature(bytes32, bytes memory) external pure returns (bool) {\n    return false;\n  }\n\n  /// @inheritdoc IERC165\n  function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {\n    return\n      interfaceId == type(IERC165).interfaceId ||\n      interfaceId == type(IModuleValidator).interfaceId ||\n      interfaceId == type(IModule).interfaceId;\n  }\n\n  /// @notice Returns all guardians for an account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param addr Address of account to get guardians for\n  /// @return Array of guardians for the account\n  function guardiansFor(bytes32 hashedOriginDomain, address addr) public view returns (Guardian[] memory) {\n    address[] memory guardians = accountGuardians[hashedOriginDomain][addr].values();\n    Guardian[] memory result = new Guardian[](guardians.length);\n    for (uint256 i = 0; i < guardians.length; i++) {\n      result[i] = accountGuardianData[hashedOriginDomain][addr][guardians[i]];\n    }\n    return result;\n  }\n\n  /// @notice Returns all accounts guarded by a guardian\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param guardian Address of guardian to get guarded accounts for\n  /// @return Array of accounts guarded by the guardian\n  function guardianOf(bytes32 hashedOriginDomain, address guardian) public view returns (address[] memory) {\n    return guardedAccounts[hashedOriginDomain][guardian].values();\n  }\n\n  /// @notice Returns the pending recovery data for an account and origin domain\n  /// @param hashedOriginDomain Hash of the origin domain\n  /// @param account Address of the account\n  /// @return The full RecoveryRequest struct containing hashedCredentialId, rawPublicKey, and timestamp\n  function getPendingRecoveryData(\n    bytes32 hashedOriginDomain,\n    address account\n  ) public view returns (RecoveryRequest memory) {\n    return pendingRecoveryData[hashedOriginDomain][account];\n  }\n}\n",
+        "WebAuthValidator.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { Transaction } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\n\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { IModule } from \"../interfaces/IModule.sol\";\nimport { VerifierCaller } from \"../helpers/VerifierCaller.sol\";\nimport { Strings } from \"@openzeppelin/contracts/utils/Strings.sol\";\nimport { Base64 } from \"solady/src/utils/Base64.sol\";\nimport { JSONParserLib } from \"solady/src/utils/JSONParserLib.sol\";\nimport { Errors } from \"../libraries/Errors.sol\";\n\n/// @title WebAuthValidator\n/// @author Matter Labs\n/// @custom:security-contact security@matterlabs.dev\n/// @dev This contract allows secure user authentication using WebAuthn public keys.\ncontract WebAuthValidator is VerifierCaller, IModuleValidator {\n  using JSONParserLib for JSONParserLib.Item;\n  using JSONParserLib for string;\n\n  /// @dev P256Verify precompile implementation, as defined in RIP-7212, is found at\n  /// https://github.com/matter-labs/era-contracts/blob/main/system-contracts/contracts/precompiles/P256Verify.yul\n  address private constant P256_VERIFIER = address(0x100);\n\n  error NOT_KEY_OWNER(address account);\n\n  // check for secure validation: bit 0 = 1 (user present), bit 2 = 1 (user verified)\n  bytes1 private constant AUTH_DATA_MASK = 0x05;\n  bytes32 private constant LOW_S_MAX = 0x7fffffff800000007fffffffffffffffde737d56d38bcf4279dce5617e3192a8;\n  bytes32 private constant HIGH_R_MAX = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551;\n\n  event PasskeyCreated(address indexed keyOwner, string originDomain, bytes credentialId);\n  event PasskeyRemoved(address indexed keyOwner, string originDomain, bytes credentialId);\n\n  mapping(string originDomain => mapping(bytes credentialId => mapping(address accountAddress => bytes32[2] publicKey)))\n    public publicKeys;\n\n  function getAccountKey(\n    string calldata originDomain,\n    bytes calldata credentialId,\n    address accountAddress\n  ) external view returns (bytes32[2] memory) {\n    return publicKeys[originDomain][credentialId][accountAddress];\n  }\n\n  mapping(string originDomain => mapping(bytes credentialId => address accountAddress)) public registeredAddress;\n\n  struct PasskeyId {\n    string domain;\n    bytes credentialId;\n  }\n\n  /// @notice Runs on module install\n  /// @param data ABI-encoded WebAuthn passkey to add immediately, or empty if not needed\n  function onInstall(bytes calldata data) external override {\n    if (data.length > 0) {\n      (bytes memory credentialId, bytes32[2] memory rawPublicKey, string memory originDomain) = abi.decode(\n        data,\n        (bytes, bytes32[2], string)\n      );\n      if (!addValidationKey(credentialId, rawPublicKey, originDomain)) {\n        revert Errors.WEBAUTHN_KEY_EXISTS();\n      }\n    }\n  }\n\n  /// @notice Runs on module uninstall\n  /// @param data ABI-encoded array of origin domains to remove keys for\n  function onUninstall(bytes calldata data) external override {\n    PasskeyId[] memory passkeyIds = abi.decode(data, (PasskeyId[]));\n    for (uint256 i = 0; i < passkeyIds.length; i++) {\n      PasskeyId memory passkeyId = passkeyIds[i];\n      removeValidationKey(passkeyId.credentialId, passkeyId.domain);\n    }\n  }\n\n  function removeValidationKey(bytes memory credentialId, string memory domain) public {\n    if (registeredAddress[domain][credentialId] != msg.sender) {\n      revert NOT_KEY_OWNER(registeredAddress[domain][credentialId]);\n    }\n    registeredAddress[domain][credentialId] = address(0);\n    publicKeys[domain][credentialId][msg.sender] = [bytes32(0), bytes32(0)];\n\n    emit PasskeyRemoved(msg.sender, domain, credentialId);\n  }\n\n  /// @notice Adds a WebAuthn passkey for the caller\n  /// @param credentialId unique public identifier for the key\n  /// @param rawPublicKey ABI-encoded WebAuthn public key to add\n  /// @param originDomain the domain this associated with\n  /// @return true if the key was added, false if one already exists\n  function addValidationKey(\n    bytes memory credentialId,\n    bytes32[2] memory rawPublicKey,\n    string memory originDomain\n  ) public returns (bool) {\n    bytes32[2] memory initialAccountKey = publicKeys[originDomain][credentialId][msg.sender];\n    if (uint256(initialAccountKey[0]) != 0 || uint256(initialAccountKey[1]) != 0) {\n      // only allow adding new keys, no overwrites/updates\n      return false;\n    }\n    if (registeredAddress[originDomain][credentialId] != address(0)) {\n      // this key already exists on the domain for an existing account\n      return false;\n    }\n    if (rawPublicKey[0] == 0 && rawPublicKey[1] == 0) {\n      // empty keys aren't valid\n      return false;\n    }\n\n    publicKeys[originDomain][credentialId][msg.sender] = rawPublicKey;\n    registeredAddress[originDomain][credentialId] = msg.sender;\n\n    emit PasskeyCreated(msg.sender, originDomain, credentialId);\n\n    return true;\n  }\n\n  /// @notice Validates a WebAuthn signature\n  /// @param signedHash The hash of the signed message\n  /// @param signature The signature to validate\n  /// @return true if the signature is valid\n  function validateSignature(bytes32 signedHash, bytes calldata signature) external view returns (bool) {\n    return webAuthVerify(signedHash, signature);\n  }\n\n  /// @notice Validates a transaction signed with a passkey\n  /// @dev Does not validate the transaction signature field, which is expected to be different due to the modular format\n  /// @param signedHash The hash of the signed transaction\n  /// @param transaction The transaction to validate\n  /// @return true if the signature is valid\n  function validateTransaction(bytes32 signedHash, Transaction calldata transaction) external view returns (bool) {\n    (bytes memory signature, , ) = abi.decode(transaction.signature, (bytes, address, bytes));\n    return webAuthVerify(signedHash, signature);\n  }\n\n  /// @notice Validates a WebAuthn signature\n  /// @dev Performs r & s range validation to prevent signature malleability\n  /// @dev Checks passkey authenticator data flags (valid number of credentials)\n  /// @dev Requires that the transaction signature hash was the signed challenge\n  /// @dev Verifies that the signature was performed by a 'get' request\n  /// @param transactionHash The hash of the signed message\n  /// @param fatSignature The signature to validate (authenticator data, client data, [r, s])\n  /// @return true if the signature is valid\n  function webAuthVerify(bytes32 transactionHash, bytes memory fatSignature) internal view returns (bool) {\n    (\n      bytes memory authenticatorData,\n      string memory clientDataJSON,\n      bytes32[2] memory rs,\n      bytes memory credentialId\n    ) = _decodeFatSignature(fatSignature);\n\n    // prevent signature replay https://yondon.blog/2019/01/01/how-not-to-use-ecdsa/\n    if (uint256(rs[0]) == 0 || rs[0] > HIGH_R_MAX || uint256(rs[1]) == 0 || rs[1] > LOW_S_MAX) {\n      return false;\n    }\n\n    // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API/Authenticator_data#attestedcredentialdata\n    if (authenticatorData[32] & AUTH_DATA_MASK != AUTH_DATA_MASK) {\n      return false;\n    }\n\n    // parse out the required fields (type, challenge, crossOrigin): https://goo.gl/yabPex\n    JSONParserLib.Item memory root = JSONParserLib.parse(clientDataJSON);\n    // challenge should contain the transaction hash, ensuring that the transaction is signed\n    string memory challenge = root.at('\"challenge\"').value().decodeString();\n    bytes memory challengeData = Base64.decode(challenge);\n    if (challengeData.length != 32) {\n      return false; // wrong hash size\n    }\n    if (bytes32(challengeData) != transactionHash) {\n      return false;\n    }\n\n    // type ensures the signature was created from a validation request\n    string memory type_ = root.at('\"type\"').value().decodeString();\n    if (!Strings.equal(\"webauthn.get\", type_)) {\n      return false;\n    }\n\n    // the origin determines which key to validate against\n    // as passkeys are linked to domains, so the storage mapping reflects that\n    string memory origin = root.at('\"origin\"').value().decodeString();\n    bytes32[2] memory publicKey = publicKeys[origin][credentialId][msg.sender];\n    if (uint256(publicKey[0]) == 0 && uint256(publicKey[1]) == 0) {\n      // no key found!\n      return false;\n    }\n\n    // cross-origin validation is optional, but explicitly not supported.\n    // cross-origin requests would be from embedding the auth request\n    // from another domain. The current SSO setup uses a pop-up instead of\n    // an i-frame, so we're rejecting these until the implemention supports it\n    JSONParserLib.Item memory crossOriginItem = root.at('\"crossOrigin\"');\n    if (!crossOriginItem.isUndefined()) {\n      string memory crossOrigin = crossOriginItem.value();\n      if (!Strings.equal(\"false\", crossOrigin)) {\n        return false;\n      }\n    }\n\n    bytes32 message = _createMessage(authenticatorData, bytes(clientDataJSON));\n    return callVerifier(P256_VERIFIER, message, rs, publicKey);\n  }\n\n  /// @inheritdoc IERC165\n  function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {\n    return\n      interfaceId == type(IERC165).interfaceId ||\n      interfaceId == type(IModuleValidator).interfaceId ||\n      interfaceId == type(IModule).interfaceId;\n  }\n\n  function _createMessage(\n    bytes memory authenticatorData,\n    bytes memory clientData\n  ) private pure returns (bytes32 message) {\n    bytes32 clientDataHash = sha256(clientData);\n    message = sha256(bytes.concat(authenticatorData, clientDataHash));\n  }\n\n  function _decodeFatSignature(\n    bytes memory fatSignature\n  )\n    private\n    pure\n    returns (\n      bytes memory authenticatorData,\n      string memory clientDataSuffix,\n      bytes32[2] memory rs,\n      bytes memory credentialId\n    )\n  {\n    (authenticatorData, clientDataSuffix, rs, credentialId) = abi.decode(\n      fatSignature,\n      (bytes, string, bytes32[2], bytes)\n    );\n  }\n}\n",
+        "IGuardianRecoveryValidator.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { IModuleValidator } from \"./IModuleValidator.sol\";\nimport { Transaction } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\n\ninterface IGuardianRecoveryValidator is IModuleValidator {\n  function proposeValidationKey(bytes32 hashedOriginDomain, address externalAccount) external;\n\n  function removeValidationKey(bytes32 hashedOriginDomain, address externalAccount) external;\n\n  function initRecovery(\n    address accountToRecover,\n    bytes32 hashedCredentialId,\n    bytes32[2] memory rawPublicKey,\n    bytes32 hashedOriginDomain\n  ) external;\n\n  function addValidationKey(bytes32 hashedOriginDomain, address accountToGuard) external returns (bool);\n\n  function validateTransaction(bytes32 signedHash, Transaction calldata transaction) external returns (bool);\n\n  function validateSignature(bytes32 signedHash, bytes memory signature) external view returns (bool);\n}\n"
+    }
+}

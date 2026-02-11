@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00474",
+    "project_name": "cantina_stryke_aug2025.pdf",
+    "findings": [
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Missing validation in PoolSpotPrice._getPrice function",
+            "description": "The _getPrice function in PoolSpotPrice accepts a callAsset address but does not verify it is one of the pool's tokens. The root cause is missing input validation. If a wrong asset is passed, the function returns a price in incorrect units, leading to miscalculations in premiums and fees. The impact is silent propagation of wrong prices, potentially causing over- or under-charging, though the team claims it's only called internally with correct values.\n",
+            "severity": "Informational",
+            "location": [
+                "PoolSpotPrice.sol#L19"
+            ],
+            "files": [
+                "contracts/src/apps/options/pricing/PoolSpotPrice.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PoolSpotPrice.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity >=0.8.0 <0.9.0;\n\nimport {IVerifiedSpotPrice} from \"../../../interfaces/IVerifiedSpotPrice.sol\";\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {FullMath} from \"@uniswap/v3-core/contracts/libraries/FullMath.sol\";\n\ncontract PoolSpotPrice is IVerifiedSpotPrice {\n    function getSpotPrice(IUniswapV3Pool pool, address callAsset, uint8 callAssetDecimals)\n        external\n        view\n        returns (uint256)\n    {\n        (, bytes memory result) = address(pool).staticcall(abi.encodeWithSignature(\"slot0()\"));\n        uint160 sqrtPriceX96 = abi.decode(result, (uint160));\n        return _getPrice(pool, sqrtPriceX96, callAsset, callAssetDecimals);\n    }\n\n    function _getPrice(IUniswapV3Pool _pool, uint160 sqrtPriceX96, address callAsset, uint8 callAssetDecimals)\n        internal\n        view\n        returns (uint256 price)\n    {\n        if (sqrtPriceX96 <= type(uint128).max) {\n            uint256 priceX192 = uint256(sqrtPriceX96) * sqrtPriceX96;\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX192, 10 ** callAssetDecimals, 1 << 192)\n                : FullMath.mulDiv(1 << 192, 10 ** callAssetDecimals, priceX192);\n        } else {\n            uint256 priceX128 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);\n\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX128, 10 ** callAssetDecimals, 1 << 128)\n                : FullMath.mulDiv(1 << 128, 10 ** callAssetDecimals, priceX128);\n        }\n    }\n}\n"
+    }
+}

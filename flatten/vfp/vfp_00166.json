@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00166",
+    "project_name": "The Compact Audit.md",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "EOAs Can Be Registered as Allocators",
+            "description": "Externally owned accounts (EOAs) can be registered as allocators in the protocol, even though allocators are expected to implement specific logic such as the `authorizeClaim` function. The `_registerAllocator` function does not verify whether the provided address contains contract code, allowing EOAs to be registered. Since EOAs cannot execute code or respond to function calls, any attempt to invoke `authorizeClaim` on such an EOA will result in a revert with the error `InvalidAllocation(allocator)`. This issue stems from the lack of a contract code check during registration. An attacker or misconfigured user could register an EOA as an allocator, leading to failed claims or transfers when that allocator is used. The impact includes denial of service for claim processing involving such allocators, potentially locking user funds or disrupting protocol functionality.\n",
+            "severity": "High",
+            "location": [
+                "AllocatorLogic.sol::_registerAllocator#69"
+            ],
+            "files": [
+                "the-compact/src/lib/AllocatorLogic.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AllocatorLogic.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport { ResetPeriod } from \"../types/ResetPeriod.sol\";\nimport { Scope } from \"../types/Scope.sol\";\n\nimport { ConsumerLib } from \"./ConsumerLib.sol\";\nimport { EfficiencyLib } from \"./EfficiencyLib.sol\";\nimport { IdLib } from \"./IdLib.sol\";\nimport { ValidityLib } from \"./ValidityLib.sol\";\n\nimport { ITheCompact } from \"../interfaces/ITheCompact.sol\";\n\n/**\n * @title AllocatorLogic\n * @notice Inherited contract implementing internal functions with logic for registering\n * new allocators, allowing registered allocators to directly consume nonces within their\n * scope, and querying for information on nonce consumption and lock details.\n */\ncontract AllocatorLogic {\n    using IdLib for uint96;\n    using IdLib for uint256;\n    using IdLib for address;\n    using ConsumerLib for uint256;\n    using EfficiencyLib for uint256;\n    using ValidityLib for address;\n\n    /**\n     * @notice Internal function for marking allocator nonces as consumed. Once consumed, a nonce\n     * cannot be reused to claim resource locks referencing that allocator. Called by the external\n     * consume function and during claim processing to prevent replay attacks.\n     * @param nonces Array of nonces to mark as consumed for the calling allocator.\n     * @return       Whether all nonces were successfully marked as consumed.\n     */\n    function _consume(uint256[] calldata nonces) internal returns (bool) {\n        // NOTE: this may not be necessary, consider removing\n        msg.sender.usingAllocatorId().mustHaveARegisteredAllocator();\n\n        unchecked {\n            uint256 i;\n\n            assembly (\"memory-safe\") {\n                i := nonces.offset\n            }\n\n            uint256 end = i + (nonces.length << 5);\n            uint256 nonce;\n            for (; i < end; i += 0x20) {\n                assembly (\"memory-safe\") {\n                    nonce := calldataload(i)\n                }\n                nonce.consumeNonceAsAllocator(msg.sender);\n\n                emit ITheCompact.NonceConsumedDirectly(msg.sender, nonce);\n            }\n        }\n\n        return true;\n    }\n\n    /**\n     * @notice Internal function for registering an allocator. Validates that one of three\n     * conditions is met: caller is the allocator address, allocator address contains code, or\n     * proof represents valid create2 deployment parameters that derive the allocator address.\n     * @param allocator    The address to register as an allocator.\n     * @param proof        An 85-byte value containing create2 address derivation parameters.\n     * @return allocatorId A unique identifier assigned to the registered allocator.\n     */\n    function _registerAllocator(address allocator, bytes calldata proof) internal returns (uint96 allocatorId) {\n        allocator = uint256(uint160(allocator)).asSanitizedAddress();\n        if (!allocator.canBeRegistered(proof)) {\n            assembly (\"memory-safe\") {\n                // revert InvalidRegistrationProof(allocator)\n                mstore(0, 0x4e7f492b)\n                mstore(0x20, allocator)\n                revert(0x1c, 0x24)\n            }\n        }\n\n        allocatorId = allocator.register();\n    }\n\n    /**\n     * @notice Internal view function for checking whether a specific nonce has been consumed by\n     * an allocator.\n     * @param nonce     The nonce to check.\n     * @param allocator The address of the allocator.\n     * @return          Whether the nonce has been consumed.\n     */\n    function _hasConsumedAllocatorNonce(uint256 nonce, address allocator) internal view returns (bool) {\n        return allocator.hasConsumedAllocatorNonce(nonce);\n    }\n\n    /**\n     * @notice Internal view function for retrieving the details of a resource lock.\n     * @param id           The ERC6909 token identifier for the resource lock.\n     * @return token       The address of the underlying token (or address(0) for native tokens).\n     * @return allocator   The address of the allocator mediating the resource lock.\n     * @return resetPeriod The duration after which the underlying tokens can be withdrawn once a forced withdrawal is initiated.\n     * @return scope       The scope of the resource lock (multichain or single chain).\n     * @return lockTag     The lock tag containing the allocator ID, the reset period, and the scope.\n     */\n    function _getLockDetails(uint256 id)\n        internal\n        view\n        returns (address token, address allocator, ResetPeriod resetPeriod, Scope scope, bytes12 lockTag)\n    {\n        token = id.toAddress();\n        allocator = id.toAllocatorId().toRegisteredAllocator();\n        resetPeriod = id.toResetPeriod();\n        scope = id.toScope();\n        lockTag = id.toLockTag();\n    }\n}\n"
+    }
+}

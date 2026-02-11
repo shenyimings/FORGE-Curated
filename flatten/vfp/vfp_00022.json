@@ -1,0 +1,137 @@
+{
+    "vfp_id": "vfp_00022",
+    "project_name": "cantina_aragon_oct2025.pdf",
+    "findings": [
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-250"
+                ]
+            },
+            "title": "Swapper contract should never hold tokens or allowances between transactions",
+            "description": "The Swapper contract is designed to temporarily execute arbitrary actions on behalf of users during a single transaction, particularly after claiming rewards. However, it is unsafe for the Swapper to hold any tokens or allowances between transactions because it supports delegatecall to an external Executor, allowing arbitrary code execution. The root cause is the high-privilege context in which the Swapper operates. If the contract were to hold tokens or approvals, a malicious action sequence could drain them. Although the design intends for no residual balances, the risk arises if future modifications or incorrect assumptions allow funds to remain. The impact is potential loss of user funds if the Swapper accumulates tokens and is exploited via crafted actions. This is classified as informational to emphasize secure usage patterns.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L64",
+                "Swapper.sol#L70-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Check on executor is insufficent",
+            "description": "The Swapper contract only checks that the _executor address provided during construction is non-zero, but it does not verify that the address contains actual code. The root cause is an incomplete validation that assumes a non-zero address implies a valid contract. In multi-chain deployments or due to configuration errors, a valid-looking address might not have a contract deployed, causing delegatecall to succeed but execute no useful code, leading to silent failures or unexpected behavior. The impact is potential malfunction of the Swapper if initialized with an incorrect executor address, reducing system reliability. This can be mitigated by checking that the address has non-zero code size, ensuring the target is a real contract.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L32-L34"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Low granularity for choosing percentage KAT to lock",
+            "description": "The Swapper contract allows users to specify a percentage of KAT tokens to lock in escrow using whole integer percentages (e.g., 5%, 10%). The root cause is the use of a coarse 1% increment system, which lacks precision. This results in low granularity, especially at the boundaries—for example, choosing between 4% and 5% represents a 25% relative change. The impact is reduced flexibility for users who want fine-grained control over their lock-up ratios, potentially affecting yield optimization and voting power distribution. While not a security risk, it limits usability and precision in financial decisions. The recommendation is to use basis points (1/100th of a percent) for finer control.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L53"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Dangerous delegatecall can be replaced with inheritance",
+            "description": "The Swapper contract uses delegatecall to execute actions through an external Executor contract. The root cause of the risk is the dynamic and potentially unbounded nature of delegatecall, which, if not strictly sanitized, can lead to dangerous state modifications or reentrancy. Although the current setup may be safe, the use of a dynamically set executor increases complexity and trust assumptions. The impact is an elevated risk of logic errors or future vulnerabilities if the executor contract is changed or compromised. A safer alternative is to inherit the executor logic directly or implement it internally, eliminating the need for external delegatecall and reducing attack surface, gas costs, and dependency risks.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L73-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "KAT tokens stuck in the swapper cannot be rescued",
+            "description": "The Swapper contract checks the balance of KAT tokens before and after claiming and swapping, and reverts if the balance decreases, which prevents underflow. However, this design prevents any KAT tokens already present in the Swapper from being included in the compounding process. The root cause is the strict balance check that assumes no pre-existing balance. As a result, if KAT tokens are accidentally sent to the Swapper, they become stuck and cannot be rescued or compounded. The impact is permanent loss of funds if tokens are misrouted, reducing recoverability and user trust. The recommendation is to remove the pre-check and instead use the post-swap balance as the amount to compound, enabling recovery of stranded tokens.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L83"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Actions cannot send native tokens in claimAndSwap() because it is not payable",
+            "description": "The claimAndSwap() function in the Swapper contract is not marked as payable, even though the _actions array includes a value field intended to specify native token amounts for external calls. The root cause is a mismatch between the function’s design and its implementation—while it supports value transfers in actions, it cannot receive native tokens to fund them. This makes it impossible to send ETH (or native tokens) during claim and swap operations. The impact is reduced functionality and potential gas waste if users attempt to pass value, which will revert. Alternatively, if native token transfers are not intended, including the value field is unnecessary and increases calldata cost. The recommendation is to either make the function payable to enable native token use or remove the value parameter to streamline the interface.\n",
+            "severity": "Informational",
+            "location": [
+                "Swapper.sol#L43-L50",
+                "Swapper.sol#L73-L75"
+            ],
+            "files": [
+                "katana-governance/src/Swapper.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Swapper.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.17;\n\nimport { ReentrancyGuard } from \"@openzeppelin/contracts/security/ReentrancyGuard.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\nimport { VotingEscrowV1_2_0 as Escrow } from \"@escrow/VotingEscrowIncreasing_v1_2_0.sol\";\n\nimport { IExecutor } from \"@aragon/osx-commons-contracts/src/executors/IExecutor.sol\";\nimport { Action } from \"@aragon/osx-commons-contracts/src/executors/IExecutor.sol\";\n\nimport { ISwapper } from \"src/interfaces/ISwapper.sol\";\nimport { IRewardsDistributor } from \"src/interfaces/IRewardsDistributor.sol\";\n\ncontract Swapper is ISwapper, ReentrancyGuard {\n    using SafeERC20 for IERC20;\n\n    /// @notice The address of the rewards distributor where swapper can claim tokens.\n    IRewardsDistributor public immutable rewardDistributor;\n\n    /// @notice The executor contract Swapper delegates the actions execution to.\n    address public immutable executor;\n\n    /// @notice The escrow contract address\n    Escrow public immutable escrow;\n\n    /// @notice The ERC20 token address escrow uses\n    IERC20 public immutable escrowToken;\n\n    constructor(address _rewardDistributor, address _escrow, address _executor) {\n        if (_executor == address(0)) {\n            revert ZeroAddress();\n        }\n\n        rewardDistributor = IRewardsDistributor(_rewardDistributor);\n        executor = _executor;\n        escrow = Escrow(_escrow);\n        escrowToken = IERC20(escrow.token());\n    }\n\n    /// @inheritdoc ISwapper\n    function claimAndSwap(\n        Claim calldata _claim,\n        Action[] calldata _actions,\n        uint256 _pct\n    )\n        public\n        nonReentrant\n        returns (uint256 tokenAmountGained, uint256 tokenId)\n    {\n        // make sure percentage is never more than 100.\n        if (_pct > 100) {\n            revert PctTooBig();\n        }\n\n        address[] memory users = new address[](_claim.tokens.length);\n        for (uint256 i = 0; i < _claim.tokens.length; i++) {\n            users[i] = msg.sender;\n        }\n\n        // save before amount of the escrow token as if we have any\n        // we may need to compound it\n        uint256 beforeAmount = escrowToken.balanceOf(address(this));\n\n        // If `_tokens`, `_amounts` and `_proofs` have incorrect size, below reverts.\n        // The `user` must have set this contract as a recipient\n        // for the `token` prior to calling this.\n        // At this point, this contract holds balances on `_tokens`.\n        rewardDistributor.claim(users, _claim.tokens, _claim.amounts, _claim.proofs);\n\n        // call actions\n        (bool success,) = executor.delegatecall(\n            abi.encodeCall(IExecutor.execute, (bytes32(uint256(uint160(address(this)))), _actions, 0))\n        );\n        if (!success) {\n            revert ActionsFailed();\n        }\n\n        // if the tokens are not KAT they will be transferred as part of the actions passed to the executor\n        // hence we only check the balance difference of the escrow token and see if we need to compound\n        uint256 afterAmount = escrowToken.balanceOf(address(this));\n        tokenAmountGained = afterAmount - beforeAmount;\n        Locked memory lock;\n        if (tokenAmountGained > 0) {\n            lock = _compoundEscrowToken(_pct, tokenAmountGained);\n        }\n\n        emit ClaimAndSwapped(msg.sender, _claim.tokens, _claim.amounts, _pct, lock);\n\n        return (tokenAmountGained, lock.tokenId);\n    }\n\n    function _compoundEscrowToken(uint256 _pct, uint256 _tokenAmountGained) internal returns (Locked memory lock) {\n        // If tokenAmountGained > 0, then kat token balance was increased on this contract.\n        // If pct > 0, create a lock with percentage and send rest to sender.\n        // If pct = 0, send whole amount to sender.\n        uint256 remaining = _tokenAmountGained;\n        if (_pct > 0) {\n            lock.amount = (_tokenAmountGained * _pct) / 100;\n            remaining = _tokenAmountGained - lock.amount;\n\n            // 1. approve should not revert even for non-compliant ERC20s as\n            // it only approves the exact amount that will be transfered\n            // from this contract, automatically setting allowance back to 0.\n            // we trust that escrow's createLockFor will transfer the whole lock.amount.\n            // 2. It's better to allow fail rather than silently succeed if `lock.amount`\n            // is less than minDeposit of escrow, so no need to add extra check and revert.\n            escrowToken.approve(address(escrow), lock.amount);\n            lock.tokenId = escrow.createLockFor(lock.amount, msg.sender);\n        }\n\n        if (remaining > 0) {\n            escrowToken.safeTransfer(msg.sender, remaining);\n        }\n    }\n}\n"
+    }
+}

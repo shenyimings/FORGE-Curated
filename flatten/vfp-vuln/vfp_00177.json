@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00177",
+    "project_name": "cantina_eco_pr28_pr38_aug2025.pdf",
+    "findings": [
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Anyone can issue approvals for ERC7702 delegatee",
+            "description": "The ERC7702TokenApprover module allows anyone to call the approve() function on behalf of a delegatee after they have set code via EIP-7702. This is because the function does not restrict who can invoke it once delegation is active. As a result, any third party can trigger approvals for arbitrary tokens on behalf of the delegatee, potentially granting the Permit3 contract access to tokens the user did not intend to approve. The root cause is the lack of access control in the approve() function, combined with the persistent nature of EIP-7702 delegation. The impact is unauthorized token approvals, increasing the risk of asset loss if the Permit3 contract is compromised or misused.\n",
+            "severity": "Medium",
+            "location": [
+                "ERC7702TokenApprover.sol#L41-L56"
+            ],
+            "files": [
+                "70649332/permit3/src/modules/ERC7702TokenApprover.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ERC7702TokenApprover.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport { IERC20 } from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport { IERC7702TokenApprover } from \"../interfaces/IERC7702TokenApprover.sol\";\n\n/**\n * @title ERC7702TokenApprover\n * @notice Contract designed to work with ERC-7702 to batch approve infinite allowances to Permit3\n * @dev This contract is intended to be used as delegation target for EOAs using ERC-7702\n *      Users authorize their EOA to delegatecall to this contract, which then sets infinite\n *      allowances for specified ERC20 tokens to the Permit3 contract.\n */\ncontract ERC7702TokenApprover is IERC7702TokenApprover {\n    using SafeERC20 for IERC20;\n\n    /// @notice The Permit3 contract address that will receive infinite approvals\n    address public immutable PERMIT3;\n\n    /**\n     * @notice Constructor to set the Permit3 contract address\n     * @param permit3 Address of the Permit3 contract\n     */\n    constructor(\n        address permit3\n    ) {\n        if (permit3 == address(0)) {\n            revert ZeroPermit3();\n        }\n        PERMIT3 = permit3;\n    }\n\n    /**\n     * @notice Batch approve infinite allowances for multiple ERC20 tokens to Permit3\n     * @dev This function is designed to be called via ERC-7702 delegatecall from an EOA\n     *      The EOA must have authorized delegation to this contract in the same transaction\n     * @param tokens Array of ERC20 token addresses to approve\n     */\n    function approve(\n        address[] calldata tokens\n    ) external {\n        uint256 tokensLength = tokens.length;\n        if (tokensLength == 0) {\n            revert NoTokensProvided();\n        }\n\n        for (uint256 i = 0; i < tokensLength; ++i) {\n            if (tokens[i] == address(0)) {\n                revert ZeroToken();\n            }\n            // Set infinite allowance (type(uint256).max) regardless of current allowance\n            IERC20(tokens[i]).forceApprove(PERMIT3, type(uint256).max);\n        }\n    }\n}\n"
+    }
+}

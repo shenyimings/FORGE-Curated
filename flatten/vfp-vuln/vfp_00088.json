@@ -1,0 +1,50 @@
+{
+    "vfp_id": "vfp_00088",
+    "project_name": "Vultisig - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Sweep and reinvest functions are vulnerable to sandwich attacks",
+            "description": "The _swapTokens() function in StakeSweeper.sol calculates the expected output of a token swap using Uniswap's getAmountsOut() function, which reads from current pool reserves that can be manipulated by frontrunning. The calculated amountOutMin applies slippage protection but is derived from a potentially manipulated state, rendering the protection ineffective. This allows an attacker to sandwich sweep() or reinvest() transactions by manipulating the price before the swap and profiting afterward. The root cause is the reliance on on-chain price data at execution time rather than off-chain, user-provided minimums. The lack of access control on sweep() exacerbates the issue by allowing anyone to trigger these vulnerable swaps. Exploitation would involve monitoring the mempool, frontrunning with a large trade, allowing the victim's swap to execute at a worse rate, and back-running to capture profit. The impact is financial loss for users due to unfavorable swap rates, especially during large sweeps or reinvestments.\n",
+            "severity": "High",
+            "location": [
+                "Stake.sol",
+                "StakeSweeper.sol::104-111"
+            ],
+            "files": [
+                "vultisig-contract/contracts/StakeSweeper.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Ineffective deadline protection in _swapTokens()",
+            "description": "The _swapTokens() function in StakeSweeper.sol sets the deadline for Uniswap swaps using block.timestamp + 1 hours, which is calculated at execution time. Since the Uniswap router compares this deadline against the same block.timestamp, the check is always satisfied, making the deadline protection meaningless. The root cause is the dynamic calculation of the deadline instead of using a fixed timestamp provided by the caller. As a result, transactions can remain valid in the mempool indefinitely, exposing users to execution under unfavorable market conditions long after submission. This undermines the purpose of the deadline parameter, which is to limit the time window for execution. The impact is increased exposure to price volatility and potential loss due to stale transactions being mined at inopportune times.\n",
+            "severity": "Medium",
+            "location": [
+                "StakeSweeper.sol::115"
+            ],
+            "files": [
+                "vultisig-contract/contracts/StakeSweeper.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "StakeSweeper.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"./interfaces/IUniswapRouter.sol\";\n\n/**\n * @title StakeSweeper\n * @dev Contract for sweeping tokens into reward tokens using Uniswap-like routers\n */\ncontract StakeSweeper is Ownable {\n    using SafeERC20 for IERC20;\n\n    // Events\n    event RouterSet(address indexed router);\n    event MinOutPercentageSet(uint8 percentage);\n    event TokenSwept(address indexed token, uint256 amountIn, uint256 amountOut);\n\n    // State variables\n    address public defaultRouter;\n    uint8 public minOutPercentage = 90; // Default 90% to protect from slippage\n    IERC20 public immutable rewardToken;\n\n    constructor(address _rewardToken, address _router) Ownable(msg.sender) {\n        require(_rewardToken != address(0), \"StakeSweeper: reward token is zero address\");\n        require(_router != address(0), \"StakeSweeper: router is zero address\");\n        rewardToken = IERC20(_rewardToken);\n        defaultRouter = _router;\n    }\n\n    /**\n     * @dev Sets the router for sweep operations\n     * @param _router The address of the Uniswap-like router to use\n     */\n    function setRouter(address _router) external onlyOwner {\n        require(_router != address(0), \"StakeSweeper: router is zero address\");\n        defaultRouter = _router;\n        emit RouterSet(_router);\n    }\n\n    /**\n     * @dev Sets the minimum percentage of output tokens expected (slippage protection)\n     * @param _percentage The percentage (1-100)\n     */\n    function setMinOutPercentage(uint8 _percentage) external onlyOwner {\n        require(_percentage > 0 && _percentage <= 100, \"StakeSweeper: percentage must be between 1-100\");\n        minOutPercentage = _percentage;\n        emit MinOutPercentageSet(_percentage);\n    }\n\n    /**\n     */\n    function reinvest(address _stakingToken, address _recipient) external returns (uint256) {\n        uint256 balance = IERC20(rewardToken).balanceOf(address(this));\n\n        uint256 amountOut = _swapTokens(address(rewardToken), address(_stakingToken), balance, _recipient);\n\n        emit TokenSwept(address(rewardToken), balance, amountOut);\n        return amountOut;\n    }\n\n    /**\n     * @dev Sweeps a token and converts it to reward tokens\n     * @param _token Token to sweep\n     * @param _recipient Address to receive the reward tokens\n     * @return Amount of reward tokens received\n     */\n    function sweep(address _token, address _recipient) external returns (uint256) {\n        require(_token != address(rewardToken), \"StakeSweeper: cannot sweep reward token\");\n        require(_recipient != address(0), \"StakeSweeper: recipient is zero address\");\n\n        IERC20 token = IERC20(_token);\n        uint256 balance = token.balanceOf(address(this));\n        require(balance > 0, \"StakeSweeper: no tokens to sweep\");\n\n        // Execute the swap\n        uint256 amountOut = _swapTokens(_token, address(rewardToken), balance, _recipient);\n\n        emit TokenSwept(_token, balance, amountOut);\n        return amountOut;\n    }\n\n    /**\n     * @dev Internal function to swap tokens using Uniswap router\n     */\n    function _swapTokens(address _tokenIn, address _tokenOut, uint256 _amountIn, address _recipient)\n        internal\n        returns (uint256)\n    {\n        require(_amountIn > 0, \"StakeSweeper: amount to swap must be greater than 0\");\n\n        address[] memory path = new address[](2);\n        path[0] = _tokenIn;\n        path[1] = _tokenOut;\n\n        IERC20(_tokenIn).safeIncreaseAllowance(defaultRouter, _amountIn);\n\n        // Get quote from router\n        uint256[] memory amountsOut;\n        uint256 expectedOut = 0;\n\n        try IUniswapRouter(defaultRouter).getAmountsOut(_amountIn, path) returns (uint256[] memory output) {\n            amountsOut = output;\n            if (amountsOut.length > 1) {\n                expectedOut = amountsOut[amountsOut.length - 1];\n            }\n        } catch {}\n\n        uint256 amountOutMin = expectedOut > 0 ? (expectedOut * minOutPercentage) / 100 : 1;\n\n        // Execute swap\n        uint256[] memory amounts = IUniswapRouter(defaultRouter).swapExactTokensForTokens(\n            _amountIn, amountOutMin, path, _recipient, block.timestamp + 1 hours\n        );\n\n        IERC20(_tokenIn).safeIncreaseAllowance(defaultRouter, 0);\n        return amounts[amounts.length - 1];\n    }\n}\n"
+    }
+}

@@ -1,0 +1,118 @@
+{
+    "vfp_id": "vfp_00651",
+    "project_name": "ackee-blockchain-vfat-sickle-report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-749"
+                ]
+            },
+            "title": "Whitelisted callers can perform delegatecall on every Sickle",
+            "description": "This vulnerability allows any address whitelisted in the SickleRegistry to perform delegatecall operations on every deployed Sickle contract. The root cause is the centralized SickleRegistry, which maintains a global whitelist used by all Sickle instances via the Multicall contract. Since the registry is immutable and shared across all user wallets, a malicious or compromised admin can add a malicious caller and target, enabling unauthorized execution of arbitrary code in the context of any Sickle. An attacker who gains control of the admin key can whitelist themselves and a malicious contract, then call multicall() on all Sickle instances to drain user funds via delegatecall. This results in a complete loss of user assets across the entire system, with no possibility of mitigation once the transaction is executed due to the atomic nature of the attack.\n",
+            "severity": "High",
+            "location": [
+                "Sickle.sol",
+                "Multicall.sol",
+                "SickleRegistry.sol::setWhitelistedCallers",
+                "SickleRegistry.sol::setWhitelistedTargets"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol",
+                "sickle-public/contracts/SickleRegistry.sol",
+                "sickle-public/contracts/base/Multicall.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Referral code setter can be front-run",
+            "description": "The setReferralCode function in the SickleRegistry contract is vulnerable to front-running because it does not include any protection against race conditions. The function checks if a referral code is already assigned and, if not, assigns it to the caller. However, since this operation is not atomic or protected by a commit-reveal scheme, an attacker can observe a pending transaction in the mempool and submit a competing transaction with a higher gas price to claim the same referral code. This allows the attacker to steal referral rewards intended for the original user. The impact is limited to loss of referral incentives rather than principal funds, but it undermines the fairness and integrity of the referral system. The exploit is highly likely due to the simplicity of the attack and the lack of economic or technical barriers.\n",
+            "severity": "Medium",
+            "location": [
+                "SickleRegistry.sol::setReferralCode#104-111"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleRegistry.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-475"
+                ]
+            },
+            "title": "Incorrect usage of Initializable",
+            "description": "The Sickle.sol contract incorrectly uses the Initializable pattern by applying the initializer modifier to both the Multicall constructor and the Sickle constructor, as well as having a separate initialize function. This violates the OpenZeppelin Initializable contract's warning against multiple initializers, risking multiple initializations, callable initialization functions post-deployment, and undefined behavior in proxy patterns. The root cause is a misunderstanding of upgradeable contract patterns. This could allow malicious re-initialization, potentially changing ownership or critical parameters after deployment. The impact includes potential loss of control over the contract, fund loss, or permanent corruption of contract state, especially in an upgradeable architecture.\n",
+            "severity": "Informational",
+            "location": [
+                "Sickle.sol::constructor",
+                "Sickle.sol::initialize"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Usage of magic constants",
+            "description": "The SickleRegistry and FeesLib contracts use magic numbers like 500 (for 5% fee cap) and 10_000 (for basis points) without defining named constants. The root cause is poor code readability practices. Magic constants make the code harder to understand and maintain, as their meaning is not immediately clear. For example, 500 could be misinterpreted without the comment. The impact is reduced code clarity and increased risk of errors during updates (e.g., changing fee limits incorrectly). Using named constants like MAX_FEE would improve transparency and safety.\n",
+            "severity": "Informational",
+            "location": [
+                "SickleRegistry.sol::setFees#126",
+                "FeesLib.sol#59"
+            ],
+            "files": [
+                "sickle-public/contracts/SickleRegistry.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant function",
+            "description": "The _Sickle_initialize function in Sickle.sol acts solely as a pass-through to _SickleStorage_initialize without adding any logic or validation. The cause is that the function was created unnecessarily, increasing code complexity without benefit. This redundancy cannot be exploited but may confuse developers about the initialization flow. The impact is on code maintainability and gas efficiency during deployment due to unnecessary function calls, though minimal.\n",
+            "severity": "Informational",
+            "location": [
+                "Sickle.sol::_Sickle_initialize#34-39"
+            ],
+            "files": [
+                "sickle-public/contracts/Sickle.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Multicall.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.17;\n\nimport { SickleStorage } from \"contracts/base/SickleStorage.sol\";\nimport { SickleRegistry } from \"contracts/SickleRegistry.sol\";\n\n/// @title Multicall contract\n/// @author vfat.tools\n/// @notice Enables calling multiple methods in a single call to the contract\nabstract contract Multicall is SickleStorage {\n    /// ERRORS ///\n\n    error MulticallParamsMismatchError(); // 0xc1e637c9\n\n    /// @notice Thrown when the target contract is not whitelisted\n    /// @param target Address of the non-whitelisted target\n    error TargetNotWhitelisted(address target); // 0x47ccabe7\n\n    /// @notice Thrown when the caller is not whitelisted\n    /// @param caller Address of the non-whitelisted caller\n    error CallerNotWhitelisted(address caller); // 0x252c8273\n\n    /// STORAGE ///\n\n    /// @notice Address of the SickleRegistry contract\n    /// @dev Needs to be immutable so that it's accessible for Sickle proxies\n    SickleRegistry public immutable registry;\n\n    /// INITIALIZATION ///\n\n    /// @param registry_ Address of the SickleRegistry contract\n    constructor(SickleRegistry registry_) initializer {\n        registry = registry_;\n    }\n\n    /// WRITE FUNCTIONS ///\n\n    /// @notice Batch multiple calls together (calls or delegatecalls)\n    /// @param targets Array of targets to call\n    /// @param data Array of data to pass with the calls\n    function multicall(\n        address[] calldata targets,\n        bytes[] calldata data\n    ) external payable {\n        if (targets.length != data.length) {\n            revert MulticallParamsMismatchError();\n        }\n\n        if (!registry.isWhitelistedCaller(msg.sender)) {\n            revert CallerNotWhitelisted(msg.sender);\n        }\n\n        for (uint256 i = 0; i != data.length;) {\n            if (targets[i] == address(0)) {\n                unchecked {\n                    ++i;\n                }\n                continue; // No-op\n            }\n\n            if (targets[i] != address(this)) {\n                if (!registry.isWhitelistedTarget(targets[i])) {\n                    revert TargetNotWhitelisted(targets[i]);\n                }\n            }\n\n            (bool success, bytes memory result) =\n                targets[i].delegatecall(data[i]);\n\n            if (!success) {\n                if (result.length == 0) revert();\n                assembly {\n                    revert(add(32, result), mload(result))\n                }\n            }\n            unchecked {\n                ++i;\n            }\n        }\n    }\n}\n",
+        "Sickle.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.17;\n\nimport { SickleStorage } from \"contracts/base/SickleStorage.sol\";\nimport { Multicall } from \"contracts/base/Multicall.sol\";\nimport { SickleRegistry } from \"contracts/SickleRegistry.sol\";\n\n/// @title Sickle contract\n/// @author vfat.tools\n/// @notice Sickle facilitates farming and interactions with Masterchef\n/// contracts\n/// @dev Base contract inheriting from all the other \"manager\" contracts\ncontract Sickle is SickleStorage, Multicall {\n    /// @notice Function to receive ETH\n    receive() external payable { }\n\n    /// @param sickleRegistry_ Address of the SickleRegistry contract\n    constructor(\n        SickleRegistry sickleRegistry_\n    ) initializer Multicall(sickleRegistry_) {\n        _Sickle_initialize(address(0), address(0));\n    }\n\n    /// @param sickleOwner_ Address of the Sickle owner\n    function initialize(\n        address sickleOwner_,\n        address approved_\n    ) external initializer {\n        _Sickle_initialize(sickleOwner_, approved_);\n    }\n\n    /// INTERNALS ///\n\n    function _Sickle_initialize(\n        address sickleOwner_,\n        address approved_\n    ) internal {\n        SickleStorage._SickleStorage_initialize(sickleOwner_, approved_);\n    }\n\n    function onERC721Received(\n        address, // operator\n        address, // from\n        uint256, // tokenId\n        bytes calldata // data\n    ) external pure returns (bytes4) {\n        return this.onERC721Received.selector;\n    }\n\n    function onERC1155Received(\n        address, // operator\n        address, // from\n        uint256, // id\n        uint256, // value\n        bytes calldata // data\n    ) external pure returns (bytes4) {\n        return this.onERC1155Received.selector;\n    }\n\n    function onERC1155BatchReceived(\n        address, // operator\n        address, // from\n        uint256[] calldata, // ids\n        uint256[] calldata, // values\n        bytes calldata // data\n    ) external pure returns (bytes4) {\n        return this.onERC1155BatchReceived.selector;\n    }\n}\n",
+        "SickleRegistry.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.17;\n\nimport { Admin } from \"contracts/base/Admin.sol\";\n\nlibrary SickleRegistryEvents {\n    event CollectorChanged(address newCollector);\n    event FeesUpdated(bytes32[] feeHashes, uint256[] feesInBP);\n    event ReferralCodeCreated(bytes32 indexed code, address indexed referrer);\n\n    // Multicall caller and target whitelist status changes\n    event CallerStatusChanged(address caller, bool isWhitelisted);\n    event TargetStatusChanged(address target, bool isWhitelisted);\n}\n\n/// @title SickleRegistry contract\n/// @author vfat.tools\n/// @notice Manages the whitelisted contracts and the collector address\ncontract SickleRegistry is Admin {\n    /// ERRORS ///\n\n    error ArrayLengthMismatch(); // 0xa24a13a6\n    error FeeAboveMaxLimit(); // 0xd6cf7b5e\n    error InvalidReferralCode(); // 0xe55b4629\n\n    /// STORAGE ///\n\n    /// @notice Address of the fee collector\n    address public collector;\n\n    /// @notice Tracks the contracts that can be called through Sickle multicall\n    /// @return True if the contract is a whitelisted target\n    mapping(address => bool) public isWhitelistedTarget;\n\n    /// @notice Tracks the contracts that can call Sickle multicall\n    /// @return True if the contract is a whitelisted caller\n    mapping(address => bool) public isWhitelistedCaller;\n\n    /// @notice Keeps track of the referrers and their associated code\n    mapping(bytes32 => address) public referralCodes;\n\n    /// @notice Mapping for fee hashes (hash of the strategy contract addresses\n    /// and the function selectors) and their associated fees\n    /// @return The fee in basis points to apply to the transaction amount\n    mapping(bytes32 => uint256) public feeRegistry;\n\n    /// WRITE FUNCTIONS ///\n\n    /// @param admin_ Address of the admin\n    /// @param collector_ Address of the collector\n    constructor(address admin_, address collector_) Admin(admin_) {\n        collector = collector_;\n    }\n\n    /// @notice Updates the whitelist status for multiple multicall targets\n    /// @param targets Addresses of the contracts to update\n    /// @param isApproved New status for the contracts\n    /// @custom:access Restricted to protocol admin.\n    function setWhitelistedTargets(\n        address[] calldata targets,\n        bool isApproved\n    ) external onlyAdmin {\n        for (uint256 i; i < targets.length;) {\n            isWhitelistedTarget[targets[i]] = isApproved;\n            emit SickleRegistryEvents.TargetStatusChanged(\n                targets[i], isApproved\n            );\n\n            unchecked {\n                ++i;\n            }\n        }\n    }\n\n    /// @notice Updates the fee collector address\n    /// @param newCollector Address of the new fee collector\n    /// @custom:access Restricted to protocol admin.\n    function updateCollector(address newCollector) external onlyAdmin {\n        collector = newCollector;\n        emit SickleRegistryEvents.CollectorChanged(newCollector);\n    }\n\n    /// @notice Update the whitelist status for multiple multicall callers\n    /// @param callers Addresses of the callers\n    /// @param isApproved New status for the caller\n    /// @custom:access Restricted to protocol admin.\n    function setWhitelistedCallers(\n        address[] calldata callers,\n        bool isApproved\n    ) external onlyAdmin {\n        for (uint256 i; i < callers.length;) {\n            isWhitelistedCaller[callers[i]] = isApproved;\n            emit SickleRegistryEvents.CallerStatusChanged(\n                callers[i], isApproved\n            );\n\n            unchecked {\n                ++i;\n            }\n        }\n    }\n\n    /// @notice Associates a referral code to the address of the caller\n    function setReferralCode(bytes32 referralCode) external {\n        if (referralCodes[referralCode] != address(0)) {\n            revert InvalidReferralCode();\n        }\n\n        referralCodes[referralCode] = msg.sender;\n        emit SickleRegistryEvents.ReferralCodeCreated(referralCode, msg.sender);\n    }\n\n    /// @notice Update the fees for multiple strategy functions\n    /// @param feeHashes Array of fee hashes\n    /// @param feesArray Array of fees to apply (in basis points)\n    /// @custom:access Restricted to protocol admin.\n    function setFees(\n        bytes32[] calldata feeHashes,\n        uint256[] calldata feesArray\n    ) external onlyAdmin {\n        if (feeHashes.length != feesArray.length) {\n            revert ArrayLengthMismatch();\n        }\n\n        for (uint256 i = 0; i < feeHashes.length;) {\n            if (feesArray[i] <= 500) {\n                // maximum fee of 5%\n                feeRegistry[feeHashes[i]] = feesArray[i];\n            } else {\n                revert FeeAboveMaxLimit();\n            }\n            unchecked {\n                ++i;\n            }\n        }\n\n        emit SickleRegistryEvents.FeesUpdated(feeHashes, feesArray);\n    }\n}\n"
+    }
+}

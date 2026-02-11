@@ -1,0 +1,36 @@
+{
+    "vfp_id": "vfp_00429",
+    "project_name": "ChainSecurity_Liquity_Bold_Audit (1).pdf",
+    "findings": [
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing Events",
+            "description": "The `AddRemoveManager._setAddManager` and `_setRemoveManager` functions do not emit events when manager roles are updated.\n\nThe root cause is lack of event emission for state changes in access control.\n\nMakes it difficult for off-chain systems and users to track changes in trove management permissions.\n\nThe impact is reduced transparency and auditability of role assignments, potentially leading to security incidents going unnoticed.\n",
+            "severity": "Informational",
+            "location": [
+                "AddRemoveManager._setAddManager",
+                "AddRemoveManager._setRemoveManager"
+            ],
+            "files": [
+                "bold/contracts/src/Dependencies/AddRemoveManagers.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AddRemoveManagers.sol": "// SPDX-License-Identifier: BUSL-1.1\n\npragma solidity 0.8.24;\n\nimport \"../Interfaces/IAddRemoveManagers.sol\";\nimport \"../Interfaces/IAddressesRegistry.sol\";\nimport \"../Interfaces/ITroveNFT.sol\";\n\ncontract AddRemoveManagers is IAddRemoveManagers {\n    ITroveNFT internal immutable troveNFT;\n\n    struct RemoveManagerReceiver {\n        address manager;\n        address receiver;\n    }\n\n    /*\n     * Mapping from TroveId to granted address for operations that \"give\" money to the trove (add collateral, pay debt).\n     * Useful for instance for cold/hot wallet setups.\n     * If its value is zero address, any address is allowed to do those operations on behalf of trove owner.\n     * Otherwise, only the address in this mapping (and the trove owner) will be allowed.\n     * To restrict this permission to no one, trove owner should be set in this mapping.\n     */\n    mapping(uint256 => address) public addManagerOf;\n\n    /*\n     * Mapping from TroveId to granted addresses for operations that \"withdraw\" money from the trove (withdraw collateral, borrow),\n     * and for each of those addresses another address for the receiver of those withdrawn funds.\n     * Useful for instance for cold/hot wallet setups or for automations.\n     * Only the address in this mapping, if any, and the trove owner, will be allowed.\n     * Therefore, by default this permission is restricted to no one.\n     * If the receiver is zero, the owner is assumed as the receiver.\n     * RemoveManager also assumes AddManager permission\n     */\n    mapping(uint256 => RemoveManagerReceiver) public removeManagerReceiverOf;\n\n    error EmptyManager();\n    error NotBorrower();\n    error NotOwnerNorAddManager();\n    error NotOwnerNorRemoveManager();\n\n    event TroveNFTAddressChanged(address _newTroveNFTAddress);\n    event AddManagerUpdated(uint256 indexed _troveId, address _newAddManager);\n    event RemoveManagerAndReceiverUpdated(uint256 indexed _troveId, address _newRemoveManager, address _newReceiver);\n\n    constructor(IAddressesRegistry _addressesRegistry) {\n        troveNFT = _addressesRegistry.troveNFT();\n        emit TroveNFTAddressChanged(address(troveNFT));\n    }\n\n    function setAddManager(uint256 _troveId, address _manager) external {\n        _requireCallerIsBorrower(_troveId);\n        _setAddManager(_troveId, _manager);\n    }\n\n    function _setAddManager(uint256 _troveId, address _manager) internal {\n        addManagerOf[_troveId] = _manager;\n        emit AddManagerUpdated(_troveId, _manager);\n    }\n\n    function setRemoveManager(uint256 _troveId, address _manager) external {\n        setRemoveManagerWithReceiver(_troveId, _manager, troveNFT.ownerOf(_troveId));\n    }\n\n    function setRemoveManagerWithReceiver(uint256 _troveId, address _manager, address _receiver) public {\n        _requireCallerIsBorrower(_troveId);\n        _setRemoveManagerAndReceiver(_troveId, _manager, _receiver);\n    }\n\n    function _setRemoveManagerAndReceiver(uint256 _troveId, address _manager, address _receiver) internal {\n        _requireNonZeroManagerUnlessWiping(_manager, _receiver);\n        removeManagerReceiverOf[_troveId].manager = _manager;\n        removeManagerReceiverOf[_troveId].receiver = _receiver;\n        emit RemoveManagerAndReceiverUpdated(_troveId, _manager, _receiver);\n    }\n\n    function _wipeAddRemoveManagers(uint256 _troveId) internal {\n        delete addManagerOf[_troveId];\n        delete removeManagerReceiverOf[_troveId];\n        emit AddManagerUpdated(_troveId, address(0));\n        emit RemoveManagerAndReceiverUpdated(_troveId, address(0), address(0));\n    }\n\n    function _requireNonZeroManagerUnlessWiping(address _manager, address _receiver) internal pure {\n        if (_manager == address(0) && _receiver != address(0)) {\n            revert EmptyManager();\n        }\n    }\n\n    function _requireCallerIsBorrower(uint256 _troveId) internal view {\n        if (msg.sender != troveNFT.ownerOf(_troveId)) {\n            revert NotBorrower();\n        }\n    }\n\n    function _requireSenderIsOwnerOrAddManager(uint256 _troveId, address _owner) internal view {\n        address addManager = addManagerOf[_troveId];\n        if (msg.sender != _owner && addManager != address(0) && msg.sender != addManager) {\n            // RemoveManager assumes AddManager permission too\n            address removeManager = removeManagerReceiverOf[_troveId].manager;\n            if (msg.sender != removeManager) {\n                revert NotOwnerNorAddManager();\n            }\n        }\n    }\n\n    function _requireSenderIsOwnerOrRemoveManagerAndGetReceiver(uint256 _troveId, address _owner)\n        internal\n        view\n        returns (address)\n    {\n        address manager = removeManagerReceiverOf[_troveId].manager;\n        address receiver = removeManagerReceiverOf[_troveId].receiver;\n        if (msg.sender != _owner && msg.sender != manager) {\n            revert NotOwnerNorRemoveManager();\n        }\n        if (receiver == address(0) || msg.sender != manager) {\n            return _owner;\n        }\n        return receiver;\n    }\n}\n"
+    }
+}

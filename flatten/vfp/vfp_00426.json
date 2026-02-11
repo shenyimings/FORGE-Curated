@@ -1,0 +1,30 @@
+{
+    "vfp_id": "vfp_00426",
+    "project_name": "ChainSecurity_Liquity_Bold_Audit (1).pdf",
+    "findings": [
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Core Debt Invariant Incorrectly Documented",
+            "description": "The documented core debt invariant omits `defaultPool.BoldDebt`, making it incorrect.\n\nThe root cause is that documentation was not updated to reflect the full accounting of debt across pools.\n\nMisleads developers and auditors about the true state of system debt.\n\nThe impact is potential for incorrect assumptions during audits or integrations, leading to flawed off-chain analysis.\n",
+            "severity": "Informational",
+            "location": [
+                "Documentation",
+                "Core debt invariant"
+            ],
+            "files": [
+                "bold/contracts/src/DefaultPool.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "DefaultPool.sol": "// SPDX-License-Identifier: BUSL-1.1\n\npragma solidity 0.8.24;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport \"./Interfaces/IDefaultPool.sol\";\nimport \"./Interfaces/IAddressesRegistry.sol\";\nimport \"./Interfaces/IActivePool.sol\";\n\n/*\n * The Default Pool holds the Coll and Bold debt (but not Bold tokens) from liquidations that have been redistributed\n * to active troves but not yet \"applied\", i.e. not yet recorded on a recipient active trove's struct.\n *\n * When a trove makes an operation that applies its pending Coll and Bold debt, its pending Coll and Bold debt is moved\n * from the Default Pool to the Active Pool.\n */\ncontract DefaultPool is IDefaultPool {\n    using SafeERC20 for IERC20;\n\n    string public constant NAME = \"DefaultPool\";\n\n    IERC20 public immutable collToken;\n    address public immutable troveManagerAddress;\n    address public immutable activePoolAddress;\n    uint256 internal collBalance; // deposited Coll tracker\n    uint256 internal BoldDebt; // debt\n\n    event CollTokenAddressChanged(address _newCollTokenAddress);\n    event ActivePoolAddressChanged(address _newActivePoolAddress);\n    event TroveManagerAddressChanged(address _newTroveManagerAddress);\n    event DefaultPoolBoldDebtUpdated(uint256 _boldDebt);\n    event DefaultPoolCollBalanceUpdated(uint256 _collBalance);\n\n    constructor(IAddressesRegistry _addressesRegistry) {\n        collToken = _addressesRegistry.collToken();\n        troveManagerAddress = address(_addressesRegistry.troveManager());\n        activePoolAddress = address(_addressesRegistry.activePool());\n\n        emit CollTokenAddressChanged(address(collToken));\n        emit TroveManagerAddressChanged(troveManagerAddress);\n        emit ActivePoolAddressChanged(activePoolAddress);\n\n        // Allow funds movements between Liquity contracts\n        collToken.approve(activePoolAddress, type(uint256).max);\n    }\n\n    // --- Getters for public variables. Required by IPool interface ---\n\n    /*\n    * Returns the collBalance state variable.\n    *\n    * Not necessarily equal to the the contract's raw Coll balance - ether can be forcibly sent to contracts.\n    */\n    function getCollBalance() external view override returns (uint256) {\n        return collBalance;\n    }\n\n    function getBoldDebt() external view override returns (uint256) {\n        return BoldDebt;\n    }\n\n    // --- Pool functionality ---\n\n    function sendCollToActivePool(uint256 _amount) external override {\n        _requireCallerIsTroveManager();\n        uint256 newCollBalance = collBalance - _amount;\n        collBalance = newCollBalance;\n        emit DefaultPoolCollBalanceUpdated(newCollBalance);\n\n        // Send Coll to Active Pool and increase its recorded Coll balance\n        IActivePool(activePoolAddress).receiveColl(_amount);\n    }\n\n    function receiveColl(uint256 _amount) external {\n        _requireCallerIsActivePool();\n\n        uint256 newCollBalance = collBalance + _amount;\n        collBalance = newCollBalance;\n\n        // Pull Coll tokens from ActivePool\n        collToken.safeTransferFrom(msg.sender, address(this), _amount);\n\n        emit DefaultPoolCollBalanceUpdated(newCollBalance);\n    }\n\n    function increaseBoldDebt(uint256 _amount) external override {\n        _requireCallerIsTroveManager();\n        BoldDebt = BoldDebt + _amount;\n        emit DefaultPoolBoldDebtUpdated(BoldDebt);\n    }\n\n    function decreaseBoldDebt(uint256 _amount) external override {\n        _requireCallerIsTroveManager();\n        BoldDebt = BoldDebt - _amount;\n        emit DefaultPoolBoldDebtUpdated(BoldDebt);\n    }\n\n    // --- 'require' functions ---\n\n    function _requireCallerIsActivePool() internal view {\n        require(msg.sender == activePoolAddress, \"DefaultPool: Caller is not the ActivePool\");\n    }\n\n    function _requireCallerIsTroveManager() internal view {\n        require(msg.sender == troveManagerAddress, \"DefaultPool: Caller is not the TroveManager\");\n    }\n}\n"
+    }
+}

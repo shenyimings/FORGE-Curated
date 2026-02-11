@@ -1,0 +1,55 @@
+{
+    "vfp_id": "vfp_00134",
+    "project_name": "cantina_managed_sky_sky_april2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-439"
+                ]
+            },
+            "title": "Deprecating the Sky ⇒ MKR path will affect external integrators",
+            "description": "The new MkrSky deployment only supports one-way conversion from MKR to SKY, disabling the previous bidirectional functionality. This change is caused by the design decision to deprecate the SKY → MKR conversion path upon initialization of the new converter. As a result, external integrator protocols that rely on the SKY → MKR path will no longer be able to use it. This could lead to operational disruptions for these protocols if they are not prepared for the change. The impact is primarily on integration continuity and user experience rather than direct fund loss or contract compromise.\n",
+            "severity": "Informational",
+            "location": [
+                "SkyInit.sol#L57"
+            ],
+            "files": [
+                "893bccd61fe28b64dedd00b16574d2b54122da3c/sky/deploy/SkyInit.sol",
+                "893bccd61fe28b64dedd00b16574d2b54122da3c/sky/src/MkrSky.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-266"
+                ]
+            },
+            "title": "MKR mint authorities can be removed",
+            "description": "The MkrSky contract assumes no additional MKR tokens will be minted, as a fixed amount of SKY is pre-minted based on the current MKR total supply. However, the MKR token's minting authority still permits certain contracts, such as DssVestMintable and the MCD_PAUSE_PROXY, to mint new MKR tokens. This situation arises because the minting permissions have not been fully revoked, leaving open the possibility of unexpected MKR supply increases. If new MKR were to be minted, it would break the 1:1 equivalence assumption between MKR and SKY, potentially undermining the economic model of the Sky system. While no active exploit is known, this represents a risk to the system's long-term integrity.\n",
+            "severity": "Informational",
+            "location": [
+                "README.md"
+            ],
+            "files": [
+                "893bccd61fe28b64dedd00b16574d2b54122da3c/sky/README.md",
+                "893bccd61fe28b64dedd00b16574d2b54122da3c/sky/src/MkrSky.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "SkyInit.sol": "// SPDX-FileCopyrightText: © 2023 Dai Foundation <www.daifoundation.org>\n// SPDX-License-Identifier: AGPL-3.0-or-later\n//\n// This program is free software: you can redistribute it and/or modify\n// it under the terms of the GNU Affero General Public License as published by\n// the Free Software Foundation, either version 3 of the License, or\n// (at your option) any later version.\n//\n// This program is distributed in the hope that it will be useful,\n// but WITHOUT ANY WARRANTY; without even the implied warranty of\n// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n// GNU Affero General Public License for more details.\n//\n// You should have received a copy of the GNU Affero General Public License\n// along with this program.  If not, see <https://www.gnu.org/licenses/>.\n\npragma solidity >=0.8.0;\n\nimport { DssInstance } from \"dss-test/MCD.sol\";\n\ninterface SkyLike {\n    function mint(address, uint256) external;\n}\n\ninterface MkrSkyLike {\n    function mkr() external view returns (address);\n    function sky() external view returns (address);\n    function rate() external view returns (uint256);\n}\n\ninterface MkrLike {\n    function authority() external view returns (address);\n    function totalSupply() external view returns (uint256);\n}\n\ninterface MkrAuthorityLike {\n    function deny(address) external;\n}\n\nlibrary SkyInit {\n\n    // Note that we assume the fee is 0 initially, hence we don't set it explicitly\n    function updateMkrSky(\n        DssInstance memory dss,\n        address mkrSky\n    ) internal {\n        address oldMkrSky = dss.chainlog.getAddress(\"MKR_SKY\");\n        address mkr  = MkrSkyLike(oldMkrSky).mkr();\n        address sky  = MkrSkyLike(oldMkrSky).sky();\n        uint256 rate = MkrSkyLike(oldMkrSky).rate();\n\n        require(MkrSkyLike(mkrSky).mkr()  == mkr);\n        require(MkrSkyLike(mkrSky).sky()  == sky);\n        require(MkrSkyLike(mkrSky).rate() == rate);\n\n        // Block the sky=>mkr direction for the old converter\n        MkrAuthorityLike(MkrLike(mkr).authority()).deny(oldMkrSky);\n\n        // Mint SKY to facilitate conversions\n        SkyLike(sky).mint(mkrSky, MkrLike(mkr).totalSupply() * rate);\n\n        dss.chainlog.setAddress(\"MKR_SKY_LEGACY\", oldMkrSky);\n        dss.chainlog.setAddress(\"MKR_SKY\", mkrSky);\n    }\n}\n",
+        "MkrSky.sol": "// SPDX-License-Identifier: AGPL-3.0-or-later\n\n/// MkrSky.sol -- Mkr/Sky Exchanger\n\n// Copyright (C) 2023 Dai Foundation\n//\n// This program is free software: you can redistribute it and/or modify\n// it under the terms of the GNU Affero General Public License as published by\n// the Free Software Foundation, either version 3 of the License, or\n// (at your option) any later version.\n//\n// This program is distributed in the hope that it will be useful,\n// but WITHOUT ANY WARRANTY; without even the implied warranty of\n// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n// GNU Affero General Public License for more details.\n//\n// You should have received a copy of the GNU Affero General Public License\n// along with this program.  If not, see <https://www.gnu.org/licenses/>.\n\npragma solidity ^0.8.21;\n\ninterface GemLike {\n    function burn(address, uint256) external;\n    function transfer(address, uint256) external;\n}\n\ncontract MkrSky {\n    mapping (address => uint256) public wards;\n    uint256                      public fee;\n    uint256                      public take; // accumulated SKY fee available for collection\n\n    uint256 constant WAD = 10**18;\n\n    GemLike public immutable mkr;\n    GemLike public immutable sky;\n    uint256 public immutable rate;\n\n    event Rely(address indexed usr);\n    event Deny(address indexed usr);\n    event File(bytes32 indexed what, uint256 data);\n    event Collect(address indexed to, uint256 take);\n    event Burn(uint256 skyAmt);\n    event MkrToSky(address indexed caller, address indexed usr, uint256 mkrAmt, uint256 skyAmt, uint256 skyFee);\n\n    modifier auth {\n        require(wards[msg.sender] == 1, \"MkrSky/not-authorized\");\n        _;\n    }\n\n    constructor(address mkr_, address sky_, uint256 rate_) {\n        mkr  = GemLike(mkr_);\n        sky  = GemLike(sky_);\n        rate = rate_;\n\n        wards[msg.sender] = 1;\n        emit Rely(msg.sender);\n    }\n\n    // Admin functions\n\n    function rely(address usr) external auth {\n        wards[usr] = 1;\n        emit Rely(usr);\n    }\n\n    function deny(address usr) external auth {\n        wards[usr] = 0;\n        emit Deny(usr);\n    }\n\n    function file(bytes32 what, uint256 data) external auth {\n        if (what == \"fee\") {\n            require(data <= WAD, \"MkrSky/fee-exceeds-wad\");\n            fee = data;\n        } else revert(\"MkrSky/file-unrecognized-param\");\n        emit File(what, data);\n    }\n\n    function collect(address to) external auth returns (uint256 take_) {\n        take_ = take;\n        require(take_ > 0, \"MkrSky/nothing-to-collect\");\n        take = 0;\n        sky.transfer(to, take_);\n        emit Collect(to, take_);\n    }\n\n    // This function is intended to be used when deactivating this contract or for burning excess SKY due to MKR being burned.\n    // If needed, making sure that the `take` amount is not burned is assumed to be done on a higher level (e.g by calling `collect` first).\n    function burn(uint256 skyAmt) external auth {\n        sky.burn(address(this), skyAmt);\n        emit Burn(skyAmt);\n    }\n\n    // Public functions\n\n    function mkrToSky(address usr, uint256 mkrAmt) external {\n        uint256 skyAmt = mkrAmt * rate;\n        uint256 skyFee;\n        uint256 fee_ = fee;\n        if (fee_ > 0) {\n            skyFee = skyAmt * fee_ / WAD;\n            unchecked { skyAmt -= skyFee; }\n            take += skyFee;\n        }\n\n        mkr.burn(msg.sender, mkrAmt);\n        sky.transfer(usr, skyAmt);\n        emit MkrToSky(msg.sender, usr, mkrAmt, skyAmt, skyFee);\n    }\n}\n"
+    }
+}

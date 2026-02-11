@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00079",
+    "project_name": "Forte - Zenith Audit Report (October).pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Unsafe transferFrom() may make the deployer not have to provide the initial liquidity",
+            "description": "The vulnerability arises in the createPool function of ALTBCFactory.sol, where the contract uses an unsafe IERC20.transferFrom() call to transfer the initial liquidity token (xToken) from the deployer to the newly created pool. \nThe root cause is the lack of proper validation of the boolean return value of transferFrom(), which some tokens may return false without reverting upon failure. \nAn attacker could exploit this by using a token that does not revert on failure but returns false, causing the protocol to incorrectly assume the transfer succeeded and proceed with initializing the pool with claimed but non-existent liquidity. \nThis could allow a malicious deployer to create a pool without actually providing initial liquidity, potentially leading to a broken or exploitable pool state, though the likelihood is low due to specific conditions required.\n",
+            "severity": "Medium",
+            "location": [
+                "ALTBCFactory.sol::createPool#72-73"
+            ],
+            "files": [
+                "4c365ab40df0bbb740df950531c857693308dc91/liquidity-altbc/src/factory/ALTBCFactory.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ALTBCFactory.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.24;\n\nimport \"lib/liquidity-base/src/common/IErrors.sol\";\nimport {ALTBCPool, FeeInfo, IERC20} from \"src/amm/ALTBCPool.sol\";\nimport {ALTBCFactoryDeployed} from \"src/common/IALTBCEvents.sol\";\nimport {ALTBCInput} from \"src/amm/ALTBC.sol\";\nimport {FactoryBase} from \"lib/liquidity-base/src/factory/FactoryBase.sol\";\nimport \"lib/liquidity-base/src/common/IEvents.sol\";\nimport {ILPToken} from \"lib/liquidity-base/src/common/ILPToken.sol\";\n\n/**\n * @title Pool Factory\n * @dev creates the pools in an automated and permissioned fashion\n * @author  @oscarsernarosero @mpetersoCode55 @cirsteve\n */\n\ncontract ALTBCFactory is FactoryBase {\n    bytes altbcBytecode;\n    string public constant VERSION = \"v1.0.0\";\n\n    /**\n     * @dev constructor receives and saves the ALTBCPool byte code to bypass contract side limit\n     * @param _altbcBytecode the bytecode of the ALTBC\n     */\n    constructor(bytes memory _altbcBytecode) {\n        altbcBytecode = _altbcBytecode;\n        emit ALTBCFactoryDeployed(VERSION);\n    }\n\n    /**\n     * @dev deploys an ALTBC pool\n     * @param _xToken address of the X token (x axis)\n     * @param _yToken address of the Y token (y axis)\n     * @param _lpFee percentage of the fees in percentage basis points\n     * @param _tbcInput input data for the pool\n     * @param _xAdd the initial liquidity of xTokens that will be transferred to the pool\n     * @return deployedPool the address of the deployed pool\n     * @notice Only allowed deployers can deploy pools and only allowed yTokens are allowed\n     */\n    function createPool(\n        address _xToken,\n        address _yToken,\n        uint16 _lpFee,\n        ALTBCInput memory _tbcInput,\n        uint256 _xAdd,\n        uint256 _wInactive\n    ) external onlyAllowedDeployers onlyAllowedYTokens(_yToken) returns (address deployedPool) {\n        if (protocolFeeCollector == address(0)) revert NoProtocolFeeCollector();\n\n        bytes memory _constructor = abi.encode(\n            _xToken,\n            _yToken,\n            lpTokenAddress,\n            ILPToken(lpTokenAddress).currentTokenId() + 1,\n            FeeInfo(_lpFee, protocolFee, protocolFeeCollector),\n            _tbcInput,\n            VERSION\n        );\n        bytes memory deployBytecode = abi.encodePacked(altbcBytecode, _constructor);\n\n        assembly {\n            deployedPool := create(0, add(deployBytecode, 0x20), mload(deployBytecode))\n            if iszero(deployedPool) {\n                returndatacopy(0, 0, returndatasize())\n                revert(0, returndatasize())\n            }\n        }\n        emit PoolCreated(deployedPool);\n        _addPoolToAllowList(deployedPool);\n\n        IERC20(_xToken).transferFrom(_msgSender(), address(deployedPool), _xAdd);\n        ALTBCPool(deployedPool).initializePool(_msgSender(), _xAdd, _wInactive);\n    }\n}\n"
+    }
+}

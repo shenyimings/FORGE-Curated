@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00256",
+    "project_name": "ChainSecurity_StudioV_Neulock_Audit.pdf",
+    "findings": [
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "Gas Griefing by Adding Many Unlock Keys",
+            "description": "The function `NeuDaoLockV1.setNeuDaoAddress()` deletes elements from the `keyTokenIds` array by iterating through the entire array, which becomes increasingly expensive as more token IDs are added. There is no upper bound on the array length aside from the total supply of NEU tokens.\nThe use of an unbounded array without efficient removal mechanisms leads to increasing gas costs for array cleanup during function execution.\nAn attacker could add a large number of key token IDs, causing future calls to `setNeuDaoAddress()` to consume excessive gas, potentially making the function unusable due to block gas limits.\nThis could result in the inability to update the Neu DAO address, leading to a denial of service for critical contract functionality.\n",
+            "severity": "Informational",
+            "location": [
+                "NeuDaoLockV1.setNeuDaoAddress"
+            ],
+            "files": [
+                "neulock-onchain/contracts/old/LockV1.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "LockV1.sol": "// SPDX-License-Identifier: CC0-1.0\npragma solidity 0.8.28;\n\nimport \"@openzeppelin/contracts/access/AccessControl.sol\";\n\nimport {INeuDaoLockV1} from \"../interfaces/ILockV1.sol\";\nimport {INeuV3, INeuTokenV3} from \"../interfaces/INeuV3.sol\";\n\n/**\n * @dev NeuDaoLock locks Ether donated from Neulock's sponsors until the\n * operator (currently managed by Studio V) sets the address of a permanent DAO\n * contract and the holders of at least 7 governance tokens agree to unlock the\n * funds by calling unlock(tokenId), which registers their token as a \"key\".\n * \n * The operator can set the DAO address and, after that, the holders of\n * governance tokens can vote for unlocking the funds. If the operator changes\n * the DAO address, the votes are reset.\n * \n * Given that there are at least 7 key tokens, anyone can call withdraw() to\n * send the locked funds to the DAO address.\n */\ncontract NeuDaoLockV1 is AccessControl, INeuDaoLockV1 {\n    bytes32 public constant OPERATOR_ROLE = keccak256(\"OPERATOR_ROLE\");\n    uint256 public constant REQUIRED_KEY_TOKENS = 7;\n    INeuTokenV3 immutable private _neuContract;\n\n    address public neuDaoAddress;\n    uint256[] public keyTokenIds;\n\n    constructor(\n        address defaultAdmin,\n        address operator,\n        address neuContractAddress\n    ) {\n        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);\n        _grantRole(OPERATOR_ROLE, operator);\n\n        _neuContract = INeuTokenV3(neuContractAddress);\n    }\n\n    function setNeuDaoAddress(address newNeoDaoAddress) external onlyRole(OPERATOR_ROLE) {\n        delete keyTokenIds;\n        // slither-disable-next-line missing-zero-check (we may want to set it again to 0x0, to prevent users from unlocking before we decide on a new DAO)\n        neuDaoAddress = newNeoDaoAddress;\n\n        emit AddressChange(newNeoDaoAddress);\n    }\n\n    function unlock(uint256 neuTokenId) external {\n        require(_neuContract.ownerOf(neuTokenId) == msg.sender, \"Caller does not own NEU\");\n        require(_neuContract.isGovernanceToken(neuTokenId), \"Provided token is not governance\");\n        require(neuDaoAddress != address(0), \"NEU DAO address not set\");\n\n        uint256 keyTokenIdsLength = keyTokenIds.length;\n\n        for (uint256 i = 0; i < keyTokenIdsLength; i++) {\n            require(keyTokenIds[i] != neuTokenId, \"Token already used as key\");\n        }\n\n        keyTokenIds.push(neuTokenId);\n\n        emit Unlock(neuTokenId);\n    }\n\n    function cancelUnlock(uint256 neuTokenId) external {\n        require(_neuContract.ownerOf(neuTokenId) == msg.sender, \"Caller does not own NEU\");\n\n        uint256 keyTokenIdsLength = keyTokenIds.length;\n\n        for (uint256 i = 0; i < keyTokenIdsLength; i++) {\n            if (keyTokenIds[i] == neuTokenId) {\n                keyTokenIds[i] = keyTokenIds[keyTokenIdsLength - 1];\n                // slither-disable-next-line costly-loop (we return after the costly call)\n                keyTokenIds.pop();\n\n                emit UnlockCancel(neuTokenId);\n                return;\n            }\n        }\n        revert(\"NEU not found\");\n    }\n\n    function withdraw() external {\n        require(neuDaoAddress != address(0), \"NEU DAO address not set\");\n        require(keyTokenIds.length >= REQUIRED_KEY_TOKENS, \"Not enough key tokens\");\n\n        uint256 balance = address(this).balance;\n\n        emit Withdraw(balance);\n\n        // slither-disable-start low-level-calls (calling like this is the best practice for sending Ether)\n        // slither-disable-next-line arbitrary-send-eth (neuDaoAddress is only set by the operator and approved by key holders who have called unlock())\n        (bool sent, ) = address(neuDaoAddress).call{value: balance}(\"\");\n        require(sent, \"Failed to send Ether\");\n        // slither-disable-end low-level-calls\n    }\n\n    receive() external payable {}\n}"
+    }
+}

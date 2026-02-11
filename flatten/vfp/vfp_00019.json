@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00019",
+    "project_name": "ChainSecurity_Sky_Sky_Audit.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Rate Is Not Validated",
+            "description": "1. **Description:** The initialization function NgtInit.init() did not validate the rate parameter used in the MkrNgt converter, allowing it to be set to an arbitrary value during deployment.\n2. **Cause:** The lack of input validation in the deployment script for the rate parameter, which is critical for maintaining the correct conversion ratio between MKR and SKY tokens.\n3. **Exploitation:** A malicious or erroneous deployer could set an incorrect rate, distorting the token conversion mechanism and potentially causing economic imbalance or loss of trust in the system.\n4. **Impact:** Users could be misled or suffer financial loss due to incorrect conversion rates, undermining the integrity of the token system. However, since the issue was corrected in Version 3, the impact was mitigated before deployment in later versions.\n",
+            "severity": "Low",
+            "location": [
+                "NgtInit.sol::init"
+            ],
+            "files": [
+                "sky/src/MkrSky.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MkrSky.sol": "// SPDX-License-Identifier: AGPL-3.0-or-later\n\n/// MkrSky.sol -- Mkr/Sky Exchanger\n\n// Copyright (C) 2023 Dai Foundation\n//\n// This program is free software: you can redistribute it and/or modify\n// it under the terms of the GNU Affero General Public License as published by\n// the Free Software Foundation, either version 3 of the License, or\n// (at your option) any later version.\n//\n// This program is distributed in the hope that it will be useful,\n// but WITHOUT ANY WARRANTY; without even the implied warranty of\n// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n// GNU Affero General Public License for more details.\n//\n// You should have received a copy of the GNU Affero General Public License\n// along with this program.  If not, see <https://www.gnu.org/licenses/>.\n\npragma solidity ^0.8.21;\n\ninterface GemLike {\n    function burn(address, uint256) external;\n    function transfer(address, uint256) external;\n}\n\ncontract MkrSky {\n    mapping (address => uint256) public wards;\n    uint256                      public fee;\n    uint256                      public take; // accumulated SKY fee available for collection\n\n    uint256 constant WAD = 10**18;\n\n    GemLike public immutable mkr;\n    GemLike public immutable sky;\n    uint256 public immutable rate;\n\n    event Rely(address indexed usr);\n    event Deny(address indexed usr);\n    event File(bytes32 indexed what, uint256 data);\n    event Collect(address indexed to, uint256 take);\n    event Burn(uint256 skyAmt);\n    event MkrToSky(address indexed caller, address indexed usr, uint256 mkrAmt, uint256 skyAmt, uint256 skyFee);\n\n    modifier auth {\n        require(wards[msg.sender] == 1, \"MkrSky/not-authorized\");\n        _;\n    }\n\n    constructor(address mkr_, address sky_, uint256 rate_) {\n        mkr  = GemLike(mkr_);\n        sky  = GemLike(sky_);\n        rate = rate_;\n\n        wards[msg.sender] = 1;\n        emit Rely(msg.sender);\n    }\n\n    // Admin functions\n\n    function rely(address usr) external auth {\n        wards[usr] = 1;\n        emit Rely(usr);\n    }\n\n    function deny(address usr) external auth {\n        wards[usr] = 0;\n        emit Deny(usr);\n    }\n\n    function file(bytes32 what, uint256 data) external auth {\n        if (what == \"fee\") {\n            require(data <= WAD, \"MkrSky/fee-exceeds-wad\");\n            fee = data;\n        } else revert(\"MkrSky/file-unrecognized-param\");\n        emit File(what, data);\n    }\n\n    function collect(address to) external auth returns (uint256 take_) {\n        take_ = take;\n        require(take_ > 0, \"MkrSky/nothing-to-collect\");\n        take = 0;\n        sky.transfer(to, take_);\n        emit Collect(to, take_);\n    }\n\n    // This function is intended to be used when deactivating this contract or for burning excess SKY due to MKR being burned.\n    // If needed, making sure that the `take` amount is not burned is assumed to be done on a higher level (e.g by calling `collect` first).\n    function burn(uint256 skyAmt) external auth {\n        sky.burn(address(this), skyAmt);\n        emit Burn(skyAmt);\n    }\n\n    // Public functions\n\n    function mkrToSky(address usr, uint256 mkrAmt) external {\n        uint256 skyAmt = mkrAmt * rate;\n        uint256 skyFee;\n        uint256 fee_ = fee;\n        if (fee_ > 0) {\n            skyFee = skyAmt * fee_ / WAD;\n            unchecked { skyAmt -= skyFee; }\n            take += skyFee;\n        }\n\n        mkr.burn(msg.sender, mkrAmt);\n        sky.transfer(usr, skyAmt);\n        emit MkrToSky(msg.sender, usr, mkrAmt, skyAmt, skyFee);\n    }\n}\n"
+    }
+}

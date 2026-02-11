@@ -1,0 +1,28 @@
+{
+    "vfp_id": "vfp_00508",
+    "project_name": "2025.08.14 - Final - Malda Audit Report.pdf",
+    "findings": [
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "WrapAndSupply prevents supplying on host when gasFee is set",
+            "description": "The wrapAndSupplyOnExtensionMarket function in WrapAndSupply.sol uses all of the msg.value to wrap native tokens, leaving no value to cover the gasFee required by mTokenGateway. The root cause is the failure to account for the gasFee when calculating the amount to wrap. A user calling this function with a non-zero gasFee set will cause the supplyOnHost call to revert due to insufficient value. The attack path is a legitimate user attempting to use the utility function, which fails unexpectedly. The impact is that the core functionality of supplying wrapped tokens on the host chain is broken when gasFee is non-zero, disrupting user experience and protocol functionality.\n",
+            "severity": "Medium",
+            "location": [
+                "WrapAndSupply.sol#78",
+                "WrapAndSupply.sol#93-100",
+                "mTokenGateway.sol#235"
+            ],
+            "files": [
+                "798d00b879b8412ca4049ba09dba5ae42464cfe7/2025-07-malda/malda-lending/src/utils/WrapAndSupply.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "WrapAndSupply.sol": "// Copyright (c) 2025 Merge Layers Inc.\n//\n// This source code is licensed under the Business Source License 1.1\n// (the \"License\"); you may not use this file except in compliance with the\n// License. You may obtain a copy of the License at\n//\n//     https://github.com/malda-protocol/malda-lending/blob/main/LICENSE-BSL\n//\n// See the License for the specific language governing permissions and\n// limitations under the License.\n//\n// This file contains code derived from or inspired by Compound V2,\n// originally licensed under the BSD 3-Clause License. See LICENSE-COMPOUND-V2\n// for original license terms and attributions.\n\n// SPDX-License-Identifier: AGPL-3.0\npragma solidity =0.8.28;\n\n/*\n _____ _____ __    ____  _____ \n|     |  _  |  |  |    \\|  _  |\n| | | |     |  |__|  |  |     |\n|_|_|_|__|__|_____|____/|__|__|   \n*/\n\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\nimport {ImErc20} from \"src/interfaces/ImErc20.sol\";\nimport {ImTokenMinimal} from \"src/interfaces/ImToken.sol\";\nimport {ImTokenGateway} from \"src/interfaces/ImTokenGateway.sol\";\n\ninterface IWrappedNative {\n    function deposit() external payable;\n    function transfer(address to, uint256 value) external returns (bool);\n    function withdraw(uint256) external;\n}\n\ncontract WrapAndSupply {\n    IWrappedNative public immutable wrappedNative;\n\n    // ----------- ERRORS ------------\n    error WrapAndSupply_AddressNotValid();\n    error WrapAndSupply_AmountNotValid();\n\n    // ----------- EVENTS ------------\n    event WrappedAndSupplied(address indexed sender, address indexed receiver, address indexed market, uint256 amount);\n\n    constructor(address _wrappedNative) {\n        require(_wrappedNative != address(0), WrapAndSupply_AddressNotValid());\n        wrappedNative = IWrappedNative(_wrappedNative);\n    }\n\n    // ----------- PUBLIC ------------\n    /**\n     * @notice Wraps a native coin into its wrapped version and supplies on a host market\n     * @param mToken The market address\n     * @param receiver The mToken receiver\n     */\n    function wrapAndSupplyOnHostMarket(address mToken, address receiver, uint256 minAmount) external payable {\n        address underlying = ImTokenMinimal(mToken).underlying();\n        require(underlying == address(wrappedNative), WrapAndSupply_AddressNotValid());\n\n        uint256 amount = _wrap();\n\n        IERC20(underlying).approve(mToken, 0);\n        IERC20(underlying).approve(mToken, amount);\n        ImErc20(mToken).mint(amount, receiver, minAmount);\n\n        emit WrappedAndSupplied(msg.sender, receiver, mToken, amount);\n    }\n\n    /**\n     * @notice Wraps a native coin into its wrapped version and supplies on an extension market\n     * @param mTokenGateway The market address\n     * @param receiver The receiver\n     * @param selector The host chain function selector\n     */\n    function wrapAndSupplyOnExtensionMarket(address mTokenGateway, address receiver, bytes4 selector)\n        external\n        payable\n    {\n        address underlying = ImTokenGateway(mTokenGateway).underlying();\n        require(underlying == address(wrappedNative), WrapAndSupply_AddressNotValid());\n\n        uint256 amount = _wrap();\n\n        IERC20(underlying).approve(mTokenGateway, 0);\n        IERC20(underlying).approve(mTokenGateway, amount);\n        ImTokenGateway(mTokenGateway).supplyOnHost(amount, receiver, selector);\n    }\n\n    // ----------- PRIVATE ------------\n    function _wrap() private returns (uint256) {\n        uint256 amount = msg.value;\n        require(amount > 0, WrapAndSupply_AmountNotValid());\n\n        wrappedNative.deposit{value: amount}();\n        return amount;\n    }\n}\n"
+    }
+}

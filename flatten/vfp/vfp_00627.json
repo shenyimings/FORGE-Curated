@@ -1,0 +1,86 @@
+{
+    "vfp_id": "vfp_00627",
+    "project_name": "Oxorio SAMM Module Audit.md",
+    "findings": [
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Misleading variable and event naming",
+            "description": "Several naming issues were identified: `_signer` should be `_owner`, `TxAllowanceChanged` should be `TxAllowedChanged`, `last_angle_bracket` is misleading, and `allowance` should be `maximumTxValue`.\nThe root cause is imprecise naming that misrepresents functionality.\nThis can lead to misunderstandings about the code's behavior.\nThe impact is increased risk of logic errors during development or integration.\nRenaming these elements would improve code clarity and correctness.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol#16",
+                "ISAMMEvents.sol#35",
+                "IModuleGuardEvents.sol#6-7",
+                "utils.nr#27",
+                "utils.nr#78",
+                "SAMM.sol#70"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1050"
+                ]
+            },
+            "title": "Inefficient use of onlyOwner modifier in setDKIMPublicKeyHashes",
+            "description": "The `setDKIMPublicKeyHashes` function iteratively calls `setDKIMPublicKeyHash` inside a loop, causing the `onlyOwner` modifier to be evaluated multiple times. \nThis design leads to unnecessary gas costs due to repeated modifier checks.\nThe root cause is the lack of internal function abstraction to bypass access control for internal calls.\nAn attacker cannot directly exploit this, but it increases transaction costs for legitimate users.\nThe impact is elevated gas consumption and reduced efficiency of contract interactions.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol::setDKIMPublicKeyHashes#53"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Inefficient _stringEq function implementation",
+            "description": "The `_stringEq` function uses `abi.encodePacked` on both string arguments, which causes redundant memory expansion and increases gas usage.\nThe root cause is a non-optimal string comparison method that does not leverage existing efficient libraries.\nThis inefficiency affects any call to this function, though it appears to be unused.\nThe impact is wasted computation and higher gas costs if ever used.\nConsider using OpenZeppelin's `Strings.equal` or removing the function entirely.\n",
+            "severity": "Informational",
+            "location": [
+                "DKIMRegistry.sol::_stringEq#27"
+            ],
+            "files": [
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/utils/DKIMRegistry.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "DKIMRegistry.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.23;\n\nimport \"openzeppelin-contracts/contracts/access/Ownable.sol\";\nimport \"../interfaces/IDKIMRegistry.sol\";\n\n/**\n * A Registry that store the hash(dkim_public_key) for each domain\n *   The hash is calculated by taking Poseidon of DKIM key split into 9 chunks of 242 bits each\n *\n *   https://zkrepl.dev/?gist=43ce7dce2466c63812f6efec5b13aa73 can be used to generate the public key hash.\n *   The same code is used in EmailVerifier.sol\n *   Input is DKIM pub key split into 17 chunks of 121 bits. You can use `helpers` package to fetch/split DKIM keys\n */\ncontract DKIMRegistry is IDKIMRegistry, Ownable {\n    constructor(address _signer) Ownable(_signer) {}\n\n    event DKIMPublicKeyHashRegistered(string domainName, bytes32 publicKeyHash);\n    event DKIMPublicKeyHashRevoked(bytes32 publicKeyHash);\n\n    // Mapping from domain name to DKIM public key hash\n    mapping(string => mapping(bytes32 => bool)) public dkimPublicKeyHashes;\n\n    // DKIM public that are revoked (eg: in case of private key compromise)\n    mapping(bytes32 => bool) public revokedDKIMPublicKeyHashes;\n\n    function _stringEq(string memory a, string memory b) internal pure returns (bool) {\n        return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));\n    }\n\n    function isDKIMPublicKeyHashValid(string memory domainName, bytes32 publicKeyHash) public view returns (bool) {\n        if (revokedDKIMPublicKeyHashes[publicKeyHash]) {\n            return false;\n        }\n\n        if (dkimPublicKeyHashes[domainName][publicKeyHash]) {\n            return true;\n        }\n\n        return false;\n    }\n\n    function setDKIMPublicKeyHash(string memory domainName, bytes32 publicKeyHash) public onlyOwner {\n        require(!revokedDKIMPublicKeyHashes[publicKeyHash], \"cannot set revoked pubkey\");\n\n        dkimPublicKeyHashes[domainName][publicKeyHash] = true;\n\n        emit DKIMPublicKeyHashRegistered(domainName, publicKeyHash);\n    }\n\n    function setDKIMPublicKeyHashes(string memory domainName, bytes32[] memory publicKeyHashes) public onlyOwner {\n        for (uint256 i = 0; i < publicKeyHashes.length; i++) {\n            setDKIMPublicKeyHash(domainName, publicKeyHashes[i]);\n        }\n    }\n\n    function revokeDKIMPublicKeyHash(bytes32 publicKeyHash) public onlyOwner {\n        revokedDKIMPublicKeyHashes[publicKeyHash] = true;\n\n        emit DKIMPublicKeyHashRevoked(publicKeyHash);\n    }\n}\n"
+    }
+}

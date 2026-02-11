@@ -1,0 +1,52 @@
+{
+    "vfp_id": "vfp_00092",
+    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "DineroWithdrawRequestManager vulnerable to token overwithdrawal via batch ID overlap",
+            "description": "The DineroWithdrawRequestManager does not track individual upxETH token balances per withdrawal request. Instead, it records a range of batch IDs during withdrawal initiation and redeems all tokens within that range upon finalization. This design flaw allows for overlapping batch ID ranges across different users' requests.\n\nThe root cause is in the _initiateWithdrawImpl function, which captures the initial and final batch IDs before and after calling PirexETH::initiateRedemption. Since batch IDs are incremented per deposit size, multiple withdrawal requests can share overlapping batch IDs. When a user finalizes their request, they redeem all tokens in the recorded range, including those that belong to other users' requests.\n\nAn attacker can front-run another user's withdrawal request to create overlapping batch ID ranges. When the attacker finalizes first, they withdraw more tokens than they are entitled to, including those meant for other users. The victim user, when finalizing later, receives less than expected because some tokens have already been redeemed.\n\nThe impact includes unfair distribution of assets, financial loss for honest users, and potential for malicious actors to profit by exploiting the overlap. This undermines the fairness and security of the withdrawal system and can lead to significant user losses.\n",
+            "severity": "High",
+            "location": [
+                "src/withdraws/Dinero.sol::_initiateWithdrawImpl",
+                "src/withdraws/Dinero.sol::_finalizeWithdrawImpl",
+                "src/withdraws/PirexETH.sol::_initiateRedemption"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Dinero.sol",
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/PirexETH.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "DoS might happen to DineroWithdrawRequestManager#_initiateWithdrawImpl() due to overflow on ++s_batchNonce",
+            "description": "The vulnerability exists in DineroWithdrawRequestManager#_initiateWithdrawImpl(), where the requestId is generated using a nonce derived from s_batchNonce, a uint16 variable. Since uint16 can only hold values up to 65535, once this limit is reached, any further call to initiateWithdraw will revert due to arithmetic overflow. The root cause is the insufficient size of the s_batchNonce variable, which was chosen to fit within a uint256 requestId structure alongside two uint120 batch IDs. An attacker can exploit this by repeatedly calling initiateWithdraw through an approved vault using different accounts to exhaust the nonce space. The impact is a complete denial of service for WETH withdrawals, locking all user funds deposited via DineroWithdrawRequestManager indefinitely.\n",
+            "severity": "High",
+            "location": [
+                "Dinero.sol#L17-L39"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Dinero.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Dinero.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport {AbstractWithdrawRequestManager} from \"./AbstractWithdrawRequestManager.sol\";\nimport {ERC1155Holder} from \"@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol\";\nimport {WETH} from \"../utils/Constants.sol\";\nimport \"../interfaces/IDinero.sol\";\n\ncontract DineroWithdrawRequestManager is AbstractWithdrawRequestManager, ERC1155Holder {\n    uint16 internal s_batchNonce;\n    uint256 internal constant MAX_BATCH_ID = type(uint120).max;\n\n    constructor(address pxETHorApxETH) AbstractWithdrawRequestManager(\n        address(WETH), address(pxETHorApxETH), address(WETH)\n    ) { }\n\n    function _initiateWithdrawImpl(\n        address /* account */,\n        uint256 amountToWithdraw,\n        bytes calldata /* data */\n    ) override internal returns (uint256 requestId) {\n        if (YIELD_TOKEN == address(apxETH)) {\n            // First redeem the apxETH to pxETH before we initiate the redemption\n            amountToWithdraw = apxETH.redeem(amountToWithdraw, address(this), address(this));\n        }\n\n        uint256 initialBatchId = PirexETH.batchId();\n        pxETH.approve(address(PirexETH), amountToWithdraw);\n        // TODO: what do we put for should trigger validator exit?\n        PirexETH.initiateRedemption(amountToWithdraw, address(this), false);\n        uint256 finalBatchId = PirexETH.batchId();\n        uint256 nonce = ++s_batchNonce;\n\n        // May require multiple batches to complete the redemption\n        require(initialBatchId < MAX_BATCH_ID);\n        require(finalBatchId < MAX_BATCH_ID);\n        // Initial and final batch ids may overlap between requests so the nonce is used to ensure uniqueness\n        return nonce << 240 | initialBatchId << 120 | finalBatchId;\n    }\n\n    function _stakeTokens(uint256 amount, bytes memory /* stakeData */) internal override {\n        WETH.withdraw(amount);\n        PirexETH.deposit{value: amount}(address(this), YIELD_TOKEN == address(apxETH));\n    }\n\n    function _decodeBatchIds(uint256 requestId) internal pure returns (uint256 initialBatchId, uint256 finalBatchId) {\n        initialBatchId = requestId >> 120 & MAX_BATCH_ID;\n        finalBatchId = requestId & MAX_BATCH_ID;\n    }\n\n    function _finalizeWithdrawImpl(\n        address /* account */,\n        uint256 requestId\n    ) internal override returns (uint256 tokensClaimed, bool finalized) {\n        finalized = canFinalizeWithdrawRequest(requestId);\n\n        if (finalized) {\n            (uint256 initialBatchId, uint256 finalBatchId) = _decodeBatchIds(requestId);\n\n            for (uint256 i = initialBatchId; i <= finalBatchId; i++) {\n                uint256 assets = upxETH.balanceOf(address(this), i);\n                if (assets == 0) continue;\n                PirexETH.redeemWithUpxEth(i, assets, address(this));\n                tokensClaimed += assets;\n            }\n        }\n\n        WETH.deposit{value: tokensClaimed}();\n    }\n\n    function canFinalizeWithdrawRequest(uint256 requestId) public view returns (bool) {\n        (uint256 initialBatchId, uint256 finalBatchId) = _decodeBatchIds(requestId);\n        uint256 totalAssets;\n\n        for (uint256 i = initialBatchId; i <= finalBatchId; i++) {\n            IPirexETH.ValidatorStatus status = PirexETH.status(PirexETH.batchIdToValidator(i));\n\n            if (status != IPirexETH.ValidatorStatus.Dissolved && status != IPirexETH.ValidatorStatus.Slashed) {\n                // Can only finalize if all validators are dissolved or slashed\n                return false;\n            }\n\n            totalAssets += upxETH.balanceOf(address(this), i);\n        }\n\n        // Can only finalize if the total assets are greater than the outstanding redemptions\n        return PirexETH.outstandingRedemptions() > totalAssets;\n    }\n}"
+    }
+}

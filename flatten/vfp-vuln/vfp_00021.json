@@ -1,0 +1,57 @@
+{
+    "vfp_id": "vfp_00021",
+    "project_name": "cantina_centrifuge_may2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-172"
+                ],
+                "3": [
+                    "CWE-173"
+                ]
+            },
+            "title": "AxelarAdapter.execute will fail to process any incoming message",
+            "description": "The vulnerability exists in the AxelarAdapter.execute function, which fails to process any incoming cross-chain message due to an incorrect string-to-address conversion in CastLib.toAddress. The root cause is that CastLib.toAddress(string) incorrectly assumes the input string's length must match the address length in bytes, when in reality, Axelar's infrastructure provides a hex string of fixed length (42 characters including '0x'). As a result, the require condition bytes(addr).length == 20 always evaluates to false because the string is not properly decoded from hex. This allows no valid cross-chain message to be processed, leading to a complete failure of inbound message handling. The impact is a denial of service for all cross-chain functionality relying on Axelar, preventing any external calls or state updates triggered by incoming messages.\n",
+            "severity": "Medium",
+            "location": [
+                "AxelarAdapter.sol::execute#60-75",
+                "CastLib.sol::toAddress#15-18"
+            ],
+            "files": [
+                "protocol-v3/src/common/adapters/AxelarAdapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-116"
+                ],
+                "3": [
+                    "CWE-838"
+                ]
+            },
+            "title": "AxelarAdapter.send sets incorrect destinationAddress for every cross chain transaction",
+            "description": "The AxelarAdapter.send function sets an incorrect destination address when relaying cross-chain transactions because it uses CastLib.toString to encode an address as a string. The current implementation uses string(abi.encodePacked(addr)), which produces a UTF-8 representation of the raw hex bytes rather than a proper hex string. This results in malformed addresses when decoded on the destination chain. The root cause is the misuse of low-level encoding without proper hex formatting. An attacker could potentially exploit this by crafting transactions that appear to target one address but are misrouted due to the corrupted string encoding. The impact is that cross-chain contract calls are sent to unintended recipients, potentially leading to loss of funds or unintended state changes if those addresses are active or malicious.\n",
+            "severity": "Medium",
+            "location": [
+                "AxelarAdapter.sol::send#82-99",
+                "CastLib.sol::toString#15-18"
+            ],
+            "files": [
+                "protocol-v3/src/common/adapters/AxelarAdapter.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AxelarAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.28;\n\nimport {Auth} from \"src/misc/Auth.sol\";\nimport {CastLib} from \"src/misc/libraries/CastLib.sol\";\nimport {\n    IAxelarAdapter,\n    IAdapter,\n    IAxelarGateway,\n    IAxelarGasService,\n    AxelarSource,\n    AxelarDestination,\n    IAxelarExecutable\n} from \"src/common/interfaces/IAxelarAdapter.sol\";\nimport {IMessageHandler} from \"src/common/interfaces/IMessageHandler.sol\";\n\n/// @title  Axelar Adapter\n/// @notice Routing contract that integrates with an Axelar Gateway\ncontract AxelarAdapter is Auth, IAxelarAdapter {\n    using CastLib for *;\n\n    IMessageHandler public immutable gateway;\n    IAxelarGateway public immutable axelarGateway;\n    IAxelarGasService public immutable axelarGasService;\n\n    mapping(string axelarId => AxelarSource) public sources;\n    mapping(uint16 centrifugeId => AxelarDestination) public destinations;\n\n    constructor(IMessageHandler gateway_, address axelarGateway_, address axelarGasService_, address deployer)\n        Auth(deployer)\n    {\n        gateway = gateway_;\n        axelarGateway = IAxelarGateway(axelarGateway_);\n        axelarGasService = IAxelarGasService(axelarGasService_);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Administration\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IAxelarAdapter\n    function file(bytes32 what, string calldata axelarId, uint16 centrifugeId, address source) external auth {\n        if (what == \"sources\") sources[axelarId] = AxelarSource(centrifugeId, source);\n        else revert FileUnrecognizedParam();\n        emit File(what, axelarId, centrifugeId, source);\n    }\n\n    /// @inheritdoc IAxelarAdapter\n    function file(bytes32 what, uint16 centrifugeId, string calldata axelarId, address destination) external auth {\n        if (what == \"destinations\") destinations[centrifugeId] = AxelarDestination(axelarId, destination);\n        else revert FileUnrecognizedParam();\n        emit File(what, centrifugeId, axelarId, destination);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Incoming\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IAxelarExecutable\n    function execute(\n        bytes32 commandId,\n        string calldata sourceAxelarId,\n        string calldata sourceAddress,\n        bytes calldata payload\n    ) public {\n        AxelarSource memory source = sources[sourceAxelarId];\n        require(source.addr != address(0) && source.addr == sourceAddress.toAddress(), InvalidAddress());\n\n        require(\n            axelarGateway.validateContractCall(commandId, sourceAxelarId, sourceAddress, keccak256(payload)),\n            NotApprovedByGateway()\n        );\n\n        gateway.handle(source.centrifugeId, payload);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Outgoing\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IAdapter\n    function send(uint16 centrifugeId, bytes calldata payload, uint256, /* gasLimit */ address refund)\n        external\n        payable\n        returns (bytes32 adapterData)\n    {\n        require(msg.sender == address(gateway), NotGateway());\n        AxelarDestination memory destination = destinations[centrifugeId];\n        require(bytes(destination.axelarId).length != 0, UnknownChainId());\n\n        string memory destinationAddress = destination.addr.toString();\n        axelarGasService.payNativeGasForContractCall{value: msg.value}(\n            address(this), destination.axelarId, destinationAddress, payload, refund\n        );\n\n        axelarGateway.callContract(destination.axelarId, destinationAddress, payload);\n\n        adapterData = bytes32(\"\");\n    }\n\n    /// @inheritdoc IAdapter\n    function estimate(uint16 centrifugeId, bytes calldata payload, uint256 gasLimit) public view returns (uint256) {\n        AxelarDestination memory destination = destinations[centrifugeId];\n        return axelarGasService.estimateGasFee(\n            destination.axelarId, destination.addr.toString(), payload, gasLimit, bytes(\"\")\n        );\n    }\n}\n"
+    }
+}

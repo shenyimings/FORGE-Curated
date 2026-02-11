@@ -1,0 +1,27 @@
+{
+    "vfp_id": "vfp_00193",
+    "project_name": "Uniswap Hooks Library Milestone 1 Audit.md",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Hooks Do Not Support Native Tokens",
+            "description": "The CurrencySettler library supports native token transfers via the `settle` function, which uses the `payable` `PoolManager.settle` method. However, none of the hook contracts are designed to receive native tokens (e.g., ETH), meaning they cannot hold a non-zero native token balance.\n\nThe root cause is the absence of a `receive` or `fallback` function in the hook contracts, which prevents them from accepting native token payments. As a result, any operation that requires the hook to settle native tokens—such as providing liquidity to a pool involving ETH—will fail because the hook cannot receive the necessary funds.\n\nAn attacker cannot directly exploit this, but malicious actors could front-run or manipulate interactions knowing that ETH-denominated pools are unsupported. The impact is that the hooks are incompatible with native token pools, severely limiting their utility and potentially leading to failed transactions or locked funds in ETH-based pools.\n",
+            "severity": "High",
+            "location": [
+                "CurrencySettler.sol::settle#28",
+                "CurrencySettler.sol#34"
+            ],
+            "files": [
+                "uniswap-hooks/src/utils/CurrencySettler.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "CurrencySettler.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/utils/CurrencySettler.sol)\n\npragma solidity ^0.8.24;\n\nimport {Currency} from \"v4-core/src/types/Currency.sol\";\nimport {IPoolManager} from \"v4-core/src/interfaces/IPoolManager.sol\";\nimport {IERC20} from \"openzeppelin/token/ERC20/IERC20.sol\";\n\n/**\n * @dev Library used to interact with the `PoolManager` to settle any open deltas.\n * To settle a positive delta (a credit to the user), a user may take or mint.\n * To settle a negative delta (a debt on the user), a user may transfer or burn to pay off a debt.\n *\n * Based on the https://github.com/Uniswap/v4-core/blob/main/test/utils/CurrencySettler.sol[Uniswap v4 test utils implementation].\n *\n * NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.\n */\nlibrary CurrencySettler {\n    /**\n     * @notice Settle (pay) a currency to the `PoolManager`\n     * @param currency Currency to settle\n     * @param poolManager `PoolManager` to settle to\n     * @param payer Address of the payer, which can be the hook itself or an external address.\n     * @param amount Amount to send\n     * @param burn If true, burn the ERC-6909 token, otherwise transfer ERC-20 to the `PoolManager`\n     */\n    function settle(Currency currency, IPoolManager poolManager, address payer, uint256 amount, bool burn) internal {\n        // Early return when amount is 0 given that some tokens may revert in this case\n        if (amount == 0) return;\n\n        // For native currencies or burns, calling sync is not required\n        // Short circuit for ERC-6909 burns to support ERC-6909-wrapped native tokens\n        if (burn) {\n            poolManager.burn(payer, currency.toId(), amount);\n        } else if (currency.isAddressZero()) {\n            poolManager.sync(currency);\n            poolManager.settle{value: amount}();\n        } else {\n            poolManager.sync(currency);\n            if (payer != address(this)) {\n                IERC20(Currency.unwrap(currency)).transferFrom(payer, address(poolManager), amount);\n            } else {\n                IERC20(Currency.unwrap(currency)).transfer(address(poolManager), amount);\n            }\n            poolManager.settle();\n        }\n    }\n\n    /**\n     * @notice Take (receive) a currency from the `PoolManager`\n     * @param currency Currency to take\n     * @param poolManager `PoolManager` to take from\n     * @param recipient Address of the recipient of the ERC-6909 or ERC-20 token.\n     * @param amount Amount to receive\n     * @param claims If true, mint the ERC-6909 token, otherwise transfer ERC-20 from the `PoolManager` to recipient\n     */\n    function take(Currency currency, IPoolManager poolManager, address recipient, uint256 amount, bool claims)\n        internal\n    {\n        // Early return when amount is 0 given that some tokens may revert in this case\n        if (amount == 0) return;\n\n        claims ? poolManager.mint(recipient, currency.toId(), amount) : poolManager.take(currency, recipient, amount);\n    }\n}\n"
+    }
+}

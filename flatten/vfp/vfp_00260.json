@@ -1,0 +1,609 @@
+{
+    "vfp_id": "vfp_00260",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
+            "description": "The FeeAuction.buy function does not validate the _assets parameter, allowing users to call the function with an empty array or token addresses that have zero balance in the contract. This causes the transaction to proceed without transferring any assets to the buyer. The root cause is the lack of input validation before processing the asset transfer and payment. An attacker or user could exploit this by calling buy with an empty _assets array or including tokens not held by the contract, resulting in a successful payment without receiving any assets. The impact is a loss of funds for the buyer, as they pay the full auction price but receive nothing in return.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy#64-80",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-240"
+                ]
+            },
+            "title": "Inconsistent balance tracking in vault creates DoS for asset borrowing",
+            "description": "The Vault contract uses inconsistent accounting methods: some functions rely on totalSupplies while others use direct balanceOf checks. The burn function reduces totalSupplies without validating against actual token balances, allowing totalSupplies to drop below totalBorrows. This violates the invariant that total supply must be >= total borrows. The root cause is the lack of synchronization between accounting variables and real token balances. An attacker can exploit this by transferring tokens directly to the vault and then burning more than the accounted supply, creating a negative available balance. The impact is a system-wide denial of service for borrowing that specific asset, even if physical tokens are available.\n",
+            "severity": "High",
+            "location": [
+                "contracts/vault/libraries/VaultLogic.sol::burn#111-124",
+                "contracts/vault/Vault.sol::availableBalance#206-209",
+                "contracts/lendingPool/libraries/ViewLogic.sol::maxBorrowable#83-91",
+                "Vault.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/libraries/VaultLogic.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ]
+            },
+            "title": "Unsafe asset removal without borrow validation",
+            "description": "The removeAsset function in VaultLogic allows removing an asset from the vault's list without checking if there are outstanding borrows. This can lead to a state where borrowers cannot repay loans because the asset is no longer recognized by the system. The root cause is the absence of a pre-removal validation check for totalBorrows. An admin or attacker with access could remove an asset with active loans, rendering repayment functions ineffective. The impact is that borrowers' funds become locked, they cannot clear their debt, and the system enters an inconsistent state.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/vault/libraries/VaultLogic.sol::removeAsset#192-208",
+                "Vault.sol::removeAsset"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/libraries/VaultLogic.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Initial auction start price can be lower than minimum start price",
+            "description": "The setStartPrice function in FeeAuction does not validate that the new start price is at least the minStartPrice. This allows an admin to set a start price below the intended minimum, potentially enabling users to acquire assets at negligible cost. The root cause is the lack of input validation in the function. An attacker with admin access or a compromised admin could exploit this to drain value from the protocol. The impact is economic loss due to unauthorized low-price asset acquisition, undermining the auction's intended price discovery mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::setStartPrice#85-89",
+                "FeeAuction.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "FeeAuction’s buy function allows purchasing at sub-optimal prices by adding tokens during an active auction",
+            "description": "The FeeAuction.buy function does not fix the asset amounts at the start of the auction. An attacker can call realizeInterest on FractionalReserve to add more tokens to the auction and then immediately buy all tokens at the current (low) price, effectively getting the added tokens for free. The root cause is the dynamic inclusion of newly added tokens in the auction without price adjustment. This behavior creates undefined and exploitable auction dynamics. The impact is unfair profit for the attacker and loss of revenue for the protocol, especially if MEV searchers are not active to arbitrage the opportunity.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
+            "description": "The FeeAuction.buy function does not validate that assets are actually transferred before accepting payment. A malicious actor can front-run a legitimate buy transaction, depleting the asset balance, and causing the victim's transaction to pay without receiving anything. The root cause is the lack of a check ensuring non-zero asset transfer before payment. This creates a race condition exploitable via MEV. The impact is financial loss for victims who pay double the price (due to price doubling after each successful buy) but receive no assets.\n",
+            "severity": "High",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Oracle update front-running allows extraction of value from vaults",
+            "description": "The protocol's minting and burning functions are vulnerable to oracle sandwiching attacks due to the use of current oracle prices without protection against timing manipulation. The root cause is the lack of safeguards such as fees, TWAPs, or circuit breakers around oracle updates. An attacker can monitor pending Chainlink oracle updates and front-run them by depositing assets before the price update and withdrawing after, profiting from the price difference. For example, when the USDC price drops, the attacker deposits at the old price and withdraws at the new, higher effective rate, extracting value from the protocol. The impact is a direct loss of funds from the protocol treasury proportional to the size of the oracle update, exploiting natural market movements rather than oracle manipulation, which undermines the economic integrity of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/vault/Vault.sol",
+                "Oracle.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "ZapOFTComposer._lzCompose may fail with USDT",
+            "description": "The _lzCompose function uses the standard approve method for ERC20 tokens without handling the special case of tokens like USDT that do not allow changing a non-zero approval to another non-zero value. The root cause is the failure to use SafeERC20's forceApprove function, despite importing the library. This can cause transactions to fail when users attempt to create zaps with multiple USDT inputs, as the approve call will revert if an existing non-zero allowance is present. The impact is a denial of service for users trying to interact with USDT in zap operations, reducing the usability and reliability of the protocol for one of the most widely used stablecoins, despite a safe alternative being available in the codebase.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/zap/ZapOFTComposer.sol#L39-L55",
+                "ZapOFTComposer.sol::_lzCompose"
+            ],
+            "files": [
+                "cap-contracts/contracts/zap/ZapOFTComposer.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Fee auction allows assets to be purchased for free",
+            "description": "The Dutch auction mechanism in the FeeAuction contract allows the price to decay linearly to zero over time, enabling users to claim fee tokens for free when the auction expires without bids. The root cause is the lack of a minimum price floor in the currentPrice function. Although this behavior may be intentional (as suggested by code comments), it represents a value leakage risk for the protocol. Attackers can wait until the auction ends and then purchase valuable protocol fees at zero cost. The impact is a direct loss of revenue for the protocol, undermining the economic sustainability of the fee collection mechanism and potentially discouraging participation in earlier, higher-priced stages of the auction.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol#L52-L57",
+                "FeeAuction.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ]
+            },
+            "title": "Interest rate manipulation through frequent mints and burns",
+            "description": "The interest rate calculation depends on the elapsed time since the last update, but this timestamp is reset on every mint, burn, or borrow operation. The root cause is the vulnerability to timestamp manipulation via frequent zero-value or low-value transactions. An attacker can artificially reduce the elapsed time used in utilization multiplier calculations by performing repeated operations, thereby dampening interest rate increases during high utilization periods. This is especially severe when zero-value mints or burns are allowed, as they enable manipulation with minimal capital. The impact is distorted interest rates that fail to reflect true market conditions, allowing borrowers to avoid paying appropriate risk premiums and undermining the protocol's risk management and capital allocation mechanisms.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/vault/libraries/VaultLogic.sol#L289-L293",
+                "contracts/oracle/libraries/VaultAdapter.sol#L87-L88",
+                "Minter.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/libraries/VaultLogic.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Checks-effects-interactions pattern violation in FeeAuction.buy",
+            "description": "The buy function in the FeeAuction contract violates the checks-effects-interactions pattern, a critical security practice in smart contract development. This violation occurs because the function performs external calls before updating the internal state, creating a window for reentrancy attacks. The root cause is improper ordering of operations, where interactions with untrusted external contracts happen too early. An attacker could exploit this by crafting a malicious contract that reenters the buy function during execution, potentially manipulating state or draining funds. The impact could include loss of funds or unintended state changes if combined with other vulnerabilities, though no direct exploit is demonstrated here.\n",
+            "severity": null,
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol#L75-L79"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "The buy function does an unnecessary callback",
+            "description": "The buy function in FeeAuction.sol performs an unnecessary callback, which introduces a potential reentrancy risk. The root cause is the inclusion of a callback mechanism that is not essential for the function's core logic. If this callback is not required, it should be removed; otherwise, it must be protected. The current implementation lacks a `nonReentrant` modifier, leaving it vulnerable if the callback targets a malicious contract. An attacker could exploit this to reenter the function and manipulate state or drain funds. The recommendation to use flashloans instead suggests a design flaw in the current approach. The impact is potential loss of funds due to reentrancy.\n",
+            "severity": null,
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol#L64-L79"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Missing parameters in ZapOFTComposer.constructor NatSpecs",
+            "description": "The NatSpec documentation for the constructor of ZapOFTComposer is incomplete, failing to document all input parameters. The root cause is incomplete or neglected documentation. While this does not introduce a direct security vulnerability, it reduces code maintainability and increases the risk of integration errors by developers who rely on documentation. Incorrect assumptions based on incomplete docs could lead to improper usage of the contract, potentially triggering unintended behaviors or security issues in dependent systems. The impact is reduced code clarity and increased risk of integration bugs.\n",
+            "severity": null,
+            "location": [
+                "contracts/zap/ZapOFTComposer.sol#L27-L31"
+            ],
+            "files": [
+                "cap-contracts/contracts/zap/ZapOFTComposer.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "The Minter.__Minter_init and FractionalReserve.__FractionalReserve_init functions are never called",
+            "description": "The initialization functions __Minter_init and __FractionalReserve_init are defined but never invoked in the codebase. The root cause is dead code that serves no functional purpose. This could mislead developers into thinking these initializers are used, potentially leading to incorrect assumptions about contract state. If these functions were intended to be called but are not, critical initialization logic may be missing. The impact is confusion, increased code complexity, and potential for undiscovered initialization flaws if similar patterns exist elsewhere.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "cap-contracts/contracts/vault/Minter.sol",
+                "cap-contracts/contracts/vault/FractionalReserve.sol",
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 41,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-657"
+                ]
+            },
+            "title": "Vault, FractionalReserve, and Minter should be abstract contracts",
+            "description": "The Vault, FractionalReserve, and Minter contracts are meant to be inherited but are not declared as abstract. The root cause is incorrect contract design, allowing direct instantiation of base contracts. If deployed directly, these contracts may lack critical initialization or contain incomplete logic, leading to undefined behavior. An attacker could deploy and manipulate such instances to simulate valid components or exploit missing access controls. The impact includes potential for protocol manipulation or integration errors if external systems interact with invalid instances.\n",
+            "severity": null,
+            "location": [
+                "contracts/vault/Vault.sol#L19"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol",
+                "cap-contracts/contracts/vault/FractionalReserve.sol",
+                "cap-contracts/contracts/vault/Minter.sol"
+            ]
+        },
+        {
+            "id": 44,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-834"
+                ]
+            },
+            "title": "Unbounded array iterations risk out-of-gas failures",
+            "description": "Several functions iterate over arrays without size limits, creating a risk of out-of-gas failures as the arrays grow. The root cause is unbounded loops that may exceed block gas limits over time. An attacker could force such a failure by growing the array to a critical size, preventing legitimate users from calling key functions. This constitutes a denial-of-service vector. The impact includes disruption of protocol operations, such as withdrawals or updates, especially in time-sensitive contexts.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "cap-contracts/contracts/deploy/service/DeployVault.sol",
+                "cap-contracts/contracts/oracle/libraries/CapTokenAdapter.sol",
+                "cap-contracts/contracts/vault/libraries/VaultLogic.sol",
+                "cap-contracts/contracts/vault/FractionalReserve.sol",
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol",
+                "cap-contracts/contracts/lendingPool/libraries/ViewLogic.sol",
+                "cap-contracts/contracts/lendingPool/libraries/ReserveLogic.sol",
+                "cap-contracts/contracts/vault/libraries/MinterLogic.sol",
+                "cap-contracts/contracts/vault/Vault.sol",
+                "cap-contracts/contracts/zap/ZapOFTComposer.sol"
+            ]
+        },
+        {
+            "id": 45,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
+            "description": "This vulnerability arises from the lack of input validation in the FeeAuction.buy function, which allows users to make a payment without transferring any assets. The root cause is the absence of a check for zero-length asset arrays. An attacker could exploit this by calling the buy function with an empty assets array, leading to unintended state changes without actual asset transfer. This could disrupt auction mechanics and potentially allow manipulation of auction outcomes or gas griefing.\n",
+            "severity": "Medium",
+            "location": [
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 49,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Inconsistent balance tracking in vault creates DoS for asset borrowing",
+            "description": "The vault contract does not properly validate available balances before allowing withdrawals or borrows, leading to inconsistent balance tracking. This is caused by the lack of a pre-check on vault liquidity. An attacker could exploit this by initiating a borrow or withdrawal when the vault has insufficient funds, causing the transaction to fail and potentially locking users out of their assets. This creates a denial-of-service condition for legitimate borrowing and withdrawal operations.\n",
+            "severity": "High",
+            "location": [
+                "Vault.sol::_verifyBalance"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 50,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Unsafe asset removal without borrow validation",
+            "description": "The removeAsset function allows removal of an asset even when there are outstanding borrows, which could lead to accounting inconsistencies. The cause is the lack of validation that the asset's total supply is zero before removal. An attacker could exploit this by removing an asset while borrows are still active, potentially breaking the accounting model and leading to incorrect balance calculations. This could result in loss of funds or inability to repay debt.\n",
+            "severity": "Medium",
+            "location": [
+                "Vault.sol::removeAsset"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 51,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Initial auction start price can be lower than minimum start price",
+            "description": "The setStartPrice function allows setting a start price below the defined minimum, undermining auction fairness. This is caused by missing validation in the setStartPrice function. An attacker could exploit this by setting an unreasonably low start price, enabling asset acquisition at a fraction of their value. This could lead to significant financial loss for the protocol and unfair advantages for early bidders.\n",
+            "severity": "Low",
+            "location": [
+                "FeeAuction.sol::setStartPrice"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 53,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "FeeAuction’s buy function allows purchasing at sub-optimal prices by adding tokens during an active auction",
+            "description": "The buy function allows users to add tokens during an active auction, which can lead to purchases at prices worse than the current market rate. The cause is the lack of price protection during active auctions. An attacker could exploit this by manipulating the auction dynamics to buy assets at sub-optimal prices, potentially leading to financial loss for bidders. While not directly exploitable for profit, it degrades user experience and economic efficiency.\n",
+            "severity": "Low",
+            "location": [
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 57,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
+            "description": "The buy function allows purchasing zero assets, which can be exploited in front-running attacks. The cause is the lack of a slippage protection mechanism and validation for non-zero asset amounts. An attacker could exploit this by front-running legitimate bids with zero-asset transactions to manipulate auction state or extract value. This undermines auction fairness and can lead to loss of user funds.\n",
+            "severity": "High",
+            "location": [
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 60,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Unaccounted external vault investment losses can create withdrawal shortfalls",
+            "description": "Losses from external vault investments are not accounted for in the protocol's accounting model, which can lead to insufficient funds when users attempt to withdraw. The cause is the lack of loss tracking from external strategies. An attacker could exploit market downturns or failed strategies to trigger withdrawals that exceed available funds. This results in withdrawal shortfalls and potential insolvency for the vault.\n",
+            "severity": "Medium",
+            "location": [
+                "ExternalVaultAdapter.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/FractionalReserve.sol"
+            ]
+        },
+        {
+            "id": 66,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of verification on ERC4626 vault withdrawal amounts",
+            "description": "The divest function does not verify that the ERC4626 vault returns the expected amount of assets upon withdrawal. The cause is missing post-withdrawal balance checks. An attacker could exploit a malicious or compromised ERC4626 vault to return fewer assets than expected, leading to fund loss. This undermines the integrity of the withdrawal process.\n",
+            "severity": "Informational",
+            "location": [
+                "FractionalReserve.sol::divest"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/FractionalReserve.sol"
+            ]
+        },
+        {
+            "id": 68,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-394"
+                ]
+            },
+            "title": "ZapOFTComposer._lzCompose may fail with USDT",
+            "description": "The _lzCompose function may fail when interacting with USDT due to its non-standard approval mechanism. The cause is the use of regular approve instead of forceApprove for tokens like USDT. An attacker could exploit this by triggering compositions with USDT, causing transaction failures. This disrupts cross-chain operations and reduces user experience.\n",
+            "severity": "Informational",
+            "location": [
+                "ZapOFTComposer.sol::_lzCompose"
+            ],
+            "files": [
+                "cap-contracts/contracts/zap/ZapOFTComposer.sol"
+            ]
+        },
+        {
+            "id": 69,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Fee auction allows assets to be purchased for free",
+            "description": "The fee auction mechanism allows the price to decay to zero, enabling users to purchase assets without paying. The cause is the price decay function not having a floor above zero. An attacker could wait for the price to decay fully and then acquire assets at no cost. This leads to direct financial loss for the protocol.\n",
+            "severity": "Informational",
+            "location": [
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 71,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ]
+            },
+            "title": "Interest rate manipulation through frequent mints and burns",
+            "description": "Users can manipulate interest rates by rapidly minting and burning tokens, which affects utilization-based rate calculations. The cause is the lack of time-averaged or smoothed utilization metrics. An attacker could exploit this to artificially inflate or deflate interest rates for profit. This distorts the lending market and can lead to unfair rate adjustments.\n",
+            "severity": "Low",
+            "location": [
+                "Vault.sol::mint",
+                "Vault.sol::burn"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Vault.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IVault } from \"../interfaces/IVault.sol\";\nimport { VaultStorageUtils } from \"../storage/VaultStorageUtils.sol\";\nimport { FractionalReserve } from \"./FractionalReserve.sol\";\nimport { Minter } from \"./Minter.sol\";\nimport { VaultLogic } from \"./libraries/VaultLogic.sol\";\nimport { ERC20PermitUpgradeable } from\n    \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport { EnumerableSet } from \"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\";\n\n/// @title Vault for storing the backing for cTokens\n/// @author kexley, @capLabs\n/// @notice Tokens are supplied by cToken minters and borrowed by covered agents\n/// @dev Supplies, borrows and utilization rates are tracked. Interest rates should be computed and\n/// charged on the external contracts, only the principle amount is counted on this contract.\nabstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, FractionalReserve, VaultStorageUtils {\n    using EnumerableSet for EnumerableSet.AddressSet;\n\n    /// @dev Initialize the assets\n    /// @param _name Name of the cap token\n    /// @param _symbol Symbol of the cap token\n    /// @param _accessControl Access control address\n    /// @param _feeAuction Fee auction address\n    /// @param _oracle Oracle address\n    /// @param _assets Asset addresses\n    /// @param _insuranceFund Insurance fund\n    function __Vault_init(\n        string memory _name,\n        string memory _symbol,\n        address _accessControl,\n        address _feeAuction,\n        address _oracle,\n        address[] calldata _assets,\n        address _insuranceFund\n    ) internal onlyInitializing {\n        __ERC20_init(_name, _symbol);\n        __ERC20Permit_init(_name);\n        __Access_init(_accessControl);\n        __FractionalReserve_init(_feeAuction);\n        __Minter_init(_oracle);\n        __Vault_init_unchained(_assets, _insuranceFund);\n    }\n\n    /// @dev Initialize unchained\n    /// @param _assets Asset addresses\n    /// @param _insuranceFund Insurance fund\n    function __Vault_init_unchained(address[] calldata _assets, address _insuranceFund) internal onlyInitializing {\n        VaultStorage storage $ = getVaultStorage();\n        uint256 length = _assets.length;\n        for (uint256 i; i < length; ++i) {\n            $.assets.add(_assets[i]);\n        }\n        $.insuranceFund = _insuranceFund;\n    }\n\n    /// @notice Mint the cap token using an asset\n    /// @dev This contract must have approval to move asset from msg.sender\n    /// @param _asset Whitelisted asset to deposit\n    /// @param _amountIn Amount of asset to use in the minting\n    /// @param _minAmountOut Minimum amount to mint\n    /// @param _receiver Receiver of the minting\n    /// @param _deadline Deadline of the tx\n    function mint(address _asset, uint256 _amountIn, uint256 _minAmountOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256 amountOut)\n    {\n        uint256 fee;\n        (amountOut, fee) = getMintAmount(_asset, _amountIn);\n        VaultLogic.mint(\n            getVaultStorage(),\n            MintBurnParams({\n                asset: _asset,\n                amountIn: _amountIn,\n                amountOut: amountOut,\n                minAmountOut: _minAmountOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fee: fee\n            })\n        );\n        _mint(_receiver, amountOut);\n        _mint(getVaultStorage().insuranceFund, fee);\n    }\n\n    /// @notice Burn the cap token for an asset\n    /// @dev Asset is withdrawn from the reserve or divested from the underlying vault\n    /// @param _asset Asset to withdraw\n    /// @param _amountIn Amount of cap token to burn\n    /// @param _minAmountOut Minimum amount out to receive\n    /// @param _receiver Receiver of the withdrawal\n    /// @param _deadline Deadline of the tx\n    function burn(address _asset, uint256 _amountIn, uint256 _minAmountOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256 amountOut)\n    {\n        uint256 fee;\n        (amountOut, fee) = getBurnAmount(_asset, _amountIn);\n        divest(_asset, amountOut);\n        VaultLogic.burn(\n            getVaultStorage(),\n            MintBurnParams({\n                asset: _asset,\n                amountIn: _amountIn,\n                amountOut: amountOut,\n                minAmountOut: _minAmountOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fee: fee\n            })\n        );\n        _burn(msg.sender, _amountIn);\n    }\n\n    /// @notice Redeem the Cap token for a bundle of assets\n    /// @dev Assets are withdrawn from the reserve or divested from the underlying vault\n    /// @param _amountIn Amount of Cap token to burn\n    /// @param _minAmountsOut Minimum amounts of assets to withdraw\n    /// @param _receiver Receiver of the withdrawal\n    /// @param _deadline Deadline of the tx\n    /// @return amountsOut Amount of assets withdrawn\n    function redeem(uint256 _amountIn, uint256[] calldata _minAmountsOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256[] memory amountsOut)\n    {\n        uint256[] memory fees;\n        (amountsOut, fees) = getRedeemAmount(_amountIn);\n        divestMany(assets(), amountsOut);\n        VaultLogic.redeem(\n            getVaultStorage(),\n            RedeemParams({\n                amountIn: _amountIn,\n                amountsOut: amountsOut,\n                minAmountsOut: _minAmountsOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fees: fees\n            })\n        );\n        _burn(msg.sender, _amountIn);\n    }\n\n    /// @notice Borrow an asset\n    /// @dev Whitelisted agents can borrow any amount, LTV is handled by Agent contracts\n    /// @param _asset Asset to borrow\n    /// @param _amount Amount of asset to borrow\n    /// @param _receiver Receiver of the borrow\n    function borrow(address _asset, uint256 _amount, address _receiver) external checkAccess(this.borrow.selector) {\n        divest(_asset, _amount);\n        VaultLogic.borrow(getVaultStorage(), BorrowParams({ asset: _asset, amount: _amount, receiver: _receiver }));\n    }\n\n    /// @notice Repay an asset\n    /// @param _asset Asset to repay\n    /// @param _amount Amount of asset to repay\n    function repay(address _asset, uint256 _amount) external checkAccess(this.repay.selector) {\n        VaultLogic.repay(getVaultStorage(), RepayParams({ asset: _asset, amount: _amount }));\n    }\n\n    /// @notice Add an asset to the vault list\n    /// @param _asset Asset address\n    function addAsset(address _asset) external checkAccess(this.addAsset.selector) {\n        VaultLogic.addAsset(getVaultStorage(), _asset);\n    }\n\n    /// @notice Remove an asset from the vault list\n    /// @param _asset Asset address\n    function removeAsset(address _asset) external checkAccess(this.removeAsset.selector) {\n        VaultLogic.removeAsset(getVaultStorage(), _asset);\n    }\n\n    /// @notice Pause an asset\n    /// @param _asset Asset address\n    function pause(address _asset) external checkAccess(this.pause.selector) {\n        VaultLogic.pause(getVaultStorage(), _asset);\n    }\n\n    /// @notice Unpause an asset\n    /// @param _asset Asset address\n    function unpause(address _asset) external checkAccess(this.unpause.selector) {\n        VaultLogic.unpause(getVaultStorage(), _asset);\n    }\n\n    /// @notice Rescue an unsupported asset\n    /// @param _asset Asset to rescue\n    /// @param _receiver Receiver of the rescue\n    function rescueERC20(address _asset, address _receiver) external checkAccess(this.rescueERC20.selector) {\n        VaultLogic.rescueERC20(getVaultStorage(), _asset, _receiver);\n    }\n\n    /// @notice Get the list of assets supported by the vault\n    /// @return assetList List of assets\n    function assets() public view returns (address[] memory assetList) {\n        assetList = getVaultStorage().assets.values();\n    }\n\n    /// @notice Get the total supplies of an asset\n    /// @param _asset Asset address\n    /// @return totalSupply Total supply\n    function totalSupplies(address _asset) external view returns (uint256 totalSupply) {\n        totalSupply = getVaultStorage().totalSupplies[_asset];\n    }\n\n    /// @notice Get the total borrows of an asset\n    /// @param _asset Asset address\n    /// @return totalBorrow Total borrow\n    function totalBorrows(address _asset) external view returns (uint256 totalBorrow) {\n        totalBorrow = getVaultStorage().totalBorrows[_asset];\n    }\n\n    /// @notice Get the pause state of an asset\n    /// @param _asset Asset address\n    /// @return isPaused Pause state\n    function paused(address _asset) external view returns (bool isPaused) {\n        isPaused = getVaultStorage().paused[_asset];\n    }\n\n    /// @notice Available balance to borrow\n    /// @param _asset Asset to borrow\n    /// @return amount Amount available\n    function availableBalance(address _asset) external view returns (uint256 amount) {\n        amount = VaultLogic.availableBalance(getVaultStorage(), _asset);\n    }\n\n    /// @notice Utilization rate of an asset\n    /// @dev Utilization scaled by 1e27\n    /// @param _asset Utilized asset\n    /// @return ratio Utilization ratio\n    function utilization(address _asset) external view returns (uint256 ratio) {\n        ratio = VaultLogic.utilization(getVaultStorage(), _asset);\n    }\n\n    /// @notice Up to date cumulative utilization index of an asset\n    /// @dev Utilization scaled by 1e27\n    /// @param _asset Utilized asset\n    /// @return index Utilization ratio index\n    function currentUtilizationIndex(address _asset) external view returns (uint256 index) {\n        index = VaultLogic.currentUtilizationIndex(getVaultStorage(), _asset);\n    }\n\n    /// @notice Get the insurance fund\n    /// @return insuranceFund Insurance fund\n    function insuranceFund() external view returns (address) {\n        return getVaultStorage().insuranceFund;\n    }\n}\n",
+        "ViewLogic.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IDelegation } from \"../../interfaces/IDelegation.sol\";\n\nimport { ILender } from \"../../interfaces/ILender.sol\";\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IVault } from \"../../interfaces/IVault.sol\";\n\nimport { AgentConfiguration } from \"./configuration/AgentConfiguration.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\n/// @title View Logic\n/// @author kexley, @capLabs\n/// @notice View functions to see the state of an agent's health\nlibrary ViewLogic {\n    using AgentConfiguration for ILender.AgentConfigurationMap;\n\n    /// @notice Calculate the agent data\n    /// @param $ Lender storage\n    /// @param _agent Agent address\n    /// @return totalDelegation Total delegation of an agent in USD, encoded with 8 decimals\n    /// @return totalSlashableCollateral Total slashable collateral of an agent in USD, encoded with 8 decimals\n    /// @return totalDebt Total debt of an agent in USD, encoded with 8 decimals\n    /// @return ltv Loan to value ratio, encoded in ray (1e27)\n    /// @return liquidationThreshold Liquidation ratio of an agent, encoded in ray (1e27)\n    /// @return health Health status of an agent, encoded in ray (1e27)\n    function agent(ILender.LenderStorage storage $, address _agent)\n        public\n        view\n        returns (\n            uint256 totalDelegation,\n            uint256 totalSlashableCollateral,\n            uint256 totalDebt,\n            uint256 ltv,\n            uint256 liquidationThreshold,\n            uint256 health\n        )\n    {\n        totalDelegation = IDelegation($.delegation).coverage(_agent);\n        totalSlashableCollateral = IDelegation($.delegation).slashableCollateral(_agent);\n        liquidationThreshold = IDelegation($.delegation).liquidationThreshold(_agent);\n\n        for (uint256 i; i < $.reservesCount; ++i) {\n            if (!$.agentConfig[_agent].isBorrowing(i)) {\n                continue;\n            }\n\n            address asset = $.reservesList[i];\n            (uint256 assetPrice,) = IOracle($.oracle).getPrice(asset);\n            if (assetPrice == 0) continue;\n\n            ILender.ReserveData storage reserve = $.reservesData[asset];\n\n            totalDebt += (IERC20(reserve.debtToken).balanceOf(_agent) + accruedRestakerInterest($, _agent, asset))\n                * assetPrice / (10 ** reserve.decimals);\n        }\n\n        ltv = totalDelegation == 0 ? 0 : (totalDebt * 1e27) / totalDelegation;\n        health = totalDebt == 0 ? type(uint256).max : (totalDelegation * liquidationThreshold) / totalDebt;\n    }\n\n    /// @notice Calculate the maximum amount that can be borrowed for a given asset\n    /// @param $ Lender storage\n    /// @param _agent Agent address\n    /// @param _asset Asset to borrow\n    /// @return maxBorrowableAmount Maximum amount that can be borrowed in asset decimals\n    function maxBorrowable(ILender.LenderStorage storage $, address _agent, address _asset)\n        external\n        view\n        returns (uint256 maxBorrowableAmount)\n    {\n        (uint256 totalDelegation,, uint256 totalDebt,,, uint256 health) = agent($, _agent);\n        uint256 unrealizedInterest = accruedRestakerInterest($, _agent, _asset);\n\n        // health is below liquidation threshold, no borrowing allowed\n        if (health < 1e27) return 0;\n\n        uint256 ltv = IDelegation($.delegation).ltv(_agent);\n        uint256 borrowCapacity = totalDelegation * ltv / 1e27;\n\n        //  already at or above borrow capacity\n        if (totalDebt >= borrowCapacity) return 0;\n\n        // Calculate remaining borrow capacity in USD (8 decimals)\n        uint256 remainingCapacity = borrowCapacity - totalDebt;\n\n        // Convert to asset amount using price and decimals\n        (uint256 assetPrice,) = IOracle($.oracle).getPrice(_asset);\n        if (assetPrice == 0) return 0;\n\n        uint256 assetDecimals = $.reservesData[_asset].decimals;\n        maxBorrowableAmount = remainingCapacity * (10 ** assetDecimals) / assetPrice;\n\n        // Get total available assets using the vault's availableBalance function\n        uint256 totalAvailable = IVault($.reservesData[_asset].vault).availableBalance(_asset);\n        if (totalAvailable < unrealizedInterest) return 0;\n        totalAvailable -= unrealizedInterest;\n\n        // Limit maxBorrowableAmount by total available assets\n        if (totalAvailable < maxBorrowableAmount) {\n            maxBorrowableAmount = totalAvailable;\n        }\n    }\n\n    /// @notice Calculate the maximum amount that can be liquidated for a given asset\n    /// @param $ Lender storage\n    /// @param _agent Agent address\n    /// @param _asset Asset to liquidate\n    /// @return maxLiquidatableAmount Maximum amount that can be liquidated in asset decimals\n    function maxLiquidatable(ILender.LenderStorage storage $, address _agent, address _asset)\n        external\n        view\n        returns (uint256 maxLiquidatableAmount)\n    {\n        (uint256 totalDelegation,, uint256 totalDebt,, uint256 liquidationThreshold, uint256 health) = agent($, _agent);\n        if (health >= 1e27) return 0;\n\n        (uint256 assetPrice,) = IOracle($.oracle).getPrice(_asset);\n        if (assetPrice == 0) return 0;\n\n        ILender.ReserveData storage reserve = $.reservesData[_asset];\n        uint256 decPow = 10 ** reserve.decimals;\n\n        // Calculate maximum liquidatable amount\n        if (totalDelegation * liquidationThreshold > $.targetHealth * totalDebt) {\n            return 0;\n        }\n\n        maxLiquidatableAmount = (($.targetHealth * totalDebt) - (totalDelegation * liquidationThreshold)) * decPow\n            / (($.targetHealth - liquidationThreshold) * assetPrice);\n\n        // Cap at the agent's debt for this asset\n        uint256 agentDebt = debt($, _agent, _asset);\n        if (agentDebt < maxLiquidatableAmount) {\n            return agentDebt;\n        }\n    }\n\n    /// @notice Get the current debt balances for an agent for a specific asset\n    /// @param $ Lender storage\n    /// @param _agent Agent address to check debt for\n    /// @param _asset Asset to check debt for\n    /// @return totalDebt Total debt amount in asset decimals\n    function debt(ILender.LenderStorage storage $, address _agent, address _asset)\n        public\n        view\n        returns (uint256 totalDebt)\n    {\n        totalDebt =\n            IERC20($.reservesData[_asset].debtToken).balanceOf(_agent) + accruedRestakerInterest($, _agent, _asset);\n    }\n\n    /// @notice Calculate the accrued restaker interest for an agent for a specific asset\n    /// @param $ Lender storage\n    /// @param _agent Agent address\n    /// @param _asset Asset to calculate accrued interest for\n    /// @return accruedInterest Accrued restaker interest in asset decimals\n    function accruedRestakerInterest(ILender.LenderStorage storage $, address _agent, address _asset)\n        public\n        view\n        returns (uint256 accruedInterest)\n    {\n        ILender.ReserveData storage reserve = $.reservesData[_asset];\n        uint256 totalInterest = IERC20(reserve.debtToken).balanceOf(_agent);\n        uint256 rate = IOracle($.oracle).restakerRate(_agent);\n        uint256 elapsedTime = block.timestamp - reserve.lastRealizationTime[_agent];\n\n        accruedInterest = totalInterest * rate * elapsedTime / 1e27;\n    }\n}\n",
+        "ZapOFTComposer.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.22;\n\nimport { IZapRouter } from \"../interfaces/IZapRouter.sol\";\n\nimport { IZapOFTComposer } from \"../interfaces/IZapOFTComposer.sol\";\nimport { SafeOFTLzComposer } from \"./SafeOFTLzComposer.sol\";\nimport { OFTComposeMsgCodec } from \"@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title ZapOFTComposer\n/// @author @capLabs\n/// @notice Compose an OFT with Zap capabilities\n/// @dev This contract is used to compose an OFT message with Zap capabilities.\n///      It handles ERC20 approvals, zap execution, and refunds the remaining tokens to the zap recipient.\n///      Expects the funds to be sent to the ZapOFTComposer contract before the message is composed.\ncontract ZapOFTComposer is SafeOFTLzComposer {\n    using SafeERC20 for IERC20;\n\n    /// @notice Store ZapRouter addresses.\n    address public immutable zapRouter;\n    address public immutable zapTokenManager;\n\n    /// @notice Constructs the contract.\n    /// @param _endpoint The address of the LayerZero endpoint.\n    /// @param _oApp The address of the OApp that is sending the composed message.\n    /// @param _zapRouter The address of the ZapRouter to use for Zap capabilities.\n    /// @param _zapTokenManager The address of the ZapTokenManager to use for token permissions.\n    constructor(address _endpoint, address _oApp, address _zapRouter, address _zapTokenManager)\n        SafeOFTLzComposer(_oApp, _endpoint)\n    {\n        zapRouter = _zapRouter;\n        zapTokenManager = _zapTokenManager;\n    }\n\n    /// @notice Handles incoming composed messages from LayerZero OFTs and executes the zap order it represents.\n    function _lzCompose(address, /*_oApp*/ bytes32, /*_guid*/ bytes calldata _message, address, bytes calldata)\n        internal\n        override\n    {\n        // Decode the payload to get the message\n        bytes memory payload = OFTComposeMsgCodec.composeMsg(_message);\n        IZapOFTComposer.ZapMessage memory zapMessage = abi.decode(payload, (IZapOFTComposer.ZapMessage));\n\n        // approve all inputs to the zapTokenManager\n        IZapRouter.Input[] memory inputs = zapMessage.order.inputs;\n        uint256 inputLength = inputs.length;\n        for (uint256 i = 0; i < inputLength; i++) {\n            IZapRouter.Input memory input = inputs[i];\n            if (input.amount > 0) {\n                IERC20(input.token).forceApprove(zapTokenManager, input.amount);\n            }\n        }\n\n        // execute the zap order\n        IZapRouter(zapRouter).executeOrder(zapMessage.order, zapMessage.route);\n    }\n}\n",
+        "FeeAuction.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IFeeAuction } from \"../interfaces/IFeeAuction.sol\";\nimport { FeeAuctionStorageUtils } from \"../storage/FeeAuctionStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { IERC20, SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title Fee Auction\n/// @author kexley, @capLabs\n/// @notice Fees are sold via a dutch auction\ncontract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUtils {\n    using SafeERC20 for IERC20;\n\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the fee auction\n    /// @param _accessControl Access control address\n    /// @param _paymentToken Payment token address\n    /// @param _paymentRecipient Payment recipient address\n    /// @param _duration Duration of auction in seconds\n    /// @param _minStartPrice Minimum start price in payment token decimals\n    function initialize(\n        address _accessControl,\n        address _paymentToken,\n        address _paymentRecipient,\n        uint256 _duration,\n        uint256 _minStartPrice\n    ) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n\n        FeeAuctionStorage storage $ = get();\n        $.paymentToken = _paymentToken;\n        $.paymentRecipient = _paymentRecipient;\n        $.startPrice = _minStartPrice;\n        $.startTimestamp = block.timestamp;\n        if (_duration == 0) revert NoDuration();\n        $.duration = _duration;\n        if (_minStartPrice == 0) revert NoMinStartPrice();\n        $.minStartPrice = _minStartPrice;\n    }\n\n    /// @notice Current price in the payment token, linearly decays toward 10% of the start price over time\n    /// @return price Current price\n    function currentPrice() public view returns (uint256 price) {\n        FeeAuctionStorage storage $ = get();\n        uint256 elapsed = block.timestamp - $.startTimestamp;\n        if (elapsed > $.duration) elapsed = $.duration;\n        price = $.startPrice * (1e27 - (elapsed * 0.9e27 / $.duration)) / 1e27;\n    }\n\n    /// @notice Buy fees in exchange for the payment token\n    /// @dev Starts new auction where start price is double the settled price of this one\n    /// @param _maxPrice Maximum price to pay\n    /// @param _assets Assets to buy\n    /// @param _minAmounts Minimum amounts to buy\n    /// @param _receiver Receiver address for the assets\n    /// @param _deadline Deadline for the auction\n    function buy(\n        uint256 _maxPrice,\n        address[] calldata _assets,\n        uint256[] calldata _minAmounts,\n        address _receiver,\n        uint256 _deadline\n    ) external {\n        uint256 price = currentPrice();\n        if (price > _maxPrice) revert InvalidPrice();\n        if (_assets.length == 0 || _assets.length != _minAmounts.length) revert InvalidAssets();\n        if (_receiver == address(0)) revert InvalidReceiver();\n        if (_deadline < block.timestamp) revert InvalidDeadline();\n\n        FeeAuctionStorage storage $ = get();\n        $.startTimestamp = block.timestamp;\n\n        uint256 newStartPrice = price * 2;\n        if (newStartPrice < $.minStartPrice) newStartPrice = $.minStartPrice;\n        $.startPrice = newStartPrice;\n\n        uint256[] memory balances = _transferOutAssets(_assets, _minAmounts, _receiver);\n\n        IERC20($.paymentToken).safeTransferFrom(msg.sender, $.paymentRecipient, price);\n\n        emit Buy(msg.sender, price, _assets, balances);\n    }\n\n    /// @notice Set the start price of the current auction\n    /// @dev This will affect the current price, use with caution\n    /// @param _startPrice New start price\n    function setStartPrice(uint256 _startPrice) external checkAccess(this.setStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        if (_startPrice < $.minStartPrice) revert InvalidStartPrice();\n        $.startPrice = _startPrice;\n        emit SetStartPrice(_startPrice);\n    }\n\n    /// @notice Set duration of auctions\n    /// @dev This will affect the current price, use with caution\n    /// @param _duration New duration in seconds\n    function setDuration(uint256 _duration) external checkAccess(this.setDuration.selector) {\n        if (_duration == 0) revert NoDuration();\n        FeeAuctionStorage storage $ = get();\n        $.duration = _duration;\n        emit SetDuration(_duration);\n    }\n\n    /// @notice Set minimum start price\n    /// @param _minStartPrice New minimum start price\n    function setMinStartPrice(uint256 _minStartPrice) external checkAccess(this.setMinStartPrice.selector) {\n        if (_minStartPrice == 0) revert NoMinStartPrice();\n        FeeAuctionStorage storage $ = get();\n        $.minStartPrice = _minStartPrice;\n        emit SetMinStartPrice(_minStartPrice);\n    }\n\n    /// @dev Transfer all specified assets to the receiver from this address\n    /// @param _assets Asset addresses\n    /// @param _minAmounts Minimum amounts to buy\n    /// @param _receiver Receiver address\n    /// @return balances Balances transferred to receiver\n    function _transferOutAssets(address[] calldata _assets, uint256[] calldata _minAmounts, address _receiver)\n        internal\n        returns (uint256[] memory balances)\n    {\n        uint256 assetsLength = _assets.length;\n        balances = new uint256[](assetsLength);\n        for (uint256 i; i < assetsLength; ++i) {\n            address asset = _assets[i];\n            uint256 balance = IERC20(asset).balanceOf(address(this));\n            balances[i] = balance;\n            if (balance < _minAmounts[i]) revert InsufficientBalance(asset, balance, _minAmounts[i]);\n            if (balance > 0) IERC20(asset).safeTransfer(_receiver, balance);\n        }\n    }\n\n    /// @notice Get the payment token address\n    /// @return token Address of the token used for payments\n    function paymentToken() external view returns (address token) {\n        token = get().paymentToken;\n    }\n\n    /// @notice Get the payment recipient address\n    /// @return recipient Address that receives the payments\n    function paymentRecipient() external view returns (address recipient) {\n        recipient = get().paymentRecipient;\n    }\n\n    /// @notice Get the current start price\n    /// @return price Current start price in payment token decimals\n    function startPrice() external view returns (uint256 price) {\n        price = get().startPrice;\n    }\n\n    /// @notice Get the start timestamp of the current auction\n    /// @return timestamp Timestamp when the current auction started\n    function startTimestamp() external view returns (uint256 timestamp) {\n        timestamp = get().startTimestamp;\n    }\n\n    /// @notice Get the auction duration\n    /// @return auctionDuration Duration in seconds\n    function duration() external view returns (uint256 auctionDuration) {\n        auctionDuration = get().duration;\n    }\n\n    /// @notice Get the minimum start price\n    /// @return price Minimum start price in payment token decimals\n    function minStartPrice() external view returns (uint256 price) {\n        price = get().minStartPrice;\n    }\n\n    /// @dev Only admin can upgrade\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n",
+        "VaultLogic.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IVault } from \"../../interfaces/IVault.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { EnumerableSet } from \"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\";\n\n/// @title Vault for storing the backing for cTokens\n/// @author kexley, @capLabs\n/// @notice Tokens are supplied by cToken minters and borrowed by covered agents\n/// @dev Supplies, borrows and utilization rates are tracked. Interest rates should be computed and\n/// charged on the external contracts, only the principle amount is counted on this contract.\nlibrary VaultLogic {\n    using SafeERC20 for IERC20;\n    using EnumerableSet for EnumerableSet.AddressSet;\n\n    /// @dev Timestamp is past the deadline\n    error PastDeadline();\n\n    /// @dev Amount out is less than required\n    error Slippage(address asset, uint256 amountOut, uint256 minAmountOut);\n\n    /// @dev Amount out is 0\n    error InvalidAmount();\n\n    /// @dev Paused assets cannot be supplied or borrowed\n    error AssetPaused(address asset);\n\n    /// @dev Only whitelisted assets can be supplied or borrowed\n    error AssetNotSupported(address asset);\n\n    /// @dev Asset is already listed\n    error AssetAlreadySupported(address asset);\n\n    /// @dev Asset has supplies\n    error AssetHasSupplies(address asset);\n\n    /// @dev Only non-supported assets can be rescued\n    error AssetNotRescuable(address asset);\n\n    /// @dev Invalid min amounts out as they dont match the number of assets\n    error InvalidMinAmountsOut();\n\n    /// @dev Insufficient reserves\n    error InsufficientReserves(address asset, uint256 balanceBefore, uint256 amount);\n\n    /// @dev Cap token minted\n    event Mint(\n        address indexed minter,\n        address receiver,\n        address indexed asset,\n        uint256 amountIn,\n        uint256 amountOut,\n        uint256 fee\n    );\n\n    /// @dev Cap token burned\n    event Burn(\n        address indexed burner,\n        address receiver,\n        address indexed asset,\n        uint256 amountIn,\n        uint256 amountOut,\n        uint256 fee\n    );\n\n    /// @dev Cap token redeemed\n    event Redeem(address indexed redeemer, address receiver, uint256 amountIn, uint256[] amountsOut, uint256[] fees);\n\n    /// @dev Borrow made\n    event Borrow(address indexed borrower, address indexed asset, uint256 amount);\n\n    /// @dev Repayment made\n    event Repay(address indexed repayer, address indexed asset, uint256 amount);\n\n    /// @dev Add asset\n    event AddAsset(address asset);\n\n    /// @dev Remove asset\n    event RemoveAsset(address asset);\n\n    /// @dev Asset paused\n    event PauseAsset(address asset);\n\n    /// @dev Asset unpaused\n    event UnpauseAsset(address asset);\n\n    /// @dev Rescue unsupported ERC20 tokens\n    event RescueERC20(address asset, address receiver);\n\n    /// @dev Modifier to only allow supplies and borrows when not paused\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    modifier whenNotPaused(IVault.VaultStorage storage $, address _asset) {\n        _whenNotPaused($, _asset);\n        _;\n    }\n\n    /// @dev Modifier to update the utilization index\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    modifier updateIndex(IVault.VaultStorage storage $, address _asset) {\n        _updateIndex($, _asset);\n        _;\n    }\n\n    /// @notice Mint the cap token using an asset\n    /// @dev This contract must have approval to move asset from msg.sender\n    /// @param $ Vault storage pointer\n    /// @param params Mint parameters\n    function mint(IVault.VaultStorage storage $, IVault.MintBurnParams memory params)\n        external\n        whenNotPaused($, params.asset)\n        updateIndex($, params.asset)\n    {\n        if (params.deadline < block.timestamp) revert PastDeadline();\n        if (params.amountOut < params.minAmountOut) {\n            revert Slippage(address(this), params.amountOut, params.minAmountOut);\n        }\n        if (params.amountOut == 0) revert InvalidAmount();\n\n        $.totalSupplies[params.asset] += params.amountIn;\n\n        IERC20(params.asset).safeTransferFrom(msg.sender, address(this), params.amountIn);\n\n        emit Mint(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut, params.fee);\n    }\n\n    /// @notice Burn the cap token for an asset\n    /// @dev Can only withdraw up to the amount remaining on this contract\n    /// @param $ Vault storage pointer\n    /// @param params Burn parameters\n    function burn(IVault.VaultStorage storage $, IVault.MintBurnParams memory params)\n        external\n        updateIndex($, params.asset)\n    {\n        if (params.deadline < block.timestamp) revert PastDeadline();\n        if (params.amountOut < params.minAmountOut) {\n            revert Slippage(params.asset, params.amountOut, params.minAmountOut);\n        }\n        if (params.amountOut == 0) revert InvalidAmount();\n\n        _verifyBalance($, params.asset, params.amountOut);\n\n        $.totalSupplies[params.asset] -= params.amountOut + params.fee;\n\n        IERC20(params.asset).safeTransfer(params.receiver, params.amountOut);\n        IERC20(params.asset).safeTransfer($.insuranceFund, params.fee);\n\n        emit Burn(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut, params.fee);\n    }\n\n    /// @notice Redeem the Cap token for a bundle of assets\n    /// @dev Can only withdraw up to the amount remaining on this contract\n    /// @param $ Vault storage pointer\n    /// @param params Redeem parameters\n    function redeem(IVault.VaultStorage storage $, IVault.RedeemParams memory params) external {\n        if (params.amountsOut.length != params.minAmountsOut.length) revert InvalidMinAmountsOut();\n        if (params.deadline < block.timestamp) revert PastDeadline();\n\n        uint256 length = $.assets.length();\n        for (uint256 i; i < length; ++i) {\n            address asset = $.assets.at(i);\n            if (params.amountsOut[i] < params.minAmountsOut[i]) {\n                revert Slippage(asset, params.amountsOut[i], params.minAmountsOut[i]);\n            }\n            if (params.amountsOut[i] == 0) revert InvalidAmount();\n            _verifyBalance($, asset, params.amountsOut[i]);\n            _updateIndex($, asset);\n            $.totalSupplies[asset] -= params.amountsOut[i] + params.fees[i];\n            IERC20(asset).safeTransfer(params.receiver, params.amountsOut[i]);\n            IERC20(asset).safeTransfer($.insuranceFund, params.fees[i]);\n        }\n\n        emit Redeem(msg.sender, params.receiver, params.amountIn, params.amountsOut, params.fees);\n    }\n\n    /// @notice Borrow an asset\n    /// @dev Whitelisted agents can borrow any amount, LTV is handled by Agent contracts\n    /// @param $ Vault storage pointer\n    /// @param params Borrow parameters\n    function borrow(IVault.VaultStorage storage $, IVault.BorrowParams memory params)\n        external\n        whenNotPaused($, params.asset)\n        updateIndex($, params.asset)\n    {\n        _verifyBalance($, params.asset, params.amount);\n\n        $.totalBorrows[params.asset] += params.amount;\n        IERC20(params.asset).safeTransfer(params.receiver, params.amount);\n\n        emit Borrow(msg.sender, params.asset, params.amount);\n    }\n\n    /// @notice Repay an asset\n    /// @param $ Vault storage pointer\n    /// @param params Repay parameters\n    function repay(IVault.VaultStorage storage $, IVault.RepayParams memory params)\n        external\n        updateIndex($, params.asset)\n    {\n        $.totalBorrows[params.asset] -= params.amount;\n        IERC20(params.asset).safeTransferFrom(msg.sender, address(this), params.amount);\n\n        emit Repay(msg.sender, params.asset, params.amount);\n    }\n\n    /// @notice Add an asset to the vault list\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    function addAsset(IVault.VaultStorage storage $, address _asset) external {\n        if (!$.assets.add(_asset)) revert AssetNotSupported(_asset);\n        emit AddAsset(_asset);\n    }\n\n    /// @notice Remove an asset from the vault list\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    function removeAsset(IVault.VaultStorage storage $, address _asset) external {\n        if ($.totalSupplies[_asset] > 0) revert AssetHasSupplies(_asset);\n        if (!$.assets.remove(_asset)) revert AssetNotSupported(_asset);\n        emit RemoveAsset(_asset);\n    }\n\n    /// @notice Pause an asset\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    function pause(IVault.VaultStorage storage $, address _asset) external {\n        $.paused[_asset] = true;\n        emit PauseAsset(_asset);\n    }\n\n    /// @notice Unpause an asset\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    function unpause(IVault.VaultStorage storage $, address _asset) external {\n        $.paused[_asset] = false;\n        emit UnpauseAsset(_asset);\n    }\n\n    /// @notice Rescue an unsupported asset\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset to rescue\n    /// @param _receiver Receiver of the rescue\n    function rescueERC20(IVault.VaultStorage storage $, address _asset, address _receiver) external {\n        if (_listed($, _asset)) revert AssetNotRescuable(_asset);\n        IERC20(_asset).safeTransfer(_receiver, IERC20(_asset).balanceOf(address(this)));\n        emit RescueERC20(_asset, _receiver);\n    }\n\n    /// @notice Calculate the available balance of an asset\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    /// @return balance Available balance\n    function availableBalance(IVault.VaultStorage storage $, address _asset) public view returns (uint256 balance) {\n        balance = $.totalSupplies[_asset] - $.totalBorrows[_asset];\n    }\n\n    /// @notice Calculate the utilization ratio of an asset\n    /// @dev Returns the ratio of borrowed assets to total supply, scaled to ray (1e27)\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    /// @return ratio Utilization ratio in ray (1e27)\n    function utilization(IVault.VaultStorage storage $, address _asset) public view returns (uint256 ratio) {\n        ratio = $.totalSupplies[_asset] != 0 ? $.totalBorrows[_asset] * 1e27 / $.totalSupplies[_asset] : 0;\n    }\n\n    /// @notice Up to date cumulative utilization index of an asset\n    /// @dev Utilization and index are both scaled in ray (1e27)\n    /// @param $ Vault storage pointer\n    /// @param _asset Utilized asset\n    /// @return index Utilization ratio index in ray (1e27)\n    function currentUtilizationIndex(IVault.VaultStorage storage $, address _asset)\n        external\n        view\n        returns (uint256 index)\n    {\n        index = $.utilizationIndex[_asset] + (utilization($, _asset) * (block.timestamp - $.lastUpdate[_asset]));\n    }\n\n    /// @notice Validate that an asset is listed\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset to check\n    /// @return isListed Asset is listed or not\n    function _listed(IVault.VaultStorage storage $, address _asset) internal view returns (bool isListed) {\n        isListed = $.assets.contains(_asset);\n    }\n\n    /// @notice Verify that an asset has enough balance\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    /// @param _amount Amount to verify\n    function _verifyBalance(IVault.VaultStorage storage $, address _asset, uint256 _amount) internal view {\n        uint256 balance = availableBalance($, _asset);\n        if (balance < _amount) {\n            revert InsufficientReserves(_asset, balance, _amount);\n        }\n    }\n\n    /// @dev Only allow supplies and borrows when not paused\n    /// @param $ Vault storage pointer\n    /// @param _asset Asset address\n    function _whenNotPaused(IVault.VaultStorage storage $, address _asset) private view {\n        if ($.paused[_asset]) revert AssetPaused(_asset);\n    }\n\n    /// @dev Update the cumulative utilization index of an asset\n    /// @param $ Vault storage pointer\n    /// @param _asset Utilized asset\n    function _updateIndex(IVault.VaultStorage storage $, address _asset) internal {\n        if (!_listed($, _asset)) revert AssetNotSupported(_asset);\n        $.utilizationIndex[_asset] += utilization($, _asset) * (block.timestamp - $.lastUpdate[_asset]);\n        $.lastUpdate[_asset] = block.timestamp;\n    }\n}\n",
+        "FractionalReserve.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IFractionalReserve } from \"../interfaces/IFractionalReserve.sol\";\nimport { FractionalReserveStorageUtils } from \"../storage/FractionalReserveStorageUtils.sol\";\nimport { FractionalReserveLogic } from \"./libraries/FractionalReserveLogic.sol\";\n\n/// @title Fractional Reserve\n/// @author kexley, @capLabs\n/// @notice Idle capital is put to work in fractional reserve vaults and can be recalled when\n/// withdrawing, redeeming or borrowing.\nabstract contract FractionalReserve is IFractionalReserve, Access, FractionalReserveStorageUtils {\n    /// @dev Initialize unchained\n    /// @param _feeAuction Fee auction address\n    function __FractionalReserve_init(address _feeAuction) internal onlyInitializing {\n        getFractionalReserveStorage().feeAuction = _feeAuction;\n    }\n\n    /// @notice Invest unborrowed capital in a fractional reserve vault (up to the reserve)\n    /// @param _asset Asset address\n    function investAll(address _asset) external checkAccess(this.investAll.selector) {\n        FractionalReserveLogic.invest(getFractionalReserveStorage(), _asset);\n    }\n\n    /// @notice Divest all of an asset from a fractional reserve vault and send any profit to fee auction\n    /// @dev If the vault has just been invested and no interest has been earned there could be a 1 wei revert since redemption wont equal loaned\n    /// @param _asset Asset address\n    function divestAll(address _asset) external checkAccess(this.divestAll.selector) {\n        FractionalReserveLogic.divest(getFractionalReserveStorage(), _asset);\n    }\n\n    /// @notice Divest some of an asset from a fractional reserve vault and send any profit to fee auction\n    /// @param _asset Asset address\n    /// @param _amountOut Amount of asset to divest\n    function divest(address _asset, uint256 _amountOut) internal {\n        FractionalReserveLogic.divest(getFractionalReserveStorage(), _asset, _amountOut);\n    }\n\n    /// @notice Divest some of many assets from a fractional reserve vault and send any profit to fee auction\n    /// @param _assets Asset addresses\n    /// @param _amountsOut Amounts of assets to divest\n    function divestMany(address[] memory _assets, uint256[] memory _amountsOut) internal {\n        FractionalReserveStorage storage $ = getFractionalReserveStorage();\n        for (uint256 i; i < _assets.length; ++i) {\n            FractionalReserveLogic.divest($, _assets[i], _amountsOut[i]);\n        }\n    }\n\n    /// @notice Set the fractional reserve vault for an asset, divesting the old vault entirely\n    /// @param _asset Asset address\n    /// @param _vault Fractional reserve vault\n    function setFractionalReserveVault(address _asset, address _vault)\n        external\n        checkAccess(this.setFractionalReserveVault.selector)\n    {\n        FractionalReserveStorage storage $ = getFractionalReserveStorage();\n        FractionalReserveLogic.divest($, _asset);\n        FractionalReserveLogic.setFractionalReserveVault($, _asset, _vault);\n    }\n\n    /// @notice Set the reserve level for an asset\n    /// @param _asset Asset address\n    /// @param _reserve Reserve level in asset decimals\n    function setReserve(address _asset, uint256 _reserve) external checkAccess(this.setReserve.selector) {\n        FractionalReserveLogic.setReserve(getFractionalReserveStorage(), _asset, _reserve);\n    }\n\n    /// @notice Realize interest from a fractional reserve vault and send to the fee auction\n    /// @dev Left permissionless so arbitrageurs can move fees to auction\n    /// @param _asset Asset address\n    function realizeInterest(address _asset) external {\n        FractionalReserveLogic.realizeInterest(getFractionalReserveStorage(), _asset);\n    }\n\n    /// @notice Interest from a fractional reserve vault\n    /// @param _asset Asset address\n    /// @return interest Claimable amount of asset\n    function claimableInterest(address _asset) external view returns (uint256 interest) {\n        interest = FractionalReserveLogic.claimableInterest(getFractionalReserveStorage(), _asset);\n    }\n\n    /// @notice Fractional reserve vault address for an asset\n    /// @param _asset Asset address\n    /// @return vaultAddress Vault address\n    function fractionalReserveVault(address _asset) external view returns (address vaultAddress) {\n        vaultAddress = getFractionalReserveStorage().vault[_asset];\n    }\n\n    /// @notice Reserve amount for an asset\n    /// @param _asset Asset address\n    /// @return reserveAmount Reserve amount\n    function reserve(address _asset) external view returns (uint256 reserveAmount) {\n        reserveAmount = getFractionalReserveStorage().reserve[_asset];\n    }\n\n    /// @notice Loaned amount for an asset\n    /// @param _asset Asset address\n    /// @return loanedAmount Loaned amount\n    function loaned(address _asset) external view returns (uint256 loanedAmount) {\n        loanedAmount = getFractionalReserveStorage().loaned[_asset];\n    }\n}\n",
+        "DeployVault.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { AccessControl } from \"../../access/AccessControl.sol\";\n\nimport { Delegation } from \"../../delegation/Delegation.sol\";\n\nimport { FeeAuction } from \"../../feeAuction/FeeAuction.sol\";\n\nimport { ILender } from \"../../interfaces/ILender.sol\";\nimport { IMinter } from \"../../interfaces/IMinter.sol\";\n\nimport { Lender } from \"../../lendingPool/Lender.sol\";\nimport { DebtToken } from \"../../lendingPool/tokens/DebtToken.sol\";\nimport { FractionalReserve } from \"../../vault/FractionalReserve.sol\";\nimport { Minter } from \"../../vault/Minter.sol\";\n\nimport { CapToken } from \"../../token/CapToken.sol\";\nimport { OFTLockbox } from \"../../token/OFTLockbox.sol\";\nimport { StakedCap } from \"../../token/StakedCap.sol\";\nimport { Vault } from \"../../vault/Vault.sol\";\nimport { ZapOFTComposer } from \"../../zap/ZapOFTComposer.sol\";\nimport {\n    FeeConfig,\n    ImplementationsConfig,\n    InfraConfig,\n    UsersConfig,\n    VaultConfig,\n    VaultLzPeriphery\n} from \"../interfaces/DeployConfigs.sol\";\n\nimport { LzAddressbook } from \"../utils/LzUtils.sol\";\nimport { ProxyUtils } from \"../utils/ProxyUtils.sol\";\nimport { ZapAddressbook } from \"../utils/ZapUtils.sol\";\n\ncontract DeployVault is ProxyUtils {\n    function _deployVault(\n        ImplementationsConfig memory implementations,\n        InfraConfig memory infra,\n        string memory name,\n        string memory symbol,\n        address[] memory assets,\n        address insuranceFund\n    ) internal returns (VaultConfig memory d) {\n        // deploy and init cap instances\n        d.capToken = _proxy(implementations.capToken);\n        d.stakedCapToken = _proxy(implementations.stakedCap);\n\n        // deploy fee auction for this vault\n        d.feeAuction = _proxy(implementations.feeAuction);\n        FeeAuction(d.feeAuction).initialize(\n            infra.accessControl,\n            d.capToken, // payment token is the vault's cap token\n            d.stakedCapToken, // payment recipient is the staked cap token\n            3 hours, // 3 hour auctions\n            1e18 // min price of 1 token\n        );\n\n        CapToken(d.capToken).initialize(\n            name, symbol, infra.accessControl, d.feeAuction, infra.oracle, assets, insuranceFund\n        );\n        StakedCap(d.stakedCapToken).initialize(infra.accessControl, d.capToken, 24 hours);\n\n        // deploy and init debt tokens\n        d.assets = assets;\n        d.restakerInterestReceiver = infra.delegation;\n        d.debtTokens = new address[](assets.length);\n        for (uint256 i = 0; i < assets.length; i++) {\n            d.debtTokens[i] = _proxy(implementations.debtToken);\n            DebtToken(d.debtTokens[i]).initialize(infra.accessControl, assets[i], infra.oracle);\n        }\n    }\n\n    function _deployVaultLzPeriphery(\n        LzAddressbook memory lzAddressbook,\n        ZapAddressbook memory zapAddressbook,\n        VaultConfig memory vault,\n        UsersConfig memory users\n    ) internal returns (VaultLzPeriphery memory d) {\n        // deploy the lockboxes\n        d.capOFTLockbox =\n            address(new OFTLockbox(vault.capToken, address(lzAddressbook.endpointV2), users.vault_config_admin));\n\n        d.stakedCapOFTLockbox =\n            address(new OFTLockbox(vault.stakedCapToken, address(lzAddressbook.endpointV2), users.vault_config_admin));\n\n        // deploy the zap composers\n        d.capZapComposer = address(\n            new ZapOFTComposer(\n                address(lzAddressbook.endpointV2),\n                d.capOFTLockbox,\n                zapAddressbook.zapRouter,\n                zapAddressbook.tokenManager\n            )\n        );\n        d.stakedCapZapComposer = address(\n            new ZapOFTComposer(\n                address(lzAddressbook.endpointV2),\n                d.stakedCapOFTLockbox,\n                zapAddressbook.zapRouter,\n                zapAddressbook.tokenManager\n            )\n        );\n    }\n\n    function _initVaultAccessControl(InfraConfig memory infra, VaultConfig memory vault, UsersConfig memory users)\n        internal\n    {\n        AccessControl accessControl = AccessControl(infra.accessControl);\n        accessControl.grantAccess(Vault.borrow.selector, vault.capToken, infra.lender);\n        accessControl.grantAccess(Vault.repay.selector, vault.capToken, infra.lender);\n        accessControl.grantAccess(Minter.setFeeData.selector, vault.capToken, users.lender_admin);\n        accessControl.grantAccess(Minter.setRedeemFee.selector, vault.capToken, users.lender_admin);\n        accessControl.grantAccess(Vault.pause.selector, vault.capToken, users.vault_config_admin);\n        accessControl.grantAccess(Vault.unpause.selector, vault.capToken, users.vault_config_admin);\n\n        accessControl.grantAccess(FractionalReserve.setReserve.selector, vault.capToken, users.vault_config_admin);\n        accessControl.grantAccess(\n            FractionalReserve.setFractionalReserveVault.selector, vault.capToken, users.vault_config_admin\n        );\n        accessControl.grantAccess(FractionalReserve.investAll.selector, vault.capToken, users.vault_config_admin);\n        accessControl.grantAccess(FractionalReserve.divestAll.selector, vault.capToken, users.vault_config_admin);\n        accessControl.grantAccess(FractionalReserve.realizeInterest.selector, vault.capToken, users.vault_config_admin);\n\n        // Configure FeeAuction access control\n        accessControl.grantAccess(FeeAuction.setStartPrice.selector, vault.feeAuction, infra.lender);\n        accessControl.grantAccess(FeeAuction.setDuration.selector, vault.feeAuction, infra.lender);\n        accessControl.grantAccess(FeeAuction.setMinStartPrice.selector, vault.feeAuction, infra.lender);\n\n        for (uint256 i = 0; i < vault.assets.length; i++) {\n            accessControl.grantAccess(DebtToken.mint.selector, vault.debtTokens[i], infra.lender);\n            accessControl.grantAccess(DebtToken.burn.selector, vault.debtTokens[i], infra.lender);\n        }\n\n        accessControl.grantAccess(FeeAuction.setMinStartPrice.selector, vault.feeAuction, users.fee_auction_admin);\n        accessControl.grantAccess(FeeAuction.setDuration.selector, vault.feeAuction, users.fee_auction_admin);\n        accessControl.grantAccess(FeeAuction.setStartPrice.selector, vault.feeAuction, users.fee_auction_admin);\n    }\n\n    function _initVaultLender(VaultConfig memory d, InfraConfig memory infra, FeeConfig memory fee) internal {\n        for (uint256 i = 0; i < d.assets.length; i++) {\n            Lender(infra.lender).addAsset(\n                ILender.AddAssetParams({\n                    asset: d.assets[i],\n                    vault: d.capToken,\n                    debtToken: d.debtTokens[i],\n                    interestReceiver: d.feeAuction,\n                    restakerInterestReceiver: d.restakerInterestReceiver,\n                    bonusCap: 0.1e27,\n                    minBorrow: 100e6\n                })\n            );\n\n            Lender(infra.lender).pauseAsset(d.assets[i], false);\n\n            Minter(d.capToken).setFeeData(\n                d.assets[i],\n                IMinter.FeeData({\n                    minMintFee: fee.minMintFee,\n                    slope0: fee.slope0,\n                    slope1: fee.slope1,\n                    mintKinkRatio: fee.mintKinkRatio,\n                    burnKinkRatio: fee.burnKinkRatio,\n                    optimalRatio: fee.optimalRatio\n                })\n            );\n        }\n    }\n}\n",
+        "MinterLogic.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IMinter } from \"../../interfaces/IMinter.sol\";\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IVault } from \"../../interfaces/IVault.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Amount Out Logic\n/// @author kexley, @capLabs\n/// @notice Amount out logic for exchanging underlying assets with cap tokens\nlibrary MinterLogic {\n    /// @dev Ray precision\n    uint256 constant RAY_PRECISION = 1e27;\n\n    /// @dev Share precision\n    uint256 constant SHARE_PRECISION = 1e33;\n\n    /// @notice Calculate the amount out from a swap including fees\n    /// @param $ Storage pointer\n    /// @param params Parameters for a swap\n    /// @return amount Amount out from a swap\n    /// @return fee Fee applied\n    function amountOut(IMinter.MinterStorage storage $, IMinter.AmountOutParams memory params)\n        external\n        view\n        returns (uint256 amount, uint256 fee)\n    {\n        (uint256 amountOutBeforeFee, uint256 newRatio) = _amountOutBeforeFee($.oracle, params);\n\n        (amount, fee) = _applyFeeSlopes(\n            $.fees[params.asset],\n            IMinter.FeeSlopeParams({ mint: params.mint, amount: amountOutBeforeFee, ratio: newRatio })\n        );\n    }\n\n    /// @notice Calculate the output amounts for redeeming a cap token for a proportional weighting\n    /// @param $ Storage pointer\n    /// @param params Parameters for redeeming\n    /// @return amounts Amount of underlying assets withdrawn\n    /// @return fees Amount of fees applied\n    function redeemAmountOut(IMinter.MinterStorage storage $, IMinter.RedeemAmountOutParams memory params)\n        external\n        view\n        returns (uint256[] memory amounts, uint256[] memory fees)\n    {\n        uint256 redeemFee = $.redeemFee;\n        uint256 shares = params.amount * SHARE_PRECISION / IERC20(address(this)).totalSupply();\n        address[] memory assets = IVault(address(this)).assets();\n        uint256 assetLength = assets.length;\n        amounts = new uint256[](assetLength);\n        fees = new uint256[](assetLength);\n        for (uint256 i; i < assetLength; ++i) {\n            address asset = assets[i];\n            uint256 withdrawAmount = IVault(address(this)).totalSupplies(asset) * shares / SHARE_PRECISION;\n\n            fees[i] = withdrawAmount * redeemFee / RAY_PRECISION;\n            amounts[i] = withdrawAmount - fees[i];\n        }\n    }\n\n    /// @notice Calculate the amount out for a swap before fees\n    /// @param _oracle Oracle address\n    /// @param params Parameters for a swap\n    /// @return amount Amount out from a swap before fees\n    /// @return newRatio New ratio of an asset to the overall basket after swap\n    function _amountOutBeforeFee(address _oracle, IMinter.AmountOutParams memory params)\n        internal\n        view\n        returns (uint256 amount, uint256 newRatio)\n    {\n        (uint256 assetPrice,) = IOracle(_oracle).getPrice(params.asset);\n        (uint256 capPrice,) = IOracle(_oracle).getPrice(address(this));\n\n        uint256 assetDecimalsPow = 10 ** IERC20Metadata(params.asset).decimals();\n        uint256 capDecimalsPow = 10 ** IERC20Metadata(address(this)).decimals();\n\n        uint256 capSupply = IERC20(address(this)).totalSupply();\n        uint256 capValue = capSupply * capPrice / capDecimalsPow;\n        uint256 allocationValue = IVault(address(this)).totalSupplies(params.asset) * assetPrice / assetDecimalsPow;\n\n        uint256 assetValue;\n        if (params.mint) {\n            assetValue = params.amount * assetPrice / assetDecimalsPow;\n            if (capSupply == 0) {\n                newRatio = RAY_PRECISION;\n                amount = params.amount * capDecimalsPow / assetDecimalsPow;\n            } else {\n                newRatio = (allocationValue + assetValue) * RAY_PRECISION / (capValue + assetValue);\n                amount = assetValue * capDecimalsPow / capPrice;\n            }\n        } else {\n            assetValue = params.amount * capPrice / capDecimalsPow;\n            if (params.amount == capSupply) {\n                newRatio = RAY_PRECISION;\n                amount = params.amount * assetDecimalsPow / capDecimalsPow;\n            } else {\n                if (allocationValue < assetValue || capValue <= assetValue) {\n                    newRatio = 0;\n                } else {\n                    newRatio = (allocationValue - assetValue) * RAY_PRECISION / (capValue - assetValue);\n                }\n                amount = assetValue * assetDecimalsPow / assetPrice;\n            }\n        }\n    }\n\n    /// @notice Apply fee slopes to a mint or burn\n    /// @dev Fees only apply to mints or burns that over-allocate the basket to one asset\n    /// @param fees Fee slopes and ratio kinks\n    /// @param params Fee slope parameters\n    /// @return amount Remaining amount after fee applied\n    /// @return fee Fee applied\n    function _applyFeeSlopes(IMinter.FeeData memory fees, IMinter.FeeSlopeParams memory params)\n        internal\n        pure\n        returns (uint256 amount, uint256 fee)\n    {\n        uint256 rate;\n        if (params.mint) {\n            rate = fees.minMintFee;\n            if (params.ratio > fees.optimalRatio) {\n                if (params.ratio > fees.mintKinkRatio) {\n                    uint256 excessRatio = params.ratio - fees.mintKinkRatio;\n                    rate += fees.slope0 + (fees.slope1 * excessRatio / (RAY_PRECISION - fees.mintKinkRatio));\n                } else {\n                    rate += fees.slope0 * params.ratio / fees.mintKinkRatio;\n                }\n            }\n        } else {\n            if (params.ratio < fees.optimalRatio) {\n                if (params.ratio < fees.burnKinkRatio) {\n                    uint256 excessRatio = fees.burnKinkRatio - params.ratio;\n                    rate = fees.slope0 + (fees.slope1 * excessRatio / (RAY_PRECISION - fees.burnKinkRatio));\n                } else {\n                    rate = fees.slope0 * fees.burnKinkRatio / params.ratio;\n                }\n            }\n        }\n\n        if (rate > RAY_PRECISION) rate = RAY_PRECISION;\n        fee = params.amount * rate / RAY_PRECISION;\n        amount = params.amount - fee;\n    }\n}\n",
+        "ReserveLogic.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\nimport { ILender } from \"../../interfaces/ILender.sol\";\nimport { ValidationLogic } from \"./ValidationLogic.sol\";\n\n/// @title Reserve Logic\n/// @author kexley, @capLabs\n/// @notice Add, remove or pause reserves on the Lender\nlibrary ReserveLogic {\n    /// @dev No more reserves allowed\n    error NoMoreReservesAllowed();\n\n    /// @notice Add asset to the lender\n    /// @param $ Lender storage\n    /// @param params Parameters for adding an asset\n    /// @return filled True if filling in empty space or false if appended\n    function addAsset(ILender.LenderStorage storage $, ILender.AddAssetParams memory params)\n        external\n        returns (bool filled)\n    {\n        ValidationLogic.validateAddAsset($, params);\n\n        uint256 id;\n\n        for (uint256 i; i < $.reservesCount; ++i) {\n            // Fill empty space if available\n            if ($.reservesList[i] == address(0)) {\n                $.reservesList[i] = params.asset;\n                id = i;\n                filled = true;\n                break;\n            }\n        }\n\n        if (!filled) {\n            if ($.reservesCount + 1 >= 256) revert NoMoreReservesAllowed();\n            id = $.reservesCount;\n            $.reservesList[$.reservesCount] = params.asset;\n        }\n\n        ILender.ReserveData storage reserve = $.reservesData[params.asset];\n        reserve.id = id;\n        reserve.vault = params.vault;\n        reserve.debtToken = params.debtToken;\n        reserve.interestReceiver = params.interestReceiver;\n        reserve.decimals = IERC20Metadata(params.asset).decimals();\n        reserve.paused = true;\n        reserve.minBorrow = params.minBorrow;\n    }\n\n    /// @notice Set the minimum borrow amount for an asset\n    /// @param $ Lender storage\n    /// @param _asset Asset address\n    /// @param _minBorrow Minimum borrow amount\n    function setMinBorrow(ILender.LenderStorage storage $, address _asset, uint256 _minBorrow) external {\n        ValidationLogic.validateSetMinBorrow($, _asset);\n        $.reservesData[_asset].minBorrow = _minBorrow;\n    }\n\n    /// @notice Remove asset from lending when there is no borrows\n    /// @param $ Lender storage\n    /// @param _asset Asset address\n    function removeAsset(ILender.LenderStorage storage $, address _asset) external {\n        ValidationLogic.validateRemoveAsset($, _asset);\n\n        $.reservesList[$.reservesData[_asset].id] = address(0);\n        delete $.reservesData[_asset];\n    }\n\n    /// @notice Pause an asset from being borrowed\n    /// @param $ Lender storage\n    /// @param _asset Asset address\n    /// @param _pause True if pausing or false if unpausing\n    function pauseAsset(ILender.LenderStorage storage $, address _asset, bool _pause) external {\n        ValidationLogic.validatePauseAsset($, _asset);\n        $.reservesData[_asset].paused = _pause;\n    }\n}\n",
+        "CapTokenAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IVault } from \"../../interfaces/IVault.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Cap Token Adapter\n/// @notice Prices are calculated based on the weighted average of underlying assets\nlibrary CapTokenAdapter {\n    /// @notice Fetch price for a cap token based on its underlying assets\n    /// @param _asset Cap token address\n    /// @return latestAnswer Price of the cap token fixed to 8 decimals\n    /// @return lastUpdated Last updated timestamp\n    function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {\n        uint256 capTokenSupply = IERC20Metadata(_asset).totalSupply();\n        if (capTokenSupply == 0) return (1e8, block.timestamp);\n\n        address[] memory assets = IVault(_asset).assets();\n        lastUpdated = block.timestamp;\n\n        uint256 totalUsdValue;\n        lastUpdated = block.timestamp;\n\n        for (uint256 i; i < assets.length; ++i) {\n            address asset = assets[i];\n            uint256 supply = IVault(_asset).totalSupplies(asset);\n            uint256 supplyDecimalsPow = 10 ** IERC20Metadata(asset).decimals();\n            (uint256 assetPrice, uint256 assetLastUpdated) = IOracle(msg.sender).getPrice(asset);\n\n            totalUsdValue += supply * assetPrice / supplyDecimalsPow;\n            if (assetLastUpdated < lastUpdated) lastUpdated = assetLastUpdated;\n        }\n\n        uint256 decimalsPow = 10 ** IERC20Metadata(_asset).decimals();\n        latestAnswer = totalUsdValue * decimalsPow / capTokenSupply;\n    }\n}\n",
+        "Minter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IMinter } from \"../interfaces/IMinter.sol\";\nimport { MinterStorageUtils } from \"../storage/MinterStorageUtils.sol\";\nimport { MinterLogic } from \"./libraries/MinterLogic.sol\";\n\n/// @title Minter/burner for cap tokens\n/// @author kexley, @capLabs\n/// @notice Cap tokens are minted or burned in exchange for collateral ratio of the backing tokens\n/// @dev Dynamic fees are applied according to the allocation of assets in the basket. Increasing\n/// the supply of a excessive asset or burning for an scarce asset will charge fees on a kinked\n/// slope. Redeem can be used to avoid these fees by burning for the current ratio of assets.\nabstract contract Minter is IMinter, Access, MinterStorageUtils {\n    /// @dev Initialize unchained\n    /// @param _oracle Oracle address\n    function __Minter_init(address _oracle) internal onlyInitializing {\n        getMinterStorage().oracle = _oracle;\n    }\n\n    /// @notice Get the mint amount for a given asset\n    /// @param _asset Asset address\n    /// @param _amountIn Amount of asset to use\n    /// @return amountOut Amount minted\n    /// @return fee Fee applied\n    function getMintAmount(address _asset, uint256 _amountIn) public view returns (uint256 amountOut, uint256 fee) {\n        (amountOut, fee) =\n            MinterLogic.amountOut(getMinterStorage(), AmountOutParams({ mint: true, asset: _asset, amount: _amountIn }));\n    }\n\n    /// @notice Get the burn amount for a given asset\n    /// @param _asset Asset address to withdraw\n    /// @param _amountIn Amount of cap token to burn\n    /// @return amountOut Amount of the asset withdrawn\n    /// @return fee Fee applied\n    function getBurnAmount(address _asset, uint256 _amountIn) public view returns (uint256 amountOut, uint256 fee) {\n        (amountOut, fee) = MinterLogic.amountOut(\n            getMinterStorage(), AmountOutParams({ mint: false, asset: _asset, amount: _amountIn })\n        );\n    }\n\n    /// @notice Get the redeem amount\n    /// @param _amountIn Amount of cap token to burn\n    /// @return amountsOut Amounts of assets to be withdrawn\n    /// @return fees Amounts of fees to be applied\n    function getRedeemAmount(uint256 _amountIn)\n        public\n        view\n        returns (uint256[] memory amountsOut, uint256[] memory fees)\n    {\n        (amountsOut, fees) =\n            MinterLogic.redeemAmountOut(getMinterStorage(), RedeemAmountOutParams({ amount: _amountIn }));\n    }\n\n    /// @notice Set the allocation slopes and ratios for an asset\n    /// @dev Starting minimum mint fee must be less than 5%\n    /// @param _asset Asset address\n    /// @param _feeData Fee slopes and ratios for the asset in the vault\n    function setFeeData(address _asset, FeeData calldata _feeData) external checkAccess(this.setFeeData.selector) {\n        if (_feeData.minMintFee >= 0.05e27) revert InvalidMinMintFee();\n        if (_feeData.mintKinkRatio >= 1e27 || _feeData.mintKinkRatio == 0) revert InvalidMintKinkRatio();\n        if (_feeData.burnKinkRatio >= 1e27 || _feeData.burnKinkRatio == 0) revert InvalidBurnKinkRatio();\n        getMinterStorage().fees[_asset] = _feeData;\n        emit SetFeeData(_asset, _feeData);\n    }\n\n    /// @notice Set the redeem fee\n    /// @param _redeemFee Redeem fee amount\n    function setRedeemFee(uint256 _redeemFee) external checkAccess(this.setRedeemFee.selector) {\n        getMinterStorage().redeemFee = _redeemFee;\n        emit SetRedeemFee(_redeemFee);\n    }\n}\n"
+    }
+}

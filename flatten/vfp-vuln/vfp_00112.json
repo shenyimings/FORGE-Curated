@@ -1,0 +1,73 @@
+{
+    "vfp_id": "vfp_00112",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "findings": [
+        {
+            "id": 59,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Reward distribution enables front-running attacks and reward siphoning",
+            "description": "The reward distribution mechanism is vulnerable to front-running, where attackers can observe pending transactions and submit higher-gas transactions to claim rewards first. The cause is the lack of anti-front-running measures in the notify and claim functions. An attacker could exploit this to siphon rewards from legitimate users. This leads to unfair distribution of rewards and reduced user trust in the system.\n",
+            "severity": "High",
+            "location": [
+                "RewardDistributor.sol::notify",
+                "RewardDistributor.sol::claim"
+            ],
+            "files": [
+                "cap-contracts/contracts/token/StakedCap.sol"
+            ]
+        },
+        {
+            "id": 48,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "StakedCap yield distribution DoS through timer manipulation",
+            "description": "The StakedCap contract's yield distribution mechanism could be disrupted by manipulating the notification timer. The root cause is the ability to call the notify function during a lock period, which could reset or interfere with yield distribution timing. An attacker could exploit this by repeatedly calling notify during the lock period to prevent legitimate yield distribution. This would result in a denial of service for yield claimants, disrupting the reward system.\n",
+            "severity": "Medium",
+            "location": [
+                "StakedCap.sol::notify"
+            ],
+            "files": [
+                "cap-contracts/contracts/token/StakedCap.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ]
+            },
+            "title": "StakedCap yield distribution DoS through timer manipulation",
+            "description": "The StakedCap contract's notify function is permissionless and resets the lastNotify timestamp upon any token deposit, which affects the lockedProfit calculation. An attacker can repeatedly call notify with minimal token transfers to reset the timer, keeping the elapsed time small and preventing yield from unlocking. The root cause is the lack of rate-limiting or time-based protection on the notify function. This allows an attacker to indefinitely delay the vesting of rewards. The impact is a denial of service for legitimate stakers who cannot withdraw their earned yield, effectively locking their rewards permanently.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/token/StakedCap.sol::notify#58-69",
+                "contracts/token/StakedCap.sol::lockedProfit#73-85",
+                "contracts/token/StakedCap.sol::totalAssets#L73-85",
+                "StakedCap.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/token/StakedCap.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "StakedCap.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IStakedCap } from \"../interfaces/IStakedCap.sol\";\nimport { StakedCapStorageUtils } from \"../storage/StakedCapStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { ERC20PermitUpgradeable } from\n    \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport {\n    ERC20Upgradeable,\n    ERC4626Upgradeable\n} from \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol\";\nimport { IERC20, IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Staked Cap Token\n/// @author kexley, @capLabs\n/// @notice Slow releasing yield-bearing token that distributes the yield accrued from agents\n/// borrowing from the underlying assets.\n/// @dev Calling notify permissionlessly will start the linear unlock\ncontract StakedCap is\n    IStakedCap,\n    UUPSUpgradeable,\n    ERC4626Upgradeable,\n    ERC20PermitUpgradeable,\n    Access,\n    StakedCapStorageUtils\n{\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the staked cap token by matching the name and symbol of the underlying\n    /// @param _accessControl Address of the access control\n    /// @param _asset Address of the cap token\n    /// @param _lockDuration Duration in seconds for profit locking\n    function initialize(address _accessControl, address _asset, uint256 _lockDuration) external initializer {\n        string memory _name = string.concat(\"s\", IERC20Metadata(_asset).name());\n        string memory _symbol = string.concat(\"s\", IERC20Metadata(_asset).symbol());\n\n        __ERC4626_init(IERC20(_asset));\n        __ERC20_init(_name, _symbol);\n        __ERC20Permit_init(_name);\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n        getStakedCapStorage().lockDuration = _lockDuration;\n    }\n\n    /// @notice Override the decimals function to match underlying decimals\n    /// @return _decimals Decimals of the staked cap token\n    function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable) returns (uint8 _decimals) {\n        _decimals = ERC4626Upgradeable.decimals();\n    }\n\n    /// @notice Notify the yield to start vesting\n    function notify() external {\n        StakedCapStorage storage $ = getStakedCapStorage();\n        if ($.lastNotify + $.lockDuration > block.timestamp) revert StillVesting();\n\n        uint256 total = IERC20(asset()).balanceOf(address(this));\n        if (total > $.storedTotal) {\n            uint256 diff = total - $.storedTotal;\n\n            $.totalLocked = diff;\n            $.storedTotal = total;\n            $.lastNotify = block.timestamp;\n\n            emit Notify(msg.sender, diff);\n        }\n    }\n\n    /// @notice Remaining locked profit after a notification\n    /// @return locked Amount remaining to be vested\n    function lockedProfit() public view returns (uint256 locked) {\n        StakedCapStorage storage $ = getStakedCapStorage();\n        if ($.lockDuration == 0) return 0;\n        uint256 elapsed = block.timestamp - $.lastNotify;\n        uint256 remaining = elapsed < $.lockDuration ? $.lockDuration - elapsed : 0;\n        locked = $.totalLocked * remaining / $.lockDuration;\n    }\n\n    /// @notice Total vested cap tokens on this contract\n    /// @return total Total amount of vested cap tokens\n    function totalAssets() public view override returns (uint256 total) {\n        total = getStakedCapStorage().storedTotal - lockedProfit();\n    }\n\n    /// @dev Overridden to update the total assets including unvested tokens\n    /// @param _caller Caller of the deposit\n    /// @param _receiver Receiver of the staked cap tokens\n    /// @param _assets Amount of cap tokens to pull from the caller\n    /// @param _shares Amount of staked cap tokens to send to receiver\n    function _deposit(address _caller, address _receiver, uint256 _assets, uint256 _shares) internal override {\n        super._deposit(_caller, _receiver, _assets, _shares);\n        getStakedCapStorage().storedTotal += _assets;\n    }\n\n    /// @dev Overridden to reduce the total assets including unvested tokens\n    /// @param _caller Caller of the withdrawal\n    /// @param _receiver Receiver of the cap tokens\n    /// @param _owner Owner of the staked cap tokens being burnt\n    /// @param _assets Amount of cap tokens to send to the receiver\n    /// @param _shares Amount of staked cap tokens to burn from the owner\n    function _withdraw(address _caller, address _receiver, address _owner, uint256 _assets, uint256 _shares)\n        internal\n        override\n    {\n        super._withdraw(_caller, _receiver, _owner, _assets, _shares);\n        getStakedCapStorage().storedTotal -= _assets;\n    }\n\n    /// @dev Only admin can upgrade implementation\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
+    }
+}

@@ -1,0 +1,27 @@
+{
+    "vfp_id": "vfp_00105",
+    "project_name": "2024.12.09 - Final - Oku's New Order Types Contract Contest Audit Report.pdf",
+    "findings": [
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Incorrect Price Freshness Validation in PythOracle",
+            "description": "The contract incorrectly validates the freshness of price data from the Pyth Oracle by using a flawed comparison logic in the `checkInRange` function. The root cause is a reversed comparison operator in the require statement, where it checks `price.publishTime < block.timestamp - noOlderThan` instead of `price.publishTime >= block.timestamp - noOlderThan`. This causes valid and fresh prices to be rejected as stale. An attacker cannot directly exploit this, but users placing stop-limit orders will experience failed executions when valid price updates are misinterpreted as stale. This leads to missed trading opportunities, financial losses, and erosion of trust in the protocol's reliability.\n",
+            "severity": "Medium",
+            "location": [
+                "PythOracle.sol::checkInRange#29",
+                "PythOracle.sol::getPriceUnsafe#28-31"
+            ],
+            "files": [
+                "ee3f781a73d65e33fb452c9a44eb1337c5cfdbd6/oku-custom-order-types/contracts/oracle/External/PythOracle.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PythOracle.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.9;\n\nimport \"../IPythRelay.sol\";\nimport \"../../interfaces/pyth/IPyth.sol\";\n\n\ncontract PythOracle is IPythRelay {\n    IPyth public immutable pythOracle;\n    bytes32 public immutable tokenId;\n    uint256 public immutable noOlderThan;\n    address public immutable underlying;\n\n    constructor(\n        IPyth _pythOraclContract,\n        bytes32 _tokenId,\n        uint256 _noOlderThan,\n        address _underlying\n    ) {\n        pythOracle = _pythOraclContract;\n        tokenId = _tokenId;\n        noOlderThan = _noOlderThan;\n        underlying = _underlying;\n    }\n\n    function currentValue() external view override returns (uint256) {\n        IPyth.Price memory price = pythOracle.getPriceUnsafe(tokenId);\n        require(\n            price.publishTime < block.timestamp - noOlderThan,\n            \"Stale Price\"\n        );\n        return uint256(uint64(price.price));\n    }\n\n    function updatePrice(\n        bytes[] calldata priceUpdate\n    ) external payable override returns (uint256 updatedPrice) {\n        // Submit a priceUpdate to the Pyth contract to update the on-chain price.\n        // Updating the price requires paying the fee returned by getUpdateFee.\n        // WARNING: These lines are required to ensure the getPriceNoOlderThan call below succeeds. If you remove them, transactions may fail with \"0x19abf40e\" error.\n        uint fee = pythOracle.getUpdateFee(priceUpdate);\n        pythOracle.updatePriceFeeds{value: fee}(priceUpdate);\n\n        IPyth.Price memory price = pythOracle.getPriceNoOlderThan(\n            tokenId,\n            uint256(uint64(noOlderThan))\n        );\n        updatedPrice = uint256(uint64(price.price));\n    }\n\n    function getUpdateFee(bytes[] calldata priceUpdate) external view override returns (uint fee){\n        return pythOracle.getUpdateFee(priceUpdate);\n    }\n}\n"
+    }
+}

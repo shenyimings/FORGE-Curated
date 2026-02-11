@@ -1,0 +1,103 @@
+{
+    "vfp_id": "vfp_00043",
+    "project_name": "ChainSecurity_MellowFinance_Multivault_Audit.pdf",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Manipulateable Withdrawal Pauses for ERC-4626",
+            "description": "The protocol determines if an ERC-4626 vault is paused by checking if the vault's share balance is non-zero before considering maxRedeem(). However, this check can be manipulated by donating a minimal amount of shares to the vault, making the balance non-zero and bypassing the pause detection. This allows a malicious user to force the protocol to interact with a paused vault, potentially leading to failed transactions or incorrect state assumptions. The root cause is the reliance on a balance-based heuristic instead of directly querying the pause state via maxRedeem(0) or similar. This could result in a denial-of-service scenario where users are unable to withdraw due to unexpected reverts. The impact includes temporary loss of access to funds and reduced protocol resilience against manipulation.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::isPaused",
+                "Vault::withdraw"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
+                ]
+            },
+            "title": "ERC-4626 Violations",
+            "description": "The contract violates the ERC-4626 standard in multiple ways. First, withdrawals are not instant; users receive partial assets and the remainder as shares, which contradicts the standard's expectation of immediate redemption. Second, functions like totalAssets, convertToShares, and maxWithdraw may revert when they should not, particularly when previewRedeem reverts due to a paused vault. Additionally, maxWithdraw and maxRedeem do not return 0 when withdrawals are paused, violating the ERC-4626 requirement. The root cause is incorrect implementation of the standard's non-reverting and instant-redemption guarantees. This leads to compatibility issues with integrators expecting compliant behavior and potential transaction failures. The impact includes reduced interoperability, user confusion, and possible loss of funds due to inaccurate event emissions and state tracking.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::totalAssets",
+                "ERC4626Adapter::maxWithdraw",
+                "ERC4626Adapter::maxRedeem",
+                "Vault::withdraw"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Improper ERC-4626 Valuation",
+            "description": "The previewRedeem function is used to determine share price, which considers on-chain conditions such as low liquidity and may quote a lower price for shares. While this aligns with ERC-4626's allowance for slippage, the protocol relies on convertToAssets and convertToShares for valuation, which should reflect the current exchange rate without manipulation. The issue arises because the protocol does not restrict tokens to those where previewRedeem cannot be manipulated. Although Mellow Finance accepts the risk by only using non-manipulable tokens, the design deviates from best practices. The root cause is the use of preview functions for valuation instead of more stable conversion methods. The impact is potential loss of value for depositors due to unfavorable exchange rates during redemption, especially in low-liquidity scenarios.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter::previewRedeem",
+                "Vault::convertToAssets"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ],
+                "3": [
+                    "CWE-628"
+                ],
+                "4": [
+                    "CWE-688"
+                ]
+            },
+            "title": "Incorrect Target for ERC-4626 Maximum Deposit Query",
+            "description": "The `ERC4626Adapter` queries `ERC4626.maxDeposit()` for the token instead of the vault, leading to incorrect deposit limit estimations. This is a misuse of the ERC-4626 interface—`maxDeposit(address)` should be called with the vault address to get the correct limit, but it is called generically. The adapter may allow deposits that exceed the vault's actual capacity or block valid deposits, depending on the token-level limits. This can result in failed deposits or incorrect rebalancing decisions, reducing capital efficiency and user experience.\n",
+            "severity": "Low",
+            "location": [
+                "ERC4626Adapter"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/ERC4626Adapter.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ERC4626Adapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.25;\n\nimport \"../interfaces/adapters/IERC4626Adapter.sol\";\n\ncontract ERC4626Adapter is IERC4626Adapter {\n    using SafeERC20 for IERC20;\n\n    address public immutable vault;\n\n    constructor(address vault_) {\n        vault = vault_;\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function maxDeposit(address token) external view returns (uint256) {\n        return IERC4626(token).maxDeposit(vault);\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function stakedAt(address token) external view returns (uint256) {\n        IERC4626 token_ = IERC4626(token);\n        return token_.previewRedeem(token_.balanceOf(vault));\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function assetOf(address token) external view returns (address) {\n        return IERC4626(token).asset();\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function handleVault(address /* token */ ) external pure returns (address withdrawalQueue) {}\n\n    /// @inheritdoc IProtocolAdapter\n    function validateRewardData(bytes calldata /* data*/ ) external pure {\n        revert(\"ERC4626Adapter: not implemented\");\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function pushRewards(\n        address, /* rewardToken*/\n        bytes calldata, /*farmData*/\n        bytes memory /* rewardData */\n    ) external pure {\n        revert(\"ERC4626Adapter: not implemented\");\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function withdraw(\n        address token,\n        address, /*withdrawalQueue*/\n        address reciever,\n        uint256 request,\n        address /*owner*/\n    ) external {\n        require(address(this) == vault, \"ERC4626Adapter: delegate call only\");\n        IERC4626(token).withdraw(request, reciever, vault);\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function deposit(address token, uint256 assets) external {\n        require(address(this) == vault, \"ERC4626Adapter: delegate call only\");\n        IERC20(IERC4626(vault).asset()).safeIncreaseAllowance(token, assets);\n        IERC4626(token).deposit(assets, vault);\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function areWithdrawalsPaused(address token, address account) external view returns (bool) {\n        IERC4626 token_ = IERC4626(token);\n        uint256 balance = token_.balanceOf(account);\n        return balance != 0 && token_.maxRedeem(account) == 0;\n    }\n}\n"
+    }
+}

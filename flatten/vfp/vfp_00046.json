@@ -1,0 +1,47 @@
+{
+    "vfp_id": "vfp_00046",
+    "project_name": "ChainSecurity_MellowFinance_Multivault_Audit.pdf",
+    "findings": [
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "getOrCreate Never Gets",
+            "description": "The `getOrCreate` function in the isolated vault factory is intended to create or return an existing vault for a given (owner, operator, strategy) tuple, but it never writes to the `isolatedVaults` storage, making the \"get\" path unreachable. The cause is a missing state update in the function logic—specifically, the created vault address is not stored in the `isolatedVaults` mapping. Any call to `getOrCreate` will attempt to create a new vault every time, even if one already exists, leading to redundant deployments or reverts due to duplicate creation. This results in functional failure of the vault creation mechanism and potential gas waste or deployment errors.\n",
+            "severity": "Low",
+            "location": [
+                "IsolatedEigenLayerVaultFactory.getOrCreate"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/IsolatedEigenLayerVaultFactory.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Argument Order for Key Computation",
+            "description": "The `IsolatedEigenLayerVaultFactory.key` function expects arguments in the order `(owner, strategy, operator)`, but `getOrCreate` passes them as `(owner, operator, strategy)`, leading to incorrect key derivation. This is a mismatch between the declared parameter order and the actual usage in a critical factory function. This could result in the creation of duplicate vaults or failure to find existing ones due to incorrect storage keys. Broken vault reuse logic and potential deployment of redundant contracts.\n",
+            "severity": "Informational",
+            "location": [
+                "IsolatedEigenLayerVaultFactory.key",
+                "IsolatedEigenLayerVaultFactory.getOrCreate"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/IsolatedEigenLayerVaultFactory.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "IsolatedEigenLayerVaultFactory.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.25;\n\nimport {EigenLayerWithdrawalQueue} from \"../queues/EigenLayerWithdrawalQueue.sol\";\n\nimport \"./IsolatedEigenLayerVault.sol\";\nimport {TransparentUpgradeableProxy} from\n    \"@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol\";\n\ncontract IsolatedEigenLayerVaultFactory is IIsolatedEigenLayerVaultFactory {\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    address public immutable delegation;\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    address public immutable isolatedVaultSingleton;\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    address public immutable withdrawalQueueSingleton;\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    address public immutable proxyAdmin;\n\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    mapping(address isolatedVault => Data) public instances;\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    mapping(bytes32 key => address isolatedVault) public isolatedVaults;\n\n    constructor(\n        address delegation_,\n        address isolatedVaultSingleton_,\n        address withdrawalQueueSingleton_,\n        address proxyAdmin_\n    ) {\n        delegation = delegation_;\n        isolatedVaultSingleton = isolatedVaultSingleton_;\n        withdrawalQueueSingleton = withdrawalQueueSingleton_;\n        proxyAdmin = proxyAdmin_;\n    }\n\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    function key(address owner, address strategy, address operator) public pure returns (bytes32) {\n        return keccak256(abi.encodePacked(owner, strategy, operator));\n    }\n\n    /// @inheritdoc IIsolatedEigenLayerVaultFactory\n    function getOrCreate(address owner, address strategy, address operator, bytes calldata data)\n        external\n        returns (address isolatedVault, address withdrawalQueue)\n    {\n        bytes32 key_ = key(owner, strategy, operator);\n        isolatedVault = isolatedVaults[key_];\n        if (isolatedVault != address(0)) {\n            return (isolatedVault, instances[isolatedVault].withdrawalQueue);\n        }\n\n        isolatedVault = address(\n            new TransparentUpgradeableProxy{salt: key_}(\n                isolatedVaultSingleton,\n                proxyAdmin,\n                abi.encodeCall(IsolatedEigenLayerVault.initialize, (owner))\n            )\n        );\n        (ISignatureUtils.SignatureWithExpiry memory signature, bytes32 salt) =\n            abi.decode(data, (ISignatureUtils.SignatureWithExpiry, bytes32));\n        IIsolatedEigenLayerVault(isolatedVault).delegateTo(delegation, operator, signature, salt);\n        withdrawalQueue = address(\n            new TransparentUpgradeableProxy{salt: key_}(\n                withdrawalQueueSingleton,\n                proxyAdmin,\n                abi.encodeCall(\n                    EigenLayerWithdrawalQueue.initialize, (isolatedVault, strategy, operator)\n                )\n            )\n        );\n\n        instances[isolatedVault] = Data(owner, strategy, operator, withdrawalQueue);\n        isolatedVaults[key_] = isolatedVault;\n        emit Created(owner, strategy, operator, data, isolatedVault, withdrawalQueue);\n    }\n}\n"
+    }
+}

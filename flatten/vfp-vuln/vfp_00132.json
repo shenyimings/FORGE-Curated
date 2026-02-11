@@ -1,0 +1,36 @@
+{
+    "vfp_id": "vfp_00132",
+    "project_name": "ChainSecurity_Liquity_Bold_Audit.pdf",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Leverage Zappers Do Not Return Swap Excess",
+            "description": "The leverage zapper contracts fail to return excess tokens received from swap operations (e.g., UniV3Exchange and CurveExchange), leaving user funds stranded in the contract. The root cause is the lack of balance tracking before and after swaps and failure to refund leftover tokens. An attacker could exploit market volatility and slippage to generate excess tokens during swaps, which would remain in the zapper and could be drained by others. This leads to user fund loss, as excess BOLD or collateral tokens are not returned. The impact is direct financial loss for users and reduced trust in the system's fund handling.\n",
+            "severity": "High",
+            "location": [
+                "UniV3Exchange.sol::swapFromBold",
+                "CurveExchange.sol::swapFromBold",
+                "Zapper contracts::openLeveragedTroveWithRawETH",
+                "Zapper contracts::leverUpTrove",
+                "Zapper contracts::leverDownTrove"
+            ],
+            "files": [
+                "bold/contracts/src/Zappers/Modules/Exchanges/UniV3Exchange.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "UniV3Exchange.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.24;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"openzeppelin-contracts/contracts/utils/math/Math.sol\";\n\nimport \"../../LeftoversSweep.sol\";\nimport \"../../../Interfaces/IBoldToken.sol\";\nimport \"./UniswapV3/ISwapRouter.sol\";\nimport \"./UniswapV3/UniPriceConverter.sol\";\nimport \"../../Interfaces/IExchange.sol\";\nimport {DECIMAL_PRECISION} from \"../../../Dependencies/Constants.sol\";\n\ncontract UniV3Exchange is LeftoversSweep, UniPriceConverter, IExchange {\n    using SafeERC20 for IERC20;\n\n    IERC20 public immutable collToken;\n    IBoldToken public immutable boldToken;\n    uint24 public immutable fee;\n    ISwapRouter public immutable uniV3Router;\n\n    constructor(IERC20 _collToken, IBoldToken _boldToken, uint24 _fee, ISwapRouter _uniV3Router) {\n        collToken = _collToken;\n        boldToken = _boldToken;\n        fee = _fee;\n        uniV3Router = _uniV3Router;\n    }\n\n    function swapFromBold(uint256 _boldAmount, uint256 _minCollAmount) external {\n        ISwapRouter uniV3RouterCached = uniV3Router;\n\n        // Set initial balances to make sure there are not lefovers\n        InitialBalances memory initialBalances;\n        _setInitialTokensAndBalances(collToken, boldToken, initialBalances);\n\n        boldToken.transferFrom(msg.sender, address(this), _boldAmount);\n        boldToken.approve(address(uniV3RouterCached), _boldAmount);\n\n        ISwapRouter.ExactOutputSingleParams memory params = ISwapRouter.ExactOutputSingleParams({\n            tokenIn: address(boldToken),\n            tokenOut: address(collToken),\n            fee: fee,\n            recipient: msg.sender,\n            deadline: block.timestamp,\n            amountOut: _minCollAmount,\n            amountInMaximum: _boldAmount,\n            sqrtPriceLimitX96: 0 // See: https://ethereum.stackexchange.com/a/156018/9205\n        });\n\n        uniV3RouterCached.exactOutputSingle(params);\n\n        // return leftovers to user\n        _returnLeftovers(initialBalances);\n    }\n\n    function swapToBold(uint256 _collAmount, uint256 _minBoldAmount) external returns (uint256) {\n        ISwapRouter uniV3RouterCached = uniV3Router;\n\n        // Set initial balances to make sure there are not lefovers\n        InitialBalances memory initialBalances;\n        _setInitialTokensAndBalances(collToken, boldToken, initialBalances);\n\n        collToken.safeTransferFrom(msg.sender, address(this), _collAmount);\n        collToken.approve(address(uniV3RouterCached), _collAmount);\n\n        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({\n            tokenIn: address(collToken),\n            tokenOut: address(boldToken),\n            fee: fee,\n            recipient: msg.sender,\n            deadline: block.timestamp,\n            amountIn: _collAmount,\n            amountOutMinimum: _minBoldAmount,\n            sqrtPriceLimitX96: 0 // See: https://ethereum.stackexchange.com/a/156018/9205\n        });\n\n        uint256 amountOut = uniV3RouterCached.exactInputSingle(params);\n\n        // return leftovers to user\n        _returnLeftovers(initialBalances);\n\n        return amountOut;\n    }\n\n    function priceToSqrtPrice(IBoldToken _boldToken, IERC20 _collToken, uint256 _price) public pure returns (uint160) {\n        // inverse price if Bold goes first\n        uint256 price = _zeroForOne(_boldToken, _collToken) ? DECIMAL_PRECISION * DECIMAL_PRECISION / _price : _price;\n        return priceToSqrtPriceX96(price);\n    }\n\n    // See: https://github.com/Uniswap/v3-periphery/blob/main/contracts/lens/QuoterV2.sol#L207C9-L207C60\n    function _zeroForOne(IBoldToken _boldToken, IERC20 _collToken) internal pure returns (bool) {\n        return address(_boldToken) < address(_collToken);\n    }\n}\n"
+    }
+}

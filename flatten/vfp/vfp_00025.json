@@ -1,0 +1,30 @@
+{
+    "vfp_id": "vfp_00025",
+    "project_name": "Matter Labs Guardian Recovery Validator Audit.md",
+    "findings": [
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Suboptimal ERC-165 Interface Check Implementation",
+            "description": "The `_supportsModuleValidator` and `_supportsHook` functions perform separate ERC-165 interface checks, resulting in six external calls instead of using the more efficient `supportsAllInterfaces` function, which would require only four. This inefficiency increases gas consumption during contract initialization. The root cause is the failure to use an optimized library function for batch interface checks. While this does not introduce a security vulnerability, it leads to unnecessarily high gas fees, which could deter user interaction or make certain operations prohibitively expensive. The impact is economic inefficiency and reduced usability, especially during account setup or module registration.\n",
+            "severity": "Low",
+            "location": [
+                "ValidatorManager.sol::_supportsModuleValidator#91",
+                "HookManager.sol::_supportsHook#154"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/managers/ValidatorManager.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ValidatorManager.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { ERC165Checker } from \"@openzeppelin/contracts/utils/introspection/ERC165Checker.sol\";\nimport { EnumerableSet } from \"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\";\nimport { ExcessivelySafeCall } from \"@nomad-xyz/excessively-safe-call/src/ExcessivelySafeCall.sol\";\n\nimport { SelfAuth } from \"../auth/SelfAuth.sol\";\nimport { Errors } from \"../libraries/Errors.sol\";\nimport { SsoStorage } from \"../libraries/SsoStorage.sol\";\nimport { IValidatorManager } from \"../interfaces/IValidatorManager.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { IModule } from \"../interfaces/IModule.sol\";\n\n/**\n * @title Manager contract for validators\n * @notice Abstract contract for managing the validators of the account\n * @dev Validators are stored in an enumerable set\n * @author https://getclave.io\n */\nabstract contract ValidatorManager is IValidatorManager, SelfAuth {\n  using EnumerableSet for EnumerableSet.AddressSet;\n  // Interface helper library\n  using ERC165Checker for address;\n  // Low level calls helper library\n  using ExcessivelySafeCall for address;\n\n  ///@inheritdoc IValidatorManager\n  function addModuleValidator(address validator, bytes calldata initData) external onlySelf {\n    _addModuleValidator(validator, initData);\n  }\n\n  ///@inheritdoc IValidatorManager\n  function removeModuleValidator(address validator, bytes calldata deinitData) external onlySelf {\n    _removeModuleValidator(validator);\n    IModule(validator).onUninstall(deinitData);\n  }\n\n  ///@inheritdoc IValidatorManager\n  function unlinkModuleValidator(address validator, bytes calldata deinitData) external onlySelf {\n    _removeModuleValidator(validator);\n    // Allow-listing slither finding as we don´t want reverting calls to prevent unlinking\n    // slither-disable-next-line unused-return\n    validator.excessivelySafeCall(gasleft(), 0, abi.encodeCall(IModule.onUninstall, (deinitData)));\n  }\n\n  /// @inheritdoc IValidatorManager\n  function isModuleValidator(address validator) external view override returns (bool) {\n    return _isModuleValidator(validator);\n  }\n\n  /// @inheritdoc IValidatorManager\n  function listModuleValidators() external view override returns (address[] memory validatorList) {\n    validatorList = SsoStorage.validators().values();\n  }\n\n  // Should not be set to private as it is called from SsoAccount's initialize\n  function _addModuleValidator(address validator, bytes memory initData) internal {\n    if (!_supportsModuleValidator(validator)) {\n      revert Errors.VALIDATOR_ERC165_FAIL(validator);\n    }\n\n    // If the module is already installed, it cannot be installed again (even as another type).\n    if (SsoStorage.validationHooks().contains(validator)) {\n      revert Errors.HOOK_ALREADY_EXISTS(validator, true);\n    }\n    if (SsoStorage.executionHooks().contains(validator)) {\n      revert Errors.HOOK_ALREADY_EXISTS(validator, false);\n    }\n    if (!SsoStorage.validators().add(validator)) {\n      revert Errors.VALIDATOR_ALREADY_EXISTS(validator);\n    }\n\n    IModule(validator).onInstall(initData);\n\n    emit ValidatorAdded(validator);\n  }\n\n  function _removeModuleValidator(address validator) private {\n    if (!SsoStorage.validators().remove(validator)) {\n      revert Errors.VALIDATOR_NOT_FOUND(validator);\n    }\n\n    emit ValidatorRemoved(validator);\n  }\n\n  function _isModuleValidator(address validator) internal view returns (bool) {\n    return SsoStorage.validators().contains(validator);\n  }\n\n  function _supportsModuleValidator(address validator) private view returns (bool) {\n    return\n      validator.supportsInterface(type(IModuleValidator).interfaceId) &&\n      validator.supportsInterface(type(IModule).interfaceId);\n  }\n}\n"
+    }
+}

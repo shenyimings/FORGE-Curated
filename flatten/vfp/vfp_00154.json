@@ -1,0 +1,26 @@
+{
+    "vfp_id": "vfp_00154",
+    "project_name": "Likwid - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 45,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Facilitate max withdrawal of a lending position",
+            "description": "The withdrawal function requires users to specify an exact amount, which may be suboptimal if interest has accrued since transaction submission. The root cause is lack of support for full withdrawal semantics. Users may withdraw less than their full balance. The impact is poor user experience and potential confusion about available balances.\n",
+            "severity": "Informational",
+            "location": [
+                "LendPosition.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/LendPosition.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "LendPosition.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\nimport {Math} from \"./Math.sol\";\nimport {BalanceDelta, BalanceDeltaLibrary} from \"../types/BalanceDelta.sol\";\nimport {CustomRevert} from \"./CustomRevert.sol\";\nimport {PositionLibrary} from \"./PositionLibrary.sol\";\nimport {SafeCast} from \"./SafeCast.sol\";\n\n/// @title LendPosition\n/// @notice Positions represent an owner address' lend tokens\nlibrary LendPosition {\n    using CustomRevert for bytes4;\n    using PositionLibrary for address;\n    using SafeCast for *;\n\n    error CannotUpdateEmptyPosition();\n\n    error WithdrawOverflow();\n\n    struct State {\n        uint128 lendAmount;\n        uint256 depositCumulativeLast;\n    }\n\n    function get(mapping(bytes32 => State) storage self, address owner, bool lendForOne, bytes32 salt)\n        internal\n        view\n        returns (State storage position)\n    {\n        bytes32 positionKey = owner.calculatePositionKey(lendForOne, salt);\n        position = self[positionKey];\n    }\n\n    function update(State storage self, bool lendForOne, uint256 depositCumulativeLast, BalanceDelta delta)\n        internal\n        returns (uint256)\n    {\n        int128 amount;\n        if (lendForOne) {\n            amount = delta.amount1();\n        } else {\n            amount = delta.amount0();\n        }\n        if ((delta == BalanceDeltaLibrary.ZERO_DELTA && self.lendAmount == 0) || amount == 0) {\n            CannotUpdateEmptyPosition.selector.revertWith();\n        }\n\n        uint256 lendAmount;\n        if (self.depositCumulativeLast != 0) {\n            lendAmount = Math.mulDiv(self.lendAmount, depositCumulativeLast, self.depositCumulativeLast);\n        }\n\n        if (amount < 0) {\n            // deposit\n            lendAmount += uint128(-amount);\n        } else {\n            // withdraw\n            if (uint128(amount) > lendAmount) {\n                WithdrawOverflow.selector.revertWith();\n            }\n            lendAmount -= uint128(amount);\n        }\n        self.lendAmount = lendAmount.toUint128();\n        self.depositCumulativeLast = depositCumulativeLast;\n\n        return self.lendAmount;\n    }\n}\n"
+    }
+}

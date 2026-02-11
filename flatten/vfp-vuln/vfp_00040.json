@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00040",
+    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "findings": [
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "OETH Strategy fails to generate yield due to rebasing disabled",
+            "description": "The vulnerability is a design flaw in the Origin ETH yield strategy, where OETH is used with rebasing disabled. The root cause is the direct use of OETH without opting into rebasing, as required by the Origin Protocol's design. Smart contracts holding OETH forfeit yield unless they explicitly opt in, but the Notional protocol does not do so. This issue is not exploitable by an attacker but represents a critical functional failure. The impact is that the yield strategy generates no returns, while user debt continues to accrue, significantly increasing the risk of liquidation. This undermines the core purpose of the strategy and misleads users about expected returns. The protocol team confirmed the issue and intends to migrate to Wrapped OETH to resolve it.\n",
+            "severity": "Medium",
+            "location": [
+                "Origin.sol::_stakeTokens"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/withdraws/Origin.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Origin.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport {AbstractWithdrawRequestManager} from \"./AbstractWithdrawRequestManager.sol\";\nimport {WETH} from \"../utils/Constants.sol\";\nimport \"../interfaces/IOrigin.sol\";\n\ncontract OriginWithdrawRequestManager is AbstractWithdrawRequestManager {\n\n    constructor() AbstractWithdrawRequestManager(address(WETH), address(oETH), address(WETH)) { }\n\n    function _initiateWithdrawImpl(\n        address /* account */,\n        uint256 oETHToWithdraw,\n        bytes calldata /* data */\n    ) override internal returns (uint256 requestId) {\n        ERC20(YIELD_TOKEN).approve(address(OriginVault), oETHToWithdraw);\n        (requestId, ) = OriginVault.requestWithdrawal(oETHToWithdraw);\n    }\n\n    function _stakeTokens(uint256 amount, bytes memory stakeData) internal override {\n        uint256 minAmountOut;\n        if (stakeData.length > 0) (minAmountOut) = abi.decode(stakeData, (uint256));\n        WETH.approve(address(OriginVault), amount);\n        OriginVault.mint(address(WETH), amount, minAmountOut);\n    }\n\n    function _finalizeWithdrawImpl(\n        address /* account */,\n        uint256 requestId\n    ) internal override returns (uint256 tokensClaimed, bool finalized) {\n        finalized = canFinalizeWithdrawRequest(requestId);\n\n        if (finalized) {\n            uint256 balanceBefore = WETH.balanceOf(address(this));\n            OriginVault.claimWithdrawal(requestId);\n            tokensClaimed = WETH.balanceOf(address(this)) - balanceBefore;\n        }\n    }\n\n    function canFinalizeWithdrawRequest(uint256 requestId) public view returns (bool) {\n        IOriginVault.WithdrawalRequest memory request = OriginVault.withdrawalRequests(requestId);\n        IOriginVault.WithdrawalQueueMetadata memory queue = OriginVault.withdrawalQueueMetadata();\n        uint256 withdrawalClaimDelay = OriginVault.withdrawalClaimDelay();\n\n        bool claimDelayMet = request.timestamp + withdrawalClaimDelay <= block.timestamp;\n        bool queueLiquidityAvailable = request.queued <= queue.claimable;\n        bool notClaimed = request.claimed == false;\n\n        return claimDelayMet && queueLiquidityAvailable && notClaimed;\n    }\n}"
+    }
+}

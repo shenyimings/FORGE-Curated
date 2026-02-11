@@ -1,0 +1,52 @@
+{
+    "vfp_id": "vfp_00113",
+    "project_name": "cantina_coinbase_bridge_aug2025.pdf",
+    "findings": [
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Inconsistent validator limit between contracts",
+            "description": "Different contracts enforce different maximum validator counts. The cause is decentralized configuration without synchronization. Could lead to state divergence or failed upgrades. The impact is operational friction during governance or key rotation.\n",
+            "severity": "Informational",
+            "location": [
+                "VerificationLib.sol#L11-L15",
+                "VerificationLib.sol#L91-L103",
+                "VerificationLib.sol#L120-L132",
+                "bridge.rs#L201-L202"
+            ],
+            "files": [
+                "bridge/base/src/libraries/VerificationLib.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Inaccurate error documentation in VerificationLib",
+            "description": "Error codes or messages in VerificationLib are not accurately documented. The cause is documentation not updated after code changes. Misleads developers and integrators about expected failure modes. The impact is increased debugging time and potential misinterpretation of failures.\n",
+            "severity": "Informational",
+            "location": [
+                "VerificationLib.sol#L59"
+            ],
+            "files": [
+                "bridge/base/src/libraries/VerificationLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "VerificationLib.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.28;\n\n/// @notice Storage layout used by this library.\n///\n/// @custom:storage-location erc7201:coinbase.storage.VerificationLib\n///\n/// @custom:field validators Mapping of validator addresses to their status.\n/// @custom:field threshold Base signature threshold.\n/// @custom:field validatorCount Count of Base validators.\nstruct VerificationLibStorage {\n    mapping(address => bool) validators;\n    uint128 threshold;\n    uint128 validatorCount;\n}\n\n/// @title VerificationLib\n///\n/// @notice A verification library for Messages being broadcasted from Solana to Base by requiring\n///         a specific minimum amount of validators to sign the message.\n///\n/// @dev This library is only relevant for Stage 0 of the bridge where offchain oracle handles the relaying\n///      of messages. This library should be irrelevant for Stage 1, where messages will automatically be\n///      included by the Base sequencer.\nlibrary VerificationLib {\n    //////////////////////////////////////////////////////////////\n    ///                       Constants                        ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice The length of a signature in bytes.\n    uint256 internal constant SIGNATURE_LENGTH_THRESHOLD = 65;\n\n    /// @dev Slot for the `VerificationLibStorage` struct in storage.\n    ///      Computed from:\n    ///         keccak256(abi.encode(uint256(keccak256(\"coinbase.storage.VerificationLib\")) - 1)) &\n    /// ~bytes32(uint256(0xff))\n    ///\n    ///      Follows ERC-7201 (see https://eips.ethereum.org/EIPS/eip-7201).\n    bytes32 private constant _VERIFICATION_LIB_STORAGE_LOCATION =\n        0x245c109929d1c5575e8db91278c683d6e028507d88b9169278939e24f465af00;\n\n    //////////////////////////////////////////////////////////////\n    ///                       Events                           ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice Emitted whenever the threshold is updated.\n    event ThresholdUpdated(uint256 newThreshold);\n\n    /// @notice Emitted whenever a validator is added.\n    event ValidatorAdded(address validator);\n\n    /// @notice Emitted whenever a validator is removed.\n    event ValidatorRemoved(address validator);\n\n    //////////////////////////////////////////////////////////////\n    ///                       Errors                           ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice Thrown when threshold is 0.\n    error InvalidThreshold();\n\n    /// @notice Thrown when a validator address is 0.\n    error InvalidValidatorAddress();\n\n    /// @notice Thrown when a validator is already added.\n    error ValidatorAlreadyAdded();\n\n    /// @notice Thrown when a validator is not a validator.\n    error ValidatorNotExisted();\n\n    /// @notice Thrown when validator count is less than threshold.\n    error ValidatorCountLessThanThreshold();\n\n    //////////////////////////////////////////////////////////////\n    ///                       Internal Functions               ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice Helper function to get a storage reference to the `VerificationLibStorage` struct.\n    ///\n    /// @return $ A storage reference to the `VerificationLibStorage` struct.\n    function getVerificationLibStorage() internal pure returns (VerificationLibStorage storage $) {\n        assembly (\"memory-safe\") {\n            $.slot := _VERIFICATION_LIB_STORAGE_LOCATION\n        }\n    }\n\n    /// @notice Initializes the verification library.\n    ///\n    /// @param validators Array of validator addresses.\n    /// @param threshold The verification threshold.\n    function initialize(address[] calldata validators, uint128 threshold) internal {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n\n        require(threshold > 0 && threshold <= validators.length, InvalidThreshold());\n\n        for (uint256 i; i < validators.length; i++) {\n            require(validators[i] != address(0), InvalidValidatorAddress());\n            require(!$.validators[validators[i]], ValidatorAlreadyAdded());\n            $.validators[validators[i]] = true;\n        }\n        $.validatorCount = uint128(validators.length);\n        $.threshold = threshold;\n    }\n\n    /// @notice Sets the verification threshold.\n    ///\n    /// @param newThreshold The new verification threshold.\n    function setThreshold(uint256 newThreshold) internal {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n        require(newThreshold > 0 && newThreshold <= $.validatorCount, InvalidThreshold());\n\n        $.threshold = uint128(newThreshold);\n\n        emit ThresholdUpdated(newThreshold);\n    }\n\n    /// @notice Add a validator to the set\n    ///\n    /// @param validator Address to add as validator\n    function addValidator(address validator) internal {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n        require(validator != address(0), InvalidValidatorAddress());\n        require(!$.validators[validator], ValidatorAlreadyAdded());\n\n        $.validators[validator] = true;\n\n        unchecked {\n            $.validatorCount++;\n        }\n\n        emit ValidatorAdded(validator);\n    }\n\n    /// @notice Remove a validator from the set\n    ///\n    /// @param validator Address to remove\n    function removeValidator(address validator) internal {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n        require($.validators[validator], ValidatorNotExisted());\n        require($.validatorCount - 1 >= $.threshold, ValidatorCountLessThanThreshold());\n\n        $.validators[validator] = false;\n\n        unchecked {\n            $.validatorCount--;\n        }\n\n        emit ValidatorRemoved(validator);\n    }\n\n    /// @notice Gets the current threshold.\n    ///\n    /// @return The current threshold.\n    function getBaseThreshold() internal view returns (uint128) {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n        return $.threshold;\n    }\n\n    /// @notice Checks if an address is a validator.\n    ///\n    /// @param validator The address to check.\n    /// @return True if the address is a validator, false otherwise.\n    function isBaseValidator(address validator) internal view returns (bool) {\n        VerificationLibStorage storage $ = getVerificationLibStorage();\n        return $.validators[validator];\n    }\n\n    /// @notice Splits signature bytes into v, r, s components\n    ///\n    /// @param signaturesCalldataOffset Calldata offset where signature bytes start\n    /// @param pos Index of the signature to split (0-indexed)\n    ///\n    /// @return v The recovery id\n    /// @return r The r component of the signature\n    /// @return s The s component of the signature\n    function signatureSplit(uint256 signaturesCalldataOffset, uint256 pos)\n        internal\n        pure\n        returns (uint8 v, bytes32 r, bytes32 s)\n    {\n        assembly {\n            let signaturePos := mul(0x41, pos) // 65 bytes per signature\n            r := calldataload(add(signaturesCalldataOffset, signaturePos)) // r at offset 0\n            s := calldataload(add(signaturesCalldataOffset, add(signaturePos, 0x20))) // s at offset 32\n            v := and(calldataload(add(signaturesCalldataOffset, add(signaturePos, 0x21))), 0xff) // v at offset 64\n        }\n    }\n}\n"
+    }
+}

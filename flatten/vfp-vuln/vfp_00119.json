@@ -1,0 +1,70 @@
+{
+    "vfp_id": "vfp_00119",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "findings": [
+        {
+            "id": 49,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Inconsistent balance tracking in vault creates DoS for asset borrowing",
+            "description": "The vault contract does not properly validate available balances before allowing withdrawals or borrows, leading to inconsistent balance tracking. This is caused by the lack of a pre-check on vault liquidity. An attacker could exploit this by initiating a borrow or withdrawal when the vault has insufficient funds, causing the transaction to fail and potentially locking users out of their assets. This creates a denial-of-service condition for legitimate borrowing and withdrawal operations.\n",
+            "severity": "High",
+            "location": [
+                "Vault.sol::_verifyBalance"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 50,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Unsafe asset removal without borrow validation",
+            "description": "The removeAsset function allows removal of an asset even when there are outstanding borrows, which could lead to accounting inconsistencies. The cause is the lack of validation that the asset's total supply is zero before removal. An attacker could exploit this by removing an asset while borrows are still active, potentially breaking the accounting model and leading to incorrect balance calculations. This could result in loss of funds or inability to repay debt.\n",
+            "severity": "Medium",
+            "location": [
+                "Vault.sol::removeAsset"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Oracle update front-running allows extraction of value from vaults",
+            "description": "The protocol's minting and burning functions are vulnerable to oracle sandwiching attacks due to the use of current oracle prices without protection against timing manipulation. The root cause is the lack of safeguards such as fees, TWAPs, or circuit breakers around oracle updates. An attacker can monitor pending Chainlink oracle updates and front-run them by depositing assets before the price update and withdrawing after, profiting from the price difference. For example, when the USDC price drops, the attacker deposits at the old price and withdraws at the new, higher effective rate, extracting value from the protocol. The impact is a direct loss of funds from the protocol treasury proportional to the size of the oracle update, exploiting natural market movements rather than oracle manipulation, which undermines the economic integrity of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/vault/Vault.sol",
+                "Oracle.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/vault/Vault.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Vault.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IVault } from \"../interfaces/IVault.sol\";\nimport { VaultStorageUtils } from \"../storage/VaultStorageUtils.sol\";\nimport { FractionalReserve } from \"./FractionalReserve.sol\";\nimport { Minter } from \"./Minter.sol\";\nimport { VaultLogic } from \"./libraries/VaultLogic.sol\";\nimport { ERC20PermitUpgradeable } from\n    \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport { EnumerableSet } from \"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\";\n\n/// @title Vault for storing the backing for cTokens\n/// @author kexley, @capLabs\n/// @notice Tokens are supplied by cToken minters and borrowed by covered agents\n/// @dev Supplies, borrows and utilization rates are tracked. Interest rates should be computed and\n/// charged on the external contracts, only the principle amount is counted on this contract.\nabstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, FractionalReserve, VaultStorageUtils {\n    using EnumerableSet for EnumerableSet.AddressSet;\n\n    /// @dev Initialize the assets\n    /// @param _name Name of the cap token\n    /// @param _symbol Symbol of the cap token\n    /// @param _accessControl Access control address\n    /// @param _feeAuction Fee auction address\n    /// @param _oracle Oracle address\n    /// @param _assets Asset addresses\n    /// @param _insuranceFund Insurance fund\n    function __Vault_init(\n        string memory _name,\n        string memory _symbol,\n        address _accessControl,\n        address _feeAuction,\n        address _oracle,\n        address[] calldata _assets,\n        address _insuranceFund\n    ) internal onlyInitializing {\n        __ERC20_init(_name, _symbol);\n        __ERC20Permit_init(_name);\n        __Access_init(_accessControl);\n        __FractionalReserve_init(_feeAuction);\n        __Minter_init(_oracle);\n        __Vault_init_unchained(_assets, _insuranceFund);\n    }\n\n    /// @dev Initialize unchained\n    /// @param _assets Asset addresses\n    /// @param _insuranceFund Insurance fund\n    function __Vault_init_unchained(address[] calldata _assets, address _insuranceFund) internal onlyInitializing {\n        VaultStorage storage $ = getVaultStorage();\n        uint256 length = _assets.length;\n        for (uint256 i; i < length; ++i) {\n            $.assets.add(_assets[i]);\n        }\n        $.insuranceFund = _insuranceFund;\n    }\n\n    /// @notice Mint the cap token using an asset\n    /// @dev This contract must have approval to move asset from msg.sender\n    /// @param _asset Whitelisted asset to deposit\n    /// @param _amountIn Amount of asset to use in the minting\n    /// @param _minAmountOut Minimum amount to mint\n    /// @param _receiver Receiver of the minting\n    /// @param _deadline Deadline of the tx\n    function mint(address _asset, uint256 _amountIn, uint256 _minAmountOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256 amountOut)\n    {\n        uint256 fee;\n        (amountOut, fee) = getMintAmount(_asset, _amountIn);\n        VaultLogic.mint(\n            getVaultStorage(),\n            MintBurnParams({\n                asset: _asset,\n                amountIn: _amountIn,\n                amountOut: amountOut,\n                minAmountOut: _minAmountOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fee: fee\n            })\n        );\n        _mint(_receiver, amountOut);\n        _mint(getVaultStorage().insuranceFund, fee);\n    }\n\n    /// @notice Burn the cap token for an asset\n    /// @dev Asset is withdrawn from the reserve or divested from the underlying vault\n    /// @param _asset Asset to withdraw\n    /// @param _amountIn Amount of cap token to burn\n    /// @param _minAmountOut Minimum amount out to receive\n    /// @param _receiver Receiver of the withdrawal\n    /// @param _deadline Deadline of the tx\n    function burn(address _asset, uint256 _amountIn, uint256 _minAmountOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256 amountOut)\n    {\n        uint256 fee;\n        (amountOut, fee) = getBurnAmount(_asset, _amountIn);\n        divest(_asset, amountOut);\n        VaultLogic.burn(\n            getVaultStorage(),\n            MintBurnParams({\n                asset: _asset,\n                amountIn: _amountIn,\n                amountOut: amountOut,\n                minAmountOut: _minAmountOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fee: fee\n            })\n        );\n        _burn(msg.sender, _amountIn);\n    }\n\n    /// @notice Redeem the Cap token for a bundle of assets\n    /// @dev Assets are withdrawn from the reserve or divested from the underlying vault\n    /// @param _amountIn Amount of Cap token to burn\n    /// @param _minAmountsOut Minimum amounts of assets to withdraw\n    /// @param _receiver Receiver of the withdrawal\n    /// @param _deadline Deadline of the tx\n    /// @return amountsOut Amount of assets withdrawn\n    function redeem(uint256 _amountIn, uint256[] calldata _minAmountsOut, address _receiver, uint256 _deadline)\n        external\n        returns (uint256[] memory amountsOut)\n    {\n        uint256[] memory fees;\n        (amountsOut, fees) = getRedeemAmount(_amountIn);\n        divestMany(assets(), amountsOut);\n        VaultLogic.redeem(\n            getVaultStorage(),\n            RedeemParams({\n                amountIn: _amountIn,\n                amountsOut: amountsOut,\n                minAmountsOut: _minAmountsOut,\n                receiver: _receiver,\n                deadline: _deadline,\n                fees: fees\n            })\n        );\n        _burn(msg.sender, _amountIn);\n    }\n\n    /// @notice Borrow an asset\n    /// @dev Whitelisted agents can borrow any amount, LTV is handled by Agent contracts\n    /// @param _asset Asset to borrow\n    /// @param _amount Amount of asset to borrow\n    /// @param _receiver Receiver of the borrow\n    function borrow(address _asset, uint256 _amount, address _receiver) external checkAccess(this.borrow.selector) {\n        divest(_asset, _amount);\n        VaultLogic.borrow(getVaultStorage(), BorrowParams({ asset: _asset, amount: _amount, receiver: _receiver }));\n    }\n\n    /// @notice Repay an asset\n    /// @param _asset Asset to repay\n    /// @param _amount Amount of asset to repay\n    function repay(address _asset, uint256 _amount) external checkAccess(this.repay.selector) {\n        VaultLogic.repay(getVaultStorage(), RepayParams({ asset: _asset, amount: _amount }));\n    }\n\n    /// @notice Add an asset to the vault list\n    /// @param _asset Asset address\n    function addAsset(address _asset) external checkAccess(this.addAsset.selector) {\n        VaultLogic.addAsset(getVaultStorage(), _asset);\n    }\n\n    /// @notice Remove an asset from the vault list\n    /// @param _asset Asset address\n    function removeAsset(address _asset) external checkAccess(this.removeAsset.selector) {\n        VaultLogic.removeAsset(getVaultStorage(), _asset);\n    }\n\n    /// @notice Pause an asset\n    /// @param _asset Asset address\n    function pause(address _asset) external checkAccess(this.pause.selector) {\n        VaultLogic.pause(getVaultStorage(), _asset);\n    }\n\n    /// @notice Unpause an asset\n    /// @param _asset Asset address\n    function unpause(address _asset) external checkAccess(this.unpause.selector) {\n        VaultLogic.unpause(getVaultStorage(), _asset);\n    }\n\n    /// @notice Rescue an unsupported asset\n    /// @param _asset Asset to rescue\n    /// @param _receiver Receiver of the rescue\n    function rescueERC20(address _asset, address _receiver) external checkAccess(this.rescueERC20.selector) {\n        VaultLogic.rescueERC20(getVaultStorage(), _asset, _receiver);\n    }\n\n    /// @notice Get the list of assets supported by the vault\n    /// @return assetList List of assets\n    function assets() public view returns (address[] memory assetList) {\n        assetList = getVaultStorage().assets.values();\n    }\n\n    /// @notice Get the total supplies of an asset\n    /// @param _asset Asset address\n    /// @return totalSupply Total supply\n    function totalSupplies(address _asset) external view returns (uint256 totalSupply) {\n        totalSupply = getVaultStorage().totalSupplies[_asset];\n    }\n\n    /// @notice Get the total borrows of an asset\n    /// @param _asset Asset address\n    /// @return totalBorrow Total borrow\n    function totalBorrows(address _asset) external view returns (uint256 totalBorrow) {\n        totalBorrow = getVaultStorage().totalBorrows[_asset];\n    }\n\n    /// @notice Get the pause state of an asset\n    /// @param _asset Asset address\n    /// @return isPaused Pause state\n    function paused(address _asset) external view returns (bool isPaused) {\n        isPaused = getVaultStorage().paused[_asset];\n    }\n\n    /// @notice Available balance to borrow\n    /// @param _asset Asset to borrow\n    /// @return amount Amount available\n    function availableBalance(address _asset) external view returns (uint256 amount) {\n        amount = VaultLogic.availableBalance(getVaultStorage(), _asset);\n    }\n\n    /// @notice Utilization rate of an asset\n    /// @dev Utilization scaled by 1e27\n    /// @param _asset Utilized asset\n    /// @return ratio Utilization ratio\n    function utilization(address _asset) external view returns (uint256 ratio) {\n        ratio = VaultLogic.utilization(getVaultStorage(), _asset);\n    }\n\n    /// @notice Up to date cumulative utilization index of an asset\n    /// @dev Utilization scaled by 1e27\n    /// @param _asset Utilized asset\n    /// @return index Utilization ratio index\n    function currentUtilizationIndex(address _asset) external view returns (uint256 index) {\n        index = VaultLogic.currentUtilizationIndex(getVaultStorage(), _asset);\n    }\n\n    /// @notice Get the insurance fund\n    /// @return insuranceFund Insurance fund\n    function insuranceFund() external view returns (address) {\n        return getVaultStorage().insuranceFund;\n    }\n}\n"
+    }
+}

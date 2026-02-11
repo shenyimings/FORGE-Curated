@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00300",
+    "project_name": "ChainSecurity_Liquity_Bold_Audit.pdf",
+    "findings": [
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Indexed Parameters of Events",
+            "description": "The `CollSent` event in `CollSurplusPool` does not index the `_to` parameter, making it harder for off-chain services to query withdrawals.\n\nThe cause is that the event parameter was not marked as `indexed`.\n\nNo direct exploit, but reduces usability for external applications.\n\nInefficient event querying for wallets and analytics tools.\n",
+            "severity": "Informational",
+            "location": [
+                "CollSurplusPool.CollSent"
+            ],
+            "files": [
+                "bold/contracts/src/CollSurplusPool.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "CollSurplusPool.sol": "// SPDX-License-Identifier: BUSL-1.1\n\npragma solidity 0.8.24;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport \"./Interfaces/ICollSurplusPool.sol\";\nimport \"./Interfaces/IAddressesRegistry.sol\";\n\ncontract CollSurplusPool is ICollSurplusPool {\n    using SafeERC20 for IERC20;\n\n    string public constant NAME = \"CollSurplusPool\";\n\n    IERC20 public immutable collToken;\n    address public immutable borrowerOperationsAddress;\n    address public immutable troveManagerAddress;\n\n    // deposited ether tracker\n    uint256 internal collBalance;\n    // Collateral surplus claimable by trove owners\n    mapping(address => uint256) internal balances;\n\n    // --- Events ---\n\n    event BorrowerOperationsAddressChanged(address _newBorrowerOperationsAddress);\n    event TroveManagerAddressChanged(address _newTroveManagerAddress);\n\n    event CollBalanceUpdated(address indexed _account, uint256 _newBalance);\n    event CollSent(address indexed _to, uint256 _amount);\n\n    constructor(IAddressesRegistry _addressesRegistry) {\n        collToken = _addressesRegistry.collToken();\n        borrowerOperationsAddress = address(_addressesRegistry.borrowerOperations());\n        troveManagerAddress = address(_addressesRegistry.troveManager());\n\n        emit BorrowerOperationsAddressChanged(borrowerOperationsAddress);\n        emit TroveManagerAddressChanged(troveManagerAddress);\n    }\n\n    /* Returns the collBalance state variable\n       Not necessarily equal to the raw coll balance - coll can be forcibly sent to contracts. */\n    function getCollBalance() external view override returns (uint256) {\n        return collBalance;\n    }\n\n    function getCollateral(address _account) external view override returns (uint256) {\n        return balances[_account];\n    }\n\n    // --- Pool functionality ---\n\n    function accountSurplus(address _account, uint256 _amount) external override {\n        _requireCallerIsTroveManager();\n\n        uint256 newAmount = balances[_account] + _amount;\n        balances[_account] = newAmount;\n        collBalance = collBalance + _amount;\n\n        emit CollBalanceUpdated(_account, newAmount);\n    }\n\n    function claimColl(address _account) external override {\n        _requireCallerIsBorrowerOperations();\n        uint256 claimableColl = balances[_account];\n        require(claimableColl > 0, \"CollSurplusPool: No collateral available to claim\");\n\n        balances[_account] = 0;\n        emit CollBalanceUpdated(_account, 0);\n\n        collBalance = collBalance - claimableColl;\n        emit CollSent(_account, claimableColl);\n\n        collToken.safeTransfer(_account, claimableColl);\n    }\n\n    // --- 'require' functions ---\n\n    function _requireCallerIsBorrowerOperations() internal view {\n        require(msg.sender == borrowerOperationsAddress, \"CollSurplusPool: Caller is not Borrower Operations\");\n    }\n\n    function _requireCallerIsTroveManager() internal view {\n        require(msg.sender == troveManagerAddress, \"CollSurplusPool: Caller is not TroveManager\");\n    }\n}\n"
+    }
+}

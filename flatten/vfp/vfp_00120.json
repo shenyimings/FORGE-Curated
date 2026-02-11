@@ -1,0 +1,58 @@
+{
+    "vfp_id": "vfp_00120",
+    "project_name": "cantina_coinbase_nov2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event for signer rotations",
+            "description": "1. **Description:** The `setSigner` function in `SignatureDiscountValidator.sol` updates the signer address without emitting an event, and the constructor also initializes the signer silently. This omission prevents off-chain systems from being notified of signer changes.\n2. **Cause:** The lack of an event emission when the signer state is modified means there is no log-based mechanism for external systems to detect changes.\n3. **Exploitation:** An attacker or misconfigured service relying on stale signer data could accept signatures from a deprecated signer if revocation is delayed due to polling inefficiencies.\n4. **Impact:** This increases operational risk and delays in revocation detection for off-chain services such as discount portals, caching layers, and monitoring tools, potentially leading to misuse of outdated trust assumptions.\n",
+            "severity": "Informational",
+            "location": [
+                "SignatureDiscountValidator.sol#L35-L39"
+            ],
+            "files": [
+                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Discount signatures scoped per validator instance",
+            "description": "1. **Description:** The `isValidDiscountRegistration` function validates signatures based only on (claimer, expires, signature) and does not include the `discountKey` in the verification payload. This design could allow replay of a valid signature across different discount tiers if multiple keys were associated with the same validator.\n2. **Cause:** The signed message payload omits the `discountKey`, creating a potential for signature replay across tiers if the same validator serves multiple keys.\n3. **Exploitation:** If the deployment ever allowed multiple discount keys per validator, an attacker could reuse a valid signature intended for one tier to claim a different discount.\n4. **Impact:** While currently not exploitable due to the operational constraint of one key per validator, this represents a latent risk that could become active if the architecture evolves without corresponding code changes, leading to unauthorized discount claims.\n",
+            "severity": "Informational",
+            "location": [
+                "SignatureDiscountValidator.sol#L48-L51"
+            ],
+            "files": [
+                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "SignatureDiscountValidator.sol": "//SPDX-License-Identifier: MIT\npragma solidity ^0.8.23;\n\nimport {Ownable} from \"solady/auth/Ownable.sol\";\n\nimport {IDiscountValidator} from \"src/L2/interface/IDiscountValidator.sol\";\nimport {SybilResistanceVerifier} from \"src/lib/SybilResistanceVerifier.sol\";\n\n/// @title Discount Validator for: Signature Discount Validator\n///\n/// @notice Implements a simple signature validation schema which performs signature verification to validate\n///         signatures were generated from the Base Signer Service.\n///\n/// @author Coinbase (https://github.com/base-org/basenames)\ncontract SignatureDiscountValidator is Ownable, IDiscountValidator {\n    /// @dev The Base Signer Service signer address.\n    address signer;\n\n    /// @dev Thrown when setting the zero address as `owner` or `signer`.\n    error NoZeroAddress();\n\n    /// @notice constructor\n    ///\n    /// @param owner_ The permissioned `owner` in the `Ownable` context.\n    /// @param signer_ The off-chain signer of the Base Signer Service.\n    constructor(address owner_, address signer_) {\n        if (owner_ == address(0)) revert NoZeroAddress();\n        if (signer_ == address(0)) revert NoZeroAddress();\n        _initializeOwner(owner_);\n        signer = signer_;\n    }\n\n    /// @notice Allows the owner to update the expected signer.\n    ///\n    /// @param signer_ The address of the new signer.\n    function setSigner(address signer_) external onlyOwner {\n        if (signer_ == address(0)) revert NoZeroAddress();\n        signer = signer_;\n    }\n\n    /// @notice Required implementation for compatibility with IDiscountValidator.\n    ///\n    /// @dev The data must be encoded as `abi.encode(discountClaimerAddress, expiry, signature_bytes)`.\n    ///\n    /// @param claimer the discount claimer's address.\n    /// @param validationData opaque bytes for performing the validation.\n    ///\n    /// @return `true` if the validation data provided is determined to be valid for the specified claimer, else `false`.\n    function isValidDiscountRegistration(address claimer, bytes calldata validationData) external view returns (bool) {\n        return SybilResistanceVerifier.verifySignature(signer, claimer, validationData);\n    }\n}\n"
+    }
+}

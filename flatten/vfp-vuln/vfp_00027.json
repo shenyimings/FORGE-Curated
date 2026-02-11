@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00027",
+    "project_name": "OIF Broadcaster Audit.md",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Prover Copies Cannot Be Updated",
+            "description": "The `updateBlockHashProverCopy` function in the `Receiver` contract fails to update prover copies due to a revert when attempting to read the version from the zero address. This occurs because the `_blockHashProverCopies` mapping is initialized to address(0), and the function calls the `version()` getter on the old address before performing the update. Since calling a function on the zero address reverts, the update mechanism is effectively broken. This prevents the system from upgrading prover implementations for remote chains, which is necessary when chains undergo upgrades or route changes. The impact is a denial of service for message verification across affected chains, undermining the system's adaptability and long-term reliability.\n",
+            "severity": "High",
+            "location": [
+                "Receiver.sol::updateBlockHashProverCopy#43-66"
+            ],
+            "files": [
+                "3522b4c7c958ce254497b879cc1f6106131c7e3e/broadcaster/src/contracts/Receiver.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Receiver.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport {IReceiver} from \"./interfaces/IReceiver.sol\";\nimport {IBlockHashProver} from \"./interfaces/IBlockHashProver.sol\";\nimport {IBlockHashProverPointer} from \"./interfaces/IBlockHashProverPointer.sol\";\nimport {BLOCK_HASH_PROVER_POINTER_SLOT} from \"./BlockHashProverPointer.sol\";\n\ncontract Receiver is IReceiver {\n    mapping(bytes32 blockHashProverPointerId => IBlockHashProver blockHashProverCopy) private _blockHashProverCopies;\n\n    error InvalidRouteLength();\n    error EmptyRoute();\n    error ProverCopyNotFound();\n    error MessageNotFound();\n    error WrongMessageSlot();\n    error WrongBlockHashProverPointerSlot();\n    error DifferentCodeHash();\n    error NewerProverVersion();\n\n    function verifyBroadcastMessage(RemoteReadArgs calldata broadcasterReadArgs, bytes32 message, address publisher)\n        external\n        view\n        returns (bytes32 broadcasterId, uint256 timestamp)\n    {\n        uint256 messageSlot;\n        bytes32 slotValue;\n\n        (broadcasterId, messageSlot, slotValue) = _readRemoteSlot(broadcasterReadArgs);\n\n        if (slotValue == 0) {\n            revert MessageNotFound();\n        }\n\n        uint256 expectedMessageSlot = uint256(keccak256(abi.encode(message, publisher)));\n        if (messageSlot != expectedMessageSlot) {\n            revert WrongMessageSlot();\n        }\n\n        timestamp = uint256(slotValue);\n    }\n\n    function updateBlockHashProverCopy(RemoteReadArgs calldata bhpPointerReadArgs, IBlockHashProver bhpCopy)\n        external\n        returns (bytes32 bhpPointerId)\n    {\n        uint256 slot;\n        bytes32 bhpCodeHash;\n        (bhpPointerId, slot, bhpCodeHash) = _readRemoteSlot(bhpPointerReadArgs);\n\n        if (slot != uint256(BLOCK_HASH_PROVER_POINTER_SLOT)) {\n            revert WrongBlockHashProverPointerSlot();\n        }\n\n        if (address(bhpCopy).codehash != bhpCodeHash) {\n            revert DifferentCodeHash();\n        }\n\n        IBlockHashProver oldProverCopy = _blockHashProverCopies[bhpPointerId];\n\n        if (oldProverCopy.version() >= bhpCopy.version()) {\n            revert NewerProverVersion();\n        }\n\n        _blockHashProverCopies[bhpPointerId] = bhpCopy;\n    }\n\n    /// @notice The BlockHashProverCopy on the local chain corresponding to the bhpPointerId\n    ///         MUST return 0 if the BlockHashProverPointer does not exist.\n    function blockHashProverCopy(bytes32 bhpPointerId) external view returns (IBlockHashProver bhpCopy) {\n        bhpCopy = _blockHashProverCopies[bhpPointerId];\n    }\n\n    function _readRemoteSlot(RemoteReadArgs calldata readArgs)\n        internal\n        view\n        returns (bytes32 remoteAccountId, uint256 slot, bytes32 slotValue)\n    {\n        if (readArgs.route.length != readArgs.bhpInputs.length) {\n            revert InvalidRouteLength();\n        }\n\n        if (readArgs.route.length == 0) {\n            revert EmptyRoute();\n        }\n\n        IBlockHashProver prover;\n        bytes32 blockHash;\n\n        for (uint256 i = 0; i < readArgs.route.length; i++) {\n            remoteAccountId = accumulator(remoteAccountId, readArgs.route[i]);\n\n            if (i == 0) {\n                prover = IBlockHashProver(IBlockHashProverPointer(readArgs.route[0]).implementationAddress());\n                blockHash = prover.getTargetBlockHash(readArgs.bhpInputs[0]);\n            } else {\n                prover = _blockHashProverCopies[remoteAccountId];\n                if (address(prover) == address(0)) {\n                    revert ProverCopyNotFound();\n                }\n\n                blockHash = prover.verifyTargetBlockHash(blockHash, readArgs.bhpInputs[i]);\n            }\n        }\n\n        address remoteAccount;\n\n        (remoteAccount, slot, slotValue) = prover.verifyStorageSlot(blockHash, readArgs.storageProof);\n\n        remoteAccountId = accumulator(remoteAccountId, remoteAccount);\n    }\n\n    function accumulator(bytes32 acc, address addr) internal pure returns (bytes32) {\n        return keccak256(abi.encode(acc, addr));\n    }\n}\n"
+    }
+}

@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00014",
+    "project_name": "2025.03.14 - Final - Crestal Network Audit Report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Anyone who is approving BlueprintV5 contract to spend ERC20 can get drained because payWithERC20",
+            "description": "The `payWithERC20` function in the Payment contract is public, allowing any external caller to initiate token transfers from any address that has approved the contract. This function is intended to be used internally by the BlueprintV5 contract during agent creation, but its public visibility enables abuse. The root cause is the lack of access control on the `payWithERC20` function, which fails to restrict callers to only trusted contracts or internal logic. An attacker can exploit this by calling `payWithERC20` directly with a victim's address as the `fromAddress`, any approved ERC20 token, and the attacker's address as the `toAddress`. This allows the attacker to drain all approved tokens from the victim's wallet. The impact is significant financial loss for users who have approved the contract to spend their tokens, especially during agent creation where such approvals are required.\n",
+            "severity": "High",
+            "location": [
+                "Payment.sol::payWithERC20#25-32"
+            ],
+            "files": [
+                "crestal-omni-contracts/src/Payment.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Payment.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/interfaces/IERC721.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nusing SafeERC20 for IERC20;\n\ncontract Payment {\n    function checkNFTOwnership(address nftTokenAddress, uint256 nftId, address userAddress)\n        public\n        view\n        returns (bool)\n    {\n        require(nftTokenAddress != address(0), \"Invalid NFT token address\");\n        require(userAddress != address(0), \"Invalid user address\");\n\n        IERC721 nftToken = IERC721(nftTokenAddress);\n        return nftToken.ownerOf(nftId) == userAddress;\n    }\n\n    // This is to support gasless flow: normally, the caller must always be the msg.sender\n    // slither-disable-next-line arbitrary-send-erc20\n    function payWithERC20(address erc20TokenAddress, uint256 amount, address fromAddress, address toAddress) internal {\n        // check from and to address\n        require(fromAddress != toAddress, \"Cannot transfer to self address\");\n        require(toAddress != address(0), \"Invalid to address\");\n        require(amount > 0, \"Amount must be greater than 0\");\n        IERC20 token = IERC20(erc20TokenAddress);\n        token.safeTransferFrom(fromAddress, toAddress, amount);\n    }\n\n    function payWithNativeToken(address payable toAddress, uint256 amount) internal {\n        require(toAddress != address(0), \"Invalid to address\");\n        require(amount > 0, \"Amount must be greater than 0\");\n\n        (bool success,) = toAddress.call{value: amount}(\"\");\n        require(success, \"Native token transfer failed\");\n    }\n}\n"
+    }
+}

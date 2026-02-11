@@ -1,0 +1,103 @@
+{
+    "vfp_id": "vfp_00051",
+    "project_name": "Linea - Burn Mechanism _ Consensys Diligence.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-705"
+                ],
+                "3": [
+                    "CWE-584"
+                ]
+            },
+            "title": "18_deploy_RollupRevenueVault.ts – Deployment Script Leaves Contract Uninitialized; fallback Does Not Enforce msg.value > 0",
+            "description": "The deployment script for the RollupRevenueVault contract attempts to call a non-existent zero-parameter initialize() function, which causes the call to be routed to the fallback function instead of properly initializing the contract. This occurs because the actual initialize function requires 10 parameters, and the deployment script uses an incorrect signature. As a result, the contract remains uninitialized, allowing an attacker to potentially claim ownership and take control of the contract. The fallback function also does not validate that msg.value > 0, which could allow silent zero-value calls that obscure the initialization failure. This vulnerability could lead to a complete compromise of the contract's administrative controls, enabling an attacker to manipulate critical state variables, roles, and funds.\n",
+            "severity": "Critical",
+            "location": [
+                "18_deploy_RollupRevenueVault.ts",
+                "RollupRevenueVault.sol::initialize#58-74",
+                "RollupRevenueVault.sol::fallback#282-288"
+            ],
+            "files": [
+                "linea-monorepo/contracts/deploy/18_deploy_RollupRevenueVault.ts",
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "RollupRevenueVault - Deployment and Initialization Flow",
+            "description": "The RollupRevenueVault contract implements two initialization functions: an initial 'initialize' with the 'initializer' modifier and a 'reinitializer(2)' function intended for upgrades. However, the use of a reinitializer that becomes immediately available after the first initialization creates a potential front-running window if the upgrade process does not use 'upgradeToAndCall' to invoke the reinitializer in the same transaction. If the upgrade process does not use 'upgradeToAndCall' to invoke the reinitializer in the same transaction, an attacker could front-run the reinitialization and gain control of the contract. Additionally, both initialization functions perform overlapping logic, including resetting critical state variables like lastInvoiceDate and the LINEA token address, which should remain immutable post-deployment. This could lead to state inconsistencies or accidental misconfiguration during upgrades. The reinitializer also grants roles additively without revoking previous roles, potentially leading to privilege accumulation. These issues increase the risk of ownership takeover and state corruption during contract upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "RollupRevenueVault.sol::initialize#45-83",
+                "RollupRevenueVault.sol::initializeRolesAndStorageVariables#85-123",
+                "RollupRevenueVault.sol::__RollupRevenueVault_init#125-160"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "RollupRevenueVault - Missing Validation for Future lastInvoiceDate",
+            "description": "The RollupRevenueVault contract does not validate that the lastInvoiceDate is not set to a future timestamp during initialization, invoice submission, or when updating arrears via the admin function. This allows a privileged user (such as the admin) to set lastInvoiceDate to a future time, which would block all subsequent invoice submissions because the system enforces sequential timestamps (_startTimestamp must equal lastInvoiceDate + 1). If lastInvoiceDate is set to a distant future timestamp or uint256 max, the invoice submission mechanism would be effectively disabled until that date or until manual admin intervention. This could result in a denial of service for the invoice payment system, disrupting operational expense settlements and potentially halting the burn mechanism if invoice arrears are not cleared. The impact is mitigated by the fact that only trusted roles can trigger this condition, but it still represents a significant operational risk.\n",
+            "severity": "Low",
+            "location": [
+                "RollupRevenueVault.sol::submitInvoice#162-184",
+                "RollupRevenueVault.sol::__RollupRevenueVault_init#125-152",
+                "RollupRevenueVault.sol::updateInvoiceArrears#238-252"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "RollupRevenueVault - Consider Enforcement of Minimum Swap Outputs",
+            "description": "The burnAndBridge function in RollupRevenueVault performs token swaps via a low-level call to a DEX adapter without enforcing minimum output validation within the function itself. While the current V3DexSwap adapter relies on the underlying Uniswap V3 router to enforce the amountOutMinimum parameter, the RollupRevenueVault contract does not verify the actual amount of LINEA tokens received after the swap. This design places the entire responsibility for slippage protection and output validation on the caller or external job, increasing operational risk. If a future adapter or router configuration fails to enforce proper slippage, or if the caller provides incorrect parameters, the system could receive significantly fewer tokens than expected, leading to financial loss. Although this is not a direct exploit vulnerability under current assumptions, it represents a critical dependency on external correctness and lacks defensive checks within the core burn mechanism, reducing the system's resilience to misconfiguration or malicious adapter changes.\n",
+            "severity": "Low",
+            "location": [
+                "RollupRevenueVault.sol::burnAndBridge",
+                "V3DexSwap.sol"
+            ],
+            "files": [
+                "linea-monorepo/contracts/src/operational/RollupRevenueVault.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "RollupRevenueVault.sol": "// SPDX-License-Identifier: Apache-2.0 OR MIT\npragma solidity 0.8.30;\n\nimport { AccessControlUpgradeable } from \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { L2MessageService } from \"../messaging/l2/L2MessageService.sol\";\nimport { TokenBridge } from \"../bridging/token/TokenBridge.sol\";\nimport { IRollupRevenueVault } from \"./interfaces/IRollupRevenueVault.sol\";\n\n/**\n * @title Upgradeable Rollup Revenue Vault Contract.\n * @notice Accepts rollup revenue, and performs burning operations.\n * @author Consensys Software Inc.\n * @custom:security-contact security-report@linea.build\n */\ncontract RollupRevenueVault is AccessControlUpgradeable, IRollupRevenueVault {\n  bytes32 public constant INVOICE_SUBMITTER_ROLE = keccak256(\"INVOICE_SUBMITTER_ROLE\");\n  bytes32 public constant BURNER_ROLE = keccak256(\"BURNER_ROLE\");\n\n  /// @notice Percentage of ETH to be burnt when performing the burn and bridge operation.\n  uint256 public constant ETH_BURNT_PERCENTAGE = 20;\n\n  /// @notice Decentralized exchange adapter contract for swapping ETH to LINEA tokens.\n  address public dexSwapAdapter;\n  /// @notice Address to receive invoice payments.\n  address public invoicePaymentReceiver;\n  /// @notice Amount of invoice arrears.\n  uint256 public invoiceArrears;\n  /// @notice Timestamp of the last invoice.\n  uint256 public lastInvoiceDate;\n  /// @notice Address of the token bridge contract.\n  TokenBridge public tokenBridge;\n  /// @notice Address of the L2 message service contract.\n  L2MessageService public messageService;\n  /// @notice Address of the L1 LINEA token burner contract to which LINEA tokens are bridged for burning.\n  address public l1LineaTokenBurner;\n  /// @notice Address of the LINEA token contract.\n  address public lineaToken;\n\n  /// @custom:oz-upgrades-unsafe-allow constructor\n  constructor() {\n    _disableInitializers();\n  }\n\n  /**\n   * @notice Reinitializes the contract state for upgrade.\n   * @param _lastInvoiceDate The default or starting timestamp for invoices less 1 second.\n   * @param _defaultAdmin Address to be granted the default admin role.\n   * @param _invoiceSubmitter Address to be granted the invoice submitter role.\n   * @param _burner Address to be granted the burner role.\n   * @param _invoicePaymentReceiver Address to receive invoice payments.\n   * @param _tokenBridge Address of the token bridge contract.\n   * @param _messageService Address of the L2 message service contract.\n   * @param _l1LineaTokenBurner Address of the L1 LINEA token burner contract.\n   * @param _lineaToken Address of the LINEA token contract.\n   * @param _dexSwapAdapter Address of the DEX swap adapter contract.\n   */\n  function initializeRolesAndStorageVariables(\n    uint256 _lastInvoiceDate,\n    address _defaultAdmin,\n    address _invoiceSubmitter,\n    address _burner,\n    address _invoicePaymentReceiver,\n    address _tokenBridge,\n    address _messageService,\n    address _l1LineaTokenBurner,\n    address _lineaToken,\n    address _dexSwapAdapter\n  ) external reinitializer(2) {\n    __AccessControl_init();\n    __RollupRevenueVault_init(\n      _lastInvoiceDate,\n      _defaultAdmin,\n      _invoiceSubmitter,\n      _burner,\n      _invoicePaymentReceiver,\n      _tokenBridge,\n      _messageService,\n      _l1LineaTokenBurner,\n      _lineaToken,\n      _dexSwapAdapter\n    );\n  }\n\n  function __RollupRevenueVault_init(\n    uint256 _lastInvoiceDate,\n    address _defaultAdmin,\n    address _invoiceSubmitter,\n    address _burner,\n    address _invoicePaymentReceiver,\n    address _tokenBridge,\n    address _messageService,\n    address _l1LineaTokenBurner,\n    address _lineaToken,\n    address _dexSwapAdapter\n  ) internal onlyInitializing {\n    require(_lastInvoiceDate != 0, ZeroTimestampNotAllowed());\n    require(_lastInvoiceDate < block.timestamp, FutureInvoicesNotAllowed());\n\n    require(_defaultAdmin != address(0), ZeroAddressNotAllowed());\n    require(_invoiceSubmitter != address(0), ZeroAddressNotAllowed());\n    require(_burner != address(0), ZeroAddressNotAllowed());\n    require(_invoicePaymentReceiver != address(0), ZeroAddressNotAllowed());\n    require(_tokenBridge != address(0), ZeroAddressNotAllowed());\n    require(_messageService != address(0), ZeroAddressNotAllowed());\n    require(_l1LineaTokenBurner != address(0), ZeroAddressNotAllowed());\n    require(_lineaToken != address(0), ZeroAddressNotAllowed());\n    require(_dexSwapAdapter != address(0), ZeroAddressNotAllowed());\n\n    _grantRole(DEFAULT_ADMIN_ROLE, _defaultAdmin);\n    _grantRole(INVOICE_SUBMITTER_ROLE, _invoiceSubmitter);\n    _grantRole(BURNER_ROLE, _burner);\n\n    lastInvoiceDate = _lastInvoiceDate;\n\n    invoicePaymentReceiver = _invoicePaymentReceiver;\n    tokenBridge = TokenBridge(_tokenBridge);\n    messageService = L2MessageService(_messageService);\n    l1LineaTokenBurner = _l1LineaTokenBurner;\n    lineaToken = _lineaToken;\n    dexSwapAdapter = _dexSwapAdapter;\n\n    emit RollupRevenueVaultInitialized(\n      _lastInvoiceDate,\n      _invoicePaymentReceiver,\n      _tokenBridge,\n      _messageService,\n      _l1LineaTokenBurner,\n      _lineaToken,\n      _dexSwapAdapter\n    );\n  }\n\n  /**\n   * @notice Submit invoice to pay to the designated receiver.\n   * @param _startTimestamp Start of the period the invoice is covering.\n   * @param _endTimestamp End of the period the invoice is covering.\n   * @param _invoiceAmount New invoice amount.\n   */\n  function submitInvoice(\n    uint256 _startTimestamp,\n    uint256 _endTimestamp,\n    uint256 _invoiceAmount\n  ) external payable onlyRole(INVOICE_SUBMITTER_ROLE) {\n    require(_startTimestamp == lastInvoiceDate + 1, TimestampsNotInSequence());\n    require(_endTimestamp > _startTimestamp, EndTimestampMustBeGreaterThanStartTimestamp());\n    require(_endTimestamp < block.timestamp, FutureInvoicesNotAllowed());\n    require(_invoiceAmount != 0, ZeroInvoiceAmount());\n\n    address payable receiver = payable(invoicePaymentReceiver);\n    uint256 balanceAvailable = address(this).balance;\n\n    uint256 totalAmountOwing = invoiceArrears + _invoiceAmount;\n    uint256 amountToPay = (balanceAvailable < totalAmountOwing) ? balanceAvailable : totalAmountOwing;\n\n    invoiceArrears = totalAmountOwing - amountToPay;\n    lastInvoiceDate = _endTimestamp;\n\n    if (amountToPay > 0) {\n      (bool success, ) = receiver.call{ value: amountToPay }(\"\");\n      require(success, InvoiceTransferFailed());\n    }\n\n    emit InvoiceProcessed(receiver, _startTimestamp, _endTimestamp, amountToPay, _invoiceAmount);\n  }\n\n  /**\n   * @notice Burns 20% of the ETH balance and uses the rest to buy LINEA tokens which are then bridged to L1 to be burned.\n   * @param _swapData Encoded calldata for the DEX swap function.\n   */\n  function burnAndBridge(bytes calldata _swapData) external onlyRole(BURNER_ROLE) {\n    _payArrears();\n\n    uint256 minimumFee = messageService.minimumFeeInWei();\n\n    if (address(this).balance > minimumFee) {\n      uint256 balanceAvailable = address(this).balance - minimumFee;\n\n      uint256 ethToBurn = (balanceAvailable * ETH_BURNT_PERCENTAGE) / 100;\n      (bool success, ) = address(0).call{ value: ethToBurn }(\"\");\n      require(success, EthBurnFailed());\n\n      (bool swapSuccess, ) = dexSwapAdapter.call{ value: balanceAvailable - ethToBurn }(_swapData);\n      require(swapSuccess, DexSwapFailed());\n\n      address lineaTokenAddress = lineaToken;\n      TokenBridge tokenBridgeContract = tokenBridge;\n\n      uint256 lineaTokenBalanceAfter = IERC20(lineaTokenAddress).balanceOf(address(this));\n\n      IERC20(lineaTokenAddress).approve(address(tokenBridgeContract), lineaTokenBalanceAfter);\n\n      tokenBridgeContract.bridgeToken{ value: minimumFee }(\n        lineaTokenAddress,\n        lineaTokenBalanceAfter,\n        l1LineaTokenBurner\n      );\n\n      emit EthBurntSwappedAndBridged(ethToBurn, lineaTokenBalanceAfter);\n    }\n  }\n\n  /**\n   * @notice Update the invoice payment receiver.\n   * @param _newInvoicePaymentReceiver New invoice payment receiver address.\n   */\n  function updateInvoicePaymentReceiver(address _newInvoicePaymentReceiver) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    require(_newInvoicePaymentReceiver != address(0), ZeroAddressNotAllowed());\n\n    address currentInvoicePaymentReceiver = invoicePaymentReceiver;\n    require(_newInvoicePaymentReceiver != currentInvoicePaymentReceiver, ExistingAddressTheSame());\n\n    invoicePaymentReceiver = _newInvoicePaymentReceiver;\n    emit InvoicePaymentReceiverUpdated(currentInvoicePaymentReceiver, _newInvoicePaymentReceiver);\n  }\n\n  /**\n   * @notice Update the invoice arrears.\n   * @param _invoiceArrears New invoice arrears value.\n   * @param _lastInvoiceDate Timestamp of the last invoice.\n   */\n  function updateInvoiceArrears(\n    uint256 _invoiceArrears,\n    uint256 _lastInvoiceDate\n  ) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    require(_lastInvoiceDate >= lastInvoiceDate, InvoiceDateTooOld());\n    require(_lastInvoiceDate < block.timestamp, FutureInvoicesNotAllowed());\n\n    emit InvoiceArrearsUpdated(invoiceArrears, _invoiceArrears, lastInvoiceDate, _lastInvoiceDate);\n\n    invoiceArrears = _invoiceArrears;\n    lastInvoiceDate = _lastInvoiceDate;\n  }\n\n  /**\n   * @notice Updates the address of the L1 LINEA token burner contract.\n   * @param _newL1LineaTokenBurner Address of the new L1 LINEA token burner contract.\n   */\n  function updateL1LineaTokenBurner(address _newL1LineaTokenBurner) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    require(_newL1LineaTokenBurner != address(0), ZeroAddressNotAllowed());\n\n    address currentL1LineaTokenBurner = l1LineaTokenBurner;\n    require(_newL1LineaTokenBurner != currentL1LineaTokenBurner, ExistingAddressTheSame());\n\n    l1LineaTokenBurner = _newL1LineaTokenBurner;\n    emit L1LineaTokenBurnerUpdated(currentL1LineaTokenBurner, _newL1LineaTokenBurner);\n  }\n\n  /**\n   * @notice Updates the address of the DEX swap adapter contract.\n   * @param _newDexSwapAdapter Address of the new DEX swap adapter contract.\n   */\n  function updateDexSwapAdapter(address _newDexSwapAdapter) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    require(_newDexSwapAdapter != address(0), ZeroAddressNotAllowed());\n\n    address currentDexSwapAdapter = dexSwapAdapter;\n    require(_newDexSwapAdapter != currentDexSwapAdapter, ExistingAddressTheSame());\n\n    dexSwapAdapter = _newDexSwapAdapter;\n    emit DexSwapAdapterUpdated(currentDexSwapAdapter, _newDexSwapAdapter);\n  }\n\n  /**\n   * @notice Fallback function - Receives Funds.\n   */\n  fallback() external payable {\n    require(msg.value > 0, NoEthSent());\n    emit EthReceived(msg.value);\n  }\n\n  /**\n   * @notice Receive function - Receives Funds.\n   */\n  receive() external payable {\n    require(msg.value > 0, NoEthSent());\n    emit EthReceived(msg.value);\n  }\n\n  /**\n   * @notice Pays off arrears where applicable and balance permits.\n   */\n  function _payArrears() internal {\n    uint256 balanceAvailable = address(this).balance;\n\n    uint256 totalAmountOwing = invoiceArrears;\n    uint256 amountToPay = (balanceAvailable < totalAmountOwing) ? balanceAvailable : totalAmountOwing;\n\n    if (amountToPay > 0) {\n      uint256 remainingArrears = totalAmountOwing - amountToPay;\n      invoiceArrears = remainingArrears;\n\n      (bool success, ) = payable(invoicePaymentReceiver).call{ value: amountToPay }(\"\");\n      require(success, InvoiceTransferFailed());\n      emit ArrearsPaid(amountToPay, remainingArrears);\n    }\n  }\n}\n"
+    }
+}

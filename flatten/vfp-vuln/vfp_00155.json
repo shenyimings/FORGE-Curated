@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00155",
+    "project_name": "cantina_charm_june2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Insufficient factory check during vault creation",
+            "description": "1. **Description:** When creating a new vault in AlphaProVaultFactory, the contract checks for a field but does not verify that the provided Uniswap V3 pool address is valid for the given token pair and fee.\n2. **Cause:** The factory does not perform a lookup or validation to confirm that the provided pool address corresponds to the correct (token0, token1, fee) triplet.\n3. **Exploitation:** An attacker could provide a fake or incorrect pool address during vault creation, leading to integration with a malicious or non-functional pool.\n4. **Impact:** This could result in loss of funds or inability to operate the vault correctly due to interaction with an invalid Uniswap V3 pool.\n",
+            "severity": "Medium",
+            "location": [
+                "AlphaProVaultFactory.sol#L46-L47"
+            ],
+            "files": [
+                "alpha-contracts-v2.1/contracts/AlphaProVaultFactory.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AlphaProVaultFactory.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.0;\npragma abicoder v2;\n\nimport {Clones} from \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {IUniswapV3Factory} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol\";\nimport \"./AlphaProVault.sol\";\n\n/**\n * @title   Alpha Pro Vault Factory\n * @notice  A factory contract for creating new vaults\n */\ncontract AlphaProVaultFactory {\n    event NewVault(address vault);\n    event UpdateProtocolFee(uint24 protocolFee);\n\n    event UpdateGovernance(address governance);\n\n    address public immutable template;\n    address[] public vaults;\n    mapping(address => bool) public isVault;\n    mapping(address => bool) public allowedFactories;\n\n    address public governance;\n    address public pendingGovernance;\n    uint24 public protocolFee;\n\n    /**\n     * @param _template A deployed AlphaProVault contract\n     * @param _governance Charm Finance governance address\n     * @param _protocolFee Fee multiplied by 1e6. Hard capped at 25%.\n     */\n    constructor(address _template, address _governance, uint24 _protocolFee) {\n        template = _template;\n        governance = _governance;\n        protocolFee = _protocolFee;\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n    }\n\n    /**\n     * @notice Create a new Alpha Pro Vault\n     * @param params InitizalizeParams Underlying Uniswap V3 pool address\n     */\n    function createVault(VaultParams calldata params) external returns (address vaultAddress) {\n        IUniswapV3Pool pool = IUniswapV3Pool(params.pool);\n        IUniswapV3Factory poolFactory = IUniswapV3Factory(pool.factory());\n        require(allowedFactories[address(poolFactory)], \"allowedFactories\");\n        require(params.pool == poolFactory.getPool(pool.token0(), pool.token1(), pool.fee()), \"pool mismatch\");\n        vaultAddress =\n            Clones.cloneDeterministic(template, keccak256(abi.encode(msg.sender, block.chainid, numVaults())));\n        AlphaProVault(vaultAddress).initialize(params, address(this));\n        vaults.push(vaultAddress);\n        isVault[vaultAddress] = true;\n        emit NewVault(vaultAddress);\n    }\n\n    function setAllowedFactory(address factory, bool allowed) external onlyGovernance {\n        allowedFactories[factory] = allowed;\n    }\n\n    function numVaults() public view returns (uint256) {\n        return vaults.length;\n    }\n\n    /**\n     * @notice Change the protocol fee charged on pool fees earned from\n     * Uniswap, expressed as multiple of 1e-6. Fee is hard capped at 25%.\n     */\n    function setProtocolFee(uint24 _protocolFee) external onlyGovernance {\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n        protocolFee = _protocolFee;\n        emit UpdateProtocolFee(_protocolFee);\n    }\n\n    /**\n     * @notice Governance address is not updated until the new governance\n     * address has called `acceptGovernance()` to accept this responsibility.\n     */\n    function setGovernance(address _governance) external onlyGovernance {\n        pendingGovernance = _governance;\n    }\n\n    /**\n     * @notice `setGovernance()` should be called by the existing fee recipient\n     * address prior to calling this function.\n     */\n    function acceptGovernance() external {\n        require(msg.sender == pendingGovernance, \"pendingGovernance\");\n        governance = msg.sender;\n        emit UpdateGovernance(msg.sender);\n    }\n\n    modifier onlyGovernance() {\n        require(msg.sender == governance, \"governance\");\n        _;\n    }\n}\n"
+    }
+}

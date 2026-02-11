@@ -1,0 +1,22 @@
+{
+    "vfp_id": "vfp_00009",
+    "project_name": "ackee-blockchain-cow-flash-loan-router-report.pdf",
+    "findings": [
+        {
+            "id": 2,
+            "category": {},
+            "title": "I2: Aave flash loan call optimization",
+            "description": "1. **Description:** The AaveBorrower.sol contract uses the generic flashLoan function for single-asset flash loans, even though Aave provides a more gas-efficient flashLoanSimple function for such cases.\n\n2. **Cause:** Use of a more general-purpose Aave interface function when a specialized, cheaper alternative is available. This leads to unnecessary gas costs.\n\n3. **Exploitation:** An attacker cannot exploit this directly, but inefficient gas usage increases transaction costs for legitimate users and solvers.\n\n4. **Impact:** Increased gas consumption for flash loan operations, leading to higher operational costs. The client acknowledged the finding but chose to retain the current implementation to preserve eligibility for flash loan fee waiving.\n",
+            "severity": "Informational",
+            "location": [
+                "AaveBorrower.sol::triggerFlashLoan#26-41"
+            ],
+            "files": [
+                "flash-loan-router/src/AaveBorrower.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AaveBorrower.sol": "// SPDX-License-Identifier: GPL-3.0-or-later\npragma solidity ^0.8;\n\nimport {IFlashLoanRouter} from \"./interface/IFlashLoanRouter.sol\";\nimport {Borrower} from \"./mixin/Borrower.sol\";\nimport {IAaveFlashLoanReceiver} from \"./vendored/IAaveFlashLoanReceiver.sol\";\nimport {IAavePool} from \"./vendored/IAavePool.sol\";\nimport {IERC20} from \"./vendored/IERC20.sol\";\n\n/// @title Aave Borrower\n/// @author CoW DAO developers\n/// @notice A borrower contract for the flash-loan router that adds support for\n/// Aave protocol.\ncontract AaveBorrower is Borrower, IAaveFlashLoanReceiver {\n    /// @param _router The router supported by this contract.\n    constructor(IFlashLoanRouter _router) Borrower(_router) {}\n\n    /// @inheritdoc Borrower\n    function triggerFlashLoan(address lender, IERC20 token, uint256 amount, bytes calldata callBackData)\n        internal\n        override\n    {\n        // For documentation on the call parameters, see:\n        // <https://aave.com/docs/developers/smart-contracts/pool#write-methods-flashloan-input-parameters>\n        IAaveFlashLoanReceiver receiverAddress = this;\n        address[] memory assets = new address[](1);\n        assets[0] = address(token);\n        uint256[] memory amounts = new uint256[](1);\n        amounts[0] = amount;\n        uint256[] memory interestRateModes = new uint256[](1);\n        // Don't open any debt position, just revert if funds can't be\n        // transferred from this contract.\n        interestRateModes[0] = 0;\n        // The next value is technically unused, since `interestRateMode` is 0.\n        address onBehalfOf = address(this);\n        bytes calldata params = callBackData;\n        // Referral supply is currently inactive\n        uint16 referralCode = 0;\n        IAavePool(lender).flashLoan(\n            address(receiverAddress), assets, amounts, interestRateModes, onBehalfOf, params, referralCode\n        );\n    }\n\n    /// @inheritdoc IAaveFlashLoanReceiver\n    function executeOperation(\n        address[] calldata,\n        uint256[] calldata,\n        uint256[] calldata,\n        address,\n        bytes calldata callBackData\n    ) external returns (bool) {\n        flashLoanCallBack(callBackData);\n        return true;\n    }\n}\n"
+    }
+}

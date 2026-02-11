@@ -1,0 +1,106 @@
+{
+    "vfp_id": "vfp_00122",
+    "project_name": "Jovay Rollup Contracts Audit.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Incorrect Use of ERC-20 `amount_` As ETH Value in L2 ERC-20 Bridge `withdraw`",
+            "description": "The L2ERC20Bridge contract incorrectly uses the ERC-20 token amount (`amount_`) as the ETH value when sending a cross-domain message via `L2Mailbox.sendMsg`. This function expects the `value` parameter to represent the amount of ETH to forward, which should be zero for ERC-20 token withdrawals. By passing `amount_` instead, the system may interpret the token amount as ETH, leading to incorrect ETH transfers or message execution failures.\n\nThe root cause is a logic error in the `withdraw` function where the wrong variable is passed to the `sendMsg` call. An attacker could potentially exploit this by initiating a withdrawal with a large token amount, causing the system to attempt an unintended ETH transfer, which may fail or lead to inconsistent state.\n\nThis could result in failed message executions on L1, incorrect accounting, or loss of user funds if the L1 bridge attempts to process a non-zero ETH value that was never sent. Even if no actual ETH is transferred, the inconsistency may disrupt message processing and bridge reliability.\n\nThe impact includes potential loss of user funds, failed withdrawals, and reduced trust in the bridge's correctness. Although the issue has been resolved, it highlights a critical flaw in cross-chain message construction.\n",
+            "severity": "High",
+            "location": [
+                "L2ERC20Bridge.sol::withdraw#47",
+                "L2Mailbox.sol::sendMsg#43-75"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Broken Set Token Mapping Flow",
+            "description": "The `setTokenMapping` function in the `L2ERC20Bridge` contract is only callable by the contract owner, which prevents the `L2Mailbox` from executing it when receiving a message from L1. Since token mapping updates are sent via cross-chain messages from L1 to L2, and the `L2Mailbox` acts as the caller, the function call fails unless the mailbox is the owner— which is not feasible due to conflicting privilege requirements.\n\nThe root cause is an access control misconfiguration: the function lacks a permission mechanism for the `L2Mailbox` to act as a trusted forwarder. This breaks the synchronization of token mappings between L1 and L2, leaving the system unable to process new ERC-20 token deposits.\n\nAn attacker could not directly exploit this, but malicious or negligent behavior by the owner (e.g., failing to manually set mappings) would prevent users from depositing unsupported tokens. More critically, even honest operation fails because the automated flow is broken.\n\nThe impact is that new ERC-20 tokens cannot be bridged until mappings are manually fixed, potentially locking user funds and disrupting onboarding of new assets. This undermines the autonomy and reliability of the bridge system.\n",
+            "severity": "High",
+            "location": [
+                "L1ERC20Bridge.sol::setTokenMapping#21-29",
+                "L2ERC20Bridge.sol::setTokenMapping#16-18",
+                "L2Mailbox.sol::relayMsg#85-108"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol",
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-390"
+                ]
+            },
+            "title": "Missing Manual Finalization Mechanism for ERC-20 Tokens Can Lead to Locked Funds",
+            "description": "The `L2Mailbox.relayMsg` function uses a low-level call to execute cross-chain messages and stores the message hash in `receiveMsgMap` to prevent replays. If the call fails (e.g., due to a revert in `finalizeDeposit`), the transaction does not revert, but no recovery mechanism exists for ERC-20 deposits or `setTokenMapping`.\n\nThe root cause is the lack of a user-callable fallback function like `claimDeposit` (which exists for ETH) to retry failed executions. Once the hash is stored, the relayer cannot resubmit the message, and the user has no way to finalize the deposit.\n\nAn attacker could trigger a failure (e.g., by causing a revert in the token contract during minting) to permanently lock deposited funds in the L1 bridge. Even non-malicious failures (e.g., gas limits) would result in lost funds without manual intervention.\n\nThe impact is permanent loss of user funds in the event of a failed execution, undermining trust in the bridge's reliability. While `setTokenMapping` can be re-submitted by the owner, ERC-20 deposits remain vulnerable.\n",
+            "severity": "Medium",
+            "location": [
+                "L2Mailbox.sol::relayMsg#85-108",
+                "L2ETHBridge.sol::claimDeposit#53-60",
+                "L2ERC20Bridge.sol::finalizeDeposit"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ERC20Bridge.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "Unsafe Token Mapping Updates Can Break Bridging",
+            "description": "The setTokenMapping function allows updating the L2 token counterpart for an existing L1 token. If a deposit is initiated before a mapping update but finalized after the update, the finalizeDeposit function will validate against the new mapping, causing the deposit to fail and the bridging process to stall. The root cause is the mutable nature of token mappings without safeguards for in-flight deposits. An attacker could potentially exploit timing by triggering a deposit and then influencing a mapping change, or honest users could be affected by legitimate updates. The impact is a denial of service for bridging operations, leading to stuck deposits and user fund lockups on L1.\n",
+            "severity": "Medium",
+            "location": [
+                "L1ERC20Bridge.sol::setTokenMapping#21-29",
+                "L2ERC20Bridge.sol::finalizeDeposit#65-66"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/bridge/L1ERC20Bridge.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "L2ERC20Bridge.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"./interfaces/IL2ERC20Bridge.sol\";\nimport \"../interfaces/IL2Mailbox.sol\";\nimport \"../../common/TokenBridge.sol\";\nimport \"../../common/interfaces/IERC20Token.sol\";\nimport \"../../L1/bridge/interfaces/IL1ERC20Bridge.sol\";\n\ncontract L2ERC20Bridge is TokenBridge, IL2ERC20Bridge {\n    /**\n     * Set token mapping relationship\n     * @param token_ Current chain asset contract address\n     * @param tokenTo_ Target asset contract address\n     */\n    function setTokenMapping(address token_, address tokenTo_) public payable override onlyOwner whenNotPaused {\n        super.setTokenMapping(token_, tokenTo_);\n    }\n\n    /**\n     * The bridge contract calls the asset contract to burn the asset and sends a message to the mailbox contract to build a message tree\n     * @param token_ erc20 contract address\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param gasLimit_ gas limit\n     * @param msg_ data\n     */\n    function withdraw(address token_, address to_, uint256 amount_, uint256 gasLimit_, bytes memory msg_) external payable override nonReentrant whenNotPaused {\n        address l1Token_ = tokenMapping[token_];\n        require(l1Token_ != address(0), \"withdraw erc20 token not exist\");\n\n        require(amount_ > 0, \"withdraw zero amount\");\n\n        // 1. Extract real sender if this call is from L2GatewayRouter.\n        address sender_ = _msgSender();\n\n        // 2. Burn token.\n        IERC20Token(token_).burn(sender_, amount_);\n\n        // 3. Generate message passed to IL1ERC20Bridge.\n        bytes memory message_ = abi.encodeCall(\n            IL1ERC20Bridge.finalizeWithdraw,\n            (l1Token_, token_, sender_, to_, amount_, msg_)\n        );\n\n        // 4. send message to L2Mailbox\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, amount_, message_, gasLimit_, sender_)));\n\n        emit WithdrawERC20(l1Token_, token_, sender_, to_, amount_, message_);\n        _decreaseBalance(token_, amount_);\n        require(IERC20Token(token_).totalSupply() == balanceOf[token_], \"totalSupply mismatch\");\n    }\n\n    /**\n     * Complete the transfer of L1 assets\n     * @param l1Token_ L1 chain asset contract address\n     * @param l2Token_ L2 chain asset contract address\n     * @param sender_ transfer initiator\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param msg_ data\n     */\n    function finalizeDeposit(address l1Token_, address l2Token_, address sender_, address to_, uint256 amount_, bytes calldata msg_) external payable override nonReentrant onlyMailBox whenNotPaused {\n        require(msg.value == 0, \"nonzero msg.value\");\n        require(l1Token_ != address(0), \"token address cannot be 0\");\n        require(l1Token_ == tokenMapping[l2Token_], \"l1 token mismatch\");\n\n        IERC20Token(l2Token_).mint(to_, amount_);\n        _increaseBalance(l2Token_, amount_);\n        // TODO : add call msg with deposit\n//        _doCallback(to_, msg_);\n        require(IERC20Token(l2Token_).totalSupply() == balanceOf[l2Token_], \"totalSupply mismatch\");\n\n        emit FinalizeDepositERC20(l1Token_, l2Token_, sender_, to_, amount_, msg_);\n    }\n}\n",
+        "L1ERC20Bridge.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol\";\nimport {SafeERC20Upgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol\";\n\nimport \"./interfaces/IL1ERC20Bridge.sol\";\nimport \"../interfaces/IL1Mailbox.sol\";\nimport \"../../L2/bridge/interfaces/IL2ERC20Bridge.sol\";\nimport \"../../common/TokenBridge.sol\";\nimport {L1BridgeProof} from \"src/L1/bridge/L1BridgeProof.sol\";\n\ncontract L1ERC20Bridge is TokenBridge, L1BridgeProof, IL1ERC20Bridge {\n    using SafeERC20Upgradeable for IERC20Upgradeable;\n\n    /**\n     * Set token mapping relationship\n     * @param token_ this chain asset contract address\n     * @param tokenTo_ Target chain asset contract address\n     */\n    function setTokenMapping(address token_, address tokenTo_) public override payable onlyOwner whenNotPaused {\n        require(token_ != address(0) && tokenTo_ != address(0), \"token address cannot be 0\");\n\n        super.setTokenMapping(token_, tokenTo_);\n\n        // update corresponding mapping in L2, 1000000 gas limit should be enough\n        bytes memory message_ = abi.encodeCall(ITokenBridge.setTokenMapping, (tokenTo_, token_));\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, 0, message_, 1000000, _msgSender())));\n    }\n\n    function deposit(address token_, address to_, uint256 amount_, uint256 gasLimit_, bytes memory msg_) external override payable nonReentrant whenNotPaused {\n        address l2Token_ = tokenMapping[token_];\n        require(l2Token_ != address(0), \"deposit erc20 token not exist\");\n\n        // 1. Transfer token into this contract.\n        address sender_ = _msgSender();\n        _transferERC20(token_, amount_);\n\n        // 2. Generate message passed to L2CustomERC20Gateway.\n        bytes memory message_ = abi.encodeCall(IL2ERC20Bridge.finalizeDeposit, (token_, l2Token_, sender_, to_, amount_, msg_));\n\n        // 3. Send message to L1Mailbox.\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, 0, message_, gasLimit_, sender_)));\n\n        emit DepositERC20(token_, l2Token_, sender_, to_, amount_, msg_);\n    }\n\n    function finalizeWithdraw(address l1Token_, address l2Token_, address sender_, address to_, uint256 amount_, bytes memory msg_) external payable override nonReentrant onlyMailBox whenNotPaused {\n        require(l2Token_ == tokenMapping[l1Token_], \"l2 token not exist\");\n        IERC20Upgradeable(l1Token_).safeTransfer(to_, amount_);\n        _decreaseBalance(l1Token_, amount_);\n        // TODO : add call msg with withdraw\n//        _doCallback(to_, msg_);\n        require(IERC20Upgradeable(l1Token_).balanceOf(address(this)) >= balanceOf[l1Token_], \"totalSupply mismatch\");\n\n        emit FinalizeWithdrawERC20(l1Token_, l2Token_, sender_, to_, amount_, msg_);\n    }\n\n    function _transferERC20(address token_, uint256 amount_) internal {\n        require(amount_ > 0, \"deposit zero amount\");\n        address sender_ = _msgSender();\n        // common practice to handle fee on transfer token.\n        IERC20Upgradeable(token_).safeTransferFrom(sender_, address(this), amount_);\n        _increaseBalance(token_, amount_);\n        require(IERC20Upgradeable(token_).balanceOf(address(this)) >= balanceOf[token_], \"balance not match\");\n    }\n}\n"
+    }
+}

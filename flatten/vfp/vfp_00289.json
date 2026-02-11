@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00289",
+    "project_name": "Morpheus - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Chainlink may return stale prices leading to incorrect token valuation",
+            "description": "The `getChainLinkDataFeedLatestAnswer` function in `ChainLinkDataConsumer.sol` retrieves price data from Chainlink oracles but does not validate the freshness of the data by checking the `updatedAt` timestamp. If the oracle has not updated within its heartbeat period, the returned price may be stale, leading the protocol to use outdated values for critical operations such as valuation or collateral calculations. The cause is the absence of a staleness check in the price retrieval logic. An attacker could exploit network congestion or oracle downtime to manipulate the system using old prices, especially in volatile market conditions. The impact is low, as it may lead to temporary mispricing, but the likelihood is also low due to Chainlink's generally reliable uptime.\n",
+            "severity": "Low",
+            "location": [
+                "ChainLinkDataConsumer.sol#L75-L89"
+            ],
+            "files": [
+                "SmartContracts/contracts/capital-protocol/ChainLinkDataConsumer.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ChainLinkDataConsumer.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport {UUPSUpgradeable} from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport {OwnableUpgradeable} from \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\n\nimport {AggregatorV3Interface} from \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\nimport {DecimalsConverter} from \"@solarity/solidity-lib/libs/decimals/DecimalsConverter.sol\";\n\nimport {IChainLinkDataConsumer, IERC165} from \"../interfaces/capital-protocol/IChainLinkDataConsumer.sol\";\n\n/**\n * @dev https://docs.chain.link/data-feeds/getting-started\n */\ncontract ChainLinkDataConsumer is IChainLinkDataConsumer, OwnableUpgradeable, UUPSUpgradeable {\n    using DecimalsConverter for uint256;\n\n    mapping(bytes32 => address[]) public dataFeeds;\n\n    /**********************************************************************************************/\n    /*** Init, IERC165                                                                          ***/\n    /**********************************************************************************************/\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    function ChainLinkDataConsumer_init() external initializer {\n        __Ownable_init();\n        __UUPSUpgradeable_init();\n    }\n\n    function supportsInterface(bytes4 interfaceId_) external pure returns (bool) {\n        return interfaceId_ == type(IChainLinkDataConsumer).interfaceId || interfaceId_ == type(IERC165).interfaceId;\n    }\n\n    /**********************************************************************************************/\n    /*** Add or remove data feeds                                                               ***/\n    /**********************************************************************************************/\n\n    /**\n     * @dev https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1\n     */\n    function updateDataFeeds(string[] calldata paths_, address[][] calldata feeds_) external onlyOwner {\n        require(paths_.length == feeds_.length, \"CLDC: mismatched array lengths\");\n        for (uint256 i = 0; i < paths_.length; i++) {\n            require(feeds_[i].length > 0, \"CLDC: empty feed array\");\n            dataFeeds[getPathId(paths_[i])] = feeds_[i];\n\n            emit DataFeedSet(paths_[i], feeds_[i]);\n        }\n    }\n\n    function getPathId(string memory path_) public pure returns (bytes32) {\n        return keccak256(abi.encodePacked(path_));\n    }\n\n    function decimals() public pure returns (uint8) {\n        return 18;\n    }\n\n    /**********************************************************************************************/\n    /*** Get data feeds                                                                         ***/\n    /**********************************************************************************************/\n\n    function getChainLinkDataFeedLatestAnswer(bytes32 pathId_) external view returns (uint256) {\n        address[] memory dataFeeds_ = dataFeeds[pathId_];\n\n        uint256 res_ = 0;\n        uint8 baseDecimals_ = 0;\n        for (uint256 i = 0; i < dataFeeds_.length; i++) {\n            AggregatorV3Interface aggregator_ = AggregatorV3Interface(dataFeeds_[i]);\n\n            try aggregator_.latestRoundData() returns (uint80, int256 answer_, uint256, uint256, uint80) {\n                if (answer_ <= 0) {\n                    return 0;\n                }\n\n                if (res_ == 0) {\n                    res_ = uint256(answer_);\n                    baseDecimals_ = aggregator_.decimals();\n                } else {\n                    res_ = (res_ * uint256(answer_)) / (10 ** aggregator_.decimals());\n                }\n            } catch {\n                return 0;\n            }\n        }\n\n        return res_.convert(baseDecimals_, 18);\n    }\n\n    /**********************************************************************************************/\n    /*** UUPS                                                                                   ***/\n    /**********************************************************************************************/\n\n    function version() external pure returns (uint256) {\n        return 1;\n    }\n\n    function _authorizeUpgrade(address) internal view override onlyOwner {}\n}\n"
+    }
+}

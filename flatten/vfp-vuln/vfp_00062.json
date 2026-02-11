@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00062",
+    "project_name": "Likwid - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Default protocol settings are not persisted",
+            "description": "The setDefaultProtocolFee() function in ProtocolFees.sol computes a new fee value using the setProtocolFee() method but fails to write it back to the defaultProtocolFee storage variable. This makes the function a no-op—despite emitting an event that suggests the update was successful. As a result, the protocol cannot update its default fee configuration, leading to potential governance or operational failures. This could prevent necessary risk adjustments or fee optimizations, undermining protocol flexibility and responsiveness to market conditions.\n",
+            "severity": "High",
+            "location": [
+                "ProtocolFees.sol"
+            ],
+            "files": [
+                "likwid-margin/src/base/ProtocolFees.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ProtocolFees.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {FeeTypes} from \"../types/FeeTypes.sol\";\nimport {Currency} from \"../types/Currency.sol\";\nimport {IProtocolFees} from \"../interfaces/IProtocolFees.sol\";\nimport {PoolKey} from \"../types/PoolKey.sol\";\nimport {ProtocolFeeLibrary} from \"../libraries/ProtocolFeeLibrary.sol\";\nimport {MarginBase} from \"./MarginBase.sol\";\nimport {Pool} from \"../libraries/Pool.sol\";\nimport {CustomRevert} from \"../libraries/CustomRevert.sol\";\n\n/// @notice Contract handling the setting and accrual of protocol fees\nabstract contract ProtocolFees is IProtocolFees, MarginBase {\n    using ProtocolFeeLibrary for uint24;\n    using Pool for Pool.State;\n    using CustomRevert for bytes4;\n\n    Currency transient syncedCurrency;\n    uint256 transient syncedReserves;\n\n    /// @inheritdoc IProtocolFees\n    mapping(Currency currency => uint256 amount) public protocolFeesAccrued;\n\n    /// @inheritdoc IProtocolFees\n    address public protocolFeeController;\n\n    uint24 public defaultProtocolFee;\n\n    constructor(address initialOwner) MarginBase(initialOwner) {\n        defaultProtocolFee = defaultProtocolFee.setProtocolFee(FeeTypes.SWAP, 20).setProtocolFee(FeeTypes.MARGIN, 40)\n            .setProtocolFee(FeeTypes.INTERESTS, 10); // 10% SWAP,20% MARGIN,5% INTERESTS\n    }\n\n    /// @inheritdoc IProtocolFees\n    function setProtocolFeeController(address controller) external onlyOwner {\n        protocolFeeController = controller;\n        emit ProtocolFeeControllerUpdated(controller);\n    }\n\n    /// @inheritdoc IProtocolFees\n    function setDefaultProtocolFee(FeeTypes feeType, uint8 newFee) external onlyOwner {\n        uint24 newProtocolFee = defaultProtocolFee.setProtocolFee(feeType, newFee);\n        if (!newProtocolFee.isValidProtocolFee()) ProtocolFeeTooLarge.selector.revertWith(newProtocolFee);\n        emit DefaultProtocolFeeUpdated(uint8(feeType), newFee);\n    }\n\n    /// @inheritdoc IProtocolFees\n    function setProtocolFee(PoolKey memory key, FeeTypes feeType, uint8 newFee) external {\n        if (msg.sender != protocolFeeController) InvalidCaller.selector.revertWith();\n        Pool.State storage pool = _getAndUpdatePool(key);\n        uint24 newProtocolFee = pool.slot0.protocolFee(defaultProtocolFee).setProtocolFee(feeType, newFee);\n        if (!newProtocolFee.isValidProtocolFee()) ProtocolFeeTooLarge.selector.revertWith(newProtocolFee);\n        pool.setProtocolFee(newProtocolFee);\n        emit ProtocolFeeUpdated(key.toId(), newProtocolFee);\n    }\n\n    /// @inheritdoc IProtocolFees\n    function collectProtocolFees(address recipient, Currency currency, uint256 amount)\n        external\n        returns (uint256 amountCollected)\n    {\n        if (msg.sender != protocolFeeController) InvalidCaller.selector.revertWith();\n        if (!currency.isAddressZero() && syncedCurrency == currency) {\n            // prevent transfer between the sync and settle balanceOfs (native settle uses msg.value)\n            ProtocolFeeCurrencySynced.selector.revertWith();\n        }\n\n        amountCollected = (amount == 0) ? protocolFeesAccrued[currency] : amount;\n        protocolFeesAccrued[currency] -= amountCollected;\n        currency.transfer(recipient, amountCollected);\n    }\n\n    /// @dev abstract internal function to allow the ProtocolFees contract to access the lock\n    function _isUnlocked() internal virtual returns (bool);\n\n    /// @dev abstract internal function to allow the ProtocolFees contract to access pool state\n    function _getAndUpdatePool(PoolKey memory key) internal virtual returns (Pool.State storage);\n\n    function _updateProtocolFees(Currency currency, uint256 amount) internal {\n        unchecked {\n            protocolFeesAccrued[currency] += amount;\n        }\n    }\n}\n"
+    }
+}

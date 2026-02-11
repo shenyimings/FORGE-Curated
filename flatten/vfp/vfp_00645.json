@@ -1,0 +1,96 @@
+{
+    "vfp_id": "vfp_00645",
+    "project_name": "cantina_puffer_february2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-282"
+                ],
+                "3": [
+                    "CWE-283"
+                ]
+            },
+            "title": "Use of OZ Ownable is risky",
+            "description": "1. **Description:** The contract CarrotStaker uses OpenZeppelin's Ownable for ownership management, which lacks a two-step ownership transfer mechanism.\n2. **Cause:** The use of the basic Ownable contract instead of Ownable2Step increases the risk of accidental or incorrect ownership transfers, such as sending ownership to an invalid or non-responsive address.\n3. **Exploitation:** An owner could mistakenly transfer ownership to a wrong or non-contract address, resulting in permanent loss of control over the contract.\n4. **Impact:** Loss of administrative control over the contract, potentially leading to inability to perform critical updates or emergency actions.\n",
+            "severity": "Low",
+            "location": [
+                "CarrotStaker.sol#L16"
+            ],
+            "files": [
+                "puffer-contracts/mainnet-contracts/src/CarrotStaker.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing input validation in constructor",
+            "description": "1. **Description:** The constructor of the contract does not validate the input address for the carrot token, allowing potentially invalid addresses to be set.\n2. **Cause:** Lack of input validation for the `carrot` parameter in the constructor, specifically not checking against the zero address.\n3. **Exploitation:** If the zero address is passed during deployment, the contract would reference a non-existent token, leading to broken functionality or potential lock-up of funds.\n4. **Impact:** The contract may become non-functional or misbehave if initialized with invalid parameters, leading to operational failures or loss of user funds.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "puffer-contracts/mainnet-contracts/src/CarrotStaker.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Incorrect symbol for staked token",
+            "description": "1. **Description:** The symbol for the staked token is set to \"sCarrot\" in lowercase, which deviates from common token symbol conventions.\n2. **Cause:** The constructor uses \"sCarrot\" instead of an uppercase or standardized format like \"sCARROT\".\n3. **Exploitation:** This is not exploitable in a security sense but may lead to confusion in user interfaces or wallet integrations that expect uppercase symbols.\n4. **Impact:** User experience degradation, potential misidentification of the token in wallets or exchanges, and inconsistency with industry standards.\n",
+            "severity": "Informational",
+            "location": [
+                "CarrotStaker.sol#L37"
+            ],
+            "files": [
+                "puffer-contracts/mainnet-contracts/src/CarrotStaker.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "Floating Pragma",
+            "description": "1. **Description:** The Solidity pragma is defined as a floating range (`>=0.8.0 <0.9.0`), which can lead to non-deterministic compilation across different compiler versions.\n2. **Cause:** The use of a version range instead of a fixed compiler version increases the risk of deploying a version compiled with an unintended compiler.\n3. **Exploitation:** Different compiler versions may introduce subtle bugs or changes in behavior; an attacker could potentially exploit known vulnerabilities in a compiler version different from the intended one.\n4. **Impact:** Risk of inconsistent bytecode generation, potential introduction of compiler-specific bugs, and reduced audit reliability due to compilation uncertainty.\n",
+            "severity": "Informational",
+            "location": [
+                "CarrotStaker.sol#L2"
+            ],
+            "files": [
+                "puffer-contracts/mainnet-contracts/src/CarrotStaker.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "CarrotStaker.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity >=0.8.0 <0.9.0;\n\nimport { ERC20 } from \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport { ICarrotStaker } from \"./interface/ICarrotStaker.sol\";\nimport { Ownable } from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\n/**\n * @title CarrotStaker\n * @author Puffer Finance\n * @notice Allows users to stake CARROT tokens and receive non-transferable sCarrot tokens\n * @notice The owner cannot disable unstaking once enabled (one-way switch)\n * @custom:security-contact security@puffer.fi\n */\ncontract CarrotStaker is ERC20, Ownable, ICarrotStaker {\n    /*\n    * @notice The CARROT token contract\n    */\n    IERC20 public immutable CARROT;\n\n    /**\n     * @notice Whether unstaking is allowed\n     */\n    bool public isUnstakingAllowed;\n\n    /**\n     * @notice Timestamp after which anyone can enable unstaking\n     */\n    uint256 public constant UNSTAKING_OPEN_TIMESTAMP = 1745193600; // 21 April 2025 00:00:00 GMT\n\n    /**\n     * @notice Initializes the contract\n     * @param carrot The address of the CARROT token\n     * @param initialOwner The address of the admin (IncentiveOps multisig)\n     */\n    constructor(address carrot, address initialOwner) ERC20(\"Staked Carrot\", \"sCarrot\") Ownable(initialOwner) {\n        CARROT = IERC20(carrot);\n    }\n\n    /**\n     * @inheritdoc ICarrotStaker\n     */\n    function stake(uint256 amount) external {\n        CARROT.transferFrom(msg.sender, address(this), amount);\n        _mint(msg.sender, amount);\n\n        emit Staked({ staker: msg.sender, amount: amount });\n    }\n\n    /**\n     * @inheritdoc ICarrotStaker\n     */\n    function unstake(uint256 amount, address recipient) external {\n        require(isUnstakingAllowed, UnstakingNotAllowed());\n\n        _burn(msg.sender, amount);\n        CARROT.transfer(recipient, amount);\n\n        emit Unstaked({ staker: msg.sender, recipient: recipient, amount: amount });\n    }\n\n    /**\n     * @inheritdoc ICarrotStaker\n     * @dev Can be called by the owner at any time, or by anyone after UNSTAKING_OPEN_TIMESTAMP\n     */\n    function allowUnstake() external {\n        require(msg.sender == owner() || block.timestamp >= UNSTAKING_OPEN_TIMESTAMP, UnauthorizedUnstakeEnable());\n        isUnstakingAllowed = true;\n        emit UnstakingAllowed(true);\n    }\n\n    /**\n     * @notice Prevents approval of sCarrot tokens\n     * @dev Overrides the approve function from ERC20\n     */\n    function approve(address, uint256) public pure override returns (bool) {\n        revert MethodNotAllowed();\n    }\n\n    /**\n     * @notice Prevents transfers of sCarrot tokens\n     * @dev Overrides the transfer function from ERC20\n     */\n    function transfer(address, uint256) public pure override returns (bool) {\n        revert MethodNotAllowed();\n    }\n\n    /**\n     * @notice Prevents transfers of sCarrot tokens\n     * @dev Overrides the transferFrom function from ERC20\n     */\n    function transferFrom(address, address, uint256) public pure override returns (bool) {\n        revert MethodNotAllowed();\n    }\n}\n"
+    }
+}

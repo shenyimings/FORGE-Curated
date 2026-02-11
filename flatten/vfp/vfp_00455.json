@@ -1,0 +1,115 @@
+{
+    "vfp_id": "vfp_00455",
+    "project_name": "ackee-blockchain-safe-smart-account-report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Front-running attack can bypass callback execution during Safe deployment",
+            "description": "The createProxyWithCallback function in SafeProxyFactory.sol is vulnerable to a front-running attack because it uses a predictable salt derivation that can be replicated by the createProxyWithNonce function. The root cause is the shared use of a nonce value derived from user inputs, which allows an attacker to calculate the deployment address in advance. An attacker can observe a victim's transaction in the mempool, compute the same salt nonce, and call createProxyWithNonce before the victim's transaction is confirmed. This results in the attacker deploying the proxy at the intended address, causing the victim's transaction to fail while the critical callback—intended to initialize security parameters or other setup logic—is never executed. The impact is medium, as it can lead to a partially initialized or insecure Safe instance, potentially compromising the intended security model.\n",
+            "severity": "Medium",
+            "location": [
+                "SafeProxyFactory.sol::createProxyWithCallback#109-110"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxyFactory.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "ProxyCreationL2 nonce value is not user given argument",
+            "description": "The SafeProxyFactory.createProxyWithCallbackL2 function emits the ProxyCreationL2 event, but the saltNonce value included in the event reflects an internal salt computation rather than the user-provided nonce. This misleads users and indexing services about the actual input parameters used for proxy creation. The root cause is the reuse of an internal function (createProxyWithNonceL2) that transforms the user input, without correctly reflecting the original value in the event. This creates a discrepancy between on-chain logs and user intent, potentially affecting replayability or auditability of deployments. The impact is a warning due to incorrect event data, which could affect tooling that relies on accurate event parameters for reconstruction or verification.\n",
+            "severity": "Informational",
+            "location": [
+                "SafeProxyFactory.sol::createProxyWithCallbackL2"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxyFactory.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-392"
+                ]
+            },
+            "title": "Factory initializer error not propagated",
+            "description": "In SafeProxyFactory.sol, when deploying a proxy with an initializer call, the inline assembly reverts with (0, 0) if the call fails, discarding the original revert reason from the initializer. This prevents users from diagnosing why a deployment failed, reducing debuggability and user experience. The root cause is the use of low-level call without error data forwarding. An attacker cannot exploit this directly, but legitimate users may struggle to understand deployment failures. The impact is informational, as it affects usability rather than security. The issue was resolved by propagating the revert data.\n",
+            "severity": "Informational",
+            "location": [
+                "SafeProxyFactory.sol::deployProxy#42-45"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxyFactory.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Missing L2-specific variant of createChainSpecificProxyWithNonce",
+            "description": "The SafeProxyFactory contract provides L2-specific variants of most deployment functions to emit additional events for L2 indexing, but lacks an L2 variant for createChainSpecificProxyWithNonce. This inconsistency means deployments using this function on L2 networks do not emit the expected ChainSpecificProxyCreationL2 event, potentially breaking indexing tools. The root cause is an incomplete implementation of the L2 deployment pattern. The impact is informational, related to event completeness. The issue was resolved by adding the missing createChainSpecificProxyWithNonceL2 function.\n",
+            "severity": "Informational",
+            "location": [
+                "SafeProxyFactory.sol"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxyFactory.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Interface type used for parameter that accepts zero address",
+            "description": "In SafeProxyFactory.sol, the createProxyWithCallback function accepts a callback parameter of interface type, but explicitly checks for address(callback) != address(0), indicating that the zero address is a valid input. Using an interface type in this context is semantically incorrect, as interfaces imply a contract implementation. The address type should be used instead to accurately reflect that zero is a valid sentinel value. The root cause is a type system misuse for special-case handling. The impact is informational, affecting code clarity. The function was later removed as part of another fix (M1).\n",
+            "severity": "Informational",
+            "location": [
+                "SafeProxyFactory.sol::createProxyWithCallback"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxyFactory.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "SafeProxyFactory.sol": "// SPDX-License-Identifier: LGPL-3.0-only\npragma solidity >=0.7.0 <0.9.0;\n\nimport {IProxyCreationCallback} from \"./IProxyCreationCallback.sol\";\nimport {SafeProxy} from \"./SafeProxy.sol\";\n\n/**\n * @title Proxy Factory - Allows to create a new proxy contract and execute a message call to the new proxy within one transaction.\n * @author Stefan George - @Georgi87\n */\ncontract SafeProxyFactory {\n    event ProxyCreation(SafeProxy indexed proxy, address singleton);\n    event ProxyCreationL2(SafeProxy indexed proxy, address singleton, bytes initializer, uint256 saltNonce);\n\n    /// @dev Allows to retrieve the creation code used for the Proxy deployment. With this it is easily possible to calculate predicted address.\n    function proxyCreationCode() public pure returns (bytes memory) {\n        return type(SafeProxy).creationCode;\n    }\n\n    /**\n     * @notice Internal method to create a new proxy contract using CREATE2. Optionally executes an initializer call to a new proxy.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer (Optional) Payload for a message call to be sent to a new proxy contract.\n     * @param salt Create2 salt to use for calculating the address of the new proxy contract.\n     * @return proxy Address of the new proxy contract.\n     */\n    function deployProxy(address _singleton, bytes memory initializer, bytes32 salt) internal returns (SafeProxy proxy) {\n        require(isContract(_singleton), \"Singleton contract not deployed\");\n\n        bytes memory deploymentData = abi.encodePacked(type(SafeProxy).creationCode, uint256(uint160(_singleton)));\n        /* solhint-disable no-inline-assembly */\n        /// @solidity memory-safe-assembly\n        assembly {\n            proxy := create2(0x0, add(0x20, deploymentData), mload(deploymentData), salt)\n        }\n        /* solhint-enable no-inline-assembly */\n        require(address(proxy) != address(0), \"Create2 call failed\");\n\n        if (initializer.length > 0) {\n            /* solhint-disable no-inline-assembly */\n            /// @solidity memory-safe-assembly\n            assembly {\n                if iszero(call(gas(), proxy, 0, add(initializer, 0x20), mload(initializer), 0, 0)) {\n                    revert(0, 0)\n                }\n            }\n            /* solhint-enable no-inline-assembly */\n        }\n    }\n\n    /**\n     * @notice Deploys a new proxy with `_singleton` singleton and `saltNonce` salt. Optionally executes an initializer call to a new proxy.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer Payload for a message call to be sent to a new proxy contract.\n     * @param saltNonce Nonce that will be used to generate the salt to calculate the address of the new proxy contract.\n     */\n    function createProxyWithNonce(address _singleton, bytes memory initializer, uint256 saltNonce) public returns (SafeProxy proxy) {\n        // If the initializer changes the proxy address should change too. Hashing the initializer data is cheaper than just concatenating it\n        bytes32 salt = keccak256(abi.encodePacked(keccak256(initializer), saltNonce));\n        proxy = deployProxy(_singleton, initializer, salt);\n        emit ProxyCreation(proxy, _singleton);\n    }\n\n    /**\n     * @notice Deploys a new proxy with `_singleton` singleton and `saltNonce` salt. Optionally executes an initializer call to a new proxy.\n     * @dev Emits an extra event to allow tracking of `initializer` and `saltNonce`.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer Payload for a message call to be sent to a new proxy contract.\n     * @param saltNonce Nonce that will be used to generate the salt to calculate the address of the new proxy contract.\n     */\n    function createProxyWithNonceL2(address _singleton, bytes memory initializer, uint256 saltNonce) public returns (SafeProxy proxy) {\n        proxy = createProxyWithNonce(_singleton, initializer, saltNonce);\n        emit ProxyCreationL2(proxy, _singleton, initializer, saltNonce);\n    }\n\n    /**\n     * @notice Deploys a new chain-specific proxy with `_singleton` singleton and `saltNonce` salt. Optionally executes an initializer call to a new proxy.\n     * @dev Allows to create a new proxy contract that should exist only on 1 network (e.g. specific governance or admin accounts)\n     *      by including the chain id in the create2 salt. Such proxies cannot be created on other networks by replaying the transaction.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer Payload for a message call to be sent to a new proxy contract.\n     * @param saltNonce Nonce that will be used to generate the salt to calculate the address of the new proxy contract.\n     */\n    function createChainSpecificProxyWithNonce(\n        address _singleton,\n        bytes memory initializer,\n        uint256 saltNonce\n    ) public returns (SafeProxy proxy) {\n        // If the initializer changes the proxy address should change too. Hashing the initializer data is cheaper than just concatenating it\n        bytes32 salt = keccak256(abi.encodePacked(keccak256(initializer), saltNonce, getChainId()));\n        proxy = deployProxy(_singleton, initializer, salt);\n        emit ProxyCreation(proxy, _singleton);\n    }\n\n    /**\n     * @notice Deploy a new proxy with `_singleton` singleton and `saltNonce` salt.\n     *         Optionally executes an initializer call to a new proxy and calls a specified callback address `callback`.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer Payload for a message call to be sent to a new proxy contract.\n     * @param saltNonce Nonce that will be used to generate the salt to calculate the address of the new proxy contract.\n     * @param callback Callback that will be invoked after the new proxy contract has been successfully deployed and initialized.\n     */\n    function createProxyWithCallback(\n        address _singleton,\n        bytes memory initializer,\n        uint256 saltNonce,\n        IProxyCreationCallback callback\n    ) public returns (SafeProxy proxy) {\n        uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));\n        proxy = createProxyWithNonce(_singleton, initializer, saltNonceWithCallback);\n        if (address(callback) != address(0)) callback.proxyCreated(proxy, _singleton, initializer, saltNonce);\n    }\n\n    /**\n     * @notice Deploy a new proxy with `_singleton` singleton and `saltNonce` salt.\n     *         Optionally executes an initializer call to a new proxy and calls a specified callback address `callback`.\n     * @dev Emits an extra event to allow tracking of `initializer` and `saltNonce`.\n     * @param _singleton Address of singleton contract. Must be deployed at the time of execution.\n     * @param initializer Payload for a message call to be sent to a new proxy contract.\n     * @param saltNonce Nonce that will be used to generate the salt to calculate the address of the new proxy contract.\n     * @param callback Callback that will be invoked after the new proxy contract has been successfully deployed and initialized.\n     */\n    function createProxyWithCallbackL2(\n        address _singleton,\n        bytes memory initializer,\n        uint256 saltNonce,\n        IProxyCreationCallback callback\n    ) public returns (SafeProxy proxy) {\n        uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));\n        proxy = createProxyWithNonceL2(_singleton, initializer, saltNonceWithCallback);\n        if (address(callback) != address(0)) callback.proxyCreated(proxy, _singleton, initializer, saltNonce);\n    }\n\n    /**\n     * @notice Returns true if `account` is a contract.\n     * @dev This function will return false if invoked during the constructor of a contract,\n     *      as the code is not created until after the constructor finishes.\n     * @param account The address being queried\n     * @return True if `account` is a contract\n     */\n    function isContract(address account) internal view returns (bool) {\n        uint256 size;\n        /* solhint-disable no-inline-assembly */\n        /// @solidity memory-safe-assembly\n        assembly {\n            size := extcodesize(account)\n        }\n        /* solhint-enable no-inline-assembly */\n        return size > 0;\n    }\n\n    /**\n     * @notice Returns the ID of the chain the contract is currently deployed on.\n     * @return The ID of the current chain as a uint256.\n     */\n    function getChainId() public view returns (uint256) {\n        uint256 id;\n        /* solhint-disable no-inline-assembly */\n        /// @solidity memory-safe-assembly\n        assembly {\n            id := chainid()\n        }\n        /* solhint-enable no-inline-assembly */\n        return id;\n    }\n}\n"
+    }
+}

@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00249",
+    "project_name": "Vicuna Finance - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Misleading token name implementation",
+            "description": "The ERC20 token contract at address 0xF224CB039F2B5909197c019b1972E62d7fdCdA0f uses a generic name \"ERC20\" instead of a descriptive name like \"Vicuna Sonic USDC.E\". This is misleading because \"ERC20\" refers to the token standard, not a specific token, which can confuse users when viewing the token in wallets or explorers. The cause is a poor implementation choice during token deployment. While this does not lead to direct financial loss, it can result in user confusion or potential phishing risks if users mistake it for a different token. The impact is low, limited to user experience and brand clarity.\n",
+            "severity": "Low",
+            "location": [
+                "0xF224CB039F2B5909197c019b1972E62d7fdCdA0f"
+            ],
+            "files": [
+                "Vicuna-core-bl/contracts/mocks/tokens/MintableERC20.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MintableERC20.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport {ERC20} from '../../dependencies/openzeppelin/contracts/ERC20.sol';\nimport {IERC20WithPermit} from '../../interfaces/IERC20WithPermit.sol';\n\n/**\n * @title ERC20Mintable\n * @dev ERC20 minting logic\n */\ncontract MintableERC20 is IERC20WithPermit, ERC20 {\n  bytes public constant EIP712_REVISION = bytes('1');\n  bytes32 internal constant EIP712_DOMAIN =\n    keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');\n  bytes32 public constant PERMIT_TYPEHASH =\n    keccak256('Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)');\n\n  // Map of address nonces (address => nonce)\n  mapping(address => uint256) internal _nonces;\n\n  bytes32 public DOMAIN_SEPARATOR;\n\n  constructor(string memory name, string memory symbol, uint8 decimals) ERC20(name, symbol) {\n    uint256 chainId = block.chainid;\n\n    DOMAIN_SEPARATOR = keccak256(\n      abi.encode(\n        EIP712_DOMAIN,\n        keccak256(bytes(name)),\n        keccak256(EIP712_REVISION),\n        chainId,\n        address(this)\n      )\n    );\n    _setupDecimals(decimals);\n  }\n\n  /// @inheritdoc IERC20WithPermit\n  function permit(\n    address owner,\n    address spender,\n    uint256 value,\n    uint256 deadline,\n    uint8 v,\n    bytes32 r,\n    bytes32 s\n  ) external override {\n    require(owner != address(0), 'INVALID_OWNER');\n    //solium-disable-next-line\n    require(block.timestamp <= deadline, 'INVALID_EXPIRATION');\n    uint256 currentValidNonce = _nonces[owner];\n    bytes32 digest = keccak256(\n      abi.encodePacked(\n        '\\x19\\x01',\n        DOMAIN_SEPARATOR,\n        keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, currentValidNonce, deadline))\n      )\n    );\n    require(owner == ecrecover(digest, v, r, s), 'INVALID_SIGNATURE');\n    _nonces[owner] = currentValidNonce + 1;\n    _approve(owner, spender, value);\n  }\n\n  /**\n   * @dev Function to mint tokens\n   * @param value The amount of tokens to mint.\n   * @return A boolean that indicates if the operation was successful.\n   */\n  function mint(uint256 value) public returns (bool) {\n    _mint(_msgSender(), value);\n    return true;\n  }\n\n  /**\n   * @dev Function to mint tokens to address\n   * @param account The account to mint tokens.\n   * @param value The amount of tokens to mint.\n   * @return A boolean that indicates if the operation was successful.\n   */\n  function mint(address account, uint256 value) public returns (bool) {\n    _mint(account, value);\n    return true;\n  }\n\n  function nonces(address owner) public view virtual returns (uint256) {\n    return _nonces[owner];\n  }\n}\n"
+    }
+}

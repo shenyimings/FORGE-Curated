@@ -1,0 +1,30 @@
+{
+    "vfp_id": "vfp_00281",
+    "project_name": "Jovay Rollup Contracts Audit.md",
+    "findings": [
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-477"
+                ]
+            },
+            "title": "Duplicate Ownership Transfer in Initialize Emits Two OwnershipTransferred Events",
+            "description": "In `BridgeBase.sol`, the `initialize` function first calls `OwnableUpgradeable.__Ownable_init()`, which sets the owner to `_msgSender()`, and then calls `_transferOwnership(owner)` to set it again to the provided `owner` argument. This results in two `OwnershipTransferred` events being emitted in the same transaction.\n\nThe root cause is the use of an outdated OpenZeppelin library (v4.x) where `__Ownable_init()` does not accept an initial owner parameter, forcing a second ownership transfer. This pattern is unnecessary and stems from version limitations.\n\nWhile not directly exploitable, this behavior can confuse off-chain indexers and on-chain systems that monitor ownership changes, especially those that assume the first `OwnershipTransferred` event reflects the final owner.\n\nThe impact is operational: it can lead to incorrect state interpretation by external systems, such as governance dashboards or monitoring tools, potentially causing erroneous alerts or decisions based on incomplete event parsing.\n",
+            "severity": null,
+            "location": [
+                "BridgeBase.sol::initialize#32",
+                "BridgeBase.sol::_transferOwnership#39"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/common/BridgeBase.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "BridgeBase.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\nimport {AddressUpgradeable} from \"@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol\";\n\nimport \"./interfaces/IBridgeBase.sol\";\n\nabstract contract BridgeBase is OwnableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, IBridgeBase {\n    using AddressUpgradeable for address;\n\n    address public mailBox;\n\n    address public toBridge;\n\n    modifier onlyMailBox() {\n        // check caller is mailBox\n        if (_msgSender() != mailBox) {\n            revert ErrorCallerIsNotMailBox();\n        }\n        _;\n    }\n\n    constructor(){\n        _disableInitializers();\n    }\n\n    function initialize(address mailBox_, address toBridge_, address owner) external initializer {\n        OwnableUpgradeable.__Ownable_init();\n        PausableUpgradeable.__Pausable_init();\n        ReentrancyGuardUpgradeable.__ReentrancyGuard_init();\n\n        require(mailBox_ != address(0) && toBridge_ != address(0) && owner != address(0), \"initialize contract address must not zero\");\n        mailBox = mailBox_;\n        toBridge = toBridge_;\n        _transferOwnership(owner);\n    }\n\n    function setMailBox(address mailBox_) external whenPaused onlyOwner {\n        require(mailBox_ != address(0), \"mailBox cannot be set to 0\");\n        mailBox = mailBox_;\n    }\n\n    function setToBridge(address toBridge_) external whenPaused onlyOwner {\n        require(toBridge_ != address(0), \"toBridge cannot be set to 0\");\n        toBridge = toBridge_;\n    }\n\n    function pause() external onlyOwner {\n        _pause();\n    }\n\n    function unpause() external onlyOwner {\n        _unpause();\n    }\n\n    // function _doCallback(address to_, bytes memory msg_) internal {\n    //     if (msg_.length > 0 && to_.code.length > 0) {\n    //         (bool success,) = to_.call(msg_);\n    //         require(success, \"LayerBase: callback failed\");\n    //     }\n    // }\n\n    function mailBoxCall(bytes memory msg_) internal {\n        mailBox.functionCallWithValue(msg_, msg.value, \"LayerBase: mailbox call failed\");\n    }\n\n    uint256[50] private __gap;\n}\n"
+    }
+}

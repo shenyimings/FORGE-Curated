@@ -1,0 +1,142 @@
+{
+    "vfp_id": "vfp_00345",
+    "project_name": "Virtuals Protocol AI Agents - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "When migrating an Agent via AgentMigrator::migrateAgent() the old sAgentToken will still be locked preventing the creator from retrieving VIRTUAL tokens",
+            "description": "The AgentMigrator::migrateAgent() function allows migration of an existing agent to new contracts, including a new AgentToken and Uniswap pool. However, the original sAgentToken tokens, which represent staked LP tokens from the old Uniswap pool, remain locked for the full 10-year maturity duration. This prevents the agent creator from redeeming the old LP tokens and retrieving the underlying VIRTUAL tokens used as initial liquidity. The root cause is the lack of logic in the migration process to unlock or transfer the old staked LP position. An attacker cannot directly exploit this, but the legitimate creator is permanently locked out of their funds. The impact is loss of access to VIRTUAL tokens that were originally provided as liquidity, effectively resulting in a permanent loss of capital for the agent creator.\n",
+            "severity": "High",
+            "location": [
+                "AgentMigrator.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Agent token holders do not receive refunds when token migrates",
+            "description": "When an Agent is migrated using AgentMigrator, holders of the old Agent token are forced to sell in the old pool and buy the new token, causing potential losses due to price volatility and slippage. The root cause is the lack of a direct redemption or migration mechanism for existing token holders. An attacker could exploit high volatility in the old pool to profit from the forced sell-off, while legitimate holders incur losses. This leads to an unfair migration process and potential loss of user funds, damaging user trust and economic fairness in the migration mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol#110-160"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Founder of AgentDAO can prevent proposal execution by migrating the Agent",
+            "description": "The ServiceNFT::mint function requires the caller to be the current AgentDAO. If the Agent is migrated, the old AgentDAO is replaced, making it impossible to execute proposals that require minting a serviceNFT, as the old DAO can no longer call the function. The root cause is the lack of support for legacy DAOs in the minting logic. A malicious founder could exploit this by migrating the Agent to block execution of unfavorable proposals, even if they passed. This leads to a loss of proposal finality and undermines the integrity of the governance process, enabling unilateral censorship by the founder.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol",
+                "ServiceNf.solt"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Agent's custom token will be transformed to regular during migration",
+            "description": "During migration via AgentMigrator, any Agent with a custom token is forced to use the standard AgentToken, losing the custom token's unique properties. This occurs because _createNewAgentToken is called without preserving the original token type. The impact is loss of functionality or branding for Agents that relied on custom tokens, reducing flexibility and backward compatibility in the migration process.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol#110"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Migrator has pausable modifier but it is not used",
+            "description": "The AgentMigrator contract inherits from Pausable but does not apply the whenNotPaused modifier to any function, rendering the pausability feature unused. This is a code hygiene issue, as unnecessary inheritance increases contract complexity and attack surface without benefit. While no direct security impact is present, it suggests incomplete design or oversight in access control planning.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol#8"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ],
+                "4": [
+                    "CWE-454"
+                ]
+            },
+            "title": "When migrating an Agent the state variable _factory of the new AgentToken is set to the AgentMigrator contract",
+            "description": "During migration, the AgentToken is initialized with msg.sender being AgentMigrator, causing _factory to point to AgentMigrator instead of the original factory. This breaks the expected factory-agent relationship, though currently no functionality depends on it. The cause is direct deployment from AgentMigrator without proxying through the factory. While no immediate impact exists, future logic relying on _factory for access control or validation could malfunction.\n",
+            "severity": "Informational",
+            "location": [
+                "AgentMigrator.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AgentMigrator.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/governance/IGovernor.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"@openzeppelin/contracts/utils/Pausable.sol\";\n\nimport \"./AgentNftV2.sol\";\nimport \"./IAgentVeToken.sol\";\nimport \"./IAgentDAO.sol\";\nimport \"./IAgentToken.sol\";\n\ncontract AgentMigrator is Ownable, Pausable {\n    AgentNftV2 private _nft;\n\n    bytes private _tokenSupplyParams;\n    bytes private _tokenTaxParams;\n    address private _tokenAdmin;\n    address private _assetToken;\n    address private _uniswapRouter;\n    uint256 public initialAmount;\n    address public tokenImplementation;\n    address public daoImplementation;\n    address public veTokenImplementation;\n    uint256 public maturityDuration;\n\n    mapping(uint256 => bool) public migratedAgents;\n\n    bool internal locked;\n\n    event AgentMigrated(\n        uint256 virtualId,\n        address dao,\n        address token,\n        address lp,\n        address veToken\n    );\n\n    modifier noReentrant() {\n        require(!locked, \"cannot reenter\");\n        locked = true;\n        _;\n        locked = false;\n    }\n\n    constructor(address agentNft_) Ownable(_msgSender()) {\n        _nft = AgentNftV2(agentNft_);\n    }\n\n    function setInitParams(\n        address tokenAdmin_,\n        address assetToken_,\n        address uniswapRouter_,\n        uint256 initialAmount_,\n        uint256 maturityDuration_\n    ) external onlyOwner {\n        _tokenAdmin = tokenAdmin_;\n        _assetToken = assetToken_;\n        _uniswapRouter = uniswapRouter_;\n        initialAmount = initialAmount_;\n        maturityDuration = maturityDuration_;\n    }\n\n    function setTokenSupplyParams(\n        uint256 maxSupply,\n        uint256 lpSupply,\n        uint256 vaultSupply,\n        uint256 maxTokensPerWallet,\n        uint256 maxTokensPerTxn,\n        uint256 botProtectionDurationInSeconds,\n        address vault\n    ) public onlyOwner {\n        _tokenSupplyParams = abi.encode(\n            maxSupply,\n            lpSupply,\n            vaultSupply,\n            maxTokensPerWallet,\n            maxTokensPerTxn,\n            botProtectionDurationInSeconds,\n            vault\n        );\n    }\n\n    function setTokenTaxParams(\n        uint256 projectBuyTaxBasisPoints,\n        uint256 projectSellTaxBasisPoints,\n        uint256 taxSwapThresholdBasisPoints,\n        address projectTaxRecipient\n    ) public onlyOwner {\n        _tokenTaxParams = abi.encode(\n            projectBuyTaxBasisPoints,\n            projectSellTaxBasisPoints,\n            taxSwapThresholdBasisPoints,\n            projectTaxRecipient\n        );\n    }\n\n    function setImplementations(\n        address token,\n        address veToken,\n        address dao\n    ) external onlyOwner {\n        tokenImplementation = token;\n        daoImplementation = dao;\n        veTokenImplementation = veToken;\n    }\n\n    function migrateAgent(\n        uint256 id,\n        string memory name,\n        string memory symbol,\n        bool canStake\n    ) external noReentrant {\n        require(!migratedAgents[id], \"Agent already migrated\");\n\n        IAgentNft.VirtualInfo memory virtualInfo = _nft.virtualInfo(id);\n        address founder = virtualInfo.founder;\n        require(founder == _msgSender(), \"Not founder\");\n\n        // Deploy Agent token & LP\n        address token = _createNewAgentToken(name, symbol);\n        address lp = IAgentToken(token).liquidityPools()[0];\n        IERC20(_assetToken).transferFrom(founder, token, initialAmount);\n        IAgentToken(token).addInitialLiquidity(address(this));\n\n        // Deploy AgentVeToken\n        address veToken = _createNewAgentVeToken(\n            string.concat(\"Staked \", name),\n            string.concat(\"s\", symbol),\n            lp,\n            founder,\n            canStake\n        );\n\n        // Deploy DAO\n        IGovernor oldDAO = IGovernor(virtualInfo.dao);\n        address payable dao = payable(\n            _createNewDAO(\n                oldDAO.name(),\n                IVotes(veToken),\n                uint32(oldDAO.votingPeriod()),\n                oldDAO.proposalThreshold()\n            )\n        );\n        // Update AgentNft\n        _nft.migrateVirtual(id, dao, token, lp, veToken);\n\n        IERC20(lp).approve(veToken, type(uint256).max);\n        IAgentVeToken(veToken).stake(\n            IERC20(lp).balanceOf(address(this)),\n            founder,\n            founder\n        );\n\n        migratedAgents[id] = true;\n\n        emit AgentMigrated(id, dao, token, lp, veToken);\n    }\n\n    function _createNewDAO(\n        string memory name,\n        IVotes token,\n        uint32 daoVotingPeriod,\n        uint256 daoThreshold\n    ) internal returns (address instance) {\n        instance = Clones.clone(daoImplementation);\n        IAgentDAO(instance).initialize(\n            name,\n            token,\n            address(_nft),\n            daoThreshold,\n            daoVotingPeriod\n        );\n\n        return instance;\n    }\n\n    function _createNewAgentVeToken(\n        string memory name,\n        string memory symbol,\n        address stakingAsset,\n        address founder,\n        bool canStake\n    ) internal returns (address instance) {\n        instance = Clones.clone(veTokenImplementation);\n        IAgentVeToken(instance).initialize(\n            name,\n            symbol,\n            founder,\n            stakingAsset,\n            block.timestamp + maturityDuration,\n            address(_nft),\n            canStake\n        );\n\n        return instance;\n    }\n\n    function _createNewAgentToken(\n        string memory name,\n        string memory symbol\n    ) internal returns (address instance) {\n        instance = Clones.clone(tokenImplementation);\n        IAgentToken(instance).initialize(\n            [_tokenAdmin, _uniswapRouter, _assetToken],\n            abi.encode(name, symbol),\n            _tokenSupplyParams,\n            _tokenTaxParams\n        );\n\n        return instance;\n    }\n\n    function pause() external onlyOwner {\n        super._pause();\n    }\n\n    function unpause() external onlyOwner {\n        super._unpause();\n    }\n\n    function reset(uint256 id) external onlyOwner {\n        migratedAgents[id] = false;\n    }\n}\n"
+    }
+}

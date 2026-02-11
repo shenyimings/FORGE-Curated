@@ -1,0 +1,87 @@
+{
+    "vfp_id": "vfp_00416",
+    "project_name": "cantina_panoptic_sep2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Anyone can call claim for any account",
+            "description": "1. **Description:** The `claim` function in the MerkleDistributor contract allows any third party to initiate a claim on behalf of any account, as long as they provide a valid Merkle proof. The tokens are sent to the account specified in the Merkle leaf, not necessarily the caller.\n2. **Cause:** The function does not require the caller (`msg.sender`) to be the same as the account receiving the tokens, enabling permissionless claiming.\n3. **Exploitation:** A malicious actor or griefer could monitor the distribution and front-run intended recipients by submitting claims for accounts they believe are inactive or unwilling to claim, sending funds to potentially incorrect or unintended addresses.\n4. **Impact:** If a leaf contains an incorrect account address, a third party could claim tokens to that address, permanently preventing recovery via the admin's `withdrawUnclaimed` function after the clawback period, leading to loss of user funds.\n",
+            "severity": "Medium",
+            "location": [
+                "MerkleDistributor.sol::claim#61"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Admin key is a single EOA set to msg.sender and immutable",
+            "description": "1. **Description:** The `admin` role is set to the deployer's externally owned account (EOA) during construction and cannot be changed due to immutability. There is no mechanism to recover or transfer admin privileges.\n2. **Cause:** The admin address is hardcoded to `msg.sender` at deployment and stored in an immutable variable, with no upgrade or recovery functionality.\n3. **Exploitation:** If the admin's private key is lost or compromised, an attacker could wait until the `withdrawableAt` timestamp and then withdraw all unclaimed funds. No recovery is possible.\n4. **Impact:** Permanent loss of unclaimed tokens in the contract if the admin key is compromised or lost, with no governance or recovery mechanism in place.\n",
+            "severity": "Low",
+            "location": [
+                "MerkleDistributor.sol::constructor#37"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Token registry uses mapping + array instead of an enumerable set",
+            "description": "1. **Description:** The contract uses a combination of a `mapping(address => bool)` and an array `tokenList` to track supported tokens. This dual structure is error-prone and can lead to inconsistencies.\n2. **Cause:** Manual management of both data structures increases the risk of bugs such as duplicate entries, failed removals, or desynchronization between the mapping and array.\n3. **Exploitation:** While not currently enforced during `claim`, if future logic were to rely on these structures, inconsistencies could lead to incorrect behavior, such as blocking valid claims or allowing unsupported tokens.\n4. **Impact:** Increased maintenance burden and potential for logic errors in future updates. Currently, the impact is limited since these structures are only used for off-chain reading.\n",
+            "severity": "Informational",
+            "location": [
+                "MerkleDistributor.sol::supportedTokens#17",
+                "MerkleDistributor.sol::tokenList#18"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Using MerkleProof.verify (memory) instead of verifyCalldata",
+            "description": "1. **Description:** The contract uses `MerkleProof.verify`, which copies the Merkle proof from calldata to memory, incurring unnecessary gas costs.\n2. **Cause:** The proof is passed as calldata but is processed using a function that requires memory, resulting in a redundant data copy.\n3. **Exploitation:** Attackers cannot exploit this directly, but every claim operation wastes gas due to the memory copy.\n4. **Impact:** Higher transaction costs for users claiming tokens, reducing efficiency and increasing the economic barrier for small claims.\n",
+            "severity": "Informational",
+            "location": [
+                "MerkleDistributor.sol::verify#71"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MerkleDistributor.sol": "// SPDX-License-Identifier: GPL-3.0-or-later\npragma solidity ^0.8.22;\n\nimport {IERC20, SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport {MerkleProof} from \"@openzeppelin/contracts/utils/cryptography/MerkleProof.sol\";\nimport {IMultiTokenMerkleDistributor} from \"./interfaces/IMerkleDistributor.sol\";\n\nerror AlreadyClaimed();\nerror InvalidProof();\nerror TokensAmountsMismatch();\nerror OnlyAdmin();\nerror WithdrawTooEarly();\n\ncontract MerkleDistributor is IMultiTokenMerkleDistributor {\n    using SafeERC20 for IERC20;\n\n    mapping(address => bool) public supportedTokens;\n    address[] public tokenList;\n    bytes32 public immutable override merkleRoot;\n\n    // This is a packed array of booleans.\n    mapping(uint256 => uint256) private claimedBitMap;\n\n    address public immutable admin;\n    uint256 public immutable withdrawableAt;\n\n    constructor(bytes32 merkleRoot_, address[] memory tokens_, uint256 withdrawableAt_, address admin_) {\n        merkleRoot = merkleRoot_;\n\n        for (uint256 i = 0; i < tokens_.length; i++) {\n            if (!supportedTokens[tokens_[i]]) {\n                supportedTokens[tokens_[i]] = true;\n                tokenList.push(tokens_[i]);\n            }\n        }\n\n        admin = admin_;\n        withdrawableAt = withdrawableAt_;\n    }\n\n    function isClaimed(uint256 index) public view override returns (bool) {\n        unchecked {\n            uint256 claimedWordIndex = index / 256;\n            uint256 claimedBitIndex = index % 256;\n            uint256 claimedWord = claimedBitMap[claimedWordIndex];\n            uint256 mask = (1 << claimedBitIndex);\n            return claimedWord & mask == mask;\n        }\n    }\n\n    function _setClaimed(uint256 index) private {\n        unchecked {\n            uint256 claimedWordIndex = index / 256;\n            uint256 claimedBitIndex = index % 256;\n            claimedBitMap[claimedWordIndex] = claimedBitMap[claimedWordIndex] | (1 << claimedBitIndex);\n        }\n    }\n\n    function claim(\n        uint256 index,\n        address account,\n        address[] calldata tokens,\n        uint256[] calldata amounts,\n        bytes32[] calldata merkleProof\n    ) public virtual override {\n        if (isClaimed(index)) revert AlreadyClaimed();\n        if (tokens.length != amounts.length) revert TokensAmountsMismatch();\n        require(msg.sender == account, \"Only the claim owner may execute their claim\");\n\n        // Verify the merkle proof with the new leaf structure\n        bytes32 node = keccak256(abi.encodePacked(index, account, tokens, amounts));\n        if (!MerkleProof.verifyCalldata(merkleProof, merkleRoot, node)) revert InvalidProof();\n\n        // Mark it claimed and send the token.\n        _setClaimed(index);\n        for (uint256 i = 0; i < tokens.length; i++) {\n            // No need to check for presence in supportedTokens - this is done implicitly in the MerkleProof.verify,\n            // so long as the supported tokens supplied to the constructor correctly included all tokens found in each claim\n            // require(supportedTokens[tokens[i]], \"Token not supported\");\n            if (amounts[i] > 0) {\n                IERC20(tokens[i]).safeTransfer(account, amounts[i]);\n            }\n        }\n\n        emit Claimed(index, account, tokens, amounts);\n    }\n\n    function withdrawUnclaimed(address[] calldata tokens, address to) external {\n        if (msg.sender != admin) revert OnlyAdmin();\n        if (block.number < withdrawableAt) revert WithdrawTooEarly();\n\n        for (uint256 i = 0; i < tokens.length; i++) {\n            IERC20 token = IERC20(tokens[i]);\n            uint256 balance = token.balanceOf(address(this));\n            if (balance > 0) {\n                token.safeTransfer(to, balance);\n            }\n        }\n    }\n}\n"
+    }
+}

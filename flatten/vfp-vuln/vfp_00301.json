@@ -1,0 +1,30 @@
+{
+    "vfp_id": "vfp_00301",
+    "project_name": "f(x) v2 Audit.md",
+    "findings": [
+        {
+            "id": 47,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "High Severity: Flashloan Functionality Blocked",
+            "description": "1.  **Description:** A flaw completely blocks the flashloan functionality of the protocol.\n2.  **Cause:** The root cause is not detailed in this chunk, but it likely involves a logic error or access control issue in the flashloan execution path.\n3.  **Exploitation:** This may not be directly exploitable by attackers but prevents intended functionality from working.\n4.  **Impact:** Users and integrations relying on flashloans (e.g., Morpho, Balancer) would be unable to use the feature, impairing protocol functionality and composability.\n",
+            "severity": "High",
+            "location": [],
+            "files": [
+                "fx-protocol-contracts/contracts/periphery/facets/MorphoFlashLoanCallbackFacet.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MorphoFlashLoanCallbackFacet.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.20;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport { IMorphoFlashLoanCallback } from \"../../interfaces/Morpho/IMorphoFlashLoanCallback.sol\";\n\nimport { LibRouter } from \"../libraries/LibRouter.sol\";\n\ncontract MorphoFlashLoanCallbackFacet is IMorphoFlashLoanCallback {\n  using SafeERC20 for IERC20;\n\n  /**********\n   * Errors *\n   **********/\n\n  /// @dev Thrown when the caller is not morpho.\n  error ErrorNotFromMorpho();\n\n  error ErrorNotFromRouterFlashLoan();\n\n  /***********************\n   * Immutable Variables *\n   ***********************/\n\n  /// @dev The address of Morpho Blue contract.\n  /// In ethereum, it is 0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb.\n  address private immutable morpho;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  constructor(address _morpho) {\n    morpho = _morpho;\n  }\n\n  /****************************\n   * Public Mutated Functions *\n   ****************************/\n\n  /// @inheritdoc IMorphoFlashLoanCallback\n  function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {\n    if (msg.sender != morpho) revert ErrorNotFromMorpho();\n\n    // make sure call invoked by router\n    LibRouter.RouterStorage storage $ = LibRouter.routerStorage();\n    if ($.flashLoanContext != LibRouter.HAS_FLASH_LOAN) revert ErrorNotFromRouterFlashLoan();\n\n    (address token, bytes memory realData) = abi.decode(data, (address, bytes));\n    (bool success, ) = address(this).call(realData);\n    // below lines will propagate inner error up\n    if (!success) {\n      // solhint-disable-next-line no-inline-assembly\n      assembly {\n        let ptr := mload(0x40)\n        let size := returndatasize()\n        returndatacopy(ptr, 0, size)\n        revert(ptr, size)\n      }\n    }\n\n    // flashloan fee is zero in Morpho\n    LibRouter.approve(token, msg.sender, assets);\n  }\n}\n"
+    }
+}

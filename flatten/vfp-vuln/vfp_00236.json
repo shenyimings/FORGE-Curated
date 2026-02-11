@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00236",
+    "project_name": "SSO Account OIDC Recovery Solidity Audit.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Potential Signature Replay Attack in ERC1271Handler",
+            "description": "The `isValidSignature` function in the `ERC1271Handler` contract lacks sufficient validation to prevent signature replay attacks. For EOA signatures, the function only verifies the signature's validity and its association with a `k1owner`, without imposing restrictions on how the hash is constructed. This allows an attacker to reuse a historical transaction hash and signature to execute unauthorized actions on behalf of the account. Additionally, the removal of EIP712 logic in the updated version eliminates safeguards such as inclusion of chain ID and contract address in the hash, enabling cross-chain and cross-account signature reuse. The impact includes unauthorized execution of transactions and potential loss of account control. The vulnerability stems from insufficient input validation and the absence of replay protection mechanisms.\n",
+            "severity": "High",
+            "location": [
+                "ERC1271Handler.sol::isValidSignature#25"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/handlers/ERC1271Handler.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ERC1271Handler.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { IERC1271Upgradeable } from \"@openzeppelin/contracts-upgradeable/interfaces/IERC1271Upgradeable.sol\";\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\nimport { SignatureDecoder } from \"../libraries/SignatureDecoder.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { OwnerManager } from \"../managers/OwnerManager.sol\";\nimport { ValidatorManager } from \"../managers/ValidatorManager.sol\";\n\n/// @title ERC1271Handler\n/// @author Matter Labs\n/// @notice Contract which provides ERC1271 signature validation\n/// @notice The implementation is inspired by Clave wallet.\nabstract contract ERC1271Handler is IERC1271Upgradeable, OwnerManager, ValidatorManager {\n  bytes4 private constant _ERC1271_MAGIC = 0x1626ba7e;\n\n  /**\n   * @dev Should return whether the signature provided is valid for the provided data. Does not run validation hooks.\n   * @param hash bytes32 - Hash of the data that is signed\n   * @param signature bytes calldata - K1 owner signature OR validator address concatenated to signature\n   * @return magicValue bytes4 - Magic value if the signature is valid, 0 otherwise\n   */\n  function isValidSignature(bytes32 hash, bytes memory signature) external view override returns (bytes4 magicValue) {\n    if (signature.length == 65) {\n      (address signer, ECDSA.RecoverError err) = ECDSA.tryRecover(hash, signature);\n      return\n        signer == address(0) || err != ECDSA.RecoverError.NoError || !_isK1Owner(signer) ? bytes4(0) : _ERC1271_MAGIC;\n    }\n\n    (bytes memory decodedSignature, address validator) = SignatureDecoder.decodeSignatureNoHookData(signature);\n\n    bool isValid = _isModuleValidator(validator) &&\n      IModuleValidator(validator).validateSignature(hash, decodedSignature);\n\n    magicValue = isValid ? _ERC1271_MAGIC : bytes4(0);\n  }\n}\n"
+    }
+}

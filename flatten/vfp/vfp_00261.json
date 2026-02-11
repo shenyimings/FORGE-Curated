@@ -1,0 +1,134 @@
+{
+    "vfp_id": "vfp_00261",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "findings": [
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Function state mutability can be restricted to view",
+            "description": "Several functions in the RateOracle contract are not marked as `view` despite not modifying state, including specific lines in the contract. The root cause is incorrect or missing state mutability specifiers. This affects code readability, gas efficiency, and tooling interpretation (e.g., static analyzers or frontends may assume state changes). While not directly exploitable, it increases the risk of misinterpretation by developers or users who assume a function is non-view and thus safe to call without transaction cost or risk. The impact is reduced code clarity and potential for unnecessary transactions or incorrect integration assumptions.\n",
+            "severity": null,
+            "location": [
+                "contracts/oracle/RateOracle.sol#L110",
+                "contracts/oracle/RateOracle.sol#L109-L112",
+                "contracts/oracle/RateOracle.sol#L26-L29",
+                "contracts/oracle/RateOracle.sol#L34-L37"
+            ],
+            "files": [
+                "cap-contracts/contracts/oracle/RateOracle.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Incorrect oracle staleness period leads to price feed DoS",
+            "description": "The PriceOracle contract uses a single staleness period for all price feeds, despite different assets having different update frequencies (e.g., stablecoins updated every 24 hours vs. ETH/BTC every hour). This misconfiguration causes the oracle to either reject valid prices from slow-updating assets or accept stale prices from fast-updating ones. The root cause is the use of a global staleness threshold without per-asset customization. An attacker or system failure could exploit this by manipulating the timing of price updates, leading to denial of service in price retrieval. The impact is that critical functions relying on price feeds may revert or operate with incorrect data, disrupting lending, borrowing, and liquidation mechanisms.\n",
+            "severity": "High",
+            "location": [
+                "contracts/oracle/PriceOracle.sol::__PriceOracle_init_unchained#21-25",
+                "contracts/deploy/service/DeployInfra.sol::_deployInfra#36-40",
+                "Oracle.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/oracle/PriceOracle.sol"
+            ]
+        },
+        {
+            "id": 42,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Like the main oracle, the backup oracle should check for staleness and zero prices",
+            "description": "The backup oracle in PriceOracle.sol does not validate price staleness or zero prices, unlike the main oracle. The root cause is inconsistent security practices between primary and backup components. If the main oracle fails and the backup is used, stale or zero prices could be accepted, leading to incorrect valuations. An attacker could manipulate or freeze price feeds to trigger liquidations or unfair trades. The impact includes financial loss due to incorrect pricing during oracle fallback scenarios.\n",
+            "severity": null,
+            "location": [
+                "contracts/oracle/PriceOracle.sol#L42"
+            ],
+            "files": [
+                "cap-contracts/contracts/oracle/PriceOracle.sol"
+            ]
+        },
+        {
+            "id": 46,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-654"
+                ]
+            },
+            "title": "Incorrect oracle staleness period leads to price feed DoS",
+            "description": "The price oracle used a single global staleness period, which could lead to a denial-of-service (DoS) condition if the global setting was too strict or too lenient for certain assets. The cause was a lack of per-asset configurability for staleness checks. An attacker could exploit this by manipulating or delaying price updates for specific assets, causing the system to reject valid prices or accept stale ones. This could halt operations that depend on fresh price data, such as liquidations or borrowing.\n",
+            "severity": "High",
+            "location": [
+                "PriceOracle.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/oracle/PriceOracle.sol"
+            ]
+        },
+        {
+            "id": 63,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Oracle update front-running allows extraction of value from vaults",
+            "description": "Oracle updates can be front-run by attackers who anticipate price changes and trade ahead of the update. The cause is the lack of commit-reveal schemes or time locks in oracle updates. An attacker could exploit this by monitoring mempool transactions and submitting trades just before an update to extract value from vaults. This leads to wealth transfer from the protocol to malicious actors.\n",
+            "severity": "Medium",
+            "location": [
+                "PriceOracle.sol::update"
+            ],
+            "files": [
+                "cap-contracts/contracts/oracle/PriceOracle.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "PriceOracle and RateOracle could be abstract contracts",
+            "description": "The PriceOracle and RateOracle contracts implement functionality intended for inheritance rather than direct deployment. The root cause is that these contracts serve as base implementations but are not marked as abstract, allowing them to be instantiated directly. This could lead to accidental deployment of incomplete or non-functional oracle instances, which might return incorrect or uninitialized data. An attacker could potentially exploit misconfigured or uninitialized oracle instances if they are used by other components expecting valid price feeds. The impact includes potential manipulation of price data, leading to incorrect valuations in lending or auction mechanisms, which could result in financial loss.\n",
+            "severity": null,
+            "location": [],
+            "files": [
+                "cap-contracts/contracts/oracle/PriceOracle.sol",
+                "cap-contracts/contracts/oracle/RateOracle.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "RateOracle.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\nimport { IOracle } from \"../interfaces/IOracle.sol\";\nimport { IRateOracle } from \"../interfaces/IRateOracle.sol\";\nimport { RateOracleStorageUtils } from \"../storage/RateOracleStorageUtils.sol\";\n\n/// @title Oracle for fetching interest rates\n/// @author kexley, @capLabs\n/// @notice Admin can set the minimum interest rates and the restaker interest rates.\nabstract contract RateOracle is IRateOracle, Access, RateOracleStorageUtils {\n    /// @dev Initialize the rate oracle\n    /// @param _accessControl Access control address\n    function __RateOracle_init(address _accessControl) internal onlyInitializing {\n        __Access_init(_accessControl);\n        __RateOracle_init_unchained();\n    }\n\n    /// @dev Initialize unchained\n    function __RateOracle_init_unchained() internal onlyInitializing { }\n\n    /// @notice Fetch the market rate for an asset being borrowed\n    /// @param _asset Asset address\n    /// @return rate Borrow interest rate\n    function marketRate(address _asset) external returns (uint256 rate) {\n        IOracle.OracleData memory data = getRateOracleStorage().marketOracleData[_asset];\n        rate = _getRate(data.adapter, data.payload);\n    }\n\n    /// @notice View the utilization rate for an asset\n    /// @param _asset Asset address\n    /// @return rate Utilization rate\n    function utilizationRate(address _asset) external returns (uint256 rate) {\n        IOracle.OracleData memory data = getRateOracleStorage().utilizationOracleData[_asset];\n        rate = _getRate(data.adapter, data.payload);\n    }\n\n    /// @notice View the benchmark rate for an asset\n    /// @param _asset Asset address\n    /// @return rate Benchmark rate\n    function benchmarkRate(address _asset) external view returns (uint256 rate) {\n        rate = getRateOracleStorage().benchmarkRate[_asset];\n    }\n\n    /// @notice View the restaker rate for an agent\n    /// @param _agent Agent address\n    /// @return rate Restaker rate\n    function restakerRate(address _agent) external view returns (uint256 rate) {\n        rate = getRateOracleStorage().restakerRate[_agent];\n    }\n\n    /// @notice View the market oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Oracle data for an asset\n    function marketOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getRateOracleStorage().marketOracleData[_asset];\n    }\n\n    /// @notice View the utilization oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Oracle data for an asset\n    function utilizationOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getRateOracleStorage().utilizationOracleData[_asset];\n    }\n\n    /// @notice Set a market source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setMarketOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setMarketOracleData.selector)\n    {\n        getRateOracleStorage().marketOracleData[_asset] = _oracleData;\n        emit SetMarketOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set a utilization source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setUtilizationOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setUtilizationOracleData.selector)\n    {\n        getRateOracleStorage().utilizationOracleData[_asset] = _oracleData;\n        emit SetUtilizationOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Update the minimum interest rate for an asset\n    /// @param _asset Asset address\n    /// @param _rate New interest rate\n    function setBenchmarkRate(address _asset, uint256 _rate) external checkAccess(this.setBenchmarkRate.selector) {\n        getRateOracleStorage().benchmarkRate[_asset] = _rate;\n        emit SetBenchmarkRate(_asset, _rate);\n    }\n\n    /// @notice Update the rate at which an agent accrues interest explicitly to pay restakers\n    /// @param _agent Agent address\n    /// @param _rate New interest rate\n    function setRestakerRate(address _agent, uint256 _rate) external checkAccess(this.setRestakerRate.selector) {\n        getRateOracleStorage().restakerRate[_agent] = _rate;\n        emit SetRestakerRate(_agent, _rate);\n    }\n\n    /// @dev Calculate rate using an adapter and payload but do not revert on errors\n    /// @param _adapter Adapter for calculation logic\n    /// @param _payload Encoded call to adapter with all required data\n    /// @return rate Calculated rate\n    function _getRate(address _adapter, bytes memory _payload) private returns (uint256 rate) {\n        (bool success, bytes memory returnedData) = _adapter.call(_payload);\n        if (success) rate = abi.decode(returnedData, (uint256));\n    }\n}\n",
+        "PriceOracle.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\nimport { IOracle } from \"../interfaces/IOracle.sol\";\nimport { IPriceOracle } from \"../interfaces/IPriceOracle.sol\";\nimport { PriceOracleStorageUtils } from \"../storage/PriceOracleStorageUtils.sol\";\n\n/// @title Oracle for fetching prices\n/// @author kexley, @capLabs\n/// @dev Payloads are stored on this contract and calculation logic is hosted on external libraries\nabstract contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {\n    /// @dev Initialize the price oracle\n    /// @param _accessControl Access control address\n    function __PriceOracle_init(address _accessControl) internal onlyInitializing {\n        __Access_init(_accessControl);\n        __PriceOracle_init_unchained();\n    }\n\n    /// @dev Initialize unchained\n    function __PriceOracle_init_unchained() internal onlyInitializing { }\n\n    /// @notice Fetch the price for an asset\n    /// @dev If initial price fetch fails then a backup source is used\n    /// @param _asset Asset address\n    /// @return price Price of the asset\n    function getPrice(address _asset) external view returns (uint256 price, uint256 lastUpdated) {\n        PriceOracleStorage storage $ = getPriceOracleStorage();\n        IOracle.OracleData memory data = $.oracleData[_asset];\n\n        (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n        if (price == 0 || _isStale(_asset, lastUpdated)) {\n            data = $.backupOracleData[_asset];\n            (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n            if (price == 0 || _isStale(_asset, lastUpdated)) revert PriceError(_asset);\n        }\n    }\n\n    /// @notice View the oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Oracle data for an asset\n    function priceOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().oracleData[_asset];\n    }\n\n    /// @notice View the backup oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Backup oracle data for an asset\n    function priceBackupOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().backupOracleData[_asset];\n    }\n\n    /// @notice View the staleness period for asset prices\n    /// @param _asset Asset address\n    /// @return assetStaleness Staleness period in seconds for asset prices\n    function staleness(address _asset) external view returns (uint256 assetStaleness) {\n        assetStaleness = getPriceOracleStorage().staleness[_asset];\n    }\n\n    /// @notice Set a price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceOracleData.selector)\n    {\n        getPriceOracleStorage().oracleData[_asset] = _oracleData;\n        emit SetPriceOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set a backup price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceBackupOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceBackupOracleData.selector)\n    {\n        getPriceOracleStorage().backupOracleData[_asset] = _oracleData;\n        emit SetPriceBackupOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set the staleness period for asset prices\n    /// @param _asset Asset address\n    /// @param _staleness Staleness period in seconds for asset prices\n    function setStaleness(address _asset, uint256 _staleness) external checkAccess(this.setStaleness.selector) {\n        getPriceOracleStorage().staleness[_asset] = _staleness;\n        emit SetStaleness(_asset, _staleness);\n    }\n\n    /// @dev Calculate price using an adapter and payload but do not revert on errors\n    /// @param _adapter Adapter for calculation logic\n    /// @param _payload Encoded call to adapter with all required data\n    /// @return price Calculated price\n    /// @return lastUpdated Last updated timestamp\n    function _getPrice(address _adapter, bytes memory _payload)\n        private\n        view\n        returns (uint256 price, uint256 lastUpdated)\n    {\n        (bool success, bytes memory returnedData) = _adapter.staticcall(_payload);\n        if (success) (price, lastUpdated) = abi.decode(returnedData, (uint256, uint256));\n    }\n\n    /// @dev Check if a price is stale\n    /// @param _asset Asset address\n    /// @param _lastUpdated Last updated timestamp\n    /// @return isStale True if the price is stale\n    function _isStale(address _asset, uint256 _lastUpdated) internal view returns (bool isStale) {\n        isStale = block.timestamp - _lastUpdated > getPriceOracleStorage().staleness[_asset];\n    }\n}\n"
+    }
+}

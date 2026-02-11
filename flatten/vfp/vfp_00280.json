@@ -1,0 +1,63 @@
+{
+    "vfp_id": "vfp_00280",
+    "project_name": "Jovay Rollup Contracts Audit.md",
+    "findings": [
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "public Function or Variable Prefixed With Underscore",
+            "description": "In `AppendOnlyMerkleTree.sol`, the public state variable `_branches` is prefixed with an underscore, which contradicts Solidity naming conventions where underscores are reserved for internal/private members. The root cause is incorrect naming style. While this does not introduce a security issue, it can confuse developers into thinking the variable is private. The impact is low, affecting code readability and adherence to community standards.\n",
+            "severity": "Low",
+            "location": [
+                "AppendOnlyMerkleTree.sol::_branches#22"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-908"
+                ],
+                "4": [
+                    "CWE-457"
+                ]
+            },
+            "title": "Appending Before Merkle Tree Initialization Results in Permanent Root Inconsistency",
+            "description": "The `append` routine in `AppendOnlyMerkleTree.sol` can be called before the zero-hash cache is initialized because the guard check enforcing initialization is commented out. This allows the `_appendMsgHash` function to execute with all `_zeroHashes` values set to zero, leading to incorrect internal node computations that mix real data with zero values instead of canonical zero hashes.\n\nThe root cause is the disabled initialization guard and the lack of explicit assignment of `_zeroHashes[0] = bytes32(0)` in `_initializeMerkleTree`, which relies on default storage values and reduces code clarity. An attacker or misconfigured contract could invoke `_appendMsgHash` before initialization, corrupting the tree structure.\n\nOnce the tree is later initialized, the zero-hash cache changes, making all previously computed branches and the exposed `_msgRoot` mathematically invalid. This results in permanent failure of all Merkle proof verifications and consistency checks.\n\nThe impact is severe: it can lead to irreversible data inconsistency in the Merkle tree, breaking any functionality that depends on correct root computation, such as message inclusion proofs or state validation, potentially compromising the integrity of the rollup system.\n",
+            "severity": null,
+            "location": [
+                "AppendOnlyMerkleTree.sol::append",
+                "AppendOnlyMerkleTree.sol::_appendMsgHash",
+                "AppendOnlyMerkleTree.sol::_initializeMerkleTree"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AppendOnlyMerkleTree.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.24;\n\nabstract contract AppendOnlyMerkleTree {\n    /// @dev The maximum height of the withdraw merkle tree.\n    uint256 private constant MAX_TREE_HEIGHT = 40;\n\n    /// @notice The merkle root of the current merkle tree.\n    /// @dev This is actual equal to `branches[n]`.\n    bytes32 internal _msgRoot;\n\n    /// @notice The next unused message index.\n    uint256 internal _nextMsgIndex;\n\n    /// @notice The list of zero hash in each height.\n    bytes32[MAX_TREE_HEIGHT] private _zeroHashes;\n\n    /// @notice The list of minimum merkle proofs needed to compute next root.\n    /// @dev Only first `n` elements are used, where `n` is the minimum value that `2^{n-1} >= currentMaxNonce + 1`.\n    /// It means we only use `currentMaxNonce + 1` leaf nodes to construct the merkle tree.\n    bytes32[MAX_TREE_HEIGHT] public _branches;\n\n    function _initializeMerkleTree() internal {\n        // Compute hashes in empty sparse Merkle tree\n        for (uint256 height = 0; height + 1 < MAX_TREE_HEIGHT; height++) {\n            _zeroHashes[height + 1] = _efficientHash(_zeroHashes[height], _zeroHashes[height]);\n        }\n    }\n\n    function _appendMsgHash(bytes32 msgHash) internal returns (uint256, bytes32) {\n        // can called only after initialize\n        // require(_zeroHashes[1] != bytes32(0), \"call before initialization\");\n\n        uint256 currentMsgIndex = _nextMsgIndex;\n        bytes32 hash = msgHash;\n        uint256 height = 0;\n\n        while (currentMsgIndex != 0) {\n            if (currentMsgIndex % 2 == 0) {\n                // it may be used in next round.\n                _branches[height] = hash;\n                // it's a left child, the right child must be null\n                hash = _efficientHash(hash, _zeroHashes[height]);\n            } else {\n                // it's a right child, use previously computed hash\n                hash = _efficientHash(_branches[height], hash);\n            }\n            unchecked {\n                height += 1;\n            }\n            currentMsgIndex >>= 1;\n        }\n\n        _branches[height] = hash;\n        _msgRoot = hash;\n\n        currentMsgIndex = _nextMsgIndex;\n        unchecked {\n            _nextMsgIndex = currentMsgIndex + 1;\n        }\n\n        return (currentMsgIndex, hash);\n    }\n\n    function _efficientHash(bytes32 a, bytes32 b) private pure returns (bytes32 value) {\n        // solhint-disable-next-line no-inline-assembly\n        assembly {\n            mstore(0x00, a)\n            mstore(0x20, b)\n            value := keccak256(0x00, 0x40)\n        }\n    }\n}\n"
+    }
+}

@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00090",
+    "project_name": "Enjoyoors EVM Vaults Security Audit Report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Reentrancy Vulnerability in _claimWithdrawal Function",
+            "description": "A reentrancy vulnerability exists in the _claimWithdrawal function of the EnjoyoorsVaultWithdrawals contract. The root cause is the lack of a reentrancy guard, which allows malicious contracts—particularly ERC777 tokens with callback functionality—to re-enter the function before the state is updated. An attacker could exploit this by crafting a malicious token contract that recursively calls _claimWithdrawal during a withdrawal, draining the contract of all withdrawable funds. This leads to a direct loss of user funds, which is why the issue is classified as Critical.\n",
+            "severity": "Critical",
+            "location": [
+                "EnjoyoorsVaultWithdrawals.sol::_claimWithdrawal"
+            ],
+            "files": [
+                "EnjoyoorsVault/contracts/vault/actions/EnjoyoorsVaultWithdrawals.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "EnjoyoorsVaultWithdrawals.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity =0.8.26;\n\nimport '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';\n\nimport '../access/Access.sol';\nimport '../../libraries/Asserts.sol';\n\n/// @title Abstract contract with Enjoyoors vaults withdrawal requests and claims functionality\nabstract contract EnjoyoorsVaultWithdrawals is Access {\n  using SafeERC20 for IERC20;\n  using Asserts for uint256;\n\n  /**\n   * @notice Emitted in case of successful withdrawal request submission\n   * @param token Token, requested for withdrawal\n   * @param user User who requested withdrawal\n   * @param requestId Id of submitted request\n   * @param amount Amount of `token` requested for withdrawal\n   */\n  event WithdrawalRequested(address indexed token, address indexed user, uint256 indexed requestId, uint256 amount);\n  /**\n   * @notice Emitted in case of successful withdrawal request submission\n   * @param requestId Id of claimed request\n   * @param amount Amount of `token` claimed\n   */\n  event WithdrawalClaimed(uint256 indexed requestId, uint256 amount);\n\n  /**\n   * @notice Revert reason if user has less supply than requested for withdrawal\n   * @param userSupply User supply of withdrawal token\n   */\n  error NotEnoughUserSupply(uint256 userSupply);\n  /**\n   * @notice Revert reason if an attempt to claim non-existent withdrawal request occurs\n   * @param lastRequestId Most recent withdrawal request id\n   */\n  error WrongWithdrawalRequestId(uint256 lastRequestId);\n  /// @notice Revert reason if an attempt of withdrawal double claim occurs\n  error AlreadyClaimed();\n\n  /// @notice Most recent withdrawal request id\n  uint256 public lastRequestId;\n  /// @notice Mapping with all withdrawal requests\n  mapping(uint256 requestId => WithdrawalRequest) withdrawalRequests;\n\n  /**\n   * @notice Internal method with withdrawal requests implementation\n   * @param token Address of vault-listed token\n   * @param amount Amount of `token` to withdraw\n   * @return requestId Id of this request if successful\n   */\n  function _requestWithdrawal(\n    address token,\n    uint256 amount\n  ) internal onlyWhitelistedToken(token) whenWithdrawalsNotPaused(token) returns (uint256 requestId) {\n    amount.assertNotZeroAmount();\n\n    uint256 _userSupply = userSupply[token][msg.sender];\n    if (_userSupply < amount) revert NotEnoughUserSupply(_userSupply);\n\n    WithdrawalRequest memory request = WithdrawalRequest({\n      amount: amount,\n      token: token,\n      user: msg.sender,\n      timestamp: uint184(block.timestamp),\n      claimed: false\n    });\n    requestId = ++lastRequestId;\n    withdrawalRequests[requestId] = request;\n\n    totalSupply[token] -= amount;\n    userSupply[token][msg.sender] -= amount;\n\n    emit WithdrawalRequested(token, msg.sender, requestId, amount);\n  }\n\n  /**\n   * @notice Internal method with withdrawal claiming implementation\n   * @param requestId Id of a request to claim\n   * @param approverData Data used by`withdrawalApprover` in a verification process\n   * @return token Claimed token address\n   * @return amount Claimed `token` amount\n   */\n  function _claimWithdrawal(\n    uint256 requestId,\n    bytes calldata approverData\n  ) internal returns (address token, uint256 amount) {\n    WithdrawalRequest storage request = withdrawalRequests[requestId];\n\n    token = request.token;\n    _whenClaimsNotPaused(token);\n\n    amount = request.amount;\n    if (amount == 0) revert WrongWithdrawalRequestId(lastRequestId);\n    if (request.claimed) revert AlreadyClaimed();\n\n    withdrawalApprover.verifyWithdrawalApproved(requestId, approverData);\n\n    IERC20(token).safeTransfer(request.user, amount);\n\n    request.claimed = true;\n    supplyTillLimit[token] += amount;\n\n    emit WithdrawalClaimed(requestId, amount);\n  }\n\n  /// @inheritdoc IEnjoyoorsVault\n  function getWithdrawalRequestById(uint256 requestId) external view returns (WithdrawalRequest memory) {\n    return withdrawalRequests[requestId];\n  }\n}\n"
+    }
+}

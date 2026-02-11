@@ -1,0 +1,121 @@
+{
+    "vfp_id": "vfp_00011",
+    "project_name": "Matter Labs Guardian Recovery Validator Audit.md",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Guardian Can Overwrite Recovery Process and Render It Useless",
+            "description": "The `initRecovery` function in the `GuardianRecoveryValidator` contract lacks a check to prevent overwriting an active recovery process. The root cause is the absence of validation for whether a recovery is already in progress. A malicious guardian can repeatedly initiate a new recovery with incorrect data or refresh the timestamp, thereby blocking a legitimate recovery. This is especially critical in multi-guardian setups where a single malicious actor can indefinitely stall recovery. The impact is a denial-of-service on the recovery mechanism, leaving the account owner unable to regain access even with honest guardians, and no way to remove the malicious guardian without a valid transaction.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initRecovery#202-215"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Failure to Clear `pendingRecoveryData` in `onUninstall` Allows Immediate Account Recovery Upon Reconnection",
+            "description": "The `onUninstall` function clears guardian data but fails to clear the `pendingRecoveryData` mapping. The root cause is the omission of a step to reset the recovery state upon uninstallation. An attacker (or former guardian) could exploit this by waiting for the validator to be reconnected and then executing a pending recovery request immediately, bypassing the intended 24-hour delay. The impact is that the security guarantee of the recovery delay is nullified, allowing unauthorized or premature account recovery based on stale state, which contradicts the intended security model.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Incomplete Recovery Process Due to Missing Validator Attachment",
+            "description": "The recovery process fails if the `SsoAccount` is not pre-attached to the `WebAuthValidator`, but no check enforces this dependency. The root cause is the lack of validation during the setup of `GuardianRecoveryValidator` to ensure `WebAuthValidator` is also installed. A guardian can initiate recovery, but the final step (adding a key via `WebAuthValidator`) will revert if the validator is not attached. The impact is that the recovery flow is rendered ineffective, leaving the account unrecoverable despite correct guardian setup. Even after a partial fix requiring `WebAuthValidator` at install time, a user could later uninstall it, breaking recovery again.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onInstall",
+                "SsoAccount.sol#214"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Uninstall Process Might Revert Due to Pending Guardian Acceptance",
+            "description": "The `onUninstall` function reverts if it attempts to remove an account from a guardian's set when the guardian has not yet accepted (i.e., `isReady` is false). The root cause is the failure to check the `isReady` flag before calling `remove` on the `guardedAccounts` set. This prevents users from uninstalling the validator while any guardian requests are pending. The impact is a denial-of-service on the uninstallation process. Additionally, if the user reinstalls the validator later, a previously pending (and now accepted) guardian could initiate recovery without the user's knowledge, potentially leading to account takeover.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::onUninstall#84",
+                "GuardianRecoveryValidator.sol#172",
+                "GuardianRecoveryValidator.sol#93",
+                "GuardianRecoveryValidator.sol#96"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-732"
+                ]
+            },
+            "title": "Function Visibility Overly Permissive",
+            "description": "Multiple functions across the codebase are declared with more permissive visibility than necessary, which violates the principle of least privilege. The root cause is the use of `public` or `internal` when `external` or `private` would suffice. While these functions are not exposed to direct malicious exploitation in most cases, unnecessarily broad visibility can increase attack surface and reduce code clarity. An attacker could potentially interact with `public` functions that were not intended for external use, leading to unexpected behavior or increased gas costs for users. The impact is generally low, but it contributes to poor code hygiene and potential future vulnerabilities if the contract evolves.\n",
+            "severity": "Medium",
+            "location": [
+                "GuardianRecoveryValidator.sol::initialize#76-78",
+                "GuardianRecoveryValidator.sol::finishRecovery#230-237",
+                "GuardianRecoveryValidator.sol::_discardRecovery#241-243",
+                "GuardianRecoveryValidator.sol::guardiansFor#312-319",
+                "GuardianRecoveryValidator.sol::guardianOf#325-327",
+                "GuardianRecoveryValidator.sol::getPendingRecoveryData#333-338"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/GuardianRecoveryValidator.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "GuardianRecoveryValidator.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { Transaction } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\nimport { Initializable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport { EnumerableSetUpgradeable } from \"@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol\";\nimport { WebAuthValidator } from \"./WebAuthValidator.sol\";\nimport { IGuardianRecoveryValidator } from \"../interfaces/IGuardianRecoveryValidator.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { IModule } from \"../interfaces/IModule.sol\";\nimport { TimestampAsserterLocator } from \"../helpers/TimestampAsserterLocator.sol\";\nimport { BatchCaller, Call } from \"../batch/BatchCaller.sol\";\n\ncontract GuardianRecoveryValidator is Initializable, IGuardianRecoveryValidator {\n  using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;\n\n  struct Guardian {\n    address addr;\n    bool isReady;\n    uint64 addedAt;\n  }\n\n  struct RecoveryRequest {\n    bytes32 hashedCredentialId;\n    bytes32[2] rawPublicKey;\n    uint256 timestamp;\n  }\n\n  error GuardianCannotBeSelf();\n  error GuardianNotFound(address guardian);\n  error GuardianNotProposed(address guardian);\n  error AccountAlreadyGuardedByGuardian(address account, address guardian);\n  error AccountNotGuardedByAddress(address account, address guardian);\n  error PasskeyNotMatched();\n  error CooldownPeriodNotPassed();\n  error ExpiredRequest();\n\n  event RecoveryInitiated(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId,\n    address guardian\n  );\n  event RecoveryFinished(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId\n  );\n  event RecoveryDiscarded(\n    address indexed account,\n    bytes32 indexed hashedOriginDomain,\n    bytes32 indexed hashedCredentialId\n  );\n  event GuardianProposed(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n  event GuardianAdded(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n  event GuardianRemoved(address indexed account, bytes32 indexed hashedOriginDomain, address indexed guardian);\n\n  uint256 public constant REQUEST_VALIDITY_TIME = 72 * 60 * 60; // 72 hours\n  uint256 public constant REQUEST_DELAY_TIME = 24 * 60 * 60; // 24 hours\n\n  bytes30 private _gap; // Gap to claim 30 bytes remaining in slot 0 after fields layout of Initializable contract\n  WebAuthValidator public webAuthValidator; // Enforced slot 1 in order to be able to access it during validateTransaction step\n  mapping(bytes32 hashedOriginDomain => mapping(address account => EnumerableSetUpgradeable.AddressSet))\n    private accountGuardians;\n  mapping(bytes32 hashedOriginDomain => mapping(address guardian => EnumerableSetUpgradeable.AddressSet))\n    private guardedAccounts;\n  mapping(bytes32 hashedOriginDomain => mapping(address account => RecoveryRequest)) public pendingRecoveryData;\n  mapping(bytes32 hashedOriginDomain => mapping(address account => mapping(address guardian => Guardian)))\n    public accountGuardianData;\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  function initialize(WebAuthValidator _webAuthValidator) public initializer {\n    webAuthValidator = _webAuthValidator;\n  }\n\n  /// @notice Validator initiator for given sso account. This module does not support initialization on creation\n  function onInstall(bytes calldata) external {}\n\n  /// @notice Removes all past guardians when this module is disabled in a account\n  function onUninstall(bytes calldata data) external {\n    bytes32[] memory hashedOriginDomains = abi.decode(data, (bytes32[]));\n    for (uint256 j = 0; j < hashedOriginDomains.length; j++) {\n      bytes32 hashedOriginDomain = hashedOriginDomains[j];\n      address[] memory guardians = accountGuardians[hashedOriginDomain][msg.sender].values();\n      for (uint256 i = 0; i < guardians.length; i++) {\n        address guardian = guardians[i];\n\n        EnumerableSetUpgradeable.AddressSet storage accounts = guardedAccounts[hashedOriginDomain][guardian];\n        bool guardedAccountsRemovalSuccessful = accounts.remove(msg.sender);\n\n        if (!guardedAccountsRemovalSuccessful) {\n          revert AccountNotGuardedByAddress(msg.sender, guardian);\n        }\n        delete accountGuardianData[hashedOriginDomain][msg.sender][guardian];\n\n        bool removalSuccessful = accountGuardians[hashedOriginDomain][msg.sender].remove(guardian);\n\n        if (!removalSuccessful) {\n          revert GuardianNotFound(guardian);\n        }\n\n        emit GuardianRemoved(msg.sender, hashedOriginDomain, guardian);\n      }\n    }\n  }\n\n  /// @notice The `proposeValidationKey` method handles the initial registration of guardians by:\n  ///   1. Taking an external account address and store it as pending guardian\n  ///   2. Enable `addValidationKey` to confirm this account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param newGuardian New Guardian's address\n  function proposeValidationKey(bytes32 hashedOriginDomain, address newGuardian) external {\n    if (msg.sender == newGuardian) revert GuardianCannotBeSelf();\n\n    bool additionSuccessful = accountGuardians[hashedOriginDomain][msg.sender].add(newGuardian);\n\n    if (!additionSuccessful) {\n      return;\n    }\n\n    accountGuardianData[hashedOriginDomain][msg.sender][newGuardian] = Guardian(\n      newGuardian,\n      false,\n      uint64(block.timestamp)\n    );\n    emit GuardianProposed(msg.sender, hashedOriginDomain, newGuardian);\n  }\n\n  /// @notice This method handles the removal of guardians by:\n  ///   1. Accepting an address as input\n  ///   2. Removing the account from the list of guardians\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param guardianToRemove Guardian's address to remove\n  function removeValidationKey(bytes32 hashedOriginDomain, address guardianToRemove) external {\n    bool removalSuccessful = accountGuardians[hashedOriginDomain][msg.sender].remove(guardianToRemove);\n\n    if (removalSuccessful) {\n      bool wasActiveGuardian = accountGuardianData[hashedOriginDomain][msg.sender][guardianToRemove].isReady;\n      delete accountGuardianData[hashedOriginDomain][msg.sender][guardianToRemove];\n\n      if (wasActiveGuardian) {\n        EnumerableSetUpgradeable.AddressSet storage accounts = guardedAccounts[hashedOriginDomain][guardianToRemove];\n        bool accountsRemovalSuccessful = accounts.remove(msg.sender);\n\n        if (!accountsRemovalSuccessful) {\n          revert AccountNotGuardedByAddress(msg.sender, guardianToRemove);\n        }\n      }\n      emit GuardianRemoved(msg.sender, hashedOriginDomain, guardianToRemove);\n      return;\n    }\n\n    revert GuardianNotFound(guardianToRemove);\n  }\n\n  /// @notice This method allows to accept being a guardian of given account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param accountToGuard Address of account which msg.sender is becoming guardian of\n  /// @return Flag indicating whether guardian was already valid or not\n  function addValidationKey(bytes32 hashedOriginDomain, address accountToGuard) external returns (bool) {\n    bool guardianProposed = accountGuardians[hashedOriginDomain][accountToGuard].contains(msg.sender);\n\n    if (guardianProposed) {\n      // We return true if the guardian was not confirmed before.\n      if (accountGuardianData[hashedOriginDomain][accountToGuard][msg.sender].isReady) return false;\n\n      accountGuardianData[hashedOriginDomain][accountToGuard][msg.sender].isReady = true;\n      bool addSuccessful = guardedAccounts[hashedOriginDomain][msg.sender].add(accountToGuard);\n\n      if (!addSuccessful) {\n        revert AccountAlreadyGuardedByGuardian(accountToGuard, msg.sender);\n      }\n\n      emit GuardianAdded(accountToGuard, hashedOriginDomain, msg.sender);\n      return true;\n    }\n\n    revert GuardianNotProposed(msg.sender);\n  }\n\n  /// @notice This modifier allows execution only by active guardian of account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param account Address of account for which we verify guardian existence\n  modifier onlyGuardianOf(bytes32 hashedOriginDomain, address account) {\n    bool isGuardian = accountGuardians[hashedOriginDomain][account].contains(msg.sender) &&\n      accountGuardianData[hashedOriginDomain][account][msg.sender].isReady;\n\n    if (!isGuardian) revert GuardianNotFound(msg.sender);\n    // Continue execution if called by guardian\n    _;\n  }\n\n  /// @notice This method initializes a recovery process for a given account\n  /// @param accountToRecover Address of account for which given recovery is initiated\n  /// @param hashedCredentialId Hashed credential ID of the new passkey\n  /// @param rawPublicKey Raw public key of the new passkey\n  /// @param hashedOriginDomain Hash of origin domain of the new passkey\n  function initRecovery(\n    address accountToRecover,\n    bytes32 hashedCredentialId,\n    bytes32[2] memory rawPublicKey,\n    bytes32 hashedOriginDomain\n  ) external onlyGuardianOf(hashedOriginDomain, accountToRecover) {\n    pendingRecoveryData[hashedOriginDomain][accountToRecover] = RecoveryRequest(\n      hashedCredentialId,\n      rawPublicKey,\n      block.timestamp\n    );\n\n    emit RecoveryInitiated(accountToRecover, hashedOriginDomain, hashedCredentialId, msg.sender);\n  }\n\n  /// @notice This method allows to discard currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function discardRecovery(bytes32 hashedOriginDomain) external {\n    emit RecoveryDiscarded(\n      msg.sender,\n      hashedOriginDomain,\n      pendingRecoveryData[hashedOriginDomain][msg.sender].hashedCredentialId\n    );\n    _discardRecovery(hashedOriginDomain);\n  }\n\n  /// @notice This method allows to finish currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function finishRecovery(bytes32 hashedOriginDomain) internal {\n    emit RecoveryFinished(\n      msg.sender,\n      hashedOriginDomain,\n      pendingRecoveryData[hashedOriginDomain][msg.sender].hashedCredentialId\n    );\n    _discardRecovery(hashedOriginDomain);\n  }\n\n  /// @notice This method allows to discard currently pending recovery\n  /// @param hashedOriginDomain Hash of origin domain\n  function _discardRecovery(bytes32 hashedOriginDomain) internal {\n    delete pendingRecoveryData[hashedOriginDomain][msg.sender];\n  }\n\n  /// @inheritdoc IModuleValidator\n  function validateTransaction(bytes32, Transaction calldata transaction) external returns (bool) {\n    // Finishing Recovery Process. If the user has a recovery in progress then:\n    //   1. The method will check if the transaction is attempting to modify passkeys\n    //   2. Verify the new passkey matches the one stored in `initRecovery`\n    //   3. Allows anyone to call this method, as the recovery was already verified in `initRecovery`\n    //   4. Verifies that the required timelock period has passed since `initRecovery` was called\n    //   5. If all the above are true, the recovery is finished\n    require(transaction.data.length >= 4, \"Only function calls are supported\");\n    require(transaction.to <= type(uint160).max, \"Overflow\");\n    // Verify the transaction is a call to WebAuthValidator contract\n    address target = address(uint160(transaction.to));\n    if (target != address(webAuthValidator)) {\n      return false;\n    }\n\n    // Verify the transaction is a call to `addValidationKey`\n    bytes4 selector = bytes4(transaction.data[:4]);\n    if (selector != WebAuthValidator.addValidationKey.selector) {\n      return false;\n    }\n\n    // Verify the current request matches pending one\n    bytes calldata transactionData = transaction.data[4:];\n    (bytes memory credentialId, bytes32[2] memory rawPublicKey, string memory originDomain) = abi.decode(\n      transactionData,\n      (bytes, bytes32[2], string)\n    );\n\n    bytes32 hashedOriginDomain = keccak256(abi.encodePacked(originDomain));\n    RecoveryRequest storage storedData = pendingRecoveryData[hashedOriginDomain][msg.sender];\n\n    bytes32 hashedCredentialIdFromTx = keccak256(credentialId);\n    if (hashedCredentialIdFromTx != storedData.hashedCredentialId) {\n      return false;\n    }\n\n    if (rawPublicKey[0] != storedData.rawPublicKey[0] || rawPublicKey[1] != storedData.rawPublicKey[1]) {\n      return false;\n    }\n    // Verify request is in valid time range\n    TimestampAsserterLocator.locate().assertTimestampInRange(\n      storedData.timestamp + REQUEST_DELAY_TIME,\n      storedData.timestamp + REQUEST_VALIDITY_TIME\n    );\n\n    finishRecovery(hashedOriginDomain);\n    return true;\n  }\n\n  /// @inheritdoc IModuleValidator\n  function validateSignature(bytes32, bytes memory) external pure returns (bool) {\n    return false;\n  }\n\n  /// @inheritdoc IERC165\n  function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {\n    return\n      interfaceId == type(IERC165).interfaceId ||\n      interfaceId == type(IModuleValidator).interfaceId ||\n      interfaceId == type(IModule).interfaceId;\n  }\n\n  /// @notice Returns all guardians for an account\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param addr Address of account to get guardians for\n  /// @return Array of guardians for the account\n  function guardiansFor(bytes32 hashedOriginDomain, address addr) public view returns (Guardian[] memory) {\n    address[] memory guardians = accountGuardians[hashedOriginDomain][addr].values();\n    Guardian[] memory result = new Guardian[](guardians.length);\n    for (uint256 i = 0; i < guardians.length; i++) {\n      result[i] = accountGuardianData[hashedOriginDomain][addr][guardians[i]];\n    }\n    return result;\n  }\n\n  /// @notice Returns all accounts guarded by a guardian\n  /// @param hashedOriginDomain Hash of origin domain\n  /// @param guardian Address of guardian to get guarded accounts for\n  /// @return Array of accounts guarded by the guardian\n  function guardianOf(bytes32 hashedOriginDomain, address guardian) public view returns (address[] memory) {\n    return guardedAccounts[hashedOriginDomain][guardian].values();\n  }\n\n  /// @notice Returns the pending recovery data for an account and origin domain\n  /// @param hashedOriginDomain Hash of the origin domain\n  /// @param account Address of the account\n  /// @return The full RecoveryRequest struct containing hashedCredentialId, rawPublicKey, and timestamp\n  function getPendingRecoveryData(\n    bytes32 hashedOriginDomain,\n    address account\n  ) public view returns (RecoveryRequest memory) {\n    return pendingRecoveryData[hashedOriginDomain][account];\n  }\n}\n"
+    }
+}

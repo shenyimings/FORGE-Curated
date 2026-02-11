@@ -1,0 +1,84 @@
+{
+    "vfp_id": "vfp_00173",
+    "project_name": "Jovay Sequencer System Contracts Audit.md",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "`view` Functions Return Future-Dated Chain Configuration",
+            "description": "The `get_config` and `get_configs` functions in the `ChainCfg` contract return the latest configuration checkpoint without verifying whether it is effective at the current block. Since `set_config` sets `effectiveBlockNum` to `block.number + 1`, the new configuration should only take effect in the next block. However, the getter functions do not enforce this delay and return the new configuration immediately, allowing it to be used in the same block it was set. The root cause is the absence of a check in the getter functions to ensure `effectiveBlockNum <= block.number`. An attacker or front-running bot could exploit this by reading the new configuration in the same block and acting on it before the intended delay, potentially causing inconsistent behavior across system components that rely on the one-block deferral. This undermines the integrity of the configuration update mechanism and could lead to race conditions or incorrect system state.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::get_config#40",
+                "sys_chaincfg.sol::get_configs#52",
+                "sys_chaincfg.sol::set_config#74"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Linear Complexity Creates DoS Vectors",
+            "description": "Multiple contracts use unbounded arrays with linear search operations (e.g., `ChainCfg.set_config`, `InferRuleManager.checkExist`, `DPoSValidatorManager.isArrayContains`), leading to increasing gas costs.\nAs data grows, these operations may exceed block gas limits, preventing further execution.\nThe cause is the use of arrays instead of mappings or sets for large datasets.\nThe impact is a denial-of-service condition where critical functions become unusable, especially in `ChainCfg` which has quadratic complexity on config updates.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::set_config#60",
+                "sys_chaincfg.sol::get_config#40",
+                "rule_mng.sol::checkExist#55",
+                "rule_mng.sol::delRule#204",
+                "rule_mng.sol::updateRule#169",
+                "rule_mng.sol::advanceEpoch#322",
+                "sys_staking.sol::isArrayContains#2492",
+                "permission_control.sol::checkGrantPermission#31",
+                "permission_control.sol::revokeAdmin#80"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ]
+            },
+            "title": "Unreadable Historical Checkpoints",
+            "description": "The `ChainCfg` contract stores configuration checkpoints in the private `configCps` array but only exposes the latest checkpoint via `get_config` and `get_configs`. This makes historical configurations inaccessible, rendering the checkpoint mechanism partially useless for auditing or state recovery. The root cause is the lack of public functions to query past checkpoints. While the data is stored, its inaccessibility defeats the purpose of maintaining a history. This limits the ability to verify past configurations or debug issues, reducing transparency and auditability. The impact is a weakened governance and monitoring system, as stakeholders cannot verify how configurations have evolved over time.\n",
+            "severity": "Medium",
+            "location": [
+                "sys_chaincfg.sol::get_config#40",
+                "sys_chaincfg.sol::get_configs#52",
+                "sys_chaincfg.sol::configCps"
+            ],
+            "files": [
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/sys_chaincfg.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "sys_chaincfg.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ncontract ChainCfg {\n    struct Config {\n        string key;\n        string value;\n    }\n\n    struct ConfigCheckpoint {\n        uint64 blockNum;\n        uint64 effectiveBlockNum;\n        Config[] configs;\n    }\n\n\n    ConfigCheckpoint[] configCps;\n\n    event ConfigUpdate(uint64 indexed blockNum, uint64 indexed effectiveBlockNum, string[] keys, string[] values);\n    \n    address public rootSys;\n    address public constant sysStaking = 0x4100000000000000000000000000000000000000;\n    address public constant intrinsicSys = 0x1111111111111111111111111111111111111111;\n\n    constructor() {\n    }\n\n    modifier onlyOwner() {\n        require(msg.sender == rootSys || msg.sender == sysStaking || msg.sender == intrinsicSys, \"Not owner\");\n        _;\n    }\n\n    function changeSys(address _newOwner)\n        public\n        onlyOwner\n    {\n        rootSys = _newOwner;\n    }\n\n    function get_config(string memory key) public view returns (string memory) {\n        if (configCps.length != 0) {\n            for (uint256 i = 0; i < configCps[configCps.length - 1].configs.length; i++) {\n                Config storage conf = configCps[configCps.length - 1].configs[i];\n                if (keccak256(abi.encodePacked(key)) == keccak256(abi.encodePacked(conf.key))) {\n                    return conf.value;\n                }\n            }\n        }\n        return \"\";\n    }\n\n    function get_configs() public view returns (Config[] memory) {\n        if (configCps.length != 0) {\n            return configCps[configCps.length - 1].configs;\n        }\n        Config[] memory configs;\n        return configs;\n    }\n\n    function set_config(string[] memory keys, string[] memory values) external onlyOwner {\n        require(keys.length == values.length, \"KVs are not match\");\n        if (configCps.length == 3) {\n            delete configCps[0];\n            for (uint256 i = 1; i < configCps.length; i++) {\n                configCps[i - 1] = configCps[i];\n            }\n            configCps.pop(); \n        }\n\n        uint256 old_config_cps_number = configCps.length;\n\n        ConfigCheckpoint storage cfgCp = configCps.push();\n        cfgCp.blockNum = uint64(block.number);\n        cfgCp.effectiveBlockNum = uint64(block.number + 1);\n\n        if (old_config_cps_number != 0) {\n            require(configCps[configCps.length - 2].effectiveBlockNum <= block.number, \"INVALID_STATE\");\n\n            for (uint256 i = 0; i < configCps[configCps.length - 2].configs.length; i++) {\n                Config storage conf = configCps[configCps.length - 2].configs[i];\n                bool found = false;\n                for (uint256 j = 0; j < keys.length; j++) {\n                    if (keccak256(abi.encodePacked(conf.key)) == keccak256(abi.encodePacked(keys[j]))) {\n                        found = true; \n                        break;\n                    }\n                }\n                if (!found) {\n                    cfgCp.configs.push(Config({\n                        key: conf.key,\n                        value: conf.value\n                    }));\n                }\n            }\n        }\n\n        for (uint256 i = 0; i < keys.length; i++) {\n            cfgCp.configs.push(Config({\n                key: keys[i],\n                value: values[i]\n            }));\n        }\n\n        emit ConfigUpdate(uint64(block.number), uint64(block.number + 1), keys, values);\n    }\n}"
+    }
+}

@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00027",
+    "project_name": "cantina_uniswap_nov2025.pdf",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Pools of assets with very low volume could make fees sit in the contract indefinitely unless the threshold is updated",
+            "description": "1. **Description:** The `release` function in `ExchangeReleaser.sol` requires searchers to burn a threshold amount of UNI to claim fee tokens. For pools with very low trading volume, the value of the accumulated fees may be less than the required UNI burn, making it economically unviable to claim.\n2. **Cause:** The fixed threshold and limited `MAX_RELEASE_LENGTH` (20) create a situation where low-value tokens remain unclaimed indefinitely.\n3. **Exploitation:** No active exploitation is required; this is a passive economic disincentive.\n4. **Impact:** Tokens with minimal value may remain trapped in the contract forever, reducing capital efficiency and potentially requiring future governance intervention to resolve.\n",
+            "severity": "Low",
+            "location": [
+                "ExchangeReleaser.sol::release#39"
+            ],
+            "files": [
+                "protocol-fees/src/releasers/ExchangeReleaser.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ExchangeReleaser.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.29;\n\nimport {Currency} from \"v4-core/types/Currency.sol\";\nimport {ERC20} from \"solmate/src/tokens/ERC20.sol\";\nimport {SafeTransferLib} from \"solmate/src/utils/SafeTransferLib.sol\";\nimport {ResourceManager} from \"../base/ResourceManager.sol\";\nimport {Nonce} from \"../base/Nonce.sol\";\nimport {ITokenJar} from \"../interfaces/ITokenJar.sol\";\nimport {IReleaser} from \"../interfaces/IReleaser.sol\";\n\n/// @title ExchangeReleaser\n/// @notice A contract that releases assets from an TokenJar in exchange for transferring a\n/// threshold amount of a resource token\n/// @dev Inherits from ResourceManager for resource transferring functionality and Nonce for replay\n/// protection\n/// @custom:security-contact security@uniswap.org\nabstract contract ExchangeReleaser is IReleaser, ResourceManager, Nonce {\n  using SafeTransferLib for ERC20;\n\n  /// @notice Maximum number of different assets that can be released in a single call\n  uint256 public constant MAX_RELEASE_LENGTH = 20;\n\n  /// @inheritdoc IReleaser\n  ITokenJar public immutable TOKEN_JAR;\n\n  /// @notice Creates a new ExchangeReleaser instance\n  /// @param _resource The address of the resource token that must be transferred\n  /// @param _threshold The minimum amount of resource tokens that must be transferred\n  /// @param _tokenJar The address of the TokenJar contract holding the assets\n  /// @param _recipient The address that will receive the resource tokens\n  constructor(address _resource, uint256 _threshold, address _tokenJar, address _recipient)\n    ResourceManager(_resource, _threshold, msg.sender, _recipient)\n  {\n    TOKEN_JAR = ITokenJar(payable(_tokenJar));\n  }\n\n  /// @inheritdoc IReleaser\n  function release(uint256 _nonce, Currency[] calldata assets, address recipient)\n    external\n    handleNonce(_nonce)\n  {\n    require(assets.length <= MAX_RELEASE_LENGTH, TooManyAssets());\n    RESOURCE.safeTransferFrom(msg.sender, RESOURCE_RECIPIENT, threshold);\n    TOKEN_JAR.release(assets, recipient);\n    _afterRelease(assets, recipient);\n  }\n\n  /// @notice Internal function to handle any post transfer actions\n  /// e.g. bridge calls or notifications\n  function _afterRelease(Currency[] calldata assets, address recipient) internal virtual {\n    // by default do nothing after release\n  }\n}\n"
+    }
+}

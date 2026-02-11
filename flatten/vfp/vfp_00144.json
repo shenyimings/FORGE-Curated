@@ -1,0 +1,31 @@
+{
+    "vfp_id": "vfp_00144",
+    "project_name": "Likwid - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "Truncated reserves bypass price safety mechanism when no interest accrues",
+            "description": "The price safety mechanism in PriceMath.sol uses truncatedReserves to limit rapid price changes by gradually converging toward actual reserves. However, both updateInterests() and getCurrentState() bypass this mechanism when no interest accrual occurs, directly setting truncatedReserves to actual pair reserves. An attacker can exploit this by performing a large swap and then triggering a state update when no interest is accrued, causing an instantaneous price update. This bypasses the intended rate-limiting protection, enabling price manipulation that affects dynamic fees and margin health checks, potentially leading to unfair liquidations or protocol losses.\n",
+            "severity": "High",
+            "location": [
+                "PriceMath.sol",
+                "Pool.sol",
+                "StateLibrary.sol"
+            ],
+            "files": [
+                "likwid-margin/src/libraries/PriceMath.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PriceMath.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.26;\n\nimport {Math} from \"./Math.sol\";\nimport {SafeCast} from \"./SafeCast.sol\";\nimport {PerLibrary} from \"./PerLibrary.sol\";\nimport {Reserves, toReserves} from \"../types/Reserves.sol\";\n\nlibrary PriceMath {\n    using SafeCast for *;\n    using PerLibrary for *;\n\n    function transferReserves(\n        Reserves originReserves,\n        Reserves destReserves,\n        uint256 timeElapsed,\n        uint24 maxPriceMovePerSecond\n    ) internal pure returns (Reserves result) {\n        if (destReserves.bothPositive()) {\n            if (!originReserves.bothPositive()) {\n                result = destReserves;\n            } else {\n                (uint256 truncatedReserve0, uint256 truncatedReserve1) = originReserves.reserves();\n                uint256 priceMoved = maxPriceMovePerSecond * (timeElapsed ** 2);\n                uint128 newTruncatedReserve0 = 0;\n                uint128 newTruncatedReserve1 = destReserves.reserve1();\n                uint256 _reserve0 = destReserves.reserve0();\n\n                uint256 reserve0Min =\n                    Math.mulDiv(newTruncatedReserve1, truncatedReserve0.lowerMillion(priceMoved), truncatedReserve1);\n                uint256 reserve0Max =\n                    Math.mulDiv(newTruncatedReserve1, truncatedReserve0.upperMillion(priceMoved), truncatedReserve1);\n                if (_reserve0 < reserve0Min) {\n                    newTruncatedReserve0 = reserve0Min.toUint128();\n                } else if (_reserve0 > reserve0Max) {\n                    newTruncatedReserve0 = reserve0Max.toUint128();\n                } else {\n                    newTruncatedReserve0 = _reserve0.toUint128();\n                }\n                result = toReserves(newTruncatedReserve0, newTruncatedReserve1);\n            }\n        } else {\n            result = destReserves;\n        }\n    }\n}\n"
+    }
+}

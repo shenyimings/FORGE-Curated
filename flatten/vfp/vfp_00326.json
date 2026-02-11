@@ -1,0 +1,87 @@
+{
+    "vfp_id": "vfp_00326",
+    "project_name": "cantina_rocketpool_jun2025.pdf",
+    "findings": [
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing upper guardrail for node.voting.power.stake.maximum allows bypass of RPL clamping to increase voting power",
+            "description": "The node.voting.power.stake.maximum parameter, which caps the effective RPL stake used in voting power calculations (default 1.5 ether), lacks an upper guardrail. This allows the pDAO to set it to an extremely high value, effectively bypassing the clamping mechanism in calculateVotingPower(). The root cause is the missing upper bound validation. A malicious pDAO could exploit this to allow large stakeholders to gain disproportionate voting power, undermining governance fairness. The impact is centralization of voting power and potential capture of pDAO governance.\n",
+            "severity": "Low",
+            "location": [
+                "RocketDAOProtocolSettingsNode.sol#L35",
+                "RocketNetworkSnapshots.sol#L20",
+                "RocketNetworkVoting.sol#L77-L80",
+                "RocketNetworkVoting.sol#L88-L96"
+            ],
+            "files": [
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing lower guardrail for reduced.bond may allow validators to stake with lower bond than expected",
+            "description": "The protocol lacks a minimum guardrail for the reduced.bond setting, which determines the required ETH bond per validator for node operators staking more than two validators.\n\nThe root cause is the absence of input validation when updating the reduced.bond parameter via DAO governance. While RPIP-42 specifies a reduction from 4 ETH to 1.5 ETH, the system allows the pDAO to set this value to zero or any arbitrarily low amount.\n\nA malicious or compromised pDAO could set reduced.bond to zero, enabling node operators to stake with no bonded ETH. This allows them to earn commission rewards without financial skin in the game.\n\nThe impact includes increased risk of validator slashing and abandonment, 100% loan-to-value (LTV) staking, and erosion of protocol security, as node operators have no economic incentive to act honestly.\n",
+            "severity": "Medium",
+            "location": [
+                "RocketDAOProtocolSettingsNode.sol#24",
+                "RocketDAOProtocolSettingsNode.sol#31-44",
+                "RocketMegapoolDelegate.sol#177",
+                "RocketMegapoolDelegate.sol#251",
+                "RocketMegapoolDelegate.sol#720",
+                "RocketNodeDeposit.sol#38-53"
+            ],
+            "files": [
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing guardrails for node.unstaking.period can cause unexpected withdrawal behaviors",
+            "description": "The node.unstaking.period setting is initialized to 28 days as per RPIP-30, but no guardrails exist to limit its value. This allows the pDAO to set it to zero (allowing immediate withdrawals) or an extremely high value (indefinitely blocking withdrawals), both of which can disrupt staking incentives and reward gaming resistance. The root cause is the absence of upper and lower bounds in the specification. A malicious pDAO majority could exploit this to either encourage reward farming or lock user funds. The impact includes potential gaming of staking rewards and user fund accessibility issues.\n",
+            "severity": "Low",
+            "location": [
+                "RocketDAOProtocolSettingsNode.sol#L25",
+                "RocketDAOProtocolSettingsNode.sol#L31-L44"
+            ],
+            "files": [
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "RocketDAOProtocolSettingsNode.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity 0.8.30;\n\nimport {RocketStorageInterface} from \"../../../../interface/RocketStorageInterface.sol\";\nimport {RocketDAOProtocolSettings} from \"./RocketDAOProtocolSettings.sol\";\nimport {RocketDAOProtocolSettingsNodeInterface} from \"../../../../interface/dao/protocol/settings/RocketDAOProtocolSettingsNodeInterface.sol\";\nimport {RocketNetworkSnapshotsInterface} from \"../../../../interface/network/RocketNetworkSnapshotsInterface.sol\";\n\n/// @notice Network auction settings\ncontract RocketDAOProtocolSettingsNode is RocketDAOProtocolSettings, RocketDAOProtocolSettingsNodeInterface {\n    // Construct\n    constructor(RocketStorageInterface _rocketStorageAddress) RocketDAOProtocolSettings(_rocketStorageAddress, \"node\") {\n        // Set version\n        version = 5;\n        // Initialise settings on deployment\n        if (!rocketStorage.getDeployedStatus()) {\n            // Set defaults\n            setSettingBool(\"node.registration.enabled\", false);\n            setSettingBool(\"node.smoothing.pool.registration.enabled\", true);\n            setSettingBool(\"node.deposit.enabled\", false);\n            setSettingBool(\"node.vacant.minipools.enabled\", false);\n            _setSettingUint(\"node.per.minipool.stake.minimum\", 0.1 ether);      // 10% of user ETH value (borrowed ETH)\n            _setSettingUint(\"node.per.minipool.stake.maximum\", 1.5 ether);      // 150% of node ETH value (bonded ETH)\n            _setSettingUint(\"reduced.bond\", 4 ether);                           // 4 ETH (RPIP-42)\n            _setSettingUint(\"node.unstaking.period\", 28 days);                  // 28 days (RPIP-30)\n            // Update deployed flag\n            setBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")), true);\n        }\n    }\n\n    /// @notice Update a setting, overrides inherited setting method with extra checks for this contract\n    function setSettingUint(string memory _settingPath, uint256 _value) override public onlyDAOProtocolProposal {\n        if(getBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")))) {\n            bytes32 settingKey = keccak256(bytes(_settingPath));\n            if(settingKey == keccak256(bytes(\"node.voting.power.stake.maximum\"))) {\n                // Redirect the setting change to push a new value into the snapshot system instead\n                RocketNetworkSnapshotsInterface rocketNetworkSnapshots = RocketNetworkSnapshotsInterface(getContractAddress(\"rocketNetworkSnapshots\"));\n                rocketNetworkSnapshots.push(settingKey, uint224(_value));\n                return;\n            }\n        }\n        // Update setting now\n        _setSettingUint(_settingPath, _value);\n    }\n\n    /// @dev Directly updates a setting, no guardrails applied\n    function _setSettingUint(string memory _settingPath, uint256 _value) internal {\n        setUint(keccak256(abi.encodePacked(settingNameSpace, _settingPath)), _value);\n    }\n\n    // Node registrations currently enabled\n    function getRegistrationEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.registration.enabled\");\n    }\n\n    // Node smoothing pool registrations currently enabled\n    function getSmoothingPoolRegistrationEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.smoothing.pool.registration.enabled\");\n    }\n\n    // Node deposits currently enabled\n    function getDepositEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.deposit.enabled\");\n    }\n\n    // Vacant minipools currently enabled\n    function getVacantMinipoolsEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.vacant.minipools.enabled\");\n    }\n\n    // Minimum RPL stake per minipool as a fraction of assigned user ETH value\n    function getMinimumPerMinipoolStake() override external view returns (uint256) {\n        return getSettingUint(\"node.per.minipool.stake.minimum\");\n    }\n\n    // Maximum RPL stake per minipool as a fraction of assigned user ETH value\n    function getMaximumPerMinipoolStake() override external view returns (uint256) {\n        return getSettingUint(\"node.per.minipool.stake.maximum\");\n    }\n\n    // Maximum staked RPL that applies to voting power per minipool as a fraction of assigned user ETH value\n    function getMaximumStakeForVotingPower() override external view returns (uint256) {\n        bytes32 settingKey = keccak256(bytes(\"node.voting.power.stake.maximum\"));\n        RocketNetworkSnapshotsInterface rocketNetworkSnapshots = RocketNetworkSnapshotsInterface(getContractAddress(\"rocketNetworkSnapshots\"));\n        return uint256(rocketNetworkSnapshots.latestValue(settingKey));\n    }\n\n    /// @notice Returns the `reduced_bond` variable used in bond requirements calculation\n    function getReducedBond() override external view returns (uint256) {\n        return getSettingUint(\"reduced.bond\");\n    }\n\n    /// @notice Returns the `base_bond_array` mapping of number of validators to cumulative bond requirement\n    function getBaseBondArray() override public pure returns (uint256[] memory) {\n        uint256[] memory amounts = new uint256[](2);\n        amounts[0] = 4 ether;\n        amounts[1] = 8 ether;\n        return amounts;\n    }\n\n    /// @notice Returns the amount of time that must be waiting after unstaking RPL before it can be returned\n    function getUnstakingPeriod() override external view returns (uint256) {\n        return getSettingUint(\"node.unstaking.period\");\n    }\n}\n"
+    }
+}

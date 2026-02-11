@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00076",
+    "project_name": "OIF Broadcaster Audit.md",
+    "findings": [
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Stuck Oracle Verifications for Migrated Chains",
+            "description": "The `BroadcasterOracle` contract allows the owner to set the `broadcasterId` for a chain, but this setting is immutable once set. If a layer-2 chain changes its settlement layer (e.g., from Ethereum to a new gateway), the route to verify messages changes, and the `broadcasterId` accumulator will no longer match the stored value. Because the ID cannot be updated, oracle verifications for that chain become permanently stuck. This design choice prioritizes immutability over adaptability, but it risks long-term disruption of cross-chain communication in the event of chain migrations, which, while rare, are not impossible.\n",
+            "severity": "Low",
+            "location": [
+                "ChainMap.sol::setBroadcasterId#39-59"
+            ],
+            "files": [
+                "acc7f9ca32ccd9e133f00c644251d7ff976edb24/src/oracles/ChainMap.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ChainMap.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport { Ownable } from \"openzeppelin/access/Ownable.sol\";\n\n/**\n * @notice Add chainmapping functionality to an oracle.\n * @dev If this oracle extension is used, it is important that transparent maps are not used; If a chain does not have a\n * corresponding configured id, it cannot be returned as is. The owner can later change this mapping unexpectedly. This\n * is not true for configured mappings.\n */\nabstract contract ChainMap is Ownable {\n    error AlreadySet();\n    error ZeroValue();\n\n    event ChainMapConfigured(uint256 protocolChainIdentifier, uint256 chainId);\n\n    mapping(uint256 protocolChainidentifier => uint256 chainId) public chainIdMap;\n    mapping(uint256 chainId => uint256 protocolChainidentifier) public reverseChainIdMap;\n\n    constructor(\n        address _owner\n    ) Ownable(_owner) { }\n\n    // --- Chain ID Functions --- //\n\n    /**\n     * @dev Wrapper for translating chainIds. Intended to override the implementation of the oracle.\n     * @param protocolId ChainId of a message.\n     * @return chainId \"Canonical\" chain id.\n     */\n    function _getMappedChainId(\n        uint256 protocolId\n    ) internal view virtual returns (uint256 chainId) {\n        chainId = chainIdMap[protocolId];\n        if (chainId == 0) revert ZeroValue();\n    }\n\n    /**\n     * @notice Sets an immutable map between 2 chain identifiers.\n     * @dev Can only be called once for every chain.\n     * @param protocolChainIdentifier Messaging protocol's chain identifier.\n     * @param chainId \"Canonical\" chain id. For EVM, should be block.chainid.\n     */\n    function setChainMap(\n        uint256 protocolChainIdentifier,\n        uint256 chainId\n    ) external onlyOwner {\n        if (protocolChainIdentifier == 0) revert ZeroValue();\n        if (chainId == 0) revert ZeroValue();\n\n        if (chainIdMap[protocolChainIdentifier] != 0) revert AlreadySet();\n        if (reverseChainIdMap[chainId] != 0) revert AlreadySet();\n\n        chainIdMap[protocolChainIdentifier] = chainId;\n        reverseChainIdMap[chainId] = protocolChainIdentifier;\n\n        emit ChainMapConfigured(protocolChainIdentifier, chainId);\n    }\n}\n"
+    }
+}

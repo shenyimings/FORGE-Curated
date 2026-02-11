@@ -1,0 +1,52 @@
+{
+    "vfp_id": "vfp_00360",
+    "project_name": "2025-04-reserve-folio-solidity-securityreview.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "GovernanceDeployer does not enforce minimum values for timelock contract",
+            "description": "The GovernanceDeployer contract does not enforce minimum values for the governance executor timelock contract, which is a critical component for preventing malicious governance proposals. The lack of enforced minimums allows potentially unsafe configurations where the timelock delay could be set too low, reducing the window for guardians to detect and cancel malicious proposals. An attacker could exploit this by creating a Folio with a very short timelock, accelerating the execution of a malicious governance action. This could lead to insufficient response time for guardians, increasing the risk of fund loss or protocol manipulation. This issue arises because the GovernanceDeployer contract does not enforce minimum values for parameters such as minimum delay or grace period, undermining the security purpose of the timelock mechanism. An attacker with governance control could potentially expedite malicious proposals by reducing the timelock duration. The impact includes reduced resilience against malicious governance actions and increased risk of rapid, unchallenged execution of harmful changes.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/deployer/GovernanceDeployer.sol",
+                "GovernanceDeployer"
+            ],
+            "files": [
+                "reserve-index-dtf/contracts/deployer/GovernanceDeployer.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-654"
+                ]
+            },
+            "title": "Fully on-chain governance creates existential governance attack risks",
+            "description": "Folios created via deployGovernedFolio are owned by a timelock-governed contract, giving complete control over the Folio, including the ability to upgrade and potentially steal funds. This creates an existential risk where an attacker could accumulate governance tokens, pass a malicious proposal, and upgrade the contract if not canceled by the guardian. The only defense is the guardian role, which lacks documented automation or availability guarantees. If guardians are offline or the project is abandoned, users have no protection. This undermines the security model and exposes users to total loss of funds in the event of a successful governance attack. The system relies entirely on on-chain governance, which exposes it to potential attacks such as vote manipulation, sybil attacks, or governance takeovers via token accumulation. Without off-chain checks or timelock safeguards, critical system parameters can be changed rapidly if an attacker gains token majority. The cause is the design choice to centralize all governance decisions on-chain without additional risk mitigation layers. This could allow an attacker to reconfigure core protocol functions, leading to potential loss of funds or protocol shutdown.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "reserve-index-dtf/contracts/deployer/GovernanceDeployer.sol",
+                "reserve-index-dtf/contracts/folio/Folio.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "GovernanceDeployer.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.28;\n\nimport { TimelockControllerUpgradeable } from \"@openzeppelin/contracts-upgradeable/governance/TimelockControllerUpgradeable.sol\";\nimport { Clones } from \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { IVotes } from \"@openzeppelin/contracts/governance/utils/IVotes.sol\";\n\nimport { IGovernanceDeployer } from \"@interfaces/IGovernanceDeployer.sol\";\nimport { FolioGovernor } from \"@gov/FolioGovernor.sol\";\nimport { StakingVault } from \"@staking/StakingVault.sol\";\nimport { Versioned } from \"@utils/Versioned.sol\";\n\n/**\n * @title Governance Deployer\n * @author akshatmittal, julianmrodri, pmckelvy1, tbrent\n */\ncontract GovernanceDeployer is IGovernanceDeployer, Versioned {\n    uint256 constant DEFAULT_REWARD_PERIOD = 3.5 days;\n    uint256 constant DEFAULT_UNSTAKING_DELAY = 1 weeks;\n\n    event DeployedGovernedStakingToken(\n        address indexed underlying,\n        address indexed stToken,\n        address governor,\n        address timelock\n    );\n    event DeployedGovernance(address indexed stToken, address governor, address timelock);\n\n    address public immutable governorImplementation;\n    address public immutable timelockImplementation;\n\n    constructor(address _governorImplementation, address _timelockImplementation) {\n        governorImplementation = _governorImplementation;\n        timelockImplementation = _timelockImplementation;\n    }\n\n    /// Deploys a StakingVault owned by a Governor with Timelock\n    /// @param name Name of the staking vault\n    /// @param symbol Symbol of the staking vault\n    /// @param underlying Underlying token for the staking vault\n    /// @param govParams Governance parameters for the governor\n    /// @param deploymentNonce Nonce for the deployment salt\n    /// @return stToken A staking vault that can be used with multiple governors\n    /// @return governor A governor responsible for the staking vault\n    /// @return timelock Timelock for the governor, owns staking vault\n    function deployGovernedStakingToken(\n        string memory name,\n        string memory symbol,\n        IERC20 underlying,\n        IGovernanceDeployer.GovParams calldata govParams,\n        bytes32 deploymentNonce\n    ) external returns (StakingVault stToken, address governor, address timelock) {\n        bytes32 deploymentSalt = keccak256(abi.encode(name, symbol, underlying, govParams, deploymentNonce));\n\n        stToken = new StakingVault{ salt: deploymentSalt }(\n            name,\n            symbol,\n            underlying,\n            address(this), // temporary admin\n            DEFAULT_REWARD_PERIOD,\n            DEFAULT_UNSTAKING_DELAY\n        );\n\n        (governor, timelock) = deployGovernanceWithTimelock(govParams, IVotes(stToken), deploymentSalt);\n\n        stToken.transferOwnership(timelock);\n\n        emit DeployedGovernedStakingToken(address(underlying), address(stToken), governor, timelock);\n    }\n\n    function deployGovernanceWithTimelock(\n        IGovernanceDeployer.GovParams calldata govParams,\n        IVotes stToken,\n        bytes32 deploymentNonce\n    ) public returns (address governor, address timelock) {\n        bytes32 deploymentSalt = keccak256(abi.encode(govParams, stToken, deploymentNonce));\n\n        governor = Clones.cloneDeterministic(governorImplementation, deploymentSalt);\n        timelock = Clones.cloneDeterministic(timelockImplementation, deploymentSalt);\n\n        TimelockControllerUpgradeable timelockController = TimelockControllerUpgradeable(payable(timelock));\n\n        FolioGovernor(payable(governor)).initialize(\n            stToken,\n            timelockController,\n            govParams.votingDelay,\n            govParams.votingPeriod,\n            govParams.proposalThreshold,\n            govParams.quorumPercent\n        );\n\n        address[] memory proposersAndExecutors = new address[](1);\n        proposersAndExecutors[0] = governor;\n\n        timelockController.initialize(\n            govParams.timelockDelay,\n            proposersAndExecutors, // Proposer Role\n            proposersAndExecutors, // Executor Role\n            address(this) // temporary admin\n        );\n\n        for (uint256 i; i < govParams.guardians.length; i++) {\n            timelockController.grantRole(timelockController.CANCELLER_ROLE(), govParams.guardians[i]);\n        }\n\n        timelockController.renounceRole(timelockController.DEFAULT_ADMIN_ROLE(), address(this));\n\n        emit DeployedGovernance(address(stToken), governor, timelock);\n    }\n}\n"
+    }
+}

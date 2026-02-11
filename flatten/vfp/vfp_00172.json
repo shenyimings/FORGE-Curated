@@ -1,0 +1,36 @@
+{
+    "vfp_id": "vfp_00172",
+    "project_name": "The Compact Audit.md",
+    "findings": [
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-228"
+                ],
+                "3": [
+                    "CWE-237"
+                ],
+                "4": [
+                    "CWE-240"
+                ]
+            },
+            "title": "Event Signature Mismatch During Claim",
+            "description": "The `Claim` event's signature is calculated without including the `uint256` type for the `nonce` parameter, which is present in the actual event emission in `emitClaim`. This causes a mismatch between the declared and emitted event signatures.\nThe root cause is an incomplete event signature string in `EventLib`, which omits the type annotation for `nonce`. This leads to incorrect topic hashing during event emission.\nOff-chain tools that rely on event signature matching (e.g., indexers, wallets, analytics platforms) will fail to decode the `Claim` event correctly, leading to broken event parsing and potential misinterpretation of claim data.\nThe impact is primarily on observability and integration, resulting in unreliable off-chain monitoring and user-facing interfaces that may misrepresent claim activity.\n",
+            "severity": "Low",
+            "location": [
+                "EventLib.sol#12-13",
+                "EventLib.sol::emitClaim#36"
+            ],
+            "files": [
+                "the-compact/src/lib/EventLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "EventLib.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\n/**\n * @title EventLib\n * @notice Library contract implementing logic for internal functions to\n * emit various events.\n * @dev Note that most events are still emitted using inline logic; this\n * library only implements a few events.\n */\nlibrary EventLib {\n    // keccak256(bytes(\"Claim(address,address,address,bytes32)\")).\n    uint256 private constant _CLAIM_EVENT_SIGNATURE = 0x770c32a2314b700d6239ee35ba23a9690f2fceb93a55d8c753e953059b3b18d4;\n\n    // keccak256(bytes(\"ForcedWithdrawalStatusUpdated(address,uint256,bool,uint256)\")).\n    uint256 private constant _FORCED_WITHDRAWAL_STATUS_UPDATED_SIGNATURE =\n        0xe27f5e0382cf5347965fc81d5c81cd141897fe9ce402d22c496b7c2ddc84e5fd;\n\n    /**\n     * @notice Internal function for emitting claim events. The sponsor and allocator\n     * addresses are sanitized before emission.\n     * @param sponsor   The account sponsoring the compact that the claim is for.\n     * @param claimHash The EIP-712 hash of the claim message.\n     * @param allocator The account mediating the claim.\n     * @param nonce     The nonce on the claimed compact.\n     */\n    function emitClaim(address sponsor, bytes32 claimHash, address allocator, uint256 nonce) internal {\n        assembly (\"memory-safe\") {\n            // Emit the Claim event:\n            //  - topic1: Claim event signature\n            //  - topic2: sponsor address (sanitized)\n            //  - topic3: allocator address (sanitized)\n            //  - topic4: caller address\n            //  - data: messageHash, nonce\n            mstore(0, claimHash)\n            mstore(0x20, nonce)\n            log4(\n                0,\n                0x40,\n                _CLAIM_EVENT_SIGNATURE,\n                shr(0x60, shl(0x60, sponsor)),\n                shr(0x60, shl(0x60, allocator)),\n                caller()\n            )\n        }\n    }\n\n    /**\n     * @notice Internal function for emitting forced withdrawal status update events.\n     * @param id             The ERC6909 token identifier of the resource lock.\n     * @param withdrawableAt The timestamp when withdrawal becomes possible.\n     */\n    function emitForcedWithdrawalStatusUpdatedEvent(uint256 id, uint256 withdrawableAt) internal {\n        assembly (\"memory-safe\") {\n            // Emit ForcedWithdrawalStatusUpdated event:\n            //  - topic1: Event signature\n            //  - topic2: Caller address\n            //  - topic3: Token id\n            //  - data: [activating flag, withdrawableAt timestamp]\n            mstore(0, iszero(iszero(withdrawableAt)))\n            mstore(0x20, withdrawableAt)\n            log3(0, 0x40, _FORCED_WITHDRAWAL_STATUS_UPDATED_SIGNATURE, caller(), id)\n        }\n    }\n}\n"
+    }
+}

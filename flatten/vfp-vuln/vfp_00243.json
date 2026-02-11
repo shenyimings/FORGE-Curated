@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00243",
+    "project_name": "SSO Account Abstraction Audit.md",
+    "findings": [
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "SsoAccount Contract Deployment Can Be Frontrun",
+            "description": "The `AAFactory` allows any user to deploy an `SsoAccount` using a salt and unique account ID, but does not prevent other users from observing and frontrunning this transaction. This occurs because the deployment relies on predictable inputs (`_salt` and `_uniqueAccountId`) without incorporating `msg.sender` or a sequential nonce. An attacker can monitor the mempool, compute the CREATE2 address, and deploy the contract first, potentially receiving funds sent to that address by the original user. The impact includes loss of funds and denial-of-service, where users lose control over their intended account address.\n",
+            "severity": "High",
+            "location": [
+                "AAFactory.sol#45"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/AAFactory.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AAFactory.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { DEPLOYER_SYSTEM_CONTRACT, IContractDeployer } from \"@matterlabs/zksync-contracts/l2/system-contracts/Constants.sol\";\nimport { SystemContractsCaller } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/SystemContractsCaller.sol\";\n\nimport { ISsoAccount } from \"./interfaces/ISsoAccount.sol\";\n\n/// @title AAFactory\n/// @author Matter Labs\n/// @custom:security-contact security@matterlabs.dev\n/// @dev This contract is used to deploy SSO accounts as beacon proxies.\ncontract AAFactory {\n  /// @notice Emitted when a new account is successfully created.\n  /// @param accountAddress The address of the newly created account.\n  /// @param uniqueAccountId A unique identifier for the account.\n  event AccountCreated(address indexed accountAddress, string uniqueAccountId);\n\n  /// @dev The bytecode hash of the beacon proxy, used for deploying proxy accounts.\n  bytes32 public immutable beaconProxyBytecodeHash;\n  address public immutable beacon;\n\n  /// @notice A mapping from unique account IDs to their corresponding deployed account addresses.\n  mapping(string => address) public accountMappings;\n\n  /// @notice Constructor that initializes the factory with a beacon proxy bytecode hash and implementation contract address.\n  /// @param _beaconProxyBytecodeHash The bytecode hash of the beacon proxy.\n  /// @param _beacon The address of the UpgradeableBeacon contract used for the SSO accounts' beacon proxies.\n  constructor(bytes32 _beaconProxyBytecodeHash, address _beacon) {\n    beaconProxyBytecodeHash = _beaconProxyBytecodeHash;\n    beacon = _beacon;\n  }\n\n  function getEncodedBeacon() external view returns (bytes memory) {\n    return abi.encode(beacon);\n  }\n\n  /// @notice Deploys a new SSO account as a beacon proxy with the specified parameters.\n  /// @dev Uses `create2` to deploy a proxy account, allowing for deterministic addresses based on the provided salt.\n  /// @param _salt The salt used for the `create2` deployment to make the address deterministic.\n  /// @param _uniqueAccountId A unique identifier for the new account.\n  /// @param _initialValidators An array of initial validators for the new account.\n  /// @param _initialK1Owners An array of initial owners of the K1 key for the new account.\n  /// @return accountAddress The address of the newly deployed SSO account.\n  function deployProxySsoAccount(\n    bytes32 _salt,\n    string calldata _uniqueAccountId,\n    bytes[] calldata _initialValidators,\n    address[] calldata _initialK1Owners\n  ) external returns (address accountAddress) {\n    require(accountMappings[_uniqueAccountId] == address(0), \"Account already exists\");\n\n    (bool success, bytes memory returnData) = SystemContractsCaller.systemCallWithReturndata(\n      uint32(gasleft()),\n      address(DEPLOYER_SYSTEM_CONTRACT),\n      uint128(0),\n      abi.encodeCall(\n        DEPLOYER_SYSTEM_CONTRACT.create2Account,\n        (_salt, beaconProxyBytecodeHash, abi.encode(beacon), IContractDeployer.AccountAbstractionVersion.Version1)\n      )\n    );\n    require(success, \"Deployment failed\");\n    (accountAddress) = abi.decode(returnData, (address));\n\n    // Initialize the newly deployed account with validators, hooks and K1 owners.\n    ISsoAccount(accountAddress).initialize(_initialValidators, _initialK1Owners);\n\n    accountMappings[_uniqueAccountId] = accountAddress;\n\n    emit AccountCreated(accountAddress, _uniqueAccountId);\n  }\n}\n"
+    }
+}

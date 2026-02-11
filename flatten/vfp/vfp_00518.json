@@ -1,0 +1,30 @@
+{
+    "vfp_id": "vfp_00518",
+    "project_name": "Parallel Protocol - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "User might receive less amount then they are willing to accept for withdraw if it clashes with a penalty fee increase",
+            "description": "The _calculateFee function in TimeLockPenaltyERC20 uses startPenaltyPercentage, which can be updated via updateStartPenaltyPercentage. If a user calls withdraw at the same time as a penalty increase, they may receive fewer tokens than expected due to the higher penalty being applied without their consent. The root cause is the lack of slippage protection in the withdrawal function. This creates a race condition where administrative actions can negatively impact user withdrawals. The impact includes reduced user control over withdrawal outcomes, potential financial loss during fee updates, and decreased predictability of the withdrawal mechanism, especially for large withdrawals.\n",
+            "severity": "Informational",
+            "location": [
+                "sPRL1.sol::withdraw",
+                "TimeLockPenaltyERC20.sol::_calculateFee"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL1.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "sPRL1.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.25;\n\nimport { TimeLockPenaltyERC20, IERC20, IERC20Permit } from \"./TimeLockPenaltyERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title sPRL1\n/// @author Cooper Labs\n/// @custom:contact security@cooperlabs.xyz\n/// @notice sPRL1 is a staking contract that allows users to deposit PRL assets.\ncontract sPRL1 is TimeLockPenaltyERC20 {\n    using SafeERC20 for IERC20;\n\n    string constant NAME = \"Stake PRL\";\n    string constant SYMBOL = \"sPRL1\";\n\n    //-------------------------------------------\n    // Constructor\n    //-------------------------------------------\n\n    /// @notice Deploy the sPRL1 contract.\n    /// @param _underlying The underlying PRL token.\n    /// @param _feeReceiver The address to receive the fees.\n    /// @param _accessManager The address of the AccessManager.\n    /// @param _startPenaltyPercentage The percentage of the penalty fee.\n    /// @param _timeLockDuration The time lock duration.\n    constructor(\n        address _underlying,\n        address _feeReceiver,\n        address _accessManager,\n        uint256 _startPenaltyPercentage,\n        uint64 _timeLockDuration\n    )\n        TimeLockPenaltyERC20(\n            NAME,\n            SYMBOL,\n            _underlying,\n            _feeReceiver,\n            _accessManager,\n            _startPenaltyPercentage,\n            _timeLockDuration\n        )\n    { }\n\n    //-------------------------------------------\n    // External functions\n    //-------------------------------------------\n\n    /// @notice Deposit assets into the contract and mint the equivalent amount of tokens.\n    /// @param _assetAmount The amount of assets to deposit.\n    function deposit(uint256 _assetAmount) external whenNotPaused nonReentrant {\n        underlying.safeTransferFrom(msg.sender, address(this), _assetAmount);\n        _deposit(_assetAmount);\n    }\n\n    /// @notice Deposit assets into the contract using ERC20Permit and mint the equivalent amount of tokens\n    /// @param _assetAmount The amount of assets to deposit\n    /// @param _deadline The deadline for the permit.\n    /// @param _v The v value of the permit signature.\n    /// @param _r The r value of the permit signature.\n    /// @param _s The s value of the permit signature.\n    function depositWithPermit(\n        uint256 _assetAmount,\n        uint256 _deadline,\n        uint8 _v,\n        bytes32 _r,\n        bytes32 _s\n    )\n        external\n        whenNotPaused\n        nonReentrant\n    {\n        // @dev using try catch to avoid reverting the transaction in case of front-running\n        try IERC20Permit(address(underlying)).permit(msg.sender, address(this), _assetAmount, _deadline, _v, _r, _s) {\n        } catch { }\n        underlying.safeTransferFrom(msg.sender, address(this), _assetAmount);\n        _deposit(_assetAmount);\n    }\n\n    /// @notice Allow users to emergency withdraw assets without penalties.\n    /// @dev This function can only be called when the contract is paused.\n    /// @param _unlockingAmount The amount of assets to unlock.\n    function emergencyWithdraw(uint256 _unlockingAmount) external whenPaused nonReentrant {\n        _burn(msg.sender, _unlockingAmount);\n        emit EmergencyWithdraw(msg.sender, _unlockingAmount);\n        underlying.safeTransfer(msg.sender, _unlockingAmount);\n    }\n\n    /// @notice Withdraw multiple withdrawal requests.\n    /// @param _ids The IDs of the withdrawal requests to withdraw.\n    function withdraw(uint256[] calldata _ids) external nonReentrant {\n        (uint256 totalAmountWithdrawn, uint256 totalFeeAmount) = _withdrawMultiple(_ids);\n        unlockingAmount = unlockingAmount - totalAmountWithdrawn - totalFeeAmount;\n        if (totalFeeAmount > 0) {\n            underlying.safeTransfer(feeReceiver, totalFeeAmount);\n        }\n        underlying.safeTransfer(msg.sender, totalAmountWithdrawn);\n    }\n}\n"
+    }
+}

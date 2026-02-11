@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00394",
+    "project_name": "cantina_coinbase_flywheel_sep2025.pdf",
+    "findings": [
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-248"
+                ]
+            },
+            "title": "Reverting token transfers can undo payout batches",
+            "description": "When batch payouts are processed, a single failing transfer (e.g., due to a recipient being on a blocklist like USDC) causes the entire batch to revert. The cause is the use of unchecked transfers in a loop without error handling. An attacker cannot directly trigger this unless they control a blocklisted address, but the system becomes fragile under edge cases. The impact is delayed or failed payouts, requiring manual intervention to retry, which reduces reliability and user trust.\n",
+            "severity": "Low",
+            "location": [
+                "Campaign.sol#L41-L49"
+            ],
+            "files": [
+                "flywheel/src/Campaign.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Campaign.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.29;\n\nimport {SafeTransferLib} from \"solady/utils/SafeTransferLib.sol\";\n\nimport {Flywheel} from \"./Flywheel.sol\";\n\n/// @title Campaign\n///\n/// @notice Holds funds for a single campaign\n///\n/// @dev Deployed on demand by protocol via clones\ncontract Campaign {\n    /// @notice ERC-7528 address for native token\n    address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;\n\n    /// @notice Address that created this token store\n    address public immutable flywheel;\n\n    /// @notice Emitted when the contract URI is updated\n    event ContractURIUpdated();\n\n    /// @notice Call sender is not flywheel\n    error OnlyFlywheel();\n\n    /// @notice Constructor\n    constructor() {\n        flywheel = msg.sender;\n    }\n\n    /// @notice Allow receiving native token\n    receive() external payable {}\n\n    /// @notice Send tokens to a recipient, called by escrow during capture/refund\n    ///\n    /// @param token The token being received\n    /// @param recipient Address to receive the tokens\n    /// @param amount Amount of tokens to receive\n    ///\n    /// @return success True if the transfer was successful\n    function sendTokens(address token, address recipient, uint256 amount) external returns (bool) {\n        if (msg.sender != flywheel) revert OnlyFlywheel();\n        if (token == NATIVE_TOKEN) {\n            SafeTransferLib.safeTransferETH(recipient, amount);\n        } else {\n            SafeTransferLib.safeTransfer(token, recipient, amount);\n        }\n        return true;\n    }\n\n    /// @notice Updates the metadata for the contract\n    function updateContractURI() external {\n        if (msg.sender != flywheel) revert OnlyFlywheel();\n        emit ContractURIUpdated();\n    }\n\n    /// @notice Returns the URI for the contract\n    ///\n    /// @return uri The URI for the contract\n    function contractURI() external view returns (string memory uri) {\n        return Flywheel(flywheel).campaignURI(address(this));\n    }\n}\n"
+    }
+}

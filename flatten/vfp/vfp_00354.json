@@ -1,0 +1,32 @@
+{
+    "vfp_id": "vfp_00354",
+    "project_name": "Virtuals Protocol AI Agents - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Tokens left in the Airdrop contract can be stolen",
+            "description": "The Airdrop::airdrop() function does not validate that the sum of _amounts equals _total, allowing a caller to pass a smaller _total than the actual sum. This discrepancy enables the function to transfer more tokens than accounted for, letting an attacker drain excess tokens from the contract. This is due to missing input validation. The impact is direct loss of funds from the airdrop contract, compromising the integrity of the distribution mechanism.\n",
+            "severity": "Informational",
+            "location": [
+                "Airdrop.sol"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/Airdrop.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Airdrop.sol": "pragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\n\ncontract Airdrop {\n\n    /**\n     *\n     * @param _token ERC20 token to airdrop\n     * @param _recipients list of recipients\n     * @param _amounts list of amounts to send each recipient\n     * @param _total total amount to transfer from caller\n     */\n    function airdrop(\n        IERC20 _token,\n        address[] calldata _recipients,\n        uint256[] calldata _amounts,\n        uint256 _total\n    ) external {\n        // bytes selector for transferFrom(address,address,uint256)\n        bytes4 transferFrom = 0x23b872dd;\n        // bytes selector for transfer(address,uint256)\n        bytes4 transfer = 0xa9059cbb;\n\n        assembly {\n            // store transferFrom selector\n            let transferFromData := add(0x20, mload(0x40))\n            mstore(transferFromData, transferFrom)\n            // store caller address\n            mstore(add(transferFromData, 0x04), caller())\n            // store address\n            mstore(add(transferFromData, 0x24), address())\n            // store _total\n            mstore(add(transferFromData, 0x44), _total)\n            // call transferFrom for _total\n\n            if iszero(\n                and( // The arguments of `and` are evaluated from right to left.\n                    or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.\n                    call(gas(), _token, 0, transferFromData, 0x64, 0x00, 0x20)\n                )\n            ) {\n                revert(0, 0)\n            }\n\n            // store transfer selector\n            let transferData := add(0x20, mload(0x40))\n            mstore(transferData, transfer)\n\n            // store length of _recipients\n            let sz := _amounts.length\n\n            // loop through _recipients\n            for {\n                let i := 0\n            } lt(i, sz) {\n                // increment i\n                i := add(i, 1)\n            } {\n                // store offset for _amounts[i]\n                let offset := mul(i, 0x20)\n                // store _amounts[i]\n                let amt := calldataload(add(_amounts.offset, offset))\n                // store _recipients[i]\n                let recp := calldataload(add(_recipients.offset, offset))\n                // store _recipients[i] in transferData\n                mstore(\n                    add(transferData, 0x04),\n                    recp\n                )\n                // store _amounts[i] in transferData\n                mstore(\n                    add(transferData, 0x24),\n                    amt\n                )\n                // call transfer for _amounts[i] to _recipients[i]\n                // Perform the transfer, reverting upon failure.\n                if iszero(\n                    and( // The arguments of `and` are evaluated from right to left.\n                        or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.\n                        call(gas(), _token, 0, transferData, 0x44, 0x00, 0x20)\n                    )\n                ) {\n                    revert(0, 0)\n                }  \n            }\n        }\n\n    }\n}"
+    }
+}

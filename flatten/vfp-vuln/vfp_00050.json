@@ -1,0 +1,75 @@
+{
+    "vfp_id": "vfp_00050",
+    "project_name": "Mina Token Bridge EVM - Zellic Audit Report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Return value of transferFrom is not checked",
+            "description": "The lock function in Bridge.sol calls transferFrom on an ERC-20 token but does not check its return value. Some ERC-20 tokens return false on failure instead of reverting, which can lead to the bridge assuming a successful transfer when no tokens were actually transferred. This is caused by relying on the transferFrom return value without proper validation. An attacker could exploit this by using a non-reverting failing token to trigger a Lock event without actually depositing funds. This could allow the attacker to mint tokens on the Mina side without backing, leading to a complete loss of funds from the bridge.\n",
+            "severity": "Critical",
+            "location": [
+                "Bridge.sol::lock"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-266"
+                ]
+            },
+            "title": "The protocol owner can withdraw all funds from the bridge",
+            "description": "The withdrawETH function in Bridge.sol allows the owner to withdraw any amount of ETH from the contract without restriction. While fees from Mina-to-Ethereum transfers are intended to be collected, the accumulated amounts are tracked off-chain in the backend, not on-chain. This design allows the owner to withdraw more than just fees, including user deposits. The cause is the lack of on-chain accounting and withdrawal limits. An attacker who compromises the owner key, or a malicious owner, could drain all ETH from the bridge. This introduces significant centralization risk and undermines user trust in the protocol's security.\n",
+            "severity": "High",
+            "location": [
+                "Bridge.sol::withdrawETH"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ]
+            },
+            "title": "Validators cannot be removed",
+            "description": "The Bridge.sol contract allows adding validators via _addListValidator but provides no mechanism to remove them. This is caused by the absence of a corresponding remove function. If a validator becomes compromised or untrustworthy, the owner cannot revoke its privileges. This creates a permanent security liability, as any added validator remains authorized indefinitely. The impact is a reduced ability to respond to security incidents and long-term operational inflexibility, posing a medium-level protocol risk.\n",
+            "severity": "Medium",
+            "location": [
+                "Bridge.sol::_addListValidator"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Bridge.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.15;\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/cryptography/draft-EIP712Upgradeable.sol\";\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ncontract Bridge is OwnableUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {\n\n    bytes32 public constant UNLOCK_HASH = keccak256(\n        \"UNLOCK(address token,uint256 amount,address user,string hash,uint256 fee)\"\n    );\n\n    address public minter;\n    mapping(address => bool) public whitelistTokens;\n    mapping(string => bool) public unlockHash;\n    uint256 public maxAmount;\n    uint256 public minAmount;\n    uint256 public threshold;\n    mapping(address => bool) public validators;\n\n    event Lock(address locker, string receipt, address token, uint256 amount, string tokenName);\n    event Unlock(address user, address token, uint256 amount, string hash, uint256 fee);\n    event ChangeMinter(address minter);\n    event ChangeMinAmount(uint256 minAmount);\n    event ChangeThreshold(uint256 newThreshold);\n    event ChangeMaxAmount(uint256 maxAmount);\n    event SetWhitelistToken(address token, bool whitelist);\n\n    modifier onlyMinter() {\n        require(minter == msg.sender, \"Bridge: Only Minter\");\n        _;\n    }\n\n    function initialize(\n        address _minter,\n        uint256 _minAmount,\n        uint256 _maxAmount,\n        address[] memory _validators,\n        uint256 _threshold\n    ) public initializer {\n        __Ownable_init();\n        __ReentrancyGuard_init();\n        __EIP712_init(\"MinaBridge\", \"1.0.0\");\n        minter = _minter;\n        minAmount = _minAmount;\n        maxAmount = _maxAmount;\n        for (uint256 i = 0; i < _validators.length; ++i) {\n            validators[_validators[i]] = true;\n        }\n        threshold = _threshold;\n        whitelistTokens[address(0)] = true;\n        emit ChangeMinter(minter);\n    }\n\n    function isValidThreshold(uint256 totalSig) public view returns (bool) {\n        if (totalSig  >= threshold) {\n            return true;\n        }\n        return false;\n    }\n\n    function _getSigner(bytes32 _digest, bytes memory _signature) public view returns (address) {\n        return ECDSA.recover(_digest, _signature);\n    }\n\n    function getUnlockHash(\n        address token,\n        uint256 amount,\n        address user,\n        string memory hash,\n        uint256 fee\n    ) public view returns (bytes32 _unlockHash) {\n        _unlockHash = _hashTypedDataV4(keccak256(abi.encode(UNLOCK_HASH, token, amount, user, keccak256(abi.encodePacked(hash)), fee)));\n    }\n\n    function _addListValidator(address[] memory _validators) internal {\n        require(_validators.length > 0, \"Invalid length\");\n        for (uint256 i = 0; i < _validators.length; i++) {\n            validators[_validators[i]] = true;\n        }\n    }\n\n    function lock(address token, string memory receipt, uint256 amount) public payable {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(amount <= maxAmount && amount >= minAmount, \"Bridge: invalid amount\");\n        string memory name = \"ETH\";\n        if (token == address(0)) {\n            require(msg.value == amount, \"Bridge: invalid amount\");\n        } else {\n            IERC20(token).transferFrom(msg.sender, address(this), amount);\n            name = IERC20(token).name();\n        }\n        emit Lock(msg.sender, receipt, token, amount, name);\n    }\n\n\n    function unlock(address token, uint256 amount, address user, string memory hash, uint256 fee, bytes[] memory _signatures) public onlyMinter nonReentrant {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(!unlockHash[hash], \"Bridge: Unlocked before\");\n        require(isValidThreshold(_signatures.length), \"Signature: Invalid Length\");\n\n        bytes32 _unlockHash = getUnlockHash(token, amount, user, hash, fee);\n\n        address[1000] memory listValidatorsSigned;\n        for (uint256 i = 0; i < _signatures.length; i++) {\n            bytes memory _signature = _signatures[i];\n            address signer = _getSigner(_unlockHash, _signature);\n            require(validators[signer], \"Invalid signature\");\n            for (uint256 j = 0; j < listValidatorsSigned.length; j++) {\n                if (listValidatorsSigned[j] == signer) {\n                    require(false, \"Invalid Signature Length\");\n                }\n            }\n            listValidatorsSigned[i] = signer;\n        }\n\n        unlockHash[hash] = true;\n        if (token == address(0)) {\n            require(address(this).balance >= amount, \"Bridge: invalid amount\");\n            payable(user).transfer(amount - fee);\n            payable(owner()).transfer(fee);\n\n        } else {\n            require(IERC20(token).balanceOf(address(this)) >= amount, \"Bridge: Invalid amount\");\n            IERC20(token).transfer(user, amount - fee);\n            IERC20(token).transfer(owner(), fee);\n\n        }\n        emit Unlock(user, token, amount - fee, hash, fee);\n    }\n\n//    ------------ADMIN FUNCTIONS--------------------------------\n    function changeMinter(address _minter) public onlyOwner {\n        minter = _minter;\n        emit ChangeMinter(minter);\n    }\n\n    function setWhitelistToken(address token, bool whitelist) public onlyOwner {\n        whitelistTokens[token] = whitelist;\n        emit SetWhitelistToken(token, whitelist);\n    }\n\n    function setMinAmount(uint256 min) public onlyOwner {\n        require(min <= maxAmount, \"Invalid minAmount\");\n        minAmount = min;\n        emit ChangeMinAmount(minAmount);\n    }\n\n    function setMaxAmount(uint256 max) public onlyOwner {\n        require(max >= minAmount, \"Invalid minAmount\");\n        maxAmount = max;\n        emit ChangeMaxAmount(maxAmount);\n    }\n\n    function setMinMaxAmount(uint256 min, uint256 max) public onlyOwner {\n        require(max >= min, \"Invalid minAmount\");\n        maxAmount = max;\n        minAmount = min;\n    }\n\n    function withdrawETH(uint256 amount) public onlyOwner {\n        require(address(this).balance >= amount, \"Bridge: insufficient balance\");\n        payable(msg.sender).transfer(amount);\n    }\n\n    function changeThreshold(uint256 _newThreshold) external onlyOwner() {\n        threshold = _newThreshold;\n        emit ChangeThreshold(_newThreshold);\n    }\n\n    function addListValidator(address[] memory _validators) external onlyOwner {\n        _addListValidator(_validators);\n    }\n}\n"
+    }
+}

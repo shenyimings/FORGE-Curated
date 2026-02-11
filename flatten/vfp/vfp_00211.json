@@ -1,0 +1,44 @@
+{
+    "vfp_id": "vfp_00211",
+    "project_name": "ackee-blockchain-lido-triggerable-withdrawals-report.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Inconsistent update of exit limits on config change",
+            "description": "The ExitLimitUtils.setExitLimits function allows updating exit limits configuration parameters, but it does not correctly update the current exit limit (_data.prevExitRequestsLimit) when the maximum limit changes. \nThe root cause is a logic error in the update condition: the current limit is only reset when the new maximum is smaller than the current limit or when there was no prior limit, but it is not proportionally adjusted based on previously consumed exits. \nAn attacker or malicious actor could exploit this by manipulating the timing of limit changes to either accelerate or delay the availability of exit requests, potentially disrupting withdrawal scheduling. \nThe impact is low, as it does not lead to loss of funds or system failure, but it reduces the system's responsiveness and predictability when configuration changes are made.\n",
+            "severity": "Low",
+            "location": [
+                "ExitLimitUtils.sol::setExitLimits#102-109"
+            ],
+            "files": [
+                "core/contracts/0.8.9/lib/ExitLimitUtils.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Code optimizations",
+            "description": "Several opportunities for code optimization were identified, including redundant checks and inefficient data handling.\nThese are primarily code quality issues that do not directly affect security but could improve gas efficiency and readability.\nWhile not exploitable, unoptimized code may increase attack surface or complicate future audits.\nThe impact is informational, as these findings are suggestions for improvement rather than security risks.\nSpecifically, multiple gas inefficiencies were identified in the codebase. In ValidatorExitDelayVerifier.verifyValidatorExitDelay, a redundant array access can be replaced with a direct variable reference. In ExitLimitUtils.updatePrevExitLimit, the computation of framesPassed and passedTime uses division and multiplication that can be optimized using modulo arithmetic to reduce gas consumption. The root cause is suboptimal arithmetic and memory access patterns. While not a security vulnerability per se, inefficient code increases transaction costs for all users. An attacker cannot exploit this directly, but the protocol incurs unnecessary operational expenses. The impact is higher gas fees and reduced economic efficiency, especially under heavy usage.\n",
+            "severity": "Informational",
+            "location": [
+                "ExitLimitUtils.sol::updatePrevExitLimit#70-85",
+                "ValidatorExitDelayVerifier.sol::verifyValidatorExitDelay#193"
+            ],
+            "files": [
+                "core/contracts/0.8.9/lib/ExitLimitUtils.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ExitLimitUtils.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.9;\n\nstruct ExitRequestLimitData {\n    uint32 maxExitRequestsLimit; // Maximum limit\n    uint32 prevExitRequestsLimit; // Limit left after previous requests\n    uint32 prevTimestamp; // Timestamp of the last update\n    uint32 frameDurationInSec; // Seconds that should pass to restore part of exits\n    uint32 exitsPerFrame; // Restored exits per frame\n}\n\nlibrary ExitLimitUtilsStorage {\n    struct DataStorage {\n        ExitRequestLimitData _exitRequestLimitData;\n    }\n\n    function getStorageExitRequestLimit(bytes32 _position) internal view returns (ExitRequestLimitData memory) {\n        return _getDataStorage(_position)._exitRequestLimitData;\n    }\n\n    function setStorageExitRequestLimit(bytes32 _position, ExitRequestLimitData memory _data) internal {\n        _getDataStorage(_position)._exitRequestLimitData = _data;\n    }\n\n    function _getDataStorage(bytes32 _position) private pure returns (DataStorage storage $) {\n        assembly {\n            $.slot := _position\n        }\n    }\n}\n\nlibrary ExitLimitUtils {\n    /// @notice Error when new value for remaining limit exceeds maximum limit.\n    error LimitExceeded();\n\n    /// @notice Error when max exit request limit exceeds uint32 max.\n    error TooLargeMaxExitRequestsLimit();\n\n    /// @notice Error when frame duration exceeds uint32 max.\n    error TooLargeFrameDuration();\n\n    /// @notice Error when exits per frame exceed the maximum exit request limit.\n    error TooLargeExitsPerFrame();\n\n    /// @notice Error when frame duration is zero.\n    error ZeroFrameDuration();\n\n    function calculateCurrentExitLimit(\n        ExitRequestLimitData memory _data,\n        uint256 timestamp\n    ) internal pure returns (uint256 currentLimit) {\n        uint256 secondsPassed = timestamp - _data.prevTimestamp;\n\n        if (secondsPassed < _data.frameDurationInSec || _data.exitsPerFrame == 0) {\n            return _data.prevExitRequestsLimit;\n        }\n\n        uint256 framesPassed = secondsPassed / _data.frameDurationInSec;\n        uint256 restoredLimit = framesPassed * _data.exitsPerFrame;\n\n        uint256 newLimit = _data.prevExitRequestsLimit + restoredLimit;\n        if (newLimit > _data.maxExitRequestsLimit) {\n            newLimit = _data.maxExitRequestsLimit;\n        }\n\n        return newLimit;\n    }\n\n    function updatePrevExitLimit(\n        ExitRequestLimitData memory _data,\n        uint256 newExitRequestLimit,\n        uint256 timestamp\n    ) internal pure returns (ExitRequestLimitData memory) {\n        if (_data.maxExitRequestsLimit < newExitRequestLimit) revert LimitExceeded();\n\n        uint256 secondsPassed = timestamp - _data.prevTimestamp;\n        uint256 framesPassed = secondsPassed / _data.frameDurationInSec;\n        uint32 passedTime = uint32(framesPassed) * _data.frameDurationInSec;\n\n        _data.prevExitRequestsLimit = uint32(newExitRequestLimit);\n        _data.prevTimestamp += passedTime;\n\n        return _data;\n    }\n\n    function setExitLimits(\n        ExitRequestLimitData memory _data,\n        uint256 maxExitRequestsLimit,\n        uint256 exitsPerFrame,\n        uint256 frameDurationInSec,\n        uint256 timestamp\n    ) internal pure returns (ExitRequestLimitData memory) {\n        if (maxExitRequestsLimit > type(uint32).max) revert TooLargeMaxExitRequestsLimit();\n        if (frameDurationInSec > type(uint32).max) revert TooLargeFrameDuration();\n        if (exitsPerFrame > maxExitRequestsLimit) revert TooLargeExitsPerFrame();\n        if (frameDurationInSec == 0) revert ZeroFrameDuration();\n\n        _data.exitsPerFrame = uint32(exitsPerFrame);\n        _data.frameDurationInSec = uint32(frameDurationInSec);\n\n        if (\n            // new maxExitRequestsLimit is smaller than prev remaining limit\n            maxExitRequestsLimit < _data.prevExitRequestsLimit ||\n            // previously exits were unlimited\n            _data.maxExitRequestsLimit == 0\n        ) {\n            _data.prevExitRequestsLimit = uint32(maxExitRequestsLimit);\n        }\n\n        _data.maxExitRequestsLimit = uint32(maxExitRequestsLimit);\n        _data.prevTimestamp = uint32(timestamp);\n\n        return _data;\n    }\n\n    function isExitLimitSet(ExitRequestLimitData memory _data) internal pure returns (bool) {\n        return _data.maxExitRequestsLimit != 0;\n    }\n}\n"
+    }
+}

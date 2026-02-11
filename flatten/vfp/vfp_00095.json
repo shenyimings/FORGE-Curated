@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00095",
+    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "findings": [
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Missing Slippage Protection in Expired PT Redemption Causes User Fund Loss",
+            "description": "When redeeming expired Pendle PT tokens, the _redeemPT function calls PendlePTLib.redeemExpiredPT, which in turn calls sy.redeem with minTokenOut set to 0. This lack of slippage protection allows the SY contract to perform external DEX swaps at arbitrarily unfavorable rates during the redemption process. The root cause is the hardcoded minTokenOut: 0 in redeemExpiredPT, which fails to account for market volatility or MEV attacks. This affects two critical user flows: instant redemption and withdraw initiation. An attacker or MEV bot can exploit this by frontrunning or manipulating market conditions during the external swap, causing the user to receive significantly fewer target tokens (e.g., sUSDe) than expected. The impact is high: users suffer direct financial loss with no recourse, as the system provides no slippage guardrails during expired token redemption, undermining trust and economic security.\n",
+            "severity": "High",
+            "location": [
+                "PendlePTLib.sol::redeemExpiredPT#87",
+                "_redeemPT#87",
+                "_executeInstantRedemption",
+                "_initiateWithdraw"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/PendlePTLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PendlePTLib.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport \"../interfaces/IPendle.sol\";\nimport \"../utils/Constants.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"../utils/TokenUtils.sol\";\n\nstruct PendleDepositData {\n    uint256 minPtOut;\n    IPRouter.ApproxParams approxParams;\n    IPRouter.LimitOrderData limitOrderData;\n}\n\n/// @dev Generic Pendle PT library for interacting with the Pendle router, reduces bytecode size\nlibrary PendlePTLib {\n    using SafeERC20 for ERC20;\n    using TokenUtils for ERC20;\n\n    function swapExactTokenForPt(\n        address tokenInSy,\n        address market,\n        uint256 tokenInAmount,\n        bytes calldata pendleData\n    ) external {\n        ERC20(tokenInSy).checkApprove(address(PENDLE_ROUTER), tokenInAmount);\n        uint256 msgValue = tokenInSy == ETH_ADDRESS ? tokenInAmount : 0;\n        PendleDepositData memory data = abi.decode(pendleData, (PendleDepositData));\n\n        IPRouter.TokenInput memory tokenInput;\n        tokenInput.tokenIn = tokenInSy;\n        tokenInput.netTokenIn = tokenInAmount;\n        tokenInput.tokenMintSy = tokenInSy;\n        // When tokenIn == tokenMintSy then the swap router can be set to\n        // empty data. This means that the vault must hold the underlying sy\n        // token when we begin the execution.\n\n        PENDLE_ROUTER.swapExactTokenForPt{value: msgValue}(\n            address(this),\n            address(market),\n            data.minPtOut,\n            data.approxParams,\n            tokenInput,\n            data.limitOrderData\n        );\n    }\n\n    function swapExactPtForToken(\n        address pt,\n        address market,\n        address tokenOutSy,\n        uint256 netPtIn,\n        bytes calldata data\n    ) external returns (uint256 netTokenOut) {\n        ERC20(pt).checkApprove(address(PENDLE_ROUTER), netPtIn);\n\n        IPRouter.TokenOutput memory tokenOutput;\n        tokenOutput.tokenOut = tokenOutSy;\n        tokenOutput.tokenRedeemSy = tokenOutSy;\n        // We check the min token out later\n        // tokenInput.minTokenOut = 0;\n        IPRouter.LimitOrderData memory limitOrderData;\n        if (data.length > 0) {\n            limitOrderData = abi.decode(data, (IPRouter.LimitOrderData));\n        }\n\n        (netTokenOut, , ) = PENDLE_ROUTER.swapExactPtForToken(\n            address(this),\n            address(market),\n            netPtIn,\n            tokenOutput,\n            limitOrderData\n        );\n    }\n\n    function redeemExpiredPT(\n        IPPrincipalToken pt,\n        IPYieldToken yt,\n        IStandardizedYield sy,\n        address tokenOutSy,\n        uint256 netPtIn\n    ) external returns (uint256 netTokenOut) {\n        // PT Tokens are known to be ERC20 compliant\n        pt.transfer(address(yt), netPtIn);\n        uint256 netSyOut = yt.redeemPY(address(sy));\n        netTokenOut = sy.redeem(address(this), netSyOut, tokenOutSy, 0, true);\n    }\n}"
+    }
+}

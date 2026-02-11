@@ -1,0 +1,47 @@
+{
+    "vfp_id": "vfp_00557",
+    "project_name": "cantina_seamless_sep2025.pdf",
+    "findings": [
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "PricingAdapter should be discouraged for on-chain use",
+            "description": "1. **Description:** The getLeverageTokenPriceAdjusted function may return imprecise or zero values due to rounding, especially when oracle precision and base asset decimals differ significantly.\n2. **Cause:** The calculation involves multiple divisions and rounding steps that can erase value in extreme cases.\n3. **Exploitation:** On-chain integrators relying on this price feed could make incorrect decisions due to inaccurate pricing.\n4. **Impact:** Risk of incorrect valuation in on-chain logic, leading to potential financial loss if used in critical paths.\n",
+            "severity": "Informational",
+            "location": [
+                "PricingAdapter.sol#L56-L73"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "PricingAdapter doesn't account for fee adjusted supply, leading to potential overpricing",
+            "description": "1. **Description:** The PricingAdapter contract calculates leverage token prices using totalSupply(), which does not account for accrued management fees. This results in an underreported supply and thus an overpriced output.\n2. **Cause:** The use of raw totalSupply() instead of getFeeAdjustedTotalSupply(ILeverageToken token) fails to reflect the true economic supply after fee accrual.\n3. **Exploitation:** Off-chain or on-chain systems relying on PricingAdapter for pricing data may overvalue tokens, leading to incorrect valuations in trading, lending, or analytics platforms.\n4. **Impact:** Mispricing can lead to financial losses for users or integrators who rely on accurate pricing data, especially in automated systems.\n",
+            "severity": "Low",
+            "location": [
+                "PricingAdapter.sol#L26-L38",
+                "PricingAdapter.sol#L41-L53"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PricingAdapter.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IERC20Metadata} from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\nimport {IAggregatorV2V3Interface} from \"../interfaces/periphery/IAggregatorV2V3Interface.sol\";\nimport {ILendingAdapter} from \"../interfaces/ILendingAdapter.sol\";\nimport {ILeverageToken} from \"../interfaces/ILeverageToken.sol\";\nimport {ILeverageManager} from \"../interfaces/ILeverageManager.sol\";\nimport {IPricingAdapter} from \"../interfaces/periphery/IPricingAdapter.sol\";\n\n/// @custom:contact security@seamlessprotocol.com\ncontract PricingAdapter is IPricingAdapter {\n    uint256 internal constant WAD = 1e18;\n\n    /// @inheritdoc IPricingAdapter\n    ILeverageManager public immutable leverageManager;\n\n    /// @notice Constructor\n    /// @param _leverageManager The LeverageManager contract\n    constructor(ILeverageManager _leverageManager) {\n        leverageManager = _leverageManager;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInCollateral(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInCollateralAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInCollateralAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInCollateralAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInDebt(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInDebtAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInDebtAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInDebtAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceAdjusted(\n        ILeverageToken leverageToken,\n        IAggregatorV2V3Interface chainlinkOracle,\n        bool isBaseDebtAsset\n    ) public view returns (int256) {\n        uint256 priceInBaseAsset = isBaseDebtAsset\n            ? getLeverageTokenPriceInDebt(leverageToken)\n            : getLeverageTokenPriceInCollateral(leverageToken);\n        uint256 baseAssetDecimals = isBaseDebtAsset\n            ? IERC20Metadata(address(leverageManager.getLeverageTokenDebtAsset(leverageToken))).decimals()\n            : IERC20Metadata(address(leverageManager.getLeverageTokenCollateralAsset(leverageToken))).decimals();\n\n        int256 oraclePrice = chainlinkOracle.latestAnswer();\n\n        int256 adjustedPrice = (oraclePrice * int256(priceInBaseAsset)) / int256(10 ** baseAssetDecimals);\n\n        return adjustedPrice;\n    }\n}\n"
+    }
+}

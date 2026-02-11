@@ -1,0 +1,293 @@
+{
+    "vfp_id": "vfp_00470",
+    "project_name": "cantina_stryke_aug2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "In-range settlement refunds are computed with boundary formulas, leaking free tokens to the settler",
+            "description": "The contract incorrectly uses boundary-based liquidity amount calculations (getAmount0ForLiquidity and getAmount1ForLiquidity) when settling in-range options, which overestimates the required token amounts. The correct in-range amounts should be calculated based on the current price within the tick range, not the boundary extremes. The root cause is the misuse of Uniswap V3 helper functions that assume liquidity is provided at range edges, not inside the range. An attacker (the settler) can exploit this by settling in-range options and receiving excess refunds due to the overestimated required amounts. This results in free tokens being siphoned from the liquidity pool, directly harming LPs by eroding their position value. The impact is a continuous economic drain on LPs whenever in-range settlement occurs, especially pronounced in wide tick ranges.\n",
+            "severity": "High",
+            "location": [
+                "OptionMarketOTMFE.sol#L538-L564"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-369"
+                ]
+            },
+            "title": "DoS near expiry: Division by zero in pricing when expiry - block.timestamp < 864",
+            "description": "The _getOptionPrice function divides the remaining time to expiry by 864 seconds to bucket time, which results in zero when less than 864 seconds remain. This zero value is then used in downstream pricing calculations that involve division, causing a division-by-zero revert. The root cause is the use of floor division without a minimum time threshold, leading to a zero value that breaks pricing math. Users attempting to mint options in the final 864 seconds before expiry will face transaction failures, resulting in wasted gas. This creates a denial-of-service condition at the end of every epoch, preventing valid mints during a predictable time window. The impact is degraded user experience and potential loss of business during the final moments of an epoch, especially if the time buffer is not properly communicated.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L262-L266"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Partial reliance on slot0 spot price can enable single-block price manipulation",
+            "description": "The protocol uses Uniswap V3's slot0 spot price for critical operations like premium calculation, OTM checks, and settlement, which is vulnerable to transient price manipulation within a single block. The root cause is the direct reliance on an instantaneous, unguarded spot price that can be moved and reverted at low cost. An attacker can manipulate the spot price to underprice options, bypass range checks, or influence settlement amounts, then let the price revert, profiting from the mispricing. This is especially feasible on thinner pools. While the protocol uses a firewall with off-chain oracles as a mitigation, the on-chain logic remains vulnerable. The impact includes unfair pricing, potential arbitrage losses for honest users, and erosion of market integrity.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L659-L665",
+                "PoolSpotPrice.sol#L9-L17"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-240"
+                ]
+            },
+            "title": "Last-element hook is used for the whole option, ignoring earlier entries",
+            "description": "During option minting, the contract only uses the hook from the last element of the optionTicks array, silently ignoring hooks from all prior entries. The root cause is the design choice to read opTick.hook only from the final tick. If hooks are ever used for pricing or risk modeling (e.g., different IV models), this could allow users to underpay premiums by appending a final tick with a low-IV hook while sourcing most liquidity from high-IV hooks. Even reordering the same ticks could change the outcome, which is non-intuitive and dangerous. The impact is potential systematic underpricing of options and unfair advantage to sophisticated users who exploit the ordering, leading to losses for LPs if such a scenario is implemented in the future.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L370"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Strike tick validation bypass through incorrect distance calculation",
+            "description": "When validating tick ranges that straddle zero (one negative, one positive tick), the contract adds the tick values instead of subtracting them, leading to an incorrect distance calculation. For example, a range from -1000 to 1000 would incorrectly compute a distance of 0 instead of 2000. The root cause is flawed arithmetic in the validation logic. This allows attackers to create positions with up to twice the allowed tick width when crossing zero, enabling excessively wide options that could be mispriced or increase LP risk. The impact is potential market manipulation and unfair pricing, undermining the protocol's risk controls. This was fixed by using proper subtraction for distance calculation.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L293"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ]
+            },
+            "title": "Unsafe ERC20 operations can cause transaction failures with non-standard tokens",
+            "description": "The protocol uses raw ERC20 transfer, transferFrom, and approve calls without handling tokens that do not return a boolean (e.g., USDT). The root cause is the absence of safe wrappers that account for non-compliant token behavior. When interacting with such tokens, the contract will revert due to Solidity's expectation of a boolean return value, even if the transfer succeeded. This affects multiple functions across the codebase. The impact is transaction failures when using common non-standard tokens, leading to a poor user experience and potential loss of funds if users are unaware. This was fixed by adopting OpenZeppelin's SafeERC20 library.\n",
+            "severity": "Medium",
+            "location": [
+                "OptionMarketOTMFE.sol#L509",
+                "OptionMarketOTMFE.sol#L577",
+                "MintOptionFirewall.sol#L128",
+                "MintOptionFirewall.sol#L131",
+                "MultiSwapRouter.sol#L78",
+                "MultiSwapRouter.sol#L81",
+                "OnSwapReceiver.sol#L93"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ]
+            },
+            "title": "Premium/exercise mismatch within Uniswap V3 tick bands",
+            "description": "The protocol computes call option premiums using the upper tick as the strike price but only allows early exercise when the spot price falls below the lower tick. This creates a structural mismatch where the option behaves like a down-and-in barrier call but is priced as a vanilla call. The root cause is inconsistent use of tick boundaries for pricing versus exercise logic. This systematically overcharges buyers, especially on wide tick bands or high-tick-spacing pools, as the barrier reduces the option's fair value. The impact is a persistent value transfer from buyers to writers, reducing market fairness and user trust. This was fixed by aligning the pricing strike with the exercise condition (using tickLower for calls).\n",
+            "severity": "Medium",
+            "location": [],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "_getPrice can silently return zero at extreme ticks due to integer flooring",
+            "description": "The _getPrice helper function uses integer arithmetic that can underflow to zero for extreme sqrtPriceX96 values, particularly at very low or very high prices. The root cause is the use of unchecked integer division and multiplication that floors toward zero. This silent failure can cause downstream issues such as zero premium quotes, incorrect OTM evaluations, or division-by-zero errors when a non-zero price is assumed. The risk is higher for tokens with unusual decimal configurations. The impact is potential mispricing and transaction failures under extreme market conditions, though the likelihood is low. The recommendation is to enforce safe tick bounds to prevent zero-price returns.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L693-L710",
+                "PoolSpotPrice.sol#L19-L37"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Unsafe downcast from in liquidity calculations",
+            "description": "The contract performs unchecked downcasts from uint256 to uint128 when handling liquidity amounts, which can silently overflow if the value exceeds 2^128 - 1. The root cause is the use of direct type casting without overflow checks. While Uniswap V3 imposes limits that make overflow unlikely, the lack of safeguards leaves the protocol vulnerable to edge cases, especially with ultra-deep liquidity positions. The impact is potential incorrect liquidity calculations, leading to wrong token amounts being transferred or settled. This was acknowledged but not fixed, with reliance on Uniswap V3's internal checks.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L466",
+                "OptionMarketOTMFE.sol#L493",
+                "OptionMarketOTMFE.sol#L498",
+                "OptionMarketOTMFE.sol#L519",
+                "OptionMarketOTMFE.sol#L524",
+                "OptionMarketOTMFE.sol#L545",
+                "OptionMarketOTMFE.sol#L558",
+                "V3BaseHandler.sol#L414",
+                "V3BaseHandler.sol#L550",
+                "V3BaseHandlerVe33Shadow.sol#L420",
+                "V3BaseHandlerVe33Shadow.sol#L559"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Incorrect tick boundary validation allows option minting at exact boundary",
+            "description": "The validation logic for preventing in-range option minting uses a strict less-than comparison for the lower tick, allowing minting when the current price is exactly equal to tickLower. The root cause is the use of '<' instead of '<=' in the boundary check. This allows users to mint options when the price is at the lower boundary, which should be considered inside the range and thus invalid for OTM requirements. The impact is potential violation of the OTM guarantee, leading to options being minted with intrinsic value, which could harm LPs by exposing them to immediate settlement risk. This undermines the protocol's risk model for option pricing.\n",
+            "severity": "Low",
+            "location": [
+                "OptionMarketOTMFE.sol#L300-L306",
+                "OptionMarketOTMFE.sol#L473"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "View functions can be declared as pure",
+            "description": "In OptionMarketOTMFE, the name() and symbol() functions are declared as view but return constant strings without reading storage or state. The root cause is suboptimal function modifier usage. These functions can be marked as pure to enable better compiler optimization and reduce gas costs for external calls. Exploitation is not applicable, as this is a gas optimization issue. The impact is slightly higher gas consumption than necessary for external callers, with no security risk.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L226-L236"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Remove vestigial references to ”delegate”",
+            "description": "The code contains outdated references to a \"delegate\" concept, including an error named NotOwnerOrDelegator and an unused event LogUpdateExerciseDelegate. The root cause is incomplete cleanup after removing delegate functionality. These remnants do not affect functionality but create confusion. No exploitation is possible, but the impact is reduced code clarity and potential misunderstanding for auditors or developers.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L83",
+                "OptionMarketOTMFE.sol#L108",
+                "OptionMarketOTMFE.sol#L589"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-282"
+                ],
+                "3": [
+                    "CWE-283"
+                ]
+            },
+            "title": "Lack of a double-step transfer ownership pattern",
+            "description": "Multiple contracts use OpenZeppelin's Ownable, which allows single-step ownership transfer. The root cause is the absence of a two-step process. If the owner mistakenly sets ownership to an invalid address, control is permanently lost. The recommended fix is to use Ownable2Step, requiring the new owner to accept ownership. This prevents accidental lockout. The impact is risk of accidental ownership loss, though no active exploitation is implied.\n",
+            "severity": "Informational",
+            "location": [
+                "OptionMarketOTMFE.sol#L29",
+                "OptionPricingLinearV2.sol#L11",
+                "BoundedTTLHook_0Day.sol#L12",
+                "BoundedTTLHook_1Week.sol#L12",
+                "ExerciseOptionFirewall.sol#L15",
+                "MintOptionFirewall.sol#L17",
+                "OpenSettlement.sol#L13",
+                "PositionManager.sol#L18",
+                "OnSwapReceiver.sol#L14"
+            ],
+            "files": [
+                "contracts/src/apps/options/OptionMarketOTMFE.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "OptionMarketOTMFE.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity >=0.8.0 <0.9.0;\n\nimport {IPositionManager} from \"../../interfaces/IPositionManager.sol\";\n\nimport {IOptionPricingV2} from \"./pricing/IOptionPricingV2.sol\";\nimport {IHandler} from \"../../interfaces/IHandler.sol\";\nimport {IClammFeeStrategyV2} from \"./pricing/fees/IClammFeeStrategyV2.sol\";\nimport {ISwapper} from \"../../interfaces/ISwapper.sol\";\nimport {ITokenURIFetcher} from \"../../interfaces/ITokenURIFetcher.sol\";\nimport {IVerifiedSpotPrice} from \"../../interfaces/IVerifiedSpotPrice.sol\";\n\nimport {ERC721} from \"../../libraries/tokens/ERC721.sol\";\nimport {ERC20} from \"openzeppelin-contracts/contracts/token/ERC20/ERC20.sol\";\nimport {SafeERC20} from \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport {Ownable} from \"openzeppelin-contracts/contracts/access/Ownable.sol\";\nimport {ReentrancyGuard} from \"openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol\";\nimport {Multicall} from \"openzeppelin-contracts/contracts/utils/Multicall.sol\";\n\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {LiquidityAmounts} from \"v3-periphery/libraries/LiquidityAmounts.sol\";\nimport {TickMath} from \"@uniswap/v3-core/contracts/libraries/TickMath.sol\";\nimport {FullMath} from \"@uniswap/v3-core/contracts/libraries/FullMath.sol\";\n\n/// @title OptionMarketOTMFE (Option Market Out-of-the-Money Fixed Expiry)\n/// @author 0xcarrot\n/// @notice This contract implements an options market for out-of-the-money (OTM) options with fixed expiry\n/// @dev Inherits from ReentrancyGuard, Multicall, Ownable, and ERC721\ncontract OptionMarketOTMFE is ReentrancyGuard, Multicall, Ownable, ERC721 {\n    using TickMath for int24;\n    using SafeERC20 for ERC20;\n\n    /// @notice Struct to store option data\n    struct OptionData {\n        uint256 opTickArrayLen;\n        uint256 expiry;\n        int24 tickLower;\n        int24 tickUpper;\n        bool isCall;\n    }\n\n    /// @notice Struct to store option ticks data\n    struct OptionTicks {\n        IHandler _handler;\n        IUniswapV3Pool pool;\n        address hook;\n        int24 tickLower;\n        int24 tickUpper;\n        uint256 liquidityToUse;\n    }\n\n    /// @notice Struct for option parameters\n    struct OptionParams {\n        OptionTicks[] optionTicks;\n        uint256 ttl;\n        uint256 maxCostAllowance;\n        int24 tickLower;\n        int24 tickUpper;\n        bool isCall;\n    }\n\n    /// @notice Struct for settling option parameters\n    struct SettleOptionParams {\n        uint256 optionId;\n        ISwapper[] swapper;\n        bytes[] swapData;\n        uint256[] liquidityToSettle;\n    }\n\n    /// @notice Struct for position splitter parameters\n    struct PositionSplitterParams {\n        uint256 optionId;\n        address to;\n        uint256[] liquidityToSplit;\n    }\n\n    // Events\n    event LogMintOption(\n        OptionParams _params, uint256 optionId, uint256 premiumAmount, uint256 size, uint256 protocolFees\n    );\n    event LogSettleOption(AssetsCache assetsCache, uint256[] liquiditySettled, address owner, uint256 optionId);\n    event LogSplitOption(PositionSplitterParams params, uint256 newOptionId, address oldOwner);\n    event LogUpdateExerciseDelegate(address owner, address delegate, bool status);\n    event LogOptionsMarketInitialized(\n        address primePool, address optionPricing, address dpFee, address callAsset, address putAsset\n    );\n    event LogUpdatePoolApprovals(\n        address settler,\n        bool statusSettler,\n        address pool,\n        bool statusPools,\n        uint256 ttl,\n        uint256 ttlStartTime,\n        bool ttlStatus,\n        uint256 bufferTime\n    );\n    event LogUpdatePoolSettings(address feeTo, address tokenURIFetcher, address dpFee, address optionPricing);\n    event LogUpdateApprovedSwapper(address swapper, bool status);\n    event LogUpdateApprovedHook(address hook, bool status);\n    event LogUpdateApprovedMinter(address minter, bool status);\n\n    // Errors\n    error MaxOptionBuyReached();\n    error IVNotSet();\n    error NotValidStrikeTick();\n    error PoolNotApproved();\n    error MaxCostAllowanceExceeded();\n    error NotOwnerOrDelegator();\n    error ArrayLenMismatch();\n    error NotEnoughAfterSwap();\n    error NotApprovedSettler();\n    error InvalidPool();\n    error NotApprovedTTL();\n    error InBUFFER_TIME();\n    error Expired();\n    error TTLNotSet();\n    error NotApprovedSwapper();\n    error NotApprovedHook();\n    error MinLiquidityToUse();\n    error NotApprovedMinter();\n\n    /// @notice Counter for option IDs\n    uint256 public optionIds;\n\n    /// @notice Buffer time for option expiry\n    uint256 BUFFER_TIME = 10 minutes;\n\n    /// @notice Interface for fee strategy\n    IClammFeeStrategyV2 public dpFee;\n    /// @notice Interface for option pricing\n    IOptionPricingV2 public optionPricing;\n\n    /// @notice Interface for verified spot price\n    IVerifiedSpotPrice public verifiedSpotPrice;\n\n    /// @notice Interface for position manager\n    IPositionManager public immutable positionManager;\n    /// @notice Interface for prime pool\n    IUniswapV3Pool public immutable primePool;\n\n    /// @notice Address of the call asset\n    address public immutable callAsset;\n    /// @notice Address of the put asset\n    address public immutable putAsset;\n\n    /// @notice Address to receive fees\n    address public feeTo;\n\n    /// @notice Address of the token URI fetcher\n    address public tokenURIFetcher;\n\n    /// @notice Decimals of the call asset\n    uint8 public immutable callAssetDecimals;\n    /// @notice Decimals of the put asset\n    uint8 public immutable putAssetDecimals;\n\n    /// @notice Maximum tick difference\n    uint24 public maxTickDiff;\n\n    /// @notice Maximum upper tick\n    int24 maxUpperTick;\n    /// @notice Minimum lower tick\n    int24 minLowerTick;\n\n    /// @notice Minimum liquidity to use\n    uint128 minLiquidityToUse;\n\n    /// @notice Mapping of option ID to option data\n    mapping(uint256 => OptionData) public opData;\n    /// @notice Mapping of option ID to option ticks\n    mapping(uint256 => OptionTicks[]) public opTickMap;\n    /// @notice Mapping of pool address to approval status\n    mapping(address => bool) public approvedPools;\n    /// @notice Mapping of settler address to approval status\n    mapping(address => bool) public settlers;\n    /// @notice Mapping of TTL to approval status\n    mapping(uint256 => bool) public approvedTTLs;\n    /// @notice Mapping of TTL to start time\n    mapping(uint256 => uint256) public ttlStartTime;\n    /// @notice Mapping of swapper address to approval status\n    mapping(address => bool) public approvedSwapper;\n    /// @notice Mapping of approved hooks\n    mapping(address => bool) public approvedHooks;\n    /// @notice Mapping of minter address to approval status\n    mapping(address => bool) public approvedMinters;\n\n    /// @notice Constructor for the OptionMarketOTM_Fixed_Expiry_V1 contract\n    /// @param _pm Address of the position manager\n    /// @param _optionPricing Address of the option pricing contract\n    /// @param _dpFee Address of the fee strategy contract\n    /// @param _callAsset Address of the call asset\n    /// @param _putAsset Address of the put asset\n    /// @param _primePool Address of the prime pool\n    constructor(\n        address _pm,\n        address _optionPricing,\n        address _dpFee,\n        address _callAsset,\n        address _putAsset,\n        address _primePool,\n        address _verifiedSpotPrice\n    ) Ownable(msg.sender) {\n        positionManager = IPositionManager(_pm);\n        callAsset = _callAsset;\n        putAsset = _putAsset;\n\n        dpFee = IClammFeeStrategyV2(_dpFee);\n\n        optionPricing = IOptionPricingV2(_optionPricing);\n\n        primePool = IUniswapV3Pool(_primePool);\n\n        verifiedSpotPrice = IVerifiedSpotPrice(_verifiedSpotPrice);\n\n        if (primePool.token0() != _callAsset && primePool.token1() != _callAsset) revert InvalidPool();\n        if (primePool.token0() != _putAsset && primePool.token1() != _putAsset) {\n            revert InvalidPool();\n        }\n\n        callAssetDecimals = ERC20(_callAsset).decimals();\n        putAssetDecimals = ERC20(_putAsset).decimals();\n\n        emit LogOptionsMarketInitialized(_primePool, _optionPricing, _dpFee, _callAsset, _putAsset);\n    }\n\n    /// @notice Returns the name of the contract\n    /// @return string The name of the contract\n    function name() public view override returns (string memory) {\n        return \"MarginZero Option Market OTM FE\";\n    }\n\n    /// @notice Returns the symbol of the contract\n    /// @return string The symbol of the contract\n    function symbol() public view override returns (string memory) {\n        return \"MZ-OM-OTM-FE\";\n    }\n\n    /// @notice Returns the token URI for a given token ID\n    /// @param id The token ID\n    /// @return string The token URI\n    function tokenURI(uint256 id) public view override returns (string memory) {\n        return ITokenURIFetcher(tokenURIFetcher).onFetchTokenURIData(id);\n    }\n\n    /// @notice Mints a new option\n    /// @param _params The option parameters\n    function mintOption(OptionParams calldata _params) external nonReentrant {\n        optionIds += 1;\n\n        if (_params.optionTicks.length > 20) {\n            revert MaxOptionBuyReached();\n        }\n\n        if (!approvedTTLs[_params.ttl]) {\n            revert NotApprovedTTL();\n        }\n\n        if (_params.tickUpper > maxUpperTick || _params.tickLower < minLowerTick) {\n            revert NotValidStrikeTick();\n        }\n\n        uint256 expiry = block.timestamp + (_params.ttl - ((block.timestamp - ttlStartTime[_params.ttl]) % _params.ttl));\n\n        if (expiry - block.timestamp > _params.ttl - BUFFER_TIME) {\n            revert InBUFFER_TIME();\n        }\n\n        if (!approvedMinters[msg.sender]) {\n            revert NotApprovedMinter();\n        }\n\n        uint256[] memory amountsPerOptionTicks = new uint256[](_params.optionTicks.length);\n        uint256 totalAssetWithdrawn;\n\n        bool isAmount0;\n\n        address assetToUse = _params.isCall ? callAsset : putAsset;\n\n        OptionTicks memory opTick;\n\n        for (uint256 i; i < _params.optionTicks.length; i++) {\n            opTick = _params.optionTicks[i];\n\n            if ((_params.tickUpper != opTick.tickUpper || _params.tickLower != opTick.tickLower)) {\n                revert NotValidStrikeTick();\n            }\n\n            if (opTick.tickUpper > 0 && opTick.tickLower > 0 || opTick.tickUpper < 0 && opTick.tickLower < 0) {\n                if (uint24(opTick.tickUpper - opTick.tickLower) > maxTickDiff) {\n                    revert NotValidStrikeTick();\n                }\n            } else {\n                if (uint24(opTick.tickUpper + opTick.tickLower) > maxTickDiff) {\n                    revert NotValidStrikeTick();\n                }\n            }\n\n            if (\n                (\n                    opTick.tickLower < TickMath.getTickAtSqrtRatio(_getCurrentSqrtPriceX96(opTick.pool))\n                        && opTick.tickUpper > TickMath.getTickAtSqrtRatio(_getCurrentSqrtPriceX96(opTick.pool))\n                )\n                    || (\n                        TickMath.getSqrtRatioAtTick(opTick.tickLower) < _getCurrentSqrtPriceX96(opTick.pool)\n                            && TickMath.getSqrtRatioAtTick(opTick.tickUpper) > _getCurrentSqrtPriceX96(opTick.pool)\n                    )\n            ) {\n                revert NotValidStrikeTick();\n            }\n\n            opTickMap[optionIds].push(\n                OptionTicks({\n                    _handler: opTick._handler,\n                    pool: opTick.pool,\n                    hook: opTick.hook,\n                    tickLower: opTick.tickLower,\n                    tickUpper: opTick.tickUpper,\n                    liquidityToUse: opTick.liquidityToUse\n                })\n            );\n\n            if (!approvedPools[address(opTick.pool)]) {\n                revert PoolNotApproved();\n            }\n\n            if (!approvedHooks[opTick.hook]) {\n                revert NotApprovedHook();\n            }\n\n            if (opTick.liquidityToUse < minLiquidityToUse) {\n                revert MinLiquidityToUse();\n            }\n\n            bytes memory usePositionData = abi.encode(\n                opTick.pool,\n                opTick.hook,\n                opTick.tickLower,\n                opTick.tickUpper,\n                opTick.liquidityToUse,\n                abi.encode(\n                    address(this),\n                    expiry,\n                    _params.isCall,\n                    opTick.pool,\n                    opTick.tickLower,\n                    opTick.tickUpper,\n                    opTick.liquidityToUse\n                )\n            );\n\n            (address[] memory tokens, uint256[] memory amounts,) =\n                positionManager.usePosition(opTick._handler, usePositionData);\n\n            if (tokens[0] == assetToUse) {\n                require(amounts[0] > 0 && amounts[1] == 0);\n                amountsPerOptionTicks[i] = (amounts[0]);\n                totalAssetWithdrawn += amounts[0];\n                isAmount0 = true;\n            } else {\n                require(amounts[1] > 0 && amounts[0] == 0);\n                amountsPerOptionTicks[i] = (amounts[1]);\n                totalAssetWithdrawn += amounts[1];\n                isAmount0 = false;\n            }\n        }\n\n        uint256 strike = getPricePerCallAssetViaTick(primePool, _params.isCall ? _params.tickUpper : _params.tickLower);\n\n        uint256 premiumAmount = _getPremiumAmount(\n            opTick.hook,\n            _params.isCall ? false : true, // isPut\n            expiry, // expiry\n            _params.ttl, // ttl\n            strike, // Strike\n            verifiedSpotPrice.getSpotPrice(primePool, callAsset, callAssetDecimals), // Current price\n            _params.isCall ? totalAssetWithdrawn : (totalAssetWithdrawn * (10 ** putAssetDecimals)) / strike\n        );\n\n        if (premiumAmount == 0) revert IVNotSet();\n\n        uint256 protocolFees;\n        if (feeTo != address(0)) {\n            protocolFees = getFee(totalAssetWithdrawn, premiumAmount);\n            ERC20(assetToUse).safeTransferFrom(msg.sender, feeTo, protocolFees);\n        }\n\n        if (premiumAmount + protocolFees > _params.maxCostAllowance) {\n            revert MaxCostAllowanceExceeded();\n        }\n\n        ERC20(assetToUse).safeTransferFrom(msg.sender, address(this), premiumAmount);\n        ERC20(assetToUse).safeIncreaseAllowance(address(positionManager), premiumAmount);\n\n        for (uint256 i; i < _params.optionTicks.length; i++) {\n            opTick = _params.optionTicks[i];\n            uint256 premiumAmountEarned = (amountsPerOptionTicks[i] * premiumAmount) / totalAssetWithdrawn;\n\n            bytes memory donatePositionData = abi.encode(\n                opTick.pool,\n                opTick.hook,\n                opTick.tickLower,\n                opTick.tickUpper,\n                isAmount0 ? premiumAmountEarned : 0,\n                isAmount0 ? 0 : premiumAmountEarned,\n                abi.encode(\"\")\n            );\n            positionManager.donateToPosition(opTick._handler, donatePositionData);\n        }\n\n        opData[optionIds] = OptionData({\n            opTickArrayLen: _params.optionTicks.length,\n            tickLower: _params.tickLower,\n            tickUpper: _params.tickUpper,\n            expiry: expiry,\n            isCall: _params.isCall\n        });\n\n        _safeMint(msg.sender, optionIds);\n\n        emit LogMintOption(_params, optionIds, premiumAmount, totalAssetWithdrawn, protocolFees);\n    }\n\n    /// @notice Struct to cache asset-related data during option settlement\n    struct AssetsCache {\n        uint256 totalProfit;\n        uint256 totalAssetRelocked;\n        ERC20 assetToUse;\n        ERC20 assetToGet;\n        bool isSettle;\n    }\n\n    /// @notice Settles an option\n    /// @param _params The settlement parameters\n    /// @return ac The assets cache containing settlement results\n    function settleOption(SettleOptionParams calldata _params) external nonReentrant returns (AssetsCache memory ac) {\n        OptionData memory oData = opData[_params.optionId];\n\n        if (oData.opTickArrayLen != _params.liquidityToSettle.length) {\n            revert ArrayLenMismatch();\n        }\n\n        if (!settlers[msg.sender]) {\n            revert NotApprovedSettler();\n        }\n\n        if (block.timestamp >= oData.expiry) {\n            ac.isSettle = true;\n        }\n\n        bool isAmount0 = oData.isCall ? primePool.token0() == callAsset : primePool.token0() == putAsset;\n\n        ac.assetToUse = ERC20(oData.isCall ? callAsset : putAsset);\n        ac.assetToGet = ERC20(oData.isCall ? putAsset : callAsset);\n\n        for (uint256 i; i < oData.opTickArrayLen; i++) {\n            if (_params.liquidityToSettle[i] == 0) continue;\n\n            OptionTicks storage opTick = opTickMap[_params.optionId][i];\n\n            uint256 liquidityToSettle = _params.liquidityToSettle[i];\n\n            (uint256 amount0, uint256 amount1) = LiquidityAmounts.getAmountsForLiquidity(\n                _getCurrentSqrtPriceX96(opTick.pool),\n                opTick.tickLower.getSqrtRatioAtTick(),\n                opTick.tickUpper.getSqrtRatioAtTick(),\n                uint128(liquidityToSettle)\n            );\n\n            if (\n                ((amount0 > 0 && amount1 == 0) || (amount1 > 0 && amount0 == 0))\n                    && !(\n                        (\n                            opTick.tickLower < TickMath.getTickAtSqrtRatio(_getCurrentSqrtPriceX96(opTick.pool))\n                                && opTick.tickUpper > TickMath.getTickAtSqrtRatio(_getCurrentSqrtPriceX96(opTick.pool))\n                        )\n                            || (\n                                TickMath.getSqrtRatioAtTick(opTick.tickLower) < _getCurrentSqrtPriceX96(opTick.pool)\n                                    && TickMath.getSqrtRatioAtTick(opTick.tickUpper) > _getCurrentSqrtPriceX96(opTick.pool)\n                            )\n                    )\n            ) {\n                if (isAmount0 && amount0 > 0 && ac.isSettle == true) {\n                    ac.assetToUse.safeIncreaseAllowance(address(positionManager), amount0);\n                    ac.totalAssetRelocked += amount0;\n                } else if (!isAmount0 && amount1 > 0 && ac.isSettle == true) {\n                    ac.assetToUse.safeIncreaseAllowance(address(positionManager), amount1);\n                    ac.totalAssetRelocked += amount1;\n                } else {\n                    uint256 amountToSwap = isAmount0\n                        ? LiquidityAmounts.getAmount0ForLiquidity(\n                            opTick.tickLower.getSqrtRatioAtTick(),\n                            opTick.tickUpper.getSqrtRatioAtTick(),\n                            uint128(liquidityToSettle)\n                        )\n                        : LiquidityAmounts.getAmount1ForLiquidity(\n                            opTick.tickLower.getSqrtRatioAtTick(),\n                            opTick.tickUpper.getSqrtRatioAtTick(),\n                            uint128(liquidityToSettle)\n                        );\n\n                    ac.totalAssetRelocked += amountToSwap;\n\n                    uint256 prevBalance = ac.assetToGet.balanceOf(address(this));\n\n                    if (!approvedSwapper[address(_params.swapper[i])]) {\n                        revert NotApprovedSwapper();\n                    }\n\n                    ac.assetToUse.transfer(address(_params.swapper[i]), amountToSwap);\n\n                    _params.swapper[i].onSwapReceived(\n                        address(ac.assetToUse), address(ac.assetToGet), amountToSwap, _params.swapData[i]\n                    );\n\n                    uint256 amountReq = isAmount0\n                        ? LiquidityAmounts.getAmount1ForLiquidity(\n                            opTick.tickLower.getSqrtRatioAtTick(),\n                            opTick.tickUpper.getSqrtRatioAtTick(),\n                            uint128(liquidityToSettle)\n                        )\n                        : LiquidityAmounts.getAmount0ForLiquidity(\n                            opTick.tickLower.getSqrtRatioAtTick(),\n                            opTick.tickUpper.getSqrtRatioAtTick(),\n                            uint128(liquidityToSettle)\n                        );\n\n                    uint256 currentBalance = ac.assetToGet.balanceOf(address(this));\n\n                    if (currentBalance < prevBalance + amountReq) {\n                        revert NotEnoughAfterSwap();\n                    }\n\n                    ac.assetToGet.safeIncreaseAllowance(address(positionManager), amountReq);\n\n                    ac.totalProfit += currentBalance - (prevBalance + amountReq);\n                }\n            } else {\n                if (isAmount0 && ac.isSettle == true) {\n                    ac.assetToUse.safeIncreaseAllowance(address(positionManager), amount0);\n                    ac.assetToGet.safeIncreaseAllowance(address(positionManager), amount1);\n\n                    uint256 actualAmount0 = LiquidityAmounts.getAmount0ForLiquidity(\n                        opTick.tickLower.getSqrtRatioAtTick(),\n                        opTick.tickUpper.getSqrtRatioAtTick(),\n                        uint128(liquidityToSettle)\n                    );\n\n                    ac.assetToGet.safeTransferFrom(msg.sender, address(this), amount1);\n\n                    ac.assetToUse.safeTransfer(msg.sender, actualAmount0 - amount0);\n                } else if (!isAmount0 && ac.isSettle == true) {\n                    ac.assetToUse.safeIncreaseAllowance(address(positionManager), amount1);\n                    ac.assetToGet.safeIncreaseAllowance(address(positionManager), amount0);\n\n                    uint256 actualAmount1 = LiquidityAmounts.getAmount1ForLiquidity(\n                        opTick.tickLower.getSqrtRatioAtTick(),\n                        opTick.tickUpper.getSqrtRatioAtTick(),\n                        uint128(liquidityToSettle)\n                    );\n\n                    ac.assetToGet.safeTransferFrom(msg.sender, address(this), amount0);\n\n                    ac.assetToUse.safeTransfer(msg.sender, actualAmount1 - amount1);\n                }\n            }\n\n            bytes memory unusePositionData = abi.encode(\n                opTick.pool, opTick.hook, opTick.tickLower, opTick.tickUpper, liquidityToSettle, abi.encode(\"\")\n            );\n\n            positionManager.unusePosition(opTick._handler, unusePositionData);\n\n            opTick.liquidityToUse -= liquidityToSettle;\n        }\n\n        if (ac.totalProfit > 0) {\n            ac.assetToGet.transfer(msg.sender, ac.totalProfit);\n        }\n\n        emit LogSettleOption(ac, _params.liquidityToSettle, ownerOf(_params.optionId), _params.optionId);\n    }\n\n    /// @notice Splits a position into a new option\n    /// @param _params The position splitter parameters\n    function positionSplitter(PositionSplitterParams calldata _params) external nonReentrant {\n        optionIds += 1;\n\n        if (ownerOf(_params.optionId) != msg.sender) {\n            revert NotOwnerOrDelegator();\n        }\n        OptionData memory oData = opData[_params.optionId];\n\n        if (oData.opTickArrayLen != _params.liquidityToSplit.length) {\n            revert ArrayLenMismatch();\n        }\n\n        if (oData.expiry <= block.timestamp) {\n            revert Expired();\n        }\n\n        for (uint256 i; i < _params.liquidityToSplit.length; i++) {\n            OptionTicks storage opTick = opTickMap[_params.optionId][i];\n            opTick.liquidityToUse -= _params.liquidityToSplit[i];\n\n            opTickMap[optionIds].push(\n                OptionTicks({\n                    _handler: opTick._handler,\n                    pool: opTick.pool,\n                    hook: opTick.hook,\n                    tickLower: opTick.tickLower,\n                    tickUpper: opTick.tickUpper,\n                    liquidityToUse: _params.liquidityToSplit[i]\n                })\n            );\n        }\n\n        opData[optionIds] = OptionData({\n            opTickArrayLen: _params.liquidityToSplit.length,\n            tickLower: oData.tickLower,\n            tickUpper: oData.tickUpper,\n            expiry: oData.expiry,\n            isCall: oData.isCall\n        });\n\n        _safeMint(_params.to, optionIds);\n\n        emit LogSplitOption(_params, optionIds, ownerOf(_params.optionId));\n    }\n\n    /// @notice Gets the price per call asset via a specific tick\n    /// @param _pool The Uniswap V3 pool\n    /// @param _tick The tick to get the price for\n    /// @return uint256 The price per call asset\n    function getPricePerCallAssetViaTick(IUniswapV3Pool _pool, int24 _tick) public view returns (uint256) {\n        uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(_tick);\n        return _getPrice(_pool, sqrtPriceX96);\n    }\n\n    /// @notice Gets the premium amount for an option\n    /// @param hook The hook address\n    /// @param isPut Whether the option is a put\n    /// @param expiry The expiry timestamp\n    /// @param strike The strike price\n    /// @param lastPrice The last price\n    /// @param amount The option amount\n    /// @return uint256 The premium amount\n    function getPremiumAmount(\n        address hook,\n        bool isPut,\n        uint256 expiry,\n        uint256 ttl,\n        uint256 strike,\n        uint256 lastPrice,\n        uint256 amount\n    ) external view returns (uint256) {\n        return _getPremiumAmount(hook, isPut, expiry, ttl, strike, lastPrice, amount);\n    }\n\n    /// @notice Gets the current sqrt price X96\n    /// @param pool The Uniswap V3 pool\n    /// @return sqrtPriceX96 The current sqrt price X96\n    function _getCurrentSqrtPriceX96(IUniswapV3Pool pool) internal view returns (uint160 sqrtPriceX96) {\n        (, bytes memory result) = address(pool).staticcall(abi.encodeWithSignature(\"slot0()\"));\n        sqrtPriceX96 = abi.decode(result, (uint160));\n    }\n\n    /// @notice Internal function to get the premium amount\n    /// @param hook The hook address\n    /// @param isPut Whether the option is a put\n    /// @param expiry The expiry timestamp\n    /// @param strike The strike price\n    /// @param lastPrice The last price\n    /// @param amount The option amount\n    /// @return premiumAmount The premium amount\n    function _getPremiumAmount(\n        address hook,\n        bool isPut,\n        uint256 expiry,\n        uint256 ttl,\n        uint256 strike,\n        uint256 lastPrice,\n        uint256 amount\n    ) internal view returns (uint256 premiumAmount) {\n        uint256 premiumInQuote = (amount * optionPricing.getOptionPrice(hook, isPut, expiry, ttl, strike, lastPrice))\n            / (isPut ? 10 ** putAssetDecimals : 10 ** callAssetDecimals);\n\n        if (isPut) {\n            return premiumInQuote;\n        }\n        return (premiumInQuote * (10 ** callAssetDecimals)) / lastPrice;\n    }\n\n    /// @notice Internal function to get the price\n    /// @param _pool The Uniswap V3 pool\n    /// @param sqrtPriceX96 The sqrt price X96\n    /// @return price The calculated price\n    function _getPrice(IUniswapV3Pool _pool, uint160 sqrtPriceX96) internal view returns (uint256 price) {\n        if (sqrtPriceX96 <= type(uint128).max) {\n            uint256 priceX192 = uint256(sqrtPriceX96) * sqrtPriceX96;\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX192, 10 ** callAssetDecimals, 1 << 192)\n                : FullMath.mulDiv(1 << 192, 10 ** callAssetDecimals, priceX192);\n        } else {\n            uint256 priceX128 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);\n\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX128, 10 ** callAssetDecimals, 1 << 128)\n                : FullMath.mulDiv(1 << 128, 10 ** callAssetDecimals, priceX128);\n        }\n    }\n\n    /// @notice Gets the fee for a given amount and premium\n    /// @param amount The option amount\n    /// @param premium The option premium\n    /// @return uint256 The calculated fee\n    function getFee(uint256 amount, uint256 premium) public view returns (uint256) {\n        return dpFee.onFeeReqReceive(address(this), amount, premium);\n    }\n\n    /// @notice Updates pool approvals and settings\n    /// @param _settler The settler address\n    /// @param _statusSettler The settler status\n    /// @param _pool The pool address\n    /// @param _statusPools The pool status\n    /// @param _ttl The time-to-live\n    /// @param _ttlStartTime The start time for the TTL\n    /// @param ttlStatus The TTL status\n    /// @param _BUFFER_TIME The buffer time\n    function updatePoolApporvals(\n        address _settler,\n        bool _statusSettler,\n        address _pool,\n        bool _statusPools,\n        uint256 _ttl,\n        uint256 _ttlStartTime,\n        bool ttlStatus,\n        uint256 _BUFFER_TIME\n    ) external onlyOwner {\n        settlers[_settler] = _statusSettler;\n        approvedPools[_pool] = _statusPools;\n        approvedTTLs[_ttl] = ttlStatus;\n        BUFFER_TIME = _BUFFER_TIME;\n\n        if (_ttlStartTime == 0) revert TTLNotSet();\n\n        ttlStartTime[_ttl] = _ttlStartTime;\n\n        IUniswapV3Pool pool = IUniswapV3Pool(_pool);\n\n        if (pool.token0() != callAsset && pool.token1() != callAsset) {\n            revert InvalidPool();\n        }\n\n        if (pool.token0() != putAsset && pool.token1() != putAsset) {\n            revert InvalidPool();\n        }\n\n        emit LogUpdatePoolApprovals(\n            _settler, _statusSettler, _pool, _statusPools, _ttl, _ttlStartTime, ttlStatus, _BUFFER_TIME\n        );\n    }\n\n    /// @notice Updates pool settings\n    /// @param _feeTo The fee recipient address\n    /// @param _tokenURIFetcher The token URI fetcher address\n    /// @param _dpFee The fee strategy address\n    /// @param _optionPricing The option pricing address\n    /// @param _verifiedSpotPrice The verified spot price address\n    /// @param _maxTickDiff The maximum tick difference\n    function updatePoolSettings(\n        address _feeTo,\n        address _tokenURIFetcher,\n        address _dpFee,\n        address _optionPricing,\n        address _verifiedSpotPrice,\n        uint24 _maxTickDiff,\n        int24 _maxUpperTick,\n        int24 _minLowerTick,\n        uint128 _minLiquidityToUse\n    ) external onlyOwner {\n        feeTo = _feeTo;\n        tokenURIFetcher = _tokenURIFetcher;\n        dpFee = IClammFeeStrategyV2(_dpFee);\n        optionPricing = IOptionPricingV2(_optionPricing);\n        verifiedSpotPrice = IVerifiedSpotPrice(_verifiedSpotPrice);\n        maxTickDiff = _maxTickDiff;\n        maxUpperTick = _maxUpperTick;\n        minLowerTick = _minLowerTick;\n        minLiquidityToUse = _minLiquidityToUse;\n        emit LogUpdatePoolSettings(_feeTo, _tokenURIFetcher, _dpFee, _optionPricing);\n    }\n\n    function setApprovedSwapperAndHook(address swapper, bool statusSwapper, address hook, bool statusHook)\n        external\n        onlyOwner\n    {\n        approvedSwapper[swapper] = statusSwapper;\n        approvedHooks[hook] = statusHook;\n        emit LogUpdateApprovedSwapper(swapper, statusSwapper);\n        emit LogUpdateApprovedHook(hook, statusHook);\n    }\n\n    function setApprovedMinter(address minter, bool statusMinter) external onlyOwner {\n        approvedMinters[minter] = statusMinter;\n        emit LogUpdateApprovedMinter(minter, statusMinter);\n    }\n\n    /// @notice Emergency withdraw function\n    /// @param token The token address to withdraw\n    function emergencyWithdraw(address token) external onlyOwner {\n        ERC20(token).safeTransfer(msg.sender, ERC20(token).balanceOf(address(this)));\n    }\n}\n"
+    }
+}

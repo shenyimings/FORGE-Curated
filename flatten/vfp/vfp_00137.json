@@ -1,0 +1,34 @@
+{
+    "vfp_id": "vfp_00137",
+    "project_name": "Virtuals Protocol Genesis - Zenith Audit Report.pdf",
+    "findings": [
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Additional checks needed when creating a Genesis",
+            "description": "The vulnerability stems from missing validation of critical parameters during Genesis creation, specifically cores.length and reserveAmount. The Bonding.launch() function requires cores.length > 0 and reserveAmount > fee, but these conditions are not enforced in FGenesis.createGenesis or FGenesis.reserveAmount. If invalid parameters are passed, the subsequent launch will revert, causing the Genesis event to fail and requiring manual refunds. This increases operational overhead and user friction. An attacker could potentially exploit this by initiating a Genesis with invalid parameters, forcing a failure and disrupting the process. The lack of upfront validation reduces system robustness and user experience.\n",
+            "severity": "Low",
+            "location": [
+                "FGenesis.sol#L151",
+                "FGenesis.sol#L78",
+                "Bonding.sol#L197-L202"
+            ],
+            "files": [
+                "2f51fc99606d83d7d8ca00d14f52d43e08c873dc/protocol-contracts/contracts/genesis/FGenesis.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "FGenesis.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {Genesis} from \"./Genesis.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport \"../virtualPersona/AgentFactoryV3.sol\";\nimport \"./GenesisTypes.sol\";\nimport \"./GenesisLib.sol\";\nimport \"../virtualPersona/AgentFactoryV3.sol\";\n\ncontract FGenesis is Initializable, AccessControlUpgradeable {\n    using GenesisLib for *;\n\n    bytes32 public constant ADMIN_ROLE = keccak256(\"ADMIN_ROLE\");\n\n    struct Params {\n        address virtualToken;\n        uint256 reserve;\n        uint256 maxContribution;\n        address feeAddr;\n        uint256 feeAmt;\n        uint256 duration;\n        bytes32 tbaSalt;\n        address tbaImpl;\n        uint32 votePeriod;\n        uint256 threshold;\n        address agentFactory;\n        uint256 agentTokenTotalSupply;\n        uint256 agentTokenLpSupply;\n    }\n\n    Params public params;\n    mapping(uint256 => address) public genesisContracts;\n    uint256 public genesisID;\n\n    event GenesisCreated(uint256 indexed id, address indexed addr);\n\n    /// @custom:oz-upgrades-unsafe-allow constructor\n    constructor() {\n        _disableInitializers();\n    }\n\n    function initialize(Params memory p) external initializer {\n        __AccessControl_init();\n        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);\n        _grantRole(ADMIN_ROLE, msg.sender);\n        _setParams(p);\n    }\n\n    function setParams(\n        Params calldata p\n    ) external onlyRole(DEFAULT_ADMIN_ROLE) {\n        _setParams(p);\n    }\n\n    function _setParams(Params memory p) internal {\n        require(\n            p.virtualToken != address(0) &&\n                p.feeAddr != address(0) &&\n                p.tbaImpl != address(0) &&\n                p.agentFactory != address(0),\n            \"Invalid addr\"\n        );\n\n        require(\n            p.reserve > 0 &&\n                p.maxContribution > 0 &&\n                p.feeAmt > 0 &&\n                p.duration > 0,\n            \"Invalid amt\"\n        );\n\n        require(\n            p.agentTokenTotalSupply > 0 &&\n                p.agentTokenLpSupply > 0 &&\n                p.agentTokenTotalSupply >= p.agentTokenLpSupply,\n            \"Invalid amt\"\n        );\n\n        params = p;\n    }\n\n    function createGenesis(\n        GenesisCreationParams memory gParams\n    ) external returns (address) {\n        require(\n            IERC20(params.virtualToken).transferFrom(\n                msg.sender,\n                params.feeAddr,\n                params.feeAmt\n            ),\n            \"transfer createGenesis fee failed\"\n        );\n\n        gParams.endTime = gParams.startTime + params.duration;\n\n        genesisID++;\n        address addr = GenesisLib.validateAndDeploy(\n            genesisID,\n            address(this),\n            gParams,\n            params.tbaSalt,\n            params.tbaImpl,\n            params.votePeriod,\n            params.threshold,\n            params.agentFactory,\n            params.virtualToken,\n            params.reserve,\n            params.maxContribution,\n            params.agentTokenTotalSupply,\n            params.agentTokenLpSupply\n        );\n\n        // Grant BONDING_ROLE of ato the new Genesis contract\n        bytes32 BONDING_ROLE = AgentFactoryV3(params.agentFactory)\n            .BONDING_ROLE();\n        AgentFactoryV3(params.agentFactory).grantRole(\n            BONDING_ROLE,\n            address(addr)\n        );\n\n        genesisContracts[genesisID] = addr;\n        emit GenesisCreated(genesisID, addr);\n        return addr;\n    }\n\n    function _getGenesis(uint256 id) internal view returns (Genesis) {\n        address addr = genesisContracts[id];\n        require(addr != address(0), \"Not found\");\n        return Genesis(addr);\n    }\n\n    function onGenesisSuccess(\n        uint256 id,\n        SuccessParams calldata p\n    ) external onlyRole(ADMIN_ROLE) {\n        _getGenesis(id).onGenesisSuccess(\n            p.refundAddresses,\n            p.refundAmounts,\n            p.distributeAddresses,\n            p.distributeAmounts,\n            p.creator\n        );\n    }\n\n    function onGenesisFailed(uint256 id) external onlyRole(ADMIN_ROLE) {\n        _getGenesis(id).onGenesisFailed();\n    }\n\n    function withdrawLeftVirtuals(\n        uint256 id,\n        address to,\n        address token\n    ) external onlyRole(ADMIN_ROLE) {\n        _getGenesis(id).withdrawLeftVirtualsAfterFinalized(to, token);\n    }\n\n    function resetTime(\n        uint256 id,\n        uint256 newStartTime,\n        uint256 newEndTime\n    ) external onlyRole(ADMIN_ROLE) {\n        _getGenesis(id).resetTime(newStartTime, newEndTime);\n    }\n\n    function cancelGenesis(uint256 id) external onlyRole(ADMIN_ROLE) {\n        _getGenesis(id).cancelGenesis();\n    }\n}\n"
+    }
+}

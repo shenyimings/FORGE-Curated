@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00043",
+    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "findings": [
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Reducing liquidity in the hardcoded Curve sDAI/sUSDe pool leads to unnecessary slippage loss",
+            "description": "The protocol uses a hardcoded path (sUSDe -> sDAI -> asset) for swapping via the Curve sDAI/sUSDe pool (0x167478921b907422F8E88B43C4Af2B8BEa278d3A). Over time, liquidity in this pool has decreased as users migrate from sDAI to sUSDS under the new SKY protocol, where most incentives are now directed.\n\nThe root cause is the static swap logic in PendlePT_sUSDe.sol that does not adapt to changing market conditions or liquidity levels. As sDAI reserves decline, slippage on swaps increases significantly, especially for large trades.\n\nUsers are forced to use this low-liquidity pool even when better alternatives exist, resulting in worse execution prices. This is particularly problematic during periods of high volatility or large withdrawals.\n\nThe impact is high, as users incur unnecessary slippage losses during exits, reducing their net returns and potentially making the protocol less competitive compared to alternatives with dynamic routing.\n",
+            "severity": "High",
+            "location": [
+                "PendlePT_sUSDe.sol::swap#42"
+            ],
+            "files": [
+                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/staking/PendlePT_sUSDe.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PendlePT_sUSDe.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport \"./PendlePT.sol\";\nimport \"../withdraws/Ethena.sol\";\nimport \"../interfaces/ITradingModule.sol\";\n\ncontract PendlePT_sUSDe is PendlePT {\n    using SafeERC20 for ERC20;\n\n    constructor(\n        address market,\n        address tokenInSY,\n        address tokenOutSY,\n        address asset,\n        address yieldToken,\n        uint256 feeRate,\n        IWithdrawRequestManager withdrawRequestManager\n    ) PendlePT(market, tokenInSY, tokenOutSY, asset, yieldToken, feeRate, withdrawRequestManager) {\n        require(tokenOutSY == address(sUSDe));\n    }\n\n    /// @notice The vast majority of the sUSDe liquidity is in an sDAI/sUSDe curve pool.\n    /// sDAI has much greater liquidity once it is unwrapped as DAI so that is done manually\n    /// in this method.\n    function _executeInstantRedemption(\n        uint256 yieldTokensToRedeem,\n        bytes memory redeemData\n    ) internal override virtual returns (uint256 assetsPurchased) {\n        PendleRedeemParams memory params = abi.decode(redeemData, (PendleRedeemParams));\n        uint256 netTokenOut = _redeemPT(yieldTokensToRedeem, params.limitOrderData);\n\n        Trade memory sDAITrade = Trade({\n            tradeType: TradeType.EXACT_IN_SINGLE,\n            sellToken: address(sUSDe),\n            buyToken: address(sDAI),\n            amount: netTokenOut,\n            limit: 0, // NOTE: no slippage guard is set here, it is enforced in the second leg\n                        // of the trade.\n            deadline: block.timestamp,\n            exchangeData: abi.encode(CurveV2SingleData({\n                pool: 0x167478921b907422F8E88B43C4Af2B8BEa278d3A,\n                fromIndex: 1, // sUSDe\n                toIndex: 0 // sDAI\n            }))\n        });\n\n        (/* */, uint256 sDAIAmount) = _executeTrade(sDAITrade, uint16(DexId.CURVE_V2));\n\n        // Unwraps the sDAI to DAI\n        uint256 daiAmount = sDAI.redeem(sDAIAmount, address(this), address(this));\n        \n        if (asset != address(DAI)) {\n            Trade memory trade = Trade({\n                tradeType: TradeType.EXACT_IN_SINGLE,\n                sellToken: address(DAI),\n                buyToken: asset,\n                amount: daiAmount,\n                limit: params.minPurchaseAmount,\n                deadline: block.timestamp,\n                exchangeData: params.exchangeData\n            });\n\n            // Trades the unwrapped DAI back to the given token.\n            (/* */, assetsPurchased) = _executeTrade(trade, params.dexId);\n        } else {\n            if (params.minPurchaseAmount > daiAmount) revert SlippageTooHigh(daiAmount, params.minPurchaseAmount);\n            assetsPurchased = daiAmount;\n        }\n    }\n}\n"
+    }
+}

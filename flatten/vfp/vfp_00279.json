@@ -1,0 +1,54 @@
+{
+    "vfp_id": "vfp_00279",
+    "project_name": "Jovay Rollup Contracts Audit.md",
+    "findings": [
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Modifier Applied Twice in withdrawAll",
+            "description": "The withdrawAll function in L2CoinBase calls the withdraw function, and both are annotated with the onlyWithdrawer modifier, resulting in the same access control check being executed twice. While this does not introduce a security vulnerability, it is inefficient and wastes gas. The root cause is redundant modifier usage. Every call to withdrawAll incurs unnecessary gas costs due to repeated checks. The impact is increased transaction fees for users, reducing the efficiency of the contract without any security benefit.\n",
+            "severity": "Low",
+            "location": [
+                "L2CoinBase.sol::withdrawAll#95-97",
+                "L2CoinBase.sol::withdraw#85-93"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2CoinBase.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Parent Contracts are not Initialized",
+            "description": "The `L2CoinBase` contract inherits from `OwnableUpgradeable`, `PausableUpgradeable`, and `ReentrancyGuardUpgradeable`, but only initializes the `Ownable` component in its `initialize` function. The `Pausable` and `ReentrancyGuard` parent contracts are not initialized, leaving their internal state uninitialized. Specifically, the `_status` variable in `ReentrancyGuardUpgradeable` remains at 0 instead of being set to `_NOT_ENTERED` (1). Although this creates an inconsistent initial state, the contract will self-correct after the first call to a `nonReentrant` function, which sets the correct state. The root cause is the omission of parent initializer calls. An attacker could potentially exploit the initial inconsistent state if reentrancy checks behave unexpectedly before the first modifier execution. However, the practical impact is low due to the self-correcting nature. Still, it represents a deviation from secure upgradeable contract patterns.\n",
+            "severity": "Low",
+            "location": [
+                "L2CoinBase.sol::initialize#19-22",
+                "ReentrancyGuardUpgradeable.sol::_status#38"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L2/core/L2CoinBase.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "L2CoinBase.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"../bridge/interfaces/IL2ETHBridge.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\n\ncontract L2CoinBase is OwnableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {\n    address public l2EthBridge;\n\n    receive() external payable {\n    }\n\n    constructor(){\n        _disableInitializers();\n    }\n\n    function initialize(address _l2EthBridge) external initializer {\n        OwnableUpgradeable.__Ownable_init();\n        l2EthBridge = _l2EthBridge;\n    }\n\n    // Withdrawal permission account\n    mapping(address => bool) public isWithdrawer;\n\n    // Whitelisted accounts on L1, to which withdrawals can be made\n    mapping(address => bool) public whiteListOnL1;\n\n    modifier onlyWithdrawer() {\n        // @note In the decentralized mode, it should be only called by a list of validator.\n        require(isWithdrawer[_msgSender()], \"INVALID_PERMISSION : sender is not withdrawer\");\n        _;\n    }\n\n    function pause() external onlyOwner {\n        _pause();\n    }\n\n    function unpause() external onlyOwner {\n        _unpause();\n    }\n\n    event SetL2EthBridge(address indexed l2EthBridge);\n\n    event AddWithdrawer(address indexed newWithdrawer);\n\n    event RemoveWithdrawer(address indexed oldWithdrawer);\n\n    event AddWhiteAddress(address indexed whiteAddress);\n\n    event RemoveWhiteAddress(address indexed whiteAddress);\n\n    event CoinBaseWithdraw(address indexed _target, uint256 indexed amount);\n\n    function setL2EthBridge(address _newL2EthBridge) whenPaused onlyOwner external {\n        l2EthBridge = _newL2EthBridge;\n        emit SetL2EthBridge(_newL2EthBridge);\n    }\n\n    function addWithdrawer(address _newWithdrawer) onlyOwner external {\n        isWithdrawer[_newWithdrawer] = true;\n\n        emit AddWithdrawer(_newWithdrawer);\n    }\n\n    function removeWithdrawer(address _oldWithdrawer) onlyOwner external {\n        isWithdrawer[_oldWithdrawer] = false;\n\n        emit RemoveWithdrawer(_oldWithdrawer);\n    }\n\n    function addWhiteAddress(address _whiteAddress) onlyOwner external {\n        whiteListOnL1[_whiteAddress] = true;\n\n        emit AddWhiteAddress(_whiteAddress);\n    }\n\n    function removeWhiteAddress(address _whiteAddress) onlyOwner external {\n        whiteListOnL1[_whiteAddress] = false;\n\n        emit RemoveWhiteAddress(_whiteAddress);\n    }\n\n    function withdraw(address _target, uint256 _amount) onlyWithdrawer whenNotPaused nonReentrant public {\n        require(whiteListOnL1[_target], \"INVALID_PERMISSION : target is not receiver on L1\");\n        require(_amount <= address(this).balance, \"INVALID_PERMISSION : withdraw amount must smaller than or equal to balance\");\n\n        bytes memory message_ = abi.encodeCall(IL2ETHBridge.withdraw, (_target, _amount, 0, \"\"));\n        (bool success_, ) = l2EthBridge.call{value : _amount}(message_);\n        require(success_, \"withdraw failed in L2EthBridge\");\n        emit CoinBaseWithdraw(_target, _amount);\n    }\n\n    function withdrawAll(address _target) onlyWithdrawer external {\n        withdraw(_target,address(this).balance);\n    }\n}"
+    }
+}

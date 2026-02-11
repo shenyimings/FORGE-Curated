@@ -1,0 +1,46 @@
+{
+    "vfp_id": "vfp_00457",
+    "project_name": "ackee-blockchain-safe-smart-account-report.pdf",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Strict calldata check on masterCopy call",
+            "description": "The fallback function in SafeProxy.sol performs an overly strict comparison of the full 32-byte calldata when checking for the masterCopy() function selector. Instead of masking the first 4 bytes (the function selector), it compares the entire 32-byte word, which includes potential appended data. The root cause is incorrect handling of function selector matching, deviating from Solidity's standard delegation behavior where extra calldata is ignored. An attacker or user can craft a call to masterCopy() with additional trailing bytes (e.g., 0xa619486e0a), which the proxy will not recognize and will delegate to the singleton, potentially leading to incorrect return values or unexpected behavior if a fallback handler processes the call. The impact is low, as it does not enable arbitrary code execution but may result in incorrect state reads or confusion in client applications.\n",
+            "severity": "Low",
+            "location": [
+                "SafeProxy.sol::fallback#41"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxy.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-188"
+                ]
+            },
+            "title": "Scratch space assumed zeroed out",
+            "description": "The SafeProxy contract's fallback function uses inline assembly to store the singleton address shifted by 96 bits into memory at offset 0x0c, assuming the first 12 bytes of memory (scratch space) are zeroed out. However, the Solidity compiler does not guarantee that scratch space is initialized to zero, even in the absence of preceding code, which could lead to incorrect ABI encoding of the address if prior operations have left garbage data in memory. This behavior relies on an unsafe assumption about the EVM memory state. Although the impact is limited to a specific internal operation and does not directly enable fund loss or access control breaches, it introduces a potential inconsistency in return data encoding under certain compiler behaviors or future changes. The impact is a warning-level issue due to the reliance on an undocumented and potentially unsafe memory assumption.\n",
+            "severity": "Informational",
+            "location": [
+                "SafeProxy.sol::fallback#43-50"
+            ],
+            "files": [
+                "safe-smart-account/contracts/proxies/SafeProxy.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "SafeProxy.sol": "// SPDX-License-Identifier: LGPL-3.0-only\n/* solhint-disable one-contract-per-file */\npragma solidity >=0.7.0 <0.9.0;\n\n/**\n * @title IProxy - Helper interface to access the singleton address of the Proxy on-chain.\n * @author Richard Meissner - @rmeissner\n */\ninterface IProxy {\n    function masterCopy() external view returns (address);\n}\n\n/**\n * @title SafeProxy - Generic proxy contract allows to execute all transactions applying the code of a master contract.\n * @author Stefan George - <stefan@gnosis.io>\n * @author Richard Meissner - <richard@gnosis.io>\n */\ncontract SafeProxy {\n    // Singleton always needs to be first declared variable, to ensure that it is at the same location in the contracts to which calls are delegated.\n    // To reduce deployment costs this variable is internal and needs to be retrieved via `getStorageAt`\n    address internal singleton;\n\n    /**\n     * @notice Constructor function sets address of singleton contract.\n     * @param _singleton Singleton address.\n     */\n    constructor(address _singleton) {\n        require(_singleton != address(0), \"Invalid singleton address provided\");\n        singleton = _singleton;\n    }\n\n    /// @dev Fallback function forwards all transactions and returns all received return data.\n    fallback() external payable {\n        // Note that this assembly block is **intentionally** not marked as memory-safe. First of all, it isn't memory\n        // safe to begin with, and turning this into memory-safe assembly would just make it less gas efficient.\n        // Additionally, we noticed that converting this to memory-safe assembly had no affect on optimizations of other\n        // contracts (as it always gets compiled alone in its own compilation unit anyway).\n        /* solhint-disable no-inline-assembly */\n        assembly {\n            let _singleton := sload(0)\n            // 0xa619486e == bytes4(keccak256(\"masterCopy()\")). The value is right padded to 32-bytes with 0s\n            if eq(calldataload(0), 0xa619486e00000000000000000000000000000000000000000000000000000000) {\n                // We mask the singleton address when handling the `masterCopy()` call to ensure that it is correctly\n                // ABI-encoded. We do this by shifting the address left by 96 bits (or 12 bytes) and then storing it in\n                // memory with a 12 byte offset from where the return data starts. Note that we **intentionally** only\n                // do this for the `masterCopy()` call, since the EVM `DELEGATECALL` opcode ignores the most-significant\n                // 12 bytes from the address, so we do not need to make sure the top bytes are cleared when proxying\n                // calls to the `singleton`. This saves us a tiny amount of gas per proxied call.\n                mstore(0x0c, shl(96, _singleton))\n                return(0, 0x20)\n            }\n            calldatacopy(0, 0, calldatasize())\n            let success := delegatecall(gas(), _singleton, 0, calldatasize(), 0, 0)\n            returndatacopy(0, 0, returndatasize())\n            if iszero(success) {\n                revert(0, returndatasize())\n            }\n            return(0, returndatasize())\n        }\n        /* solhint-enable no-inline-assembly */\n    }\n}\n"
+    }
+}

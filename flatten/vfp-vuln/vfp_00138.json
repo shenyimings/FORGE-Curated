@@ -1,0 +1,33 @@
+{
+    "vfp_id": "vfp_00138",
+    "project_name": "Across Protocol OFT Integration Differential Audit.md",
+    "findings": [
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Inconsistent Use of the `__gap` Variable",
+            "description": "The `__gap` variable is used inconsistently across the codebase, with no uniform pattern in the number of reserved storage slots. This inconsistency can lead to storage collisions during upgrades, especially in inherited contracts, because the total number of used and reserved slots exceeds expected limits (e.g., SpokePool exceeds 1000). The root cause is poor standardization and lack of documentation for storage layout. If a new variable is added in a future upgrade without awareness of prior `__gap` modifications, it could overwrite existing state, leading to corrupted data or unauthorized state changes. This poses a critical risk to contract integrity during upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "MultiCallerUpgradeable.sol::__gap#77",
+                "Arbitrum_SpokePool.sol::__gap#15-19",
+                "SpokePool.sol::__gap#1762",
+                "SpokePool.sol#122",
+                "SpokePool.sol#1786"
+            ],
+            "files": [
+                "contracts/contracts/upgradeable/MultiCallerUpgradeable.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MultiCallerUpgradeable.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\n/**\n * @title MultiCallerUpgradeable\n * @notice Logic is 100% copied from \"@uma/core/contracts/common/implementation/MultiCaller.sol\" but one\n * comment is added to clarify why we allow delegatecall() in this contract, which is typically unsafe for use in\n * upgradeable implementation contracts.\n * @dev See https://docs.openzeppelin.com/upgrades-plugins/1.x/faq#delegatecall-selfdestruct for more details.\n * @custom:security-contact bugs@across.to\n */\ncontract MultiCallerUpgradeable {\n    struct Result {\n        bool success;\n        bytes returnData;\n    }\n\n    function _validateMulticallData(bytes[] calldata data) internal virtual {\n        // no-op\n    }\n\n    function multicall(bytes[] calldata data) external returns (bytes[] memory results) {\n        _validateMulticallData(data);\n\n        uint256 dataLength = data.length;\n        results = new bytes[](dataLength);\n\n        //slither-disable-start calls-loop\n        for (uint256 i = 0; i < dataLength; ++i) {\n            // Typically, implementation contracts used in the upgradeable proxy pattern shouldn't call `delegatecall`\n            // because it could allow a malicious actor to call this implementation contract directly (rather than\n            // through a proxy contract) and then selfdestruct() the contract, thereby freezing the upgradeable\n            // proxy. However, since we're only delegatecall-ing into this contract, then we can consider this\n            // use of delegatecall() safe.\n\n            //slither-disable-start low-level-calls\n            /// @custom:oz-upgrades-unsafe-allow delegatecall\n            (bool success, bytes memory result) = address(this).delegatecall(data[i]);\n            //slither-disable-end low-level-calls\n\n            if (!success) {\n                // Next 5 lines from https://ethereum.stackexchange.com/a/83577\n                if (result.length < 68) revert();\n                //slither-disable-next-line assembly\n                assembly {\n                    result := add(result, 0x04)\n                }\n                revert(abi.decode(result, (string)));\n            }\n\n            results[i] = result;\n        }\n        //slither-disable-end calls-loop\n    }\n\n    function tryMulticall(bytes[] calldata data) external returns (Result[] memory results) {\n        _validateMulticallData(data);\n\n        uint256 dataLength = data.length;\n        results = new Result[](dataLength);\n\n        //slither-disable-start calls-loop\n        for (uint256 i = 0; i < dataLength; ++i) {\n            // The delegatecall here is safe for the same reasons outlined in the first multicall function.\n            Result memory result = results[i];\n            //slither-disable-start low-level-calls\n            /// @custom:oz-upgrades-unsafe-allow delegatecall\n            (result.success, result.returnData) = address(this).delegatecall(data[i]);\n            //slither-disable-end low-level-calls\n        }\n        //slither-disable-end calls-loop\n    }\n\n    // Reserve storage slots for future versions of this base contract to add state variables without\n    // affecting the storage layout of child contracts. Decrement the size of __gap whenever state variables\n    // are added. This is at bottom of contract to make sure its always at the end of storage.\n    uint256[1000] private __gap;\n}\n"
+    }
+}

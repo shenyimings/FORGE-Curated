@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00263",
+    "project_name": "Uniswap Calibur Audit.md",
+    "findings": [
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "`requireUV` Flag Should Not Be Hardcoded to `false`",
+            "description": "The `requireUV` flag in `KeyLib.sol` is hardcoded to `false`, meaning the contract does not enforce user verification (e.g., biometrics or PIN) during WebAuthn authentication. This creates a security gap where a registered passkey could be used without confirming the user's presence, increasing the risk of unauthorized access if the device is compromised. The root cause is a design decision to delegate user verification enforcement to the client, but this shifts responsibility away from the on-chain security model. An attacker with physical or remote access to an unlocked device could exploit this by triggering a transaction without user interaction. The impact is a weakened authentication mechanism, potentially allowing unauthorized transaction signing if the device is left unattended or compromised.\n",
+            "severity": "Medium",
+            "location": [
+                "KeyLib.sol::requireUV#68"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/KeyLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "KeyLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.23;\n\nimport {ECDSA} from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport {P256} from \"@openzeppelin/contracts/utils/cryptography/P256.sol\";\nimport {WebAuthn} from \"webauthn-sol/src/WebAuthn.sol\";\nimport {Settings, SettingsLib} from \"./SettingsLib.sol\";\n\n/// @dev The type of key.\nenum KeyType {\n    P256,\n    WebAuthnP256,\n    Secp256k1\n}\n\nstruct Key {\n    /// @dev Type of key. See the {KeyType} enum.\n    KeyType keyType;\n    /// @dev Public key in encoded form.\n    bytes publicKey;\n}\n\nlibrary KeyLib {\n    /// @notice The sentinel hash value used to represent the root key\n    bytes32 public constant ROOT_KEY_HASH = bytes32(0);\n\n    /// @notice Hashes a key\n    /// @dev uses the key type and the public key to produce a hash\n    function hash(Key memory key) internal pure returns (bytes32) {\n        return keccak256(abi.encode(key.keyType, keccak256(key.publicKey)));\n    }\n\n    /// @notice Returns whether the keyHash is the root key hash\n    function isRootKey(bytes32 keyHash) internal pure returns (bool) {\n        return keyHash == ROOT_KEY_HASH;\n    }\n\n    /// @notice Returns whether the key is the root key\n    function isRootKey(Key memory key) internal view returns (bool) {\n        return key.keyType == KeyType.Secp256k1 && abi.decode(key.publicKey, (address)) == address(this);\n    }\n\n    /// @notice A helper function to get the root key object.\n    function toRootKey() internal view returns (Key memory) {\n        return Key({keyType: KeyType.Secp256k1, publicKey: abi.encode(address(this))});\n    }\n\n    /// @notice Turns a calling address into a key hash.\n    /// @dev This key must be a SECP256K1 key since it is calling the contract.\n    function toKeyHash(address caller) internal view returns (bytes32) {\n        if (caller == address(this)) return ROOT_KEY_HASH;\n        return hash(Key({keyType: KeyType.Secp256k1, publicKey: abi.encode(caller)}));\n    }\n\n    /// @notice Verifies a signature from `key` over a `_hash`\n    function verify(Key memory key, bytes32 _hash, bytes memory signature) internal view returns (bool isValid) {\n        if (key.keyType == KeyType.Secp256k1) {\n            isValid = ECDSA.recover(_hash, signature) == abi.decode(key.publicKey, (address));\n        } else if (key.keyType == KeyType.P256) {\n            // Extract x,y from the public key\n            (bytes32 x, bytes32 y) = abi.decode(key.publicKey, (bytes32, bytes32));\n            // Split signature into r and s values.\n            (bytes32 r, bytes32 s) = abi.decode(signature, (bytes32, bytes32));\n            isValid = P256.verify(_hash, r, s, x, y);\n        } else if (key.keyType == KeyType.WebAuthnP256) {\n            (uint256 x, uint256 y) = abi.decode(key.publicKey, (uint256, uint256));\n            WebAuthn.WebAuthnAuth memory auth = abi.decode(signature, (WebAuthn.WebAuthnAuth));\n            isValid = WebAuthn.verify({challenge: abi.encode(_hash), requireUV: false, webAuthnAuth: auth, x: x, y: y});\n        } else {\n            isValid = false;\n        }\n    }\n}\n"
+    }
+}

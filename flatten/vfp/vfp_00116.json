@@ -1,0 +1,55 @@
+{
+    "vfp_id": "vfp_00116",
+    "project_name": "Uniswap Labs UNIfication Fees Audit.md",
+    "findings": [
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Users Can Overpay if `threshold` Changes",
+            "description": "The Firepit releaser contract allows users to release fees from the TokenJar by paying a threshold amount of RESOURCE tokens. However, if the threshold is adjusted by the thresholdSetter after a user has submitted a transaction but before it is mined, the user may end up paying more than intended. The release function uses the current threshold at execution time, not at submission time.\n\nThe root cause is the lack of synchronization between the threshold value and the nonce mechanism. The nonce is not incremented when the threshold is changed, so pending transactions in the mempool remain valid even if the cost has increased.\n\nAn attacker could exploit this by monitoring the mempool and frontrunning a release transaction with a threshold increase, forcing the original user to overpay. Alternatively, a user could be victimized by normal network latency if the threshold is raised during confirmation.\n\nThe impact is economic loss for users who end up overpaying for fee releases, leading to a poor user experience and potential loss of trust in the system's predictability.\n",
+            "severity": "Low",
+            "location": [
+                "ResourceManager.sol::setThreshold#45",
+                "Firepit.sol::release#22-25",
+                "Nonce.sol#8"
+            ],
+            "files": [
+                "phoenix-fees/src/base/ResourceManager.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Unconventional Import Paths",
+            "description": "The ResourceManager contract uses indirect import paths for the ERC20 interface and the IResourceManager interface, importing them through intermediate files rather than directly from their source. This practice, while not affecting runtime behavior, reduces code clarity and complicates dependency tracing for developers and auditors. The root cause is the use of transitive imports instead of direct references. This could lead to confusion during maintenance or auditing, especially in large codebases or during integration efforts. The impact is limited to reduced code readability and maintainability, with no direct security risk.\n",
+            "severity": null,
+            "location": [
+                "ResourceManager.sol#5",
+                "ResourceManager.sol#6"
+            ],
+            "files": [
+                "phoenix-fees/src/base/ResourceManager.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ResourceManager.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.29;\n\nimport {Owned} from \"solmate/src/auth/Owned.sol\";\nimport {ERC20} from \"solmate/src/utils/SafeTransferLib.sol\";\nimport {IResourceManager} from \"../interfaces/IReleaser.sol\";\n\n/// @title ResourceManager\n/// @notice A contract that holds immutable state for the resource token and the resource recipient\n/// address. It also maintains logic for managing the threshold of the resource token.\nabstract contract ResourceManager is IResourceManager, Owned {\n  /// @inheritdoc IResourceManager\n  uint256 public threshold;\n\n  /// @inheritdoc IResourceManager\n  address public thresholdSetter;\n\n  /// @inheritdoc IResourceManager\n  ERC20 public immutable RESOURCE;\n\n  /// @inheritdoc IResourceManager\n  address public immutable RESOURCE_RECIPIENT;\n\n  /// @notice Ensures only the threshold setter can call the setThreshold function\n  modifier onlyThresholdSetter() {\n    if (msg.sender != thresholdSetter) revert Unauthorized();\n    _;\n  }\n\n  /// @dev At construction the thresholdSetter defaults to 0 and its on the owner to set.\n  constructor(address _resource, uint256 _threshold, address _owner, address _recipient)\n    Owned(_owner)\n  {\n    RESOURCE = ERC20(_resource);\n    RESOURCE_RECIPIENT = _recipient;\n    threshold = _threshold;\n  }\n\n  /// @inheritdoc IResourceManager\n  function setThresholdSetter(address _thresholdSetter) external onlyOwner {\n    thresholdSetter = _thresholdSetter;\n  }\n\n  /// @inheritdoc IResourceManager\n  function setThreshold(uint256 _threshold) external onlyThresholdSetter {\n    threshold = _threshold;\n  }\n}\n"
+    }
+}

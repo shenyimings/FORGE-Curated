@@ -1,0 +1,133 @@
+{
+    "vfp_id": "vfp_00650",
+    "project_name": "cantina_byzantine_dec2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "Missing receive / fallback, ERC721 & ERC1155 token accepting hooks",
+            "description": "The Atlas.sol contract lacks a receive or fallback function, which prevents it from accepting Ether during execution of calls or batch operations. This causes transactions sending Ether to the delegated address to revert. Additionally, the contract does not implement the onERC721Received or onERC1155Received / onERC1155BatchReceived hooks, making it unable to receive ERC721 and ERC1155 tokens. The root cause is the absence of required functions to handle incoming Ether and token transfers. An attacker cannot directly exploit this for financial gain, but users lose functionality and may experience failed transactions when attempting to send Ether or tokens to the delegation. The impact is a degradation of contract functionality and reduced interoperability with other protocols expecting standard receiving capabilities.\n",
+            "severity": "High",
+            "location": [
+                "Atlas.sol::#L142"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Signature replay due to shared storage in EIP-7702 context",
+            "description": "The usedNonces mapping in Atlas.sol uses standard storage slots that reside on the delegating EOA in an EIP-7702 context. When a user switches delegations (e.g., Atlas → OtherImpl → Atlas), the intermediate contract may overwrite the storage slots used by Atlas, resetting nonce values to false. This allows previously consumed signatures to be replayed if they are still within their validity period. The root cause is the use of non-namespaced storage, which is vulnerable to collision when multiple delegation targets share the same EOA storage. An attacker could replay a valid signature after a delegation switch, leading to unauthorized execution of a previously used call. The impact includes potential loss of funds or unauthorized state changes due to signature replay.\n",
+            "severity": "Medium",
+            "location": [
+                "Atlas.sol::#L44"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Atlas delegation does not implement EIP-1271 isValidSignature",
+            "description": "The Atlas contract, while designed as an EIP-7702 delegation target, does not implement the EIP-1271 isValidSignature function. As a result, when protocols check whether an address is a contract (via code.length > 0) and attempt to validate signatures using isValidSignature, the call will revert because the function is not present. The root cause is the omission of a standard interface required for contract-based signature validation. This leads to incompatibility with protocols that rely on EIP-1271 for signature verification, potentially blocking user interactions or causing transaction failures. The impact is reduced interoperability and usability, especially in wallet and dApp ecosystems that expect EIP-1271 compliance.\n",
+            "severity": "Low",
+            "location": [
+                "Atlas.sol::#L32"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-571"
+                ]
+            },
+            "title": "Unnecessary zero-address check on recovered address",
+            "description": "The contract performs a redundant check `recoveredAddress != address(0)` before verifying `recoveredAddress == address(this)`. Since the ECDSA recover function (e.g., from OpenZeppelin) reverts if the recovered address is zero, this check is unnecessary and wastes gas. The root cause is inefficient code logic that adds an extra opcode without providing additional security. While the vulnerability does not lead to security breaches, it increases the gas cost of each signature verification. The impact is higher transaction costs for users, which affects the economic efficiency of the contract but does not compromise security.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L67",
+                "Atlas.sol::#L99"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Uninformative logging and no logging of return data",
+            "description": "The contract emits a CallExecuted event that logs the input calldata, which is already available in transaction data and thus redundant. At the same time, it discards the return data from external calls, which is often more relevant for off-chain observers. The root cause is suboptimal event design that prioritizes less useful data. This leads to increased gas costs due to logging large calldata and makes it harder for external systems to monitor or react to actual execution results. The impact includes higher operational costs and reduced observability, making debugging and integration more difficult for third-party services.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L129-L131"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ]
+            },
+            "title": "Missing fields in EIP712 domain",
+            "description": "The EIP712 domain in Atlas.sol does not include the name and version fields in the DOMAIN_TYPEHASH, which can cause certain wallets to display the signing request opaquely or even reject it due to non-compliance with expected standards. The root cause is an incomplete EIP712 domain separator configuration. This can lead to poor user experience during signature operations, as users may not clearly understand what they are signing. The impact is reduced usability and potential rejection of valid transactions by wallet software, although it does not directly affect security.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L37"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Atlas.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.30;\n\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ninterface IAtlas {\n    event CallExecuted(address indexed sender, address indexed to, uint256 value, bytes data);\n\n    error InvalidSigner();\n    error ExpiredSignature();\n    error Unauthorized();\n    error NonceAlreadyUsed();\n    error CallReverted();\n\n    /// @notice Represents a single call within a batch.\n    struct Call {\n        address to;\n        uint256 value;\n        bytes data;\n    }\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCall(Call calldata call) external payable;\n    function executeCalls(Call[] calldata calls) external payable;\n}\n\ncontract Atlas is IAtlas {\n    /*\n        Storage\n    */\n\n    bytes32 constant DOMAIN_TYPEHASH = keccak256(\"EIP712Domain(uint256 chainId,address verifyingContract)\");\n    bytes32 constant CALL_TYPEHASH = keccak256(\"Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALLS_TYPEHASH =\n        keccak256(\"ExecuteCalls(Call[] calls,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALL_TYPEHASH =\n        keccak256(\"ExecuteCall(Call call,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n\n    mapping(uint256 => bool) public usedNonces;\n\n    /*\n        External functions\n    */\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encode(CALL_TYPEHASH, call.to, call.value, keccak256(call.data)));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALL_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Hash each call individually\n        bytes32[] memory callStructHashes = new bytes32[](calls.length);\n        for (uint256 i; i < calls.length; ++i) {\n            callStructHashes[i] =\n                keccak256(abi.encode(CALL_TYPEHASH, calls[i].to, calls[i].value, keccak256(calls[i].data)));\n        }\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encodePacked(callStructHashes));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALLS_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeBatch(calls);\n    }\n\n    function executeCall(Call calldata call) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeBatch(calls);\n    }\n\n    /*\n        Private functions\n    */\n\n    function _executeBatch(Call[] calldata calls) private {\n        for (uint256 i; i < calls.length; ++i) {\n            _executeCall(calls[i]);\n        }\n    }\n\n    function _executeCall(Call calldata callItem) private {\n        // address(this) in the contract equals the EOA address NOT the contract address\n        (bool success,) = callItem.to.call{value: callItem.value}(callItem.data);\n        require(success, CallReverted());\n        emit CallExecuted(msg.sender, callItem.to, callItem.value, callItem.data);\n    }\n\n    /*\n        Views\n    */\n\n    function DOMAIN_SEPARATOR() public view returns (bytes32) {\n        return keccak256(abi.encode(DOMAIN_TYPEHASH, block.chainid, address(this)));\n    }\n}\n"
+    }
+}

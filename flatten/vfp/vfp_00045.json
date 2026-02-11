@@ -1,0 +1,72 @@
+{
+    "vfp_id": "vfp_00045",
+    "project_name": "ChainSecurity_MellowFinance_Multivault_Audit.pdf",
+    "findings": [
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Manager for Pausing Check for EigenLayer",
+            "description": "The `EigenLayerAdapter.areWithdrawalsPaused` function incorrectly checks the `StrategyManager` for pausing state instead of the `DelegationManager`, which is the correct source of truth for withdrawal pausing. This is a logic error in the adapter implementation where the wrong manager contract is queried for pausing status. If `StrategyManager` is paused but `DelegationManager` is not, the system may falsely block withdrawals, or vice versa, leading to incorrect behavior during emergency pauses. This could result in failed withdrawals during valid conditions or allow withdrawals during paused states, undermining the safety mechanisms of the protocol.\n",
+            "severity": "Low",
+            "location": [
+                "EigenLayerAdapter.areWithdrawalsPaused"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Unreachable Adapter Code",
+            "description": "The `EigenLayerAdapter.claimWithdrawal` function is implemented but never called, as the vault does not delegatecall into it. This is dead code due to incorrect delegation routing in the vault contract. The function is inaccessible to users, rendering it useless. Code bloat and maintenance burden without functional benefit.\n",
+            "severity": "Informational",
+            "location": [
+                "EigenLayerAdapter.claimWithdrawal"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-250"
+                ]
+            },
+            "title": "Giving Potentially Unnecessary Approvals",
+            "description": "The system grants token approvals to subvaults before deposits, even when the protocol does not require pulling funds (e.g., expects balance delta). This is a one-size-fits-all approval pattern that does not consider integration-specific requirements. Unnecessary approvals increase risk if the recipient contract is compromised. Increased attack surface and potential for fund loss if approvals are misused.\n",
+            "severity": "Informational",
+            "location": [
+                "Adapter approvals"
+            ],
+            "files": [
+                "simple-lrt/src/adapters/EigenLayerAdapter.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "EigenLayerAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.25;\n\nimport \"../interfaces/adapters/IEigenLayerAdapter.sol\";\n\ncontract EigenLayerAdapter is IEigenLayerAdapter {\n    using SafeERC20 for IERC20;\n\n    uint8 public constant PAUSED_DEPOSITS = 0;\n    uint8 public constant PAUSED_WITHDRAWALS = 1;\n    uint8 public constant PAUSED_ENTER_WITHDRAWAL_QUEUE = 1;\n    uint8 public constant PAUSED_EXIT_WITHDRAWAL_QUEUE = 2;\n\n    address public immutable vault;\n\n    IIsolatedEigenLayerVaultFactory public immutable factory;\n    IRewardsCoordinator public immutable rewardsCoordinator;\n    IStrategyManager public immutable strategyManager;\n    IDelegationManager public immutable delegationManager;\n\n    modifier delegateCallOnly() {\n        require(address(this) == vault, \"Delegate call only\");\n        _;\n    }\n\n    constructor(\n        address factory_,\n        address vault_,\n        IStrategyManager strategyManager_,\n        IRewardsCoordinator rewardsCoordinator_\n    ) {\n        vault = vault_;\n        factory = IIsolatedEigenLayerVaultFactory(factory_);\n        rewardsCoordinator = rewardsCoordinator_;\n        strategyManager = strategyManager_;\n        delegationManager = strategyManager_.delegation();\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function maxDeposit(address isolatedVault) external view virtual returns (uint256) {\n        (, address strategy,, address withdrawalQueue) = factory.instances(isolatedVault);\n        if (IEigenLayerWithdrawalQueue(withdrawalQueue).isShutdown()) {\n            return 0;\n        }\n        if (\n            IPausable(address(strategyManager)).paused(PAUSED_DEPOSITS)\n                || IPausable(address(strategy)).paused(PAUSED_DEPOSITS)\n                || !strategyManager.strategyIsWhitelistedForDeposit(IStrategy(strategy))\n        ) {\n            return 0;\n        }\n        (bool success, bytes memory data) =\n            strategy.staticcall(abi.encodeWithSignature(\"getTVLLimits()\"));\n        if (!success) {\n            return type(uint256).max;\n        }\n        (uint256 maxPerDeposit, uint256 maxTotalDeposits) = abi.decode(data, (uint256, uint256));\n        uint256 assets = IERC20(assetOf(isolatedVault)).balanceOf(strategy);\n        if (assets >= maxTotalDeposits) {\n            return 0;\n        }\n        return Math.min(maxPerDeposit, maxTotalDeposits - assets);\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function stakedAt(address isolatedVault) external view virtual returns (uint256) {\n        (, address strategy,, address withdrawalQueue) = factory.instances(isolatedVault);\n        if (\n            !delegationManager.isDelegated(isolatedVault)\n                && !IEigenLayerWithdrawalQueue(withdrawalQueue).isShutdown()\n        ) {\n            revert(\"EigenLayerAdapter: isolated vault is neither delegated nor shut down\");\n        }\n        return IStrategy(strategy).userUnderlyingView(isolatedVault);\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function assetOf(address isolatedVault) public view returns (address) {\n        return IIsolatedEigenLayerVault(isolatedVault).asset();\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function handleVault(address isolatedVault) external view returns (address withdrawalQueue) {\n        address owner;\n        (owner,,, withdrawalQueue) = factory.instances(isolatedVault);\n        if (owner != address(vault)) {\n            revert(\"EigenLayerAdapter: invalid isolated vault owner\");\n        }\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function validateRewardData(bytes calldata data) external view {\n        require(data.length == 32, \"EigenLayerAdapter: invalid reward data\");\n        address isolatedVault = abi.decode(data, (address));\n        (address owner,,,) = factory.instances(isolatedVault);\n        require(owner == vault, \"EigenLayerAdapter: invalid reward data\");\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function pushRewards(address rewardToken, bytes calldata farmData, bytes calldata rewardData)\n        external\n        delegateCallOnly\n    {\n        IRewardsCoordinator.RewardsMerkleClaim memory eigenLayerFarmData =\n            abi.decode(farmData, (IRewardsCoordinator.RewardsMerkleClaim));\n        require(\n            eigenLayerFarmData.tokenLeaves.length == 1\n                && address(eigenLayerFarmData.tokenLeaves[0].token) == address(rewardToken),\n            \"EigenLayerAdapter: invalid farm data\"\n        );\n        address isolatedVault = abi.decode(rewardData, (address));\n        IIsolatedEigenLayerVault(isolatedVault).processClaim(\n            rewardsCoordinator, eigenLayerFarmData, IERC20(rewardToken)\n        );\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function withdraw(\n        address isolatedVault,\n        address withdrawalQueue,\n        address reciever,\n        uint256 request,\n        address owner\n    ) external delegateCallOnly {\n        IIsolatedEigenLayerVault(isolatedVault).withdraw(\n            withdrawalQueue, reciever, request, owner == reciever\n        );\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function deposit(address isolatedVault, uint256 assets) external delegateCallOnly {\n        (, address strategy,,) = factory.instances(isolatedVault);\n        IERC20 asset_ = IERC20(IERC4626(vault).asset());\n        asset_.safeIncreaseAllowance(isolatedVault, assets);\n        IIsolatedEigenLayerVault(isolatedVault).deposit(address(strategyManager), strategy, assets);\n        if (asset_.allowance(address(this), isolatedVault) != 0) {\n            asset_.forceApprove(isolatedVault, 0);\n        }\n    }\n\n    /// @inheritdoc IProtocolAdapter\n    function areWithdrawalsPaused(address isolatedVault, address /* account */ )\n        external\n        view\n        returns (bool)\n    {\n        IPausable manager = IPausable(address(delegationManager));\n        (, address strategy,,) = factory.instances(isolatedVault);\n        return manager.paused(PAUSED_ENTER_WITHDRAWAL_QUEUE)\n            || manager.paused(PAUSED_EXIT_WITHDRAWAL_QUEUE)\n            || IPausable(strategy).paused(PAUSED_WITHDRAWALS);\n    }\n}\n"
+    }
+}

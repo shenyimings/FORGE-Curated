@@ -1,0 +1,29 @@
+{
+    "vfp_id": "vfp_00576",
+    "project_name": "Mitosis - Zellic Audit Report.pdf",
+    "findings": [
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-1265"
+                ]
+            },
+            "title": "Temporary high vote power when claiming in native token",
+            "description": "In ValidatorStakingGovMITO.sol, the _claimUnstake function transfers ETH to the user before burning the corresponding voting units. This is caused by an incorrect order of operations in the overridden function, where safeTransferETH is called prior to _moveDelegateVotes. A malicious user can exploit this by implementing a fallback function that immediately restakes the received ETH, thereby temporarily doubling their voting power during the reentrancy window. This could allow an attacker to influence time-sensitive governance votes beyond their actual stake. The impact is a temporary inflation of voting power, which undermines the fairness and integrity of the governance system, though the final state corrects itself after the burn.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/hub/staking/ValidatorStakingGovMITO.sol::_claimUnstake"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/validator/ValidatorStakingGovMITO.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "ValidatorStakingGovMITO.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { Time } from '@oz/utils/types/Time.sol';\nimport { OwnableUpgradeable } from '@ozu/access/OwnableUpgradeable.sol';\n\nimport { IValidatorManager } from '../../interfaces/hub/validator/IValidatorManager.sol';\nimport { IValidatorStakingHub } from '../../interfaces/hub/validator/IValidatorStakingHub.sol';\nimport { SudoVotes } from '../../lib/SudoVotes.sol';\nimport { ValidatorStaking } from './ValidatorStaking.sol';\n\ncontract ValidatorStakingGovMITO is ValidatorStaking, SudoVotes {\n  error ValidatorStakingGovMITO__NonTransferable();\n\n  constructor(address baseAsset_, IValidatorManager manager_, IValidatorStakingHub hub_)\n    ValidatorStaking(baseAsset_, manager_, hub_)\n  {\n    _disableInitializers();\n  }\n\n  function initialize(\n    address initialOwner,\n    uint256 initialMinStakingAmount,\n    uint256 initialMinUnstakingAmount,\n    uint48 unstakeCooldown_,\n    uint48 redelegationCooldown_\n  ) public override initializer {\n    super.initialize(\n      initialOwner, //\n      initialMinStakingAmount,\n      initialMinUnstakingAmount,\n      unstakeCooldown_,\n      redelegationCooldown_\n    );\n\n    __Votes_init();\n  }\n\n  function owner() public view override(OwnableUpgradeable, SudoVotes) returns (address) {\n    return super.owner();\n  }\n\n  function clock() public view override returns (uint48) {\n    return Time.timestamp();\n  }\n\n  function CLOCK_MODE() public view override returns (string memory) {\n    // Check that the clock was not modified\n    require(clock() == Time.timestamp(), ERC6372InconsistentClock());\n    return 'mode=timestamp';\n  }\n\n  function _getVotingUnits(address account) internal view override returns (uint256) {\n    uint48 now_ = clock();\n    (uint256 totalUnstakingAmount,) = unstaking(account, now_);\n    return stakerTotal(account, now_) + totalUnstakingAmount;\n  }\n\n  /// @dev Mints voting units to the recipient. No need to care about the validator\n  function _stake(StorageV1 storage $, address valAddr, address payer, address recipient, uint256 amount)\n    internal\n    override\n    returns (uint256)\n  {\n    require(recipient == payer, ValidatorStakingGovMITO__NonTransferable());\n\n    // mint the voting units\n    _moveDelegateVotes(address(0), delegates(recipient), amount);\n\n    return super._stake($, valAddr, payer, recipient, amount);\n  }\n\n  /// @dev Prevent the other users to receive unstaked tokens. Otherwise, users can perform transfer tokens to the others.\n  function _requestUnstake(StorageV1 storage $, address valAddr, address payer, address receiver, uint256 amount)\n    internal\n    override\n    returns (uint256)\n  {\n    require(receiver == payer, ValidatorStakingGovMITO__NonTransferable());\n    return super._requestUnstake($, valAddr, payer, receiver, amount);\n  }\n\n  /// @dev Burns the voting units from the recipient\n  function _claimUnstake(StorageV1 storage $, address receiver) internal override returns (uint256) {\n    uint256 claimed = super._claimUnstake($, receiver);\n\n    // burn the voting units\n    _moveDelegateVotes(delegates(receiver), address(0), claimed);\n\n    return claimed;\n  }\n}\n"
+    }
+}

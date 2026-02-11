@@ -1,0 +1,52 @@
+{
+    "vfp_id": "vfp_00574",
+    "project_name": "Mitosis - Zellic Audit Report.pdf",
+    "findings": [
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1286"
+                ]
+            },
+            "title": "Missing public-key validation",
+            "description": "The LibSecp256k1.sol library lacks proper validation of secp256k1 public keys before use. The root cause is the absence of checks for invalid or malformed public key points, which could lead to incorrect cryptographic operations. While the EVM's built-in ecverify function may handle some edge cases, failing to validate inputs at the contract level increases the risk of unexpected behavior or potential malleability issues. This could be exploited in edge cases involving malformed signatures or keys, though no direct exploit path is demonstrated. The impact is informational, as the risk is low and likely mitigated by lower-level checks, but it represents a deviation from secure coding practices for cryptographic libraries.\n",
+            "severity": "Informational",
+            "location": [
+                "protocol/src/lib/LibSecp256k1.sol"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Curve Validation in Public-Key Decompression",
+            "description": "The LibSecp256k1 library's uncompressPubkey function fails to verify that the decompressed (x, y) coordinates lie on the Secp256k1 elliptic curve. This is caused by the absence of a validation step after deriving the y-coordinate using EllipticCurve.deriveY. An attacker could provide a compressed public key that decompresses to a point not on the curve, which may lead to cryptographic inconsistencies or potential vulnerabilities in systems relying on valid elliptic curve points. Although this function is not currently used in the main product, its presence in the codebase poses a latent risk if it is ever invoked in a security-critical context. The impact includes potential weakening of authentication or signature verification mechanisms if the function were to be used in the future.\n",
+            "severity": "Informational",
+            "location": [
+                "LibSecp256k1.sol::uncompressPubkey"
+            ],
+            "files": [
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "LibSecp256k1.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { EllipticCurve } from '@elliptic-curve-solidity/contracts/EllipticCurve.sol';\n\nimport { StdError } from './StdError.sol';\n\nlibrary LibSecp256k1 {\n  uint256 constant AA = 0;\n  uint256 constant BB = 7;\n  uint256 constant PP = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F;\n\n  /**\n   * @notice Verifies that the given key is a compressed 33-byte secp256k1 public key on the curve.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   */\n  function verifyCmpPubkey(bytes memory cmpPubkey) internal pure {\n    uncompressPubkey(cmpPubkey);\n  }\n\n  /**\n   * @notice Verifies that the given key is a uncompressed 65-byte secp256k1 public key on the curve.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   */\n  function verifyUncmpPubkey(bytes memory uncmpPubkey) internal pure {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    bool isOnCurve = EllipticCurve.isOnCurve(x, y, AA, BB, PP);\n    require(isOnCurve, StdError.InvalidParameter('uncmpPubkey: not on curve'));\n  }\n\n  /**\n   * @notice Verifies that the given public key is a compressed 33-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the compressed public key\n   */\n  function verifyCmpPubkeyWithAddress(bytes memory cmpPubkey, address expectedAddress) internal pure {\n    bytes memory uncmpPubkey = uncompressPubkey(cmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Verifies that the given public key is a uncompressed 65-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the uncompressed public key\n   */\n  function verifyUncmpPubkeyWithAddress(bytes memory uncmpPubkey, address expectedAddress) internal pure {\n    verifyUncmpPubkey(uncmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Uncompresses a compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   * @return uncmpPubkey The uncompressed 65-byte public key\n   */\n  function uncompressPubkey(bytes memory cmpPubkey) internal pure returns (bytes memory uncmpPubkey) {\n    require(cmpPubkey.length == 33, StdError.InvalidParameter('cmpPubKey.length'));\n    require(cmpPubkey[0] == 0x02 || cmpPubkey[0] == 0x03, StdError.InvalidParameter('cmpPubKey[0]'));\n\n    uint8 prefix = uint8(cmpPubkey[0]);\n    uint256 x;\n    assembly {\n      x := mload(add(cmpPubkey, 0x21))\n    }\n    uint256 y = EllipticCurve.deriveY(prefix, x, AA, BB, PP);\n\n    uncmpPubkey = new bytes(65);\n    uncmpPubkey[0] = 0x04;\n    assembly {\n      mstore(add(uncmpPubkey, 0x21), x)\n      mstore(add(uncmpPubkey, 0x41), y)\n    }\n    return uncmpPubkey;\n  }\n\n  /**\n   * @notice Compresses an uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   * @return cmpPubkey The compressed 33-byte public key\n   */\n  function compressPubkey(bytes memory uncmpPubkey) internal pure returns (bytes memory cmpPubkey) {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    cmpPubkey = new bytes(33);\n    cmpPubkey[0] = bytes1(uint8(y % 2 == 0 ? 0x02 : 0x03));\n    assembly {\n      mstore(add(cmpPubkey, 0x21), x)\n    }\n    return cmpPubkey;\n  }\n\n  /**\n   * @notice Derives an EVM address from an uncompressed 65-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   */\n  function deriveAddressFromUncmpPubkey(bytes memory uncmpPubkey) internal pure returns (address) {\n    bytes memory noPrefix = new bytes(64);\n\n    // Copy uncmpPubkey[1:] to noPrefix\n    assembly {\n      mcopy(add(noPrefix, 0x20), add(uncmpPubkey, 0x21), 0x40)\n    }\n\n    return address(uint160(uint256(keccak256(noPrefix))));\n  }\n\n  /**\n   * @notice Derives an EVM address from a compressed 33-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   */\n  function deriveAddressFromCmpPubkey(bytes memory cmpPubkey) internal pure returns (address) {\n    return deriveAddressFromUncmpPubkey(uncompressPubkey(cmpPubkey));\n  }\n}\n"
+    }
+}

@@ -1,0 +1,73 @@
+{
+    "vfp_id": "vfp_00371",
+    "project_name": "Sponsored Periphery Audit.md",
+    "findings": [
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstrings",
+            "description": "Multiple functions and events across several contracts lack proper NatSpec documentation for parameters and return values, making it difficult for developers and auditors to understand the intended behavior.\nThe cause is developers omitting or incompletely filling out documentation comments (e.g., @param, @return) for public and external API elements.\nWhile not directly exploitable, incomplete documentation increases the risk of incorrect integration or modification by developers, potentially leading to logic errors or security vulnerabilities.\nThe impact is reduced code maintainability, increased risk of integration errors, and hindered auditability due to lack of clarity on function and event behavior.\n",
+            "severity": "Informational",
+            "location": [
+                "MulticallHandler.sol::handleV3AcrossMessage",
+                "PermissionedMulticallHandler.sol::CallerWhitelisted",
+                "PermissionedMulticallHandler.sol::CallerRemovedFromWhitelist",
+                "ArbitraryEVMFlowExecutor.sol::ArbitraryActionsExecuted",
+                "HyperCoreFlowExecutor.sol::DonationBoxInsufficientFunds",
+                "HyperCoreFlowExecutor.sol::AccountNotActivated",
+                "HyperCoreFlowExecutor.sol::SimpleTransferFlowCompleted",
+                "HyperCoreFlowExecutor.sol::FallbackHyperEVMFlowCompleted",
+                "HyperCoreFlowExecutor.sol::SwapFlowInitialized",
+                "HyperCoreFlowExecutor.sol::SwapFlowFinalized",
+                "HyperCoreFlowExecutor.sol::CancelledLimitOrder",
+                "HyperCoreFlowExecutor.sol::SubmittedLimitOrder",
+                "HyperCoreFlowExecutor.sol::SwapFlowTooExpensive",
+                "HyperCoreFlowExecutor.sol::UnsafeToBridge",
+                "HyperCoreFlowExecutor.sol::SponsoredAccountActivation",
+                "HyperCoreFlowExecutor.sol::SetCoreTokenInfo",
+                "HyperCoreFlowExecutor.sol::setCoreTokenInfo",
+                "HyperCoreFlowExecutor.sol::predictSwapHandler",
+                "HyperCoreFlowExecutor.sol::finalizeSwapFlows",
+                "HyperCoreFlowExecutor.sol::cancelLimitOrderByCloid",
+                "HyperCoreFlowExecutor.sol::sendSponsorshipFundsToSwapHandler",
+                "DstOFTHandler.sol::SetAuthorizedPeriphery",
+                "DstOFTHandler.sol::lzCompose",
+                "SponsoredOFTSrcPeriphery.sol::SponsoredOFTSend",
+                "SponsoredOFTSrcPeriphery.sol::deposit"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/MulticallHandler.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "The loop in `MulticallHandler.sol` uses the postfix increment operator (`i++`), which creates a temporary copy of the value before incrementing.\nThe root cause is the use of a less gas-efficient increment pattern.\nIn loops with many iterations, this can lead to unnecessary gas costs.\nThe impact is higher transaction costs than necessary, reducing economic efficiency.\n",
+            "severity": "Informational",
+            "location": [
+                "MulticallHandler.sol#133"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/handlers/MulticallHandler.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MulticallHandler.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity ^0.8.0;\n\nimport \"../interfaces/SpokePoolMessageHandler.sol\";\nimport \"@openzeppelin/contracts-v4/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts-v4/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts-v4/utils/Address.sol\";\nimport \"@openzeppelin/contracts-v4/security/ReentrancyGuard.sol\";\n\n/**\n * @title Across Multicall contract that allows a user to specify a series of calls that should be made by the handler\n * via the message field in the deposit.\n * @dev This contract makes the calls blindly. The contract will send any remaining tokens The caller should ensure that the tokens recieved by the handler are completely consumed.\n */\ncontract MulticallHandler is AcrossMessageHandler, ReentrancyGuard {\n    using SafeERC20 for IERC20;\n    using Address for address payable;\n\n    struct Call {\n        address target;\n        bytes callData;\n        uint256 value;\n    }\n\n    struct Replacement {\n        address token;\n        uint256 offset;\n    }\n\n    struct Instructions {\n        //  Calls that will be attempted.\n        Call[] calls;\n        // Where the tokens go if any part of the call fails.\n        // Leftover tokens are sent here as well if the action succeeds.\n        address fallbackRecipient;\n    }\n\n    // Emitted when one of the calls fails. Note: all calls are reverted in this case.\n    event CallsFailed(Call[] calls, address indexed fallbackRecipient);\n\n    // Emitted when there are leftover tokens that are sent to the fallbackRecipient.\n    event DrainedTokens(address indexed recipient, address indexed token, uint256 indexed amount);\n\n    // Errors\n    error CallReverted(uint256 index, Call[] calls);\n    error NotSelf();\n    error InvalidCall(uint256 index, Call[] calls);\n    error ReplacementCallFailed(bytes callData);\n    error CalldataTooShort(uint256 callDataLength, uint256 offset);\n\n    modifier onlySelf() {\n        _requireSelf();\n        _;\n    }\n\n    /**\n     * @notice Main entrypoint for the handler called by the SpokePool contract.\n     * @dev This will execute all calls encoded in the msg. The caller is responsible for making sure all tokens are\n     * drained from this contract by the end of the series of calls. If not, they can be stolen.\n     * A drainLeftoverTokens call can be included as a way to drain any remaining tokens from this contract.\n     * @param token The token address that was received from the relay\n     * @param message abi encoded array of Call structs, containing a target, callData, and value for each call that\n     * the contract should make.\n     */\n    function handleV3AcrossMessage(address token, uint256, address, bytes memory message) public virtual nonReentrant {\n        Instructions memory instructions = abi.decode(message, (Instructions));\n\n        // If there is no fallback recipient, call and revert if the inner call fails.\n        if (instructions.fallbackRecipient == address(0)) {\n            this.attemptCalls(instructions.calls);\n            return;\n        }\n\n        // Otherwise, try the call and send to the fallback recipient if any tokens are leftover.\n        (bool success, ) = address(this).call(abi.encodeCall(this.attemptCalls, (instructions.calls)));\n        if (!success) emit CallsFailed(instructions.calls, instructions.fallbackRecipient);\n\n        // If there are leftover tokens, send them to the fallback recipient regardless of execution success.\n        _drainRemainingTokens(token, payable(instructions.fallbackRecipient));\n    }\n\n    function attemptCalls(Call[] memory calls) external onlySelf {\n        uint256 length = calls.length;\n        for (uint256 i = 0; i < length; ++i) {\n            Call memory call = calls[i];\n\n            // If we are calling an EOA with calldata, assume target was incorrectly specified and revert.\n            if (call.callData.length > 0 && call.target.code.length == 0) {\n                revert InvalidCall(i, calls);\n            }\n\n            (bool success, ) = call.target.call{ value: call.value }(call.callData);\n            if (!success) revert CallReverted(i, calls);\n        }\n    }\n\n    function drainLeftoverTokens(address token, address payable destination) external onlySelf {\n        _drainRemainingTokens(token, destination);\n    }\n\n    function _drainRemainingTokens(address token, address payable destination) internal {\n        if (token != address(0)) {\n            // ERC20 token.\n            uint256 amount = IERC20(token).balanceOf(address(this));\n            if (amount > 0) {\n                IERC20(token).safeTransfer(destination, amount);\n                emit DrainedTokens(destination, token, amount);\n            }\n        } else {\n            // Send native token\n            uint256 amount = address(this).balance;\n            if (amount > 0) {\n                destination.sendValue(amount);\n            }\n        }\n    }\n\n    /**\n     * @notice Executes a call while replacing specified calldata offsets with current token/native balances.\n     * @dev Modifies calldata in-place using OR operations. Target calldata positions must be zeroed out.\n     * Cannot handle negative balances, making it incompatible with DEXs requiring negative input amounts.\n     * For native balance (token = address(0)), the entire balance is used as call value.\n     * @param target The contract address to call\n     * @param callData The calldata to execute, with zero values at replacement positions\n     * @param value The native token value to send (ignored if native balance replacement is used)\n     * @param replacement Array of Replacement structs specifying token addresses and byte offsets for balance injection\n     */\n    function makeCallWithBalance(\n        address target,\n        bytes memory callData,\n        uint256 value,\n        Replacement[] calldata replacement\n    ) external onlySelf {\n        for (uint256 i = 0; i < replacement.length; ++i) {\n            uint256 bal = 0;\n            if (replacement[i].token != address(0)) {\n                bal = IERC20(replacement[i].token).balanceOf(address(this));\n            } else {\n                bal = address(this).balance;\n\n                // If we're using the native balance, we assume that the caller wants to send the full value to the target.\n                value = bal;\n            }\n\n            // + 32 to skip the length of the calldata\n            uint256 offset = replacement[i].offset + 32;\n\n            // 32 has already been added to the offset, and the replacement value is 32 bytes long, so\n            // we don't need to add 32 here. We just directly compare the offset with the length of the calldata.\n            if (offset > callData.length) revert CalldataTooShort(callData.length, offset);\n\n            assembly (\"memory-safe\") {\n                // Get the pointer to the offset that the caller wants to overwrite.\n                let ptr := add(callData, offset)\n                // Get the current value at the offset.\n                let current := mload(ptr)\n                // Or the current value with the new value.\n                // Reasoning:\n                // - caller should 0-out any portion that they want overwritten.\n                // - if the caller is representing the balance in a smaller integer, like a uint160 or uint128,\n                //   the higher bits will be 0 and not overwrite any other data in the calldata assuming\n                //   the balance is small enough to fit in the smaller integer.\n                // - The catch: the smaller integer where they want to store the balance must end no\n                //   earlier than the 32nd byte in their calldata. Otherwise, this would require a\n                //   negative offset, which is not possible.\n                let val := or(bal, current)\n                // Store the new value at the offset.\n                mstore(ptr, val)\n            }\n        }\n\n        (bool success, ) = target.call{ value: value }(callData);\n        if (!success) revert ReplacementCallFailed(callData);\n    }\n\n    function _requireSelf() internal view {\n        // Must be called by this contract to ensure that this cannot be triggered without the explicit consent of the\n        // depositor (for a valid relay).\n        if (msg.sender != address(this)) revert NotSelf();\n    }\n\n    // Used if the caller is trying to unwrap the native token to this contract.\n    receive() external payable {}\n}\n"
+    }
+}

@@ -1,0 +1,51 @@
+{
+    "vfp_id": "vfp_00278",
+    "project_name": "Jovay Rollup Contracts Audit.md",
+    "findings": [
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Incomplete Security Checks in Custom Merkle Tree Library",
+            "description": "The custom WithdrawTrieVerifier library used for Merkle proof verification lacks standard safety checks, such as validating the proof length against the expected tree depth. This allows construction of proofs for intermediate nodes rather than just leaves, potentially enabling invalid withdrawals if the library is misused. While the current integration with the bridge contracts is secure, the library itself is unsafe for reuse in other contexts. The root cause is the absence of defensive checks in low-level verification logic. The impact is limited in the current context but poses a significant risk if the library is reused elsewhere without additional safeguards, potentially leading to unauthorized withdrawals or state inconsistencies.\n",
+            "severity": "Low",
+            "location": [
+                "WithdrawTrieVerifier.sol",
+                "L1Mailbox.sol#139-160"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "Several loops in the codebase use the postfix increment operator (`i++`) instead of the more gas-efficient prefix increment (`++i`). Since the return value is ignored in loop increments, using `i++` unnecessarily stores the pre-increment value, wasting gas. The root cause is suboptimal coding practice. An attacker cannot exploit this, but it increases transaction costs for all users. Over many iterations, this can result in significant gas overhead. The impact is low, but optimizing this improves efficiency and reduces operational costs.\n",
+            "severity": "Low",
+            "location": [
+                "WithdrawTrieVerifier.sol::i++#22",
+                "AppendOnlyMerkleTree.sol::height++#26"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "WithdrawTrieVerifier.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.24;\n\n// solhint-disable no-inline-assembly\n\nlibrary WithdrawTrieVerifier {\n    /// @dev Verify the merkle proof given root, leaf node and proof.\n    /// @param _root The expected root node hash of the withdraw trie.\n    /// @param _hash The leaf node hash of the withdraw trie.\n    /// @param _nonce The index of the leaf node from left to right, starting from 0.\n    /// @param _proof The concatenated merkle proof verified the leaf node.\n    function verifyMerkleProof(\n        bytes32 _root,\n        bytes32 _hash,\n        uint256 _nonce,\n        bytes memory _proof\n    ) internal pure returns (bool) {\n        require(_proof.length % 32 == 0, \"Invalid proof\");\n        uint256 _length = _proof.length / 32;\n\n        for (uint256 i = 0; i < _length; i++) {\n            bytes32 item;\n            assembly {\n                item := mload(add(add(_proof, 0x20), mul(i, 0x20)))\n            }\n            if (_nonce % 2 == 0) {\n                _hash = _efficientHash(_hash, item);\n            } else {\n                _hash = _efficientHash(item, _hash);\n            }\n            _nonce /= 2;\n        }\n        return _hash == _root;\n    }\n\n    function _efficientHash(bytes32 a, bytes32 b) private pure returns (bytes32 value) {\n        // solhint-disable-next-line no-inline-assembly\n        assembly {\n            mstore(0x00, a)\n            mstore(0x20, b)\n            value := keccak256(0x00, 0x40)\n        }\n    }\n}\n"
+    }
+}

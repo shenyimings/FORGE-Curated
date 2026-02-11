@@ -1,0 +1,49 @@
+{
+    "vfp_id": "vfp_00604",
+    "project_name": "cantina_generic_money_nov2025.pdf",
+    "findings": [
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use uint256 for nonce will result in shorter assembly",
+            "description": "The nonce in BaseAdapter.sol is defined as uint32, which leads to more complex EVM bytecode due to range-checking operations during increment. Using uint256 would reduce gas costs because storage operations are natively 256-bit, eliminating the need for masking and truncation. Although it uses an extra storage slot, the performance gain outweighs the cost, especially since nonce is frequently incremented. The impact is suboptimal gas efficiency, increasing transaction costs for all bridge operations.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseAdapter.sol::#L82-L84"
+            ],
+            "files": [
+                "7a6c887b/generic-bridging/src/adapters/BaseAdapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-128"
+                ]
+            },
+            "title": "32-bit nonce can run out",
+            "description": "The 32-bit nonce in the bridge adapter can overflow after approximately 4.3 billion transactions. Under high-throughput conditions or targeted attacks, this limit could be reached in as little as 554 days if all Ethereum gas were consumed by bridge transactions. Once exhausted, the nonce would wrap, potentially breaking message ordering and uniqueness. This could disrupt message processing and compromise bridge security. The recommendation is to use uint64 or uint256 to ensure long-term viability.\n",
+            "severity": "Informational",
+            "location": [
+                "BaseAdapter.sol::#L30-L33"
+            ],
+            "files": [
+                "7a6c887b/generic-bridging/src/adapters/BaseAdapter.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "BaseAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.29;\n\nimport { Ownable2Step, Ownable } from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\n\nimport { IBridgeAdapter } from \"../interfaces/IBridgeAdapter.sol\";\nimport { IBridgeCoordinator } from \"../interfaces/IBridgeCoordinator.sol\";\n\n/**\n * @title BaseAdapter\n * @notice Abstract base contract for bridge adapters that provides common functionality\n * @dev Implements standard adapter properties and coordinator reference. Inheriting contracts\n * must implement the bridge and estimateBridgeFee functions for specific bridge protocols.\n */\nabstract contract BaseAdapter is IBridgeAdapter, Ownable2Step {\n    /**\n     * @notice Thrown when an operation receives the zero address where a contract is required.\n     */\n    error InvalidZeroAddress();\n    /**\n     * @notice Thrown when a non-authorised caller attempts to invoke restricted functionality.\n     */\n    error UnauthorizedCaller();\n\n    /**\n     * @notice The bridge coordinator contract that this adapter is connected to\n     */\n    IBridgeCoordinator public immutable coordinator;\n\n    /**\n     * @notice Counter for the amount of bridging transactions done by the adapter\n     */\n    uint32 public nonce;\n\n    /**\n     * @notice Initializes the base adapter with bridge type and coordinator\n     * @param _coordinator The bridge coordinator contract address\n     */\n    constructor(IBridgeCoordinator _coordinator, address owner) Ownable(owner) {\n        coordinator = _coordinator;\n    }\n\n    /**\n     * @notice Returns the address of the bridge coordinator this adapter is connected to\n     * @return The address of the bridge coordinator contract\n     */\n    function bridgeCoordinator() external view override returns (address) {\n        return address(coordinator);\n    }\n\n    /**\n     * @notice Returns the bridge type identifier for this adapter implementation\n     * @return The uint16 bridge type identifier\n     */\n    function bridgeType() public view virtual returns (uint16);\n\n    /**\n     * @notice Returns the messageId for the bridging and receiving of the units\n     * @param chainId The destination chain ID for the bridge operation\n     * @return The bytes32 encoded messageId of the bridge transaction\n     */\n    function getMessageId(uint256 chainId) public view returns (bytes32) {\n        // forge-lint: disable-next-line(asm-keccak256)\n        return keccak256(abi.encodePacked(chainId, bridgeType(), block.timestamp, nonce));\n    }\n\n    /// @inheritdoc IBridgeAdapter\n    function bridge(\n        uint256 chainId,\n        bytes32 remoteAdapter,\n        bytes calldata message,\n        address refundAddress,\n        bytes calldata bridgeParams\n    )\n        external\n        payable\n        returns (bytes32 messageId)\n    {\n        require(msg.sender == address(coordinator), UnauthorizedCaller());\n\n        messageId = getMessageId(chainId);\n        unchecked {\n            ++nonce;\n        }\n\n        _dispatchBridge(chainId, remoteAdapter, message, refundAddress, bridgeParams, messageId);\n    }\n\n    /**\n     * @notice Dispatches an outbound message through the underlying bridge implementation.\n     * @param chainId Destination chain identifier recognised by the adapter implementation.\n     * @param remoteAdapter Encoded address or identifier of the remote adapter endpoint.\n     * @param message Payload forwarded to the remote coordinator for settlement.\n     * @param refundAddress Address to refund any excess fees or failed transactions.\n     * @param bridgeParams Adapter-specific parameters used to quote and configure the bridge call.\n     * @param messageId The internal only message id for the transaction\n     */\n    function _dispatchBridge(\n        uint256 chainId,\n        bytes32 remoteAdapter,\n        bytes calldata message,\n        address refundAddress,\n        bytes calldata bridgeParams,\n        bytes32 messageId\n    )\n        internal\n        virtual;\n}\n"
+    }
+}

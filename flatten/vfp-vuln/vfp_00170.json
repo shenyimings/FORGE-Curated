@@ -1,0 +1,26 @@
+{
+    "vfp_id": "vfp_00170",
+    "project_name": "Sponsored Periphery Audit.md",
+    "findings": [
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Unnecessary `payable` Fallback Function",
+            "description": "The `fallback` function in `BaseModuleHandler` is marked `payable`, allowing it to receive native assets, but the target logic in `HyperCoreFlowExecutor` does not contain any `payable` functions.\nThe root cause is the inclusion of the `payable` modifier without a functional need.\nAn attacker could send native tokens to the contract, which cannot be retrieved through normal means, potentially leading to loss of funds.\nThe impact is an increased attack surface and potential loss of native assets sent to the contract, reducing the contract's security posture.\n",
+            "severity": "Medium",
+            "location": [
+                "BaseModuleHandler.sol::fallback#34-36"
+            ],
+            "files": [
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/BaseModuleHandler.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "BaseModuleHandler.sol": "//SPDX-License-Identifier: Unlicense\npragma solidity ^0.8.0;\n\nimport { AuthorizedFundedFlow } from \"./AuthorizedFundedFlow.sol\";\nimport { HyperCoreFlowExecutor } from \"./HyperCoreFlowExecutor.sol\";\nimport { HyperCoreFlowRoles } from \"./HyperCoreFlowRoles.sol\";\n\n// Note: v5 is necessary since v4 does not use ERC-7201.\nimport { AccessControlUpgradeable } from \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport { ReentrancyGuard } from \"@openzeppelin/contracts-v4/security/ReentrancyGuard.sol\";\n\n/**\n * @notice Base contract for module handlers that use delegatecall to interact with HyperCoreFlowExecutor\n * @dev Uses AccessControlUpgradeable to ensure storage compatibility with HyperCoreFlowExecutor when using delegatecall\n */\nabstract contract BaseModuleHandler is\n    AccessControlUpgradeable,\n    ReentrancyGuard,\n    AuthorizedFundedFlow,\n    HyperCoreFlowRoles\n{\n    /// @notice Address of the underlying hypercore module\n    address public immutable hyperCoreModule;\n\n    constructor(address _donationBox, address _baseToken, bytes32 _roleAdmin) {\n        hyperCoreModule = address(new HyperCoreFlowExecutor(_donationBox, _baseToken));\n\n        _setRoleAdmin(PERMISSIONED_BOT_ROLE, _roleAdmin);\n        _setRoleAdmin(FUNDS_SWEEPER_ROLE, _roleAdmin);\n    }\n\n    /// @notice Fallback function to proxy all calls to the HyperCore module via delegatecall\n    /// @dev Permissioning is enforced by the delegated function's own modifiers (e.g. onlyPermissionedBot)\n    fallback(bytes calldata data) external nonReentrant returns (bytes memory) {\n        return _delegateToHyperCore(data);\n    }\n\n    /// @notice Internal delegatecall helper\n    function _delegateToHyperCore(bytes memory data) internal returns (bytes memory) {\n        (bool success, bytes memory ret) = hyperCoreModule.delegatecall(data);\n        if (!success) {\n            assembly {\n                revert(add(ret, 32), mload(ret))\n            }\n        }\n        return ret;\n    }\n}\n"
+    }
+}

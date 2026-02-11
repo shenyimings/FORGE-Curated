@@ -1,0 +1,47 @@
+{
+    "vfp_id": "vfp_00297",
+    "project_name": "f(x) v2 Audit.md",
+    "findings": [
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Flashloan Functionality is Blocked",
+            "description": "1. **Description:** The flashLoan function in the FlashLoans contract incorrectly validates repayment by comparing returnedAmount against amount + fee. However, returnedAmount is calculated as the difference between post-callback and pre-loan balances, which only reflects the fee portion, not the principal.\n\n2. **Cause:** The function computes returnedAmount as (post-callback balance - pre-loan balance), which measures only the additional tokens sent beyond the borrowed amount. Since the principal is not included in this delta, the condition returnedAmount < amount + fee always evaluates to true unless the borrower sends back the full principal plus fee as extra tokens.\n\n3. **Exploitation:** Any legitimate flash loan will revert because the repayment check fails even when the borrower correctly returns the principal and fee. This effectively blocks all flash loan functionality, denying a core DeFi feature and potentially disrupting integrations or arbitrage mechanisms relying on it.\n\n4. **Impact:** The flash loan mechanism becomes unusable, reducing the protocol's utility and interoperability within the DeFi ecosystem. This could hinder arbitrageurs, liquidity providers, or other protocols attempting to interact with the system via flash loans.\n",
+            "severity": "High",
+            "location": [
+                "FlashLoans.sol::flashLoan#67-97"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FlashLoans.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Flashloan Functionality Does Not Follow ERC-3156 Standard",
+            "description": "The `flashLoan` function in the FlashLoans contract does not comply with the ERC-3156 standard, which requires the lender to pull the principal plus fee from the borrower after the callback. Instead, the current implementation relies on the borrower to return the tokens, which breaks interoperability with standard-compliant `IERC3156FlashBorrower` contracts. Additionally, the `flashFee` function does not revert when the token is unsupported (i.e., when `maxFlashLoan` returns zero), as required by the ERC-3156 specification. The cause is a deviation from the standard's expected behavior in both token handling and fee calculation logic. This could prevent integration with other DeFi protocols and lead to unexpected reverts or failed flash loans. The impact is reduced composability and potential integration failures with external systems expecting standard behavior.\n",
+            "severity": "Medium",
+            "location": [
+                "FlashLoans.sol::flashLoan#86",
+                "FlashLoans.sol::flashFee#59"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/core/FlashLoans.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "FlashLoans.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.25;\n\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\nimport { ReentrancyGuardUpgradeable } from \"@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol\";\n\nimport { IERC3156FlashBorrower } from \"../common/ERC3156/IERC3156FlashBorrower.sol\";\nimport { IERC3156FlashLender } from \"../common/ERC3156/IERC3156FlashLender.sol\";\n\nimport { ProtocolFees } from \"./ProtocolFees.sol\";\n\ncontract FlashLoans is ProtocolFees, ReentrancyGuardUpgradeable, IERC3156FlashLender {\n  using SafeERC20 for IERC20;\n\n  /**********\n   * Errors *\n   **********/\n\n  /// @dev Thrown when the returned balance after flash loan is not enough.\n  error ErrorInsufficientFlashLoanReturn();\n\n  /// @dev Thrown when the returned value of `ERC3156Callback` is wrong.\n  error ErrorERC3156CallbackFailed();\n\n  /*************\n   * Constants *\n   *************/\n\n  /// @dev The correct value of the return value of `ERC3156FlashBorrower.onFlashLoan`.\n  bytes32 private constant CALLBACK_SUCCESS = keccak256(\"ERC3156FlashBorrower.onFlashLoan\");\n\n  /*************\n   * Variables *\n   *************/\n\n  /// @dev Slots for future use.\n  uint256[50] private _gap;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  function __FlashLoans_init() internal onlyInitializing {}\n\n  /*************************\n   * Public View Functions *\n   *************************/\n\n  /// @inheritdoc IERC3156FlashLender\n  function maxFlashLoan(address token) external view override returns (uint256) {\n    return IERC20(token).balanceOf(address(this));\n  }\n\n  /// @inheritdoc IERC3156FlashLender\n  function flashFee(address /*token*/, uint256 amount) public view returns (uint256) {\n    return (amount * getFlashLoanFeeRatio()) / FEE_PRECISION;\n  }\n\n  /****************************\n   * Public Mutated Functions *\n   ****************************/\n\n  /// @inheritdoc IERC3156FlashLender\n  function flashLoan(\n    IERC3156FlashBorrower receiver,\n    address token,\n    uint256 amount,\n    bytes calldata data\n  ) external nonReentrant whenNotPaused returns (bool) {\n    // save the current balance\n    uint256 prevBalance = IERC20(token).balanceOf(address(this));\n    uint256 fee = flashFee(token, amount);\n\n    // transfer token to receiver\n    IERC20(token).safeTransfer(address(receiver), amount);\n\n    // invoke the recipient's callback\n    if (receiver.onFlashLoan(_msgSender(), token, amount, fee, data) != CALLBACK_SUCCESS) {\n      revert ErrorERC3156CallbackFailed();\n    }\n\n    // ensure that the tokens + fee have been deposited back to the network\n    uint256 returnedAmount = IERC20(token).balanceOf(address(this)) - prevBalance;\n    if (returnedAmount < amount + fee) {\n      revert ErrorInsufficientFlashLoanReturn();\n    }\n\n    if (fee > 0) {\n      IERC20(token).safeTransfer(treasury, fee);\n    }\n\n    return true;\n  }\n}\n"
+    }
+}

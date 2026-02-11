@@ -1,0 +1,55 @@
+{
+    "vfp_id": "vfp_00527",
+    "project_name": "cantina_centrifuge_aug2025.pdf",
+    "findings": [
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "poolId shouldn't be 0",
+            "description": "The poolId value should not be zero because 0 is a special identifier used for GLOBAL_POT. Functions such as guardian::createPool(), hub::createPool(), and hubRegistry.registerPool() do not explicitly validate that poolId != 0, relying instead on indirect checks. The root cause is the lack of an explicit guard. Although the risk is limited due to authorization controls, a misconfiguration or malicious admin could set poolId to 0, leading to confusion in routing logic or unintended interactions with the global subsidy pot. This could result in incorrect fund allocation or state corruption.\n",
+            "severity": null,
+            "location": [
+                "guardian::createPool",
+                "hub::createPool",
+                "hubRegistry::registerPool"
+            ],
+            "files": [
+                "protocol-v3/src/common/Guardian.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Different patterns for file()",
+            "description": "The file() function is used with inconsistent parameter ordering across adapters: wireWormholeAdapter uses (centrifugeId, wormholeId), while wireAxelarAdapter uses both (axelarId, centrifugeId) and (centrifugeId, axelarId). The cause is lack of standardization. This increases the risk of integration errors and developer confusion. Having multiple patterns requires more function overloads and increases code complexity. Standardizing on one pattern (e.g., always placing centrifugeId first) would simplify the interface and reduce error surface.\n",
+            "severity": null,
+            "location": [
+                "wireWormholeAdapter::file",
+                "wireAxelarAdapter::file"
+            ],
+            "files": [
+                "protocol-v3/src/common/Guardian.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Guardian.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.28;\n\nimport {PoolId} from \"./types/PoolId.sol\";\nimport {AssetId} from \"./types/AssetId.sol\";\nimport {IRoot} from \"./interfaces/IRoot.sol\";\nimport {IAdapter} from \"./interfaces/IAdapter.sol\";\nimport {IGuardian, ISafe} from \"./interfaces/IGuardian.sol\";\nimport {IMultiAdapter} from \"./interfaces/IMultiAdapter.sol\";\nimport {IRootMessageSender} from \"./interfaces/IGatewaySenders.sol\";\nimport {IHubGuardianActions} from \"./interfaces/IGuardianActions.sol\";\n\nimport {CastLib} from \"../misc/libraries/CastLib.sol\";\n\nimport {IAxelarAdapter} from \"../adapters/interfaces/IAxelarAdapter.sol\";\nimport {IWormholeAdapter} from \"../adapters/interfaces/IWormholeAdapter.sol\";\n\ncontract Guardian is IGuardian {\n    using CastLib for address;\n\n    IRoot public immutable root;\n\n    ISafe public safe;\n    IMultiAdapter public multiAdapter;\n    IHubGuardianActions public hub;\n    IRootMessageSender public sender;\n\n    constructor(ISafe safe_, IMultiAdapter multiAdapter_, IRoot root_, IRootMessageSender messageDispatcher_) {\n        root = root_;\n        multiAdapter = multiAdapter_;\n        safe = safe_;\n        sender = messageDispatcher_;\n    }\n\n    modifier onlySafe() {\n        require(msg.sender == address(safe), NotTheAuthorizedSafe());\n        _;\n    }\n\n    modifier onlySafeOrOwner() {\n        require(msg.sender == address(safe) || _isSafeOwner(msg.sender), NotTheAuthorizedSafeOrItsOwner());\n        _;\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Administration\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IGuardian\n    function file(bytes32 what, address data) external onlySafe {\n        if (what == \"safe\") safe = ISafe(data);\n        else if (what == \"sender\") sender = IRootMessageSender(data);\n        else if (what == \"hub\") hub = IHubGuardianActions(data);\n        else if (what == \"multiAdapter\") multiAdapter = IMultiAdapter(data);\n        else revert FileUnrecognizedParam();\n\n        emit File(what, data);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Admin actions\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IGuardian\n    function createPool(PoolId poolId, address admin, AssetId currency) external onlySafe {\n        return hub.createPool(poolId, admin, currency);\n    }\n\n    /// @inheritdoc IGuardian\n    function pause() external onlySafeOrOwner {\n        root.pause();\n    }\n\n    /// @inheritdoc IGuardian\n    function unpause() external onlySafe {\n        root.unpause();\n    }\n\n    /// @inheritdoc IGuardian\n    function scheduleRely(address target) external onlySafe {\n        root.scheduleRely(target);\n    }\n\n    /// @inheritdoc IGuardian\n    function cancelRely(address target) external onlySafe {\n        root.cancelRely(target);\n    }\n\n    /// @inheritdoc IGuardian\n    function scheduleUpgrade(uint16 centrifugeId, address target) external onlySafe {\n        sender.sendScheduleUpgrade(centrifugeId, target.toBytes32());\n    }\n\n    /// @inheritdoc IGuardian\n    function cancelUpgrade(uint16 centrifugeId, address target) external onlySafe {\n        sender.sendCancelUpgrade(centrifugeId, target.toBytes32());\n    }\n\n    /// @inheritdoc IGuardian\n    function recoverTokens(\n        uint16 centrifugeId,\n        address target,\n        address token,\n        uint256 tokenId,\n        address to,\n        uint256 amount\n    ) external onlySafe {\n        sender.sendRecoverTokens(centrifugeId, target.toBytes32(), token.toBytes32(), tokenId, to.toBytes32(), amount);\n    }\n\n    /// @inheritdoc IGuardian\n    function initiateRecovery(uint16 centrifugeId, IAdapter adapter, bytes32 hash) external onlySafe {\n        multiAdapter.initiateRecovery(centrifugeId, adapter, hash);\n    }\n\n    /// @inheritdoc IGuardian\n    function disputeRecovery(uint16 centrifugeId, IAdapter adapter, bytes32 hash) external onlySafe {\n        multiAdapter.disputeRecovery(centrifugeId, adapter, hash);\n    }\n\n    /// @inheritdoc IGuardian\n    function wireAdapters(uint16 centrifugeId, IAdapter[] calldata adapters) external onlySafe {\n        multiAdapter.file(\"adapters\", centrifugeId, adapters);\n    }\n\n    /// @inheritdoc IGuardian\n    function wireWormholeAdapter(IWormholeAdapter localAdapter, uint16 centrifugeId, uint16 wormholeId, address adapter)\n        external\n        onlySafe\n    {\n        localAdapter.file(\"sources\", centrifugeId, wormholeId, adapter);\n        localAdapter.file(\"destinations\", centrifugeId, wormholeId, adapter);\n    }\n\n    /// @inheritdoc IGuardian\n    function wireAxelarAdapter(\n        IAxelarAdapter localAdapter,\n        uint16 centrifugeId,\n        string calldata axelarId,\n        string calldata adapter\n    ) external onlySafe {\n        localAdapter.file(\"sources\", axelarId, centrifugeId, adapter);\n        localAdapter.file(\"destinations\", centrifugeId, axelarId, adapter);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Helpers\n    //----------------------------------------------------------------------------------------------\n\n    function _isSafeOwner(address addr) internal view returns (bool) {\n        try safe.isOwner(addr) returns (bool isOwner) {\n            return isOwner;\n        } catch {\n            return false;\n        }\n    }\n}\n"
+    }
+}

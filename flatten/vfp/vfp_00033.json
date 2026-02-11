@@ -1,0 +1,52 @@
+{
+    "vfp_id": "vfp_00033",
+    "project_name": "cantina_sky_spark_alm_controller_oct2025.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ]
+            },
+            "title": "ETH received from exchange in OTCBuffer will be lost",
+            "description": "1. **Description:** The OTCBuffer contract contains a payable receive() function, allowing it to accept ETH from an OTC exchange as part of a swap. However, there is no mechanism in the contract to withdraw or transfer this ETH to another address, such as the ALM Proxy.\n2. **Cause:** The contract was designed to handle stablecoin outputs from OTC swaps, not ETH. The presence of the receive() function without corresponding withdrawal logic creates a situation where ETH can be irreversibly locked.\n3. **Exploitation:** An OTC exchange could return ETH instead of a stablecoin during a swap, either by error or malicious intent, leading to the permanent loss of those funds.\n4. **Impact:** The ETH sent to the contract would be permanently lost, reducing the protocol's assets and potentially affecting financial operations. While the likelihood is low (as ETH should not be a valid output), the impact is limited to the amount received.\n",
+            "severity": "Low",
+            "location": [
+                "OTCBuffer.sol#L34"
+            ],
+            "files": [
+                "spark-alm-controller/src/OTCBuffer.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Hardcode the spender to ALM Proxy in OTCBuffer",
+            "description": "1. **Description:** The OTCBuffer contract allows the DEFAULT_ADMIN_ROLE to approve any spender for asset withdrawals via the approve() function. However, the only intended spender is the ALM Proxy.\n2. **Cause:** The approve() function accepts an arbitrary spender address, introducing unnecessary trust in the admin to set the correct spender.\n3. **Exploitation:** A malicious or compromised DEFAULT_ADMIN could approve a rogue address, allowing it to claim OTC swap proceeds. While the admin is expected to be secure, this increases the attack surface.\n4. **Impact:** If the admin is compromised, funds from OTC swaps could be diverted. Hardcoding the spender would reduce trust assumptions and improve security by design.\n",
+            "severity": "Informational",
+            "location": [
+                "OTCBuffer.sol#L24"
+            ],
+            "files": [
+                "spark-alm-controller/src/OTCBuffer.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "OTCBuffer.sol": "// SPDX-License-Identifier: AGPL-3.0-or-later\npragma solidity ^0.8.21;\n\nimport { AccessControlEnumerable }  from \"openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol\";\nimport { IERC20Metadata as IERC20 } from \"openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\nimport { SafeERC20 }                from \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\n\ncontract OTCBuffer is AccessControlEnumerable {\n\n    using SafeERC20 for IERC20;\n\n    /**********************************************************************************************/\n    /*** Initialization                                                                         ***/\n    /**********************************************************************************************/\n\n    constructor(address admin) {\n        _grantRole(DEFAULT_ADMIN_ROLE, admin);\n    }\n\n    /**********************************************************************************************/\n    /*** Call functions                                                                         ***/\n    /**********************************************************************************************/\n\n    function approve(address asset, address spender, uint256 allowance)\n        external onlyRole(DEFAULT_ADMIN_ROLE)\n    {\n        IERC20(asset).forceApprove(spender, allowance);\n    }\n\n    /**********************************************************************************************/\n    /*** Receive function                                                                       ***/\n    /**********************************************************************************************/\n\n    receive() external payable { }\n\n}\n"
+    }
+}

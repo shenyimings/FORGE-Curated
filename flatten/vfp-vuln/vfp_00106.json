@@ -1,0 +1,98 @@
+{
+    "vfp_id": "vfp_00106",
+    "project_name": "ChainSecurity_StudioV_Neulock_Audit.pdf",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "Royalty Payments With Native Tokens Break Marketplace Integrations",
+            "description": "The NEU token implements EIP-2981 for royalty payments, which can be made in ETH or ERC20 tokens. However, the NeuV2 contract lacks a receive() function, causing any royalty payments in ETH to revert. This prevents the NEU token from being traded on marketplaces that enforce royalty payments in native tokens, limiting its marketability and usability.\n\nThe root cause is the absence of a receive() or fallback function in the NeuV2 contract to accept ETH payments. As a result, any marketplace attempting to send ETH royalties to the contract will have the transaction reverted.\n\nAn attacker is not directly exploiting this, but malicious actors or competitive projects could leverage this limitation to discourage trading on compliant marketplaces, pushing users toward non-compliant platforms where royalties are ignored.\n\nThe impact is a reduced trading capability of the NEU token on major marketplaces, leading to potential loss of revenue for the project and diminished user trust due to restricted functionality.\n",
+            "severity": "High",
+            "location": [
+                "NeuV2.sol"
+            ],
+            "files": [
+                "neulock-onchain/contracts/old/NeuV2.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Subscription Can Be Passed Around",
+            "description": "The NEU NFT grants entitlement to use the Neulock service, but since the NFT is freely transferable, a single owner could lend or transfer it to multiple users, allowing them to access the service without purchasing their own NFT. This undermines the business model by enabling unauthorized sharing or flash-loaning of access rights.\n\nThe cause is the lack of a cooldown or lock mechanism on the NFT after minting, allowing immediate transfer and reuse of entitlement. This design flaw enables secondary markets or lending platforms to exploit the system.\n\nAn attacker could mint a NEU NFT, allow multiple users to access the service, and then transfer it back, effectively providing unlimited access without additional cost. Flash loan platforms could automate this process.\n\nThe impact includes loss of revenue due to bypassed purchases, dilution of NFT value, and potential abuse of system resources by unauthorized users.\n",
+            "severity": "High",
+            "location": [
+                "NeuV2.sol"
+            ],
+            "files": [
+                "neulock-onchain/contracts/old/NeuV2.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-913"
+                ],
+                "3": [
+                    "CWE-915"
+                ]
+            },
+            "title": "Metadata Contract Can Be Updated",
+            "description": "The NeuV2 contract allows the OPERATOR_ROLE to update the metadata contract address via setMetadataContract() even after initialization. This introduces risk because the metadata contract manages critical data such as refund values and series information. A malicious or compromised operator could change the metadata contract to one that manipulates accounting or disables functionality.\n\nThe root cause is the lack of a mechanism to lock the metadata contract address after the initial setup, leaving it mutable indefinitely.\n\nA compromised OPERATOR_ROLE could deploy a malicious metadata contract that alters refund logic, inflates or erases sponsor points, or breaks compatibility with the NEU token.\n\nThe impact includes potential loss of funds, incorrect state tracking, and disruption of core functionality, especially around refunds and series management.\n",
+            "severity": "Medium",
+            "location": [
+                "NeuV2.sol::setMetadataContract"
+            ],
+            "files": [
+                "neulock-onchain/contracts/old/NeuV2.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Royalties in Non-Native Tokens Are Locked",
+            "description": "The NEU token contract can receive royalties in non-native tokens (e.g., ERC20), but it lacks a mechanism to withdraw these tokens. Once received, they are permanently locked in the contract, making recovery impossible without an upgrade.\n\nThe cause is the absence of a withdrawal function for ERC20 tokens, which is a common oversight when handling multiple token types.\n\nWhile not directly exploitable by attackers, this represents a significant risk if marketplaces start paying royalties in non-native tokens, leading to irreversible loss of funds.\n\nThe impact is the permanent loss of royalty revenue paid in non-native tokens, reducing the project's income and financial flexibility.\n",
+            "severity": "Medium",
+            "location": [
+                "NeuV2.sol"
+            ],
+            "files": [
+                "neulock-onchain/contracts/old/NeuV2.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "NeuV2.sol": "// SPDX-License-Identifier: CC0-1.0\n// Compatible with OpenZeppelin Contracts ^5.0.0\npragma solidity 0.8.28;\n\nimport \"@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721BurnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721RoyaltyUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol\";\n\nimport {IERC7496} from \"../interfaces/IERC7496.sol\";\nimport {INeuMetadataV2} from \"../interfaces/INeuMetadataV2.sol\";\nimport {INeuV2} from \"../interfaces/INeuV2.sol\";\nimport {INeuDaoLockV1} from \"../interfaces/ILockV1.sol\";\n\ncontract NeuV2 is\n    INeuV2,\n    IERC7496,\n    Initializable,\n    ERC721Upgradeable,\n    ERC721EnumerableUpgradeable,\n    AccessControlUpgradeable,\n    ERC721BurnableUpgradeable,\n    ERC721RoyaltyUpgradeable,\n    UUPSUpgradeable,\n    ReentrancyGuardUpgradeable\n{\n    uint256 private constant VERSION = 2;\n\n    bytes32 public constant OPERATOR_ROLE = keccak256(\"OPERATOR_ROLE\");\n    bytes32 public constant UPGRADER_ROLE = keccak256(\"UPGRADER_ROLE\");\n    bytes32 public constant POINTS_INCREASER_ROLE = keccak256(\"POINTS_INCREASER_ROLE\");\n\n    uint256 private constant GWEI = 1e9;\n\n    uint256 public weiPerSponsorPoint;\n    INeuMetadataV2 private _neuMetadata;\n    INeuDaoLockV1 private _neuDaoLock;\n\n    /// @custom:oz-upgrades-unsafe-allow constructor\n    constructor() {\n        _disableInitializers();\n    }\n\n    function initialize(\n        address defaultAdmin,\n        address upgrader,\n        address operator\n    ) public initializer {\n        __ERC721_init(\"Neulock\", \"NEU\");\n        __ERC721Enumerable_init();\n        __AccessControl_init();\n        __ERC721Burnable_init();\n        __UUPSUpgradeable_init();\n        __ReentrancyGuard_init();\n\n        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);\n        _grantRole(UPGRADER_ROLE, upgrader);\n        _grantRole(OPERATOR_ROLE, operator);\n\n        _setDefaultRoyalty(address(this), 1000); // 10%\n\n        weiPerSponsorPoint = 1e14; // 0.0001 ETH\n\n        emit InitializedNeu(VERSION, defaultAdmin, upgrader, operator);\n    }\n\n    function initializeV2(address payable neuDaoLockAddress) public reinitializer(2) onlyRole(UPGRADER_ROLE) {\n        __ReentrancyGuard_init();\n\n        _neuDaoLock = INeuDaoLockV1(neuDaoLockAddress);\n\n        emit InitializedNeuV2(neuDaoLockAddress);\n    }\n\n    function getTraitMetadataURI()\n        external\n        view\n        override\n        returns (string memory uri)\n    {\n        return _neuMetadata.getTraitMetadataURI();\n    }\n\n    function _setTraitMetadataURI(string calldata uri) private {\n        emit IERC7496.TraitMetadataURIUpdated();\n        _neuMetadata.setTraitMetadataURI(uri);\n    }\n\n    function tokenURI(uint256 tokenId) public view override returns (string memory) {\n        _requireOwned(tokenId);\n\n        // slither-disable-start calls-loop (try-catch mitigates the DoS risk on revert)\n        try _neuMetadata.tokenURI(tokenId) returns (string memory result) {\n            return result;\n        } catch {\n            return \"\";\n        }\n        // slither-disable-end calls-loop\n    }\n\n    function setMetadataContract(address newMetadataContract) external onlyRole(OPERATOR_ROLE) {\n        _neuMetadata = INeuMetadataV2(newMetadataContract);\n\n        emit MetadataContractUpdated(newMetadataContract);\n    }\n\n    function setDaoLockContract(address payable newDaoLockContract) external onlyRole(OPERATOR_ROLE) {\n        _neuDaoLock = INeuDaoLockV1(newDaoLockContract);\n        \n        emit DaoLockContractUpdated(newDaoLockContract);\n    }\n\n    function setStorageContract(address newStorageContract) external onlyRole(OPERATOR_ROLE) {\n        _grantRole(POINTS_INCREASER_ROLE, newStorageContract);\n\n        emit StorageContractUpdated(newStorageContract);\n    }\n\n    function _privateMint(\n        address to,\n        uint16 seriesIndex,\n        uint256 originalPrice\n    ) private returns (uint256 tokenId, bool governance) {\n        (tokenId, governance) = _neuMetadata.createTokenMetadata(seriesIndex, originalPrice);\n\n        _safeMint(to, tokenId);\n    }\n\n    function _privateBurn(uint256 tokenId) private {\n        _burn(tokenId);\n        _neuMetadata.deleteTokenMetadata(tokenId);\n    }\n\n    function safeMint(address to, uint16 seriesIndex) public override onlyRole(OPERATOR_ROLE) {\n        _privateMint(to, seriesIndex, 0);\n    }\n\n    function safeMintPublic(uint16 seriesIndex) external payable {\n        uint256 seriesPrice = _neuMetadata.getSeriesMintingPrice(seriesIndex);\n\n        require(msg.value >= seriesPrice, \"Not enough ETH sent\");\n        _privateMint(msg.sender, seriesIndex, seriesPrice);\n    }\n\n    function burn (uint256 tokenId) public override {\n        super.burn(tokenId);\n        _neuMetadata.deleteTokenMetadata(tokenId);\n    }\n\n    function withdraw() external onlyRole(OPERATOR_ROLE) {\n        uint256 availableBalance = address(this).balance -\n            _neuMetadata.sumAllRefundableTokensValue();\n\n        if (availableBalance > 0) {\n            // slither-disable-next-line arbitrary-send-eth (msg.sender is operator, guaranteed by onlyRole check)\n            payable(msg.sender).transfer(availableBalance);\n        }\n    }\n\n    function refund(uint256 tokenId) external {\n        require(ownerOf(tokenId) == msg.sender, \"Caller is not token owner\");\n\n        uint256 refundAmount = _neuMetadata.getRefundAmount(tokenId);\n\n        _privateBurn(tokenId);\n\n        payable(msg.sender).transfer(refundAmount);\n    }\n\n    function increaseSponsorPoints(uint256 tokenId) external payable onlyRole(POINTS_INCREASER_ROLE) returns (uint256 newSponsorPoints, uint256 sponsorPointsIncrease) {\n        (newSponsorPoints, sponsorPointsIncrease) = _increaseSponsorPoints(tokenId, msg.value);\n\n        // slither-disable-next-line low-level-calls (calling like this is the best practice for sending Ether)\n        (bool sent, ) = address(_neuDaoLock).call{value: msg.value}(\"\");\n        require(sent, \"Failed to send Ether\");\n    }\n\n    function _increaseSponsorPoints(uint256 tokenId, uint256 value) private nonReentrant() returns (uint256 newSponsorPoints, uint256 sponsorPointsIncrease) {\n        sponsorPointsIncrease = value / weiPerSponsorPoint;\n\n        if (sponsorPointsIncrease == 0) {\n            revert(\"Not enough ETH sent\");\n        }\n\n        newSponsorPoints = _neuMetadata.increaseSponsorPoints(tokenId, sponsorPointsIncrease);\n\n        emit IERC7496.TraitUpdated(bytes32(\"points\"), tokenId, bytes32(newSponsorPoints));\n    }\n\n    function setWeiPerSponsorPoint(uint256 newWeiPerSponsorPoint) external onlyRole(OPERATOR_ROLE) {\n        require(newWeiPerSponsorPoint >= GWEI, \"Must be at least 1 gwei\");\n        weiPerSponsorPoint = newWeiPerSponsorPoint;\n\n        emit WeiPerSponsorPointUpdated(newWeiPerSponsorPoint);\n    }\n\n    function setTrait(\n        uint256 /*tokenId*/,\n        bytes32 /*traitKey*/,\n        bytes32 /*newValue*/\n    ) pure public {\n        // We won't allow setting any trait individually.\n        revert(\"Trait cannot be set\");\n    }\n\n    function getTraitValue(\n        uint256 tokenId,\n        bytes32 traitKey\n    ) public view returns (bytes32 traitValue) {\n        _requireOwned(tokenId);\n\n        return _neuMetadata.getTraitValue(tokenId, traitKey);\n    }\n\n    function getTraitValues(\n        uint256 tokenId,\n        bytes32[] calldata traitKeys\n    ) public view virtual override returns (bytes32[] memory traitValues) {\n        _requireOwned(tokenId);\n\n        // slither-disable-next-line calls-loop (an unexpected revert here indicates a bug in our NeuMetadata contract that we would need to fix)\n        return _neuMetadata.getTraitValues(tokenId, traitKeys);\n    }\n\n    function setTraitMetadataURI(\n        string calldata uri\n    ) external onlyRole(OPERATOR_ROLE) {\n        _setTraitMetadataURI(uri);\n    }\n\n    function getTokensOfOwner(address owner) public view returns (uint256[] memory tokenIds) {\n        uint256 tokenCount = balanceOf(owner);\n\n        tokenIds = new uint256[](tokenCount);\n\n        for (uint256 i = 0; i < tokenCount; i++) {\n            tokenIds[i] = tokenOfOwnerByIndex(owner, i);\n        }\n    }\n\n    function getTokensWithData(uint256[] calldata tokenIds) external view returns (string[] memory tokenUris, bool[] memory isUserMinted) {\n        tokenUris = new string[](tokenIds.length);\n        isUserMinted = new bool[](tokenIds.length);\n\n        for (uint256 i = 0; i < tokenIds.length; i++) {\n            tokenUris[i] = tokenURI(tokenIds[i]);\n            // slither-disable-next-line calls-loop (will only revert if there's a bug in our NeuMetadata contract; we don't want to fail silently)\n            isUserMinted[i] = _neuMetadata.isUserMinted(tokenIds[i]);\n        }\n    }\n\n    function getTokensTraitValues(uint256[] calldata tokenIds, bytes32[] calldata traitKeys) external view returns (bytes32[][] memory traitValues) {\n        traitValues = new bytes32[][](tokenIds.length);\n\n        for (uint256 i = 0; i < tokenIds.length; i++) {\n            traitValues[i] = getTraitValues(tokenIds[i], traitKeys);\n        }\n    }\n\n    function isGovernanceToken(uint256 tokenId) external view returns (bool) {\n        _requireOwned(tokenId);\n\n        return _neuMetadata.isGovernanceToken(tokenId);\n    }\n\n    // The following functions are overrides required by Solidity.\n\n    function _update(address to, uint256 tokenId, address auth) internal override(ERC721Upgradeable, ERC721EnumerableUpgradeable) returns (address) {\n        return super._update(to, tokenId, auth);\n    }\n\n    function _increaseBalance(address account, uint128 value) internal override(ERC721Upgradeable, ERC721EnumerableUpgradeable) {\n        super._increaseBalance(account, value);\n    }\n\n    function supportsInterface(bytes4 interfaceId) public view override(\n            AccessControlUpgradeable,\n            ERC721EnumerableUpgradeable,\n            ERC721RoyaltyUpgradeable,\n            ERC721Upgradeable\n        ) returns (bool)\n    {\n        return\n            super.supportsInterface(interfaceId) ||\n            interfaceId == type(IERC7496).interfaceId;\n    }\n\n    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {}\n}"
+    }
+}

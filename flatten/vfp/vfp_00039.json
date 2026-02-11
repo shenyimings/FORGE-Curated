@@ -1,0 +1,49 @@
+{
+    "vfp_id": "vfp_00039",
+    "project_name": "cantina_uniswap_april2025.pdf",
+    "findings": [
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-193"
+                ]
+            },
+            "title": "Off-by-one issue in isExpired()",
+            "description": "1. **Description:** The `isExpired()` function in SettingsLib.sol considers a signature expired when `expiration == block.timestamp`, while `validateUserOp` treats `validUntil == block.timestamp` as valid, creating a discrepancy.\n2. **Cause:** Inconsistent time boundary checks between the library function and the validation logic.\n3. **Exploitation:** A signature valid at the exact block timestamp may be rejected by `isExpired()` but accepted in `validateUserOp`, leading to inconsistent behavior.\n4. **Impact:** This could cause valid signatures to be incorrectly rejected in certain contexts, leading to denial of service or user confusion.\n",
+            "severity": "Low",
+            "location": [
+                "SettingsLib.sol::isExpired#48"
+            ],
+            "files": [
+                "minimal-delegation/src/libraries/SettingsLib.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect comment",
+            "description": "1. **Description:** The comment in SettingsLib.sol at line 9 is inaccurate or misleading regarding the functionality or expected behavior of the code.\n2. **Cause:** The comment was not updated after code changes or was written incorrectly initially.\n3. **Exploitation:** Misleading comments can lead developers to misunderstand the code, potentially introducing bugs during maintenance.\n4. **Impact:** Increased risk of human error during development or auditing due to incorrect documentation.\n",
+            "severity": "Informational",
+            "location": [
+                "SettingsLib.sol#9"
+            ],
+            "files": [
+                "minimal-delegation/src/libraries/SettingsLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "SettingsLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.23;\n\nimport {IHook} from \"../interfaces/IHook.sol\";\n\ntype Settings is uint256;\n\n/// The most significant 8 bits are reserved to specify if the key is an admin key or not. An admin key is allowed to self-call.\n/// The least significant 160 bits specify an address to callout to for extra or overrideable validation.\n///  6 bytes |   1 byte       | 5 bytes           | 20 bytes\n//   UNUSED  |   isAdmin      | expiration        | VALIDATION_ADDRESS\nlibrary SettingsLib {\n    uint160 constant MASK_20_BYTES = uint160(0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF);\n    uint40 constant MASK_5_BYTES = uint40(0xFFFFFFFFFF);\n\n    Settings constant DEFAULT = Settings.wrap(0);\n    // RootKey has the settings: (isAdmin = true, 0 expiration, no hook)\n    Settings constant ROOT_KEY_SETTINGS = Settings.wrap(uint256(1) << 200);\n\n    /// @notice Returns whether the key is an admin key\n    function isAdmin(Settings settings) internal pure returns (bool _isAdmin) {\n        assembly {\n            _isAdmin := shr(200, settings)\n        }\n    }\n\n    /// @notice Returns the expiration timestamp in unix time\n    function expiration(Settings settings) internal pure returns (uint40 _expiration) {\n        uint40 mask = MASK_5_BYTES;\n        assembly {\n            _expiration := and(shr(160, settings), mask)\n        }\n    }\n\n    /// @notice Returns the hook address of the key\n    function hook(Settings settings) internal pure returns (IHook _hook) {\n        uint256 mask = MASK_20_BYTES;\n        assembly {\n            _hook := and(settings, mask)\n        }\n    }\n\n    /// @notice A key is expired if its expiration is less than or equal to the current block timestamp.\n    /// @dev Keys with expiry of 0 never expire.\n    function isExpired(Settings settings) internal view returns (bool _isExpired, uint40 _expiration) {\n        uint40 _exp = expiration(settings);\n        if (_exp == 0) return (false, 0);\n        return (_exp <= block.timestamp, _exp);\n    }\n}\n"
+    }
+}

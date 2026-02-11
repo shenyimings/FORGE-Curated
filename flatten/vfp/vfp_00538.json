@@ -1,0 +1,119 @@
+{
+    "vfp_id": "vfp_00538",
+    "project_name": "Uniswap Calibur Audit.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "The `from` Address in ETH_CALL Can Be Non-Zero",
+            "description": "The `isValidSignature` function in the `MinimalDelegation` contract incorrectly assumes that off-chain calls via `ETH_CALL` RPC will always originate from `address(0)`. However, the `ETH_CALL` method allows arbitrary `from` addresses to be specified, which can cause the function to enter unintended execution branches. The root cause is a flawed assumption about RPC caller behavior, deviating from the ERC-7739 standard's recommended workflow deduction. An attacker could exploit this by specifying a non-zero `from` address to bypass proper signature validation logic, potentially leading to signature reuse across different wallets if the `erc1271CallerIsSafe` branch is triggered. This could result in unauthorized transaction execution or signature replay attacks, undermining the integrity of the wallet's signature verification mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature#153",
+                "MinimalDelegation.sol::isValidSignature#159"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-841"
+                ]
+            },
+            "title": "ERC-7739 Signature Verification Workflow Deviation",
+            "description": "The `isValidSignature` function deviates from the ERC-7739 standard by not correctly deducing the signature workflow based on the signature structure. According to ERC-7739, the contract must first attempt to interpret the signature as `TypedDataSign` and fall back to `PersonalSign` only if that fails. However, the current implementation prioritizes other checks and may misinterpret a valid nested typed data signature as a `NestedPersonalSign`, causing validation to fail. This is caused by incorrect ordering of signature parsing logic. An attacker could exploit this by crafting a valid ERC-7739-compliant signature that is rejected due to improper workflow deduction, leading to denial of service for legitimate users. The impact is reduced interoperability and reliability of signature verification, potentially locking users out of their wallets.\n",
+            "severity": "Medium",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Standard P-256 Signing Algorithms May Not Be Compatible With keccak256 Hashing Scheme",
+            "description": "The contract expects P-256 signatures to be made over `keccak256` hashes, but standard implementations (e.g., ES256) use `sha256`. This incompatibility means users must manually sign raw 32-byte digests, increasing the risk of blind signing or phishing. The root cause is a deviation from standard cryptographic practices in the signature verification logic. An attacker could exploit this by presenting a malicious digest that appears legitimate but leads to unintended transactions. The impact is increased user risk during signing, potentially leading to fund loss due to poor integration with standard passkey systems.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::verify#209"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "`keyhash` and `hookdata` Should Be Part of the Signed Hash",
+            "description": "The `keyHash` and `hookData` parameters are appended to the signature without being included in the signed hash, allowing relayers to manipulate them post-signature. This is especially problematic in `validateUserOp` and `isValidSignature`. The root cause is insecure signature composition that excludes critical context data. An attacker could exploit this by altering `hookData` to bypass hook logic or cause incorrect state changes. The impact is potential logic manipulation and DoS via malicious relayers, undermining the integrity of delegated execution.\n",
+            "severity": "Low",
+            "location": [
+                "MinimalDelegation.sol::validateUserOp#110",
+                "MinimalDelegation.sol::_handleVerifySignature#204",
+                "MinimalDelegation.sol::isValidSignature#143"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-357"
+                ]
+            },
+            "title": "Risk of Blind Signing With WebAuthn",
+            "description": "The wallet integrates WebAuthn for authentication, where the challenge signed by the user's authenticator may represent blockchain transaction data. However, most WebAuthn authenticators do not display the structured blockchain data (e.g., EIP-712 typed data) on-device, leading to a risk of blind signing. Users may unknowingly approve transactions that move funds or change permissions because the relying party (website) is responsible for displaying the digest, which may be misleading or compromised. The root cause is the mismatch between WebAuthn's web2 security model and the high-stakes nature of blockchain transactions. An attacker could exploit this by phishing or compromising the frontend to present a benign-looking message while the actual signed digest authorizes a malicious transaction. The impact includes unauthorized fund transfers, account takeover, and loss of user assets, as demonstrated by real-world incidents like the 2025 Bybit hack.\n",
+            "severity": "High",
+            "location": [
+                "MinimalDelegation.sol::isValidSignature#129",
+                "MinimalDelegation.sol::batched calls#206"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/MinimalDelegation.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MinimalDelegation.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {EnumerableSetLib} from \"solady/utils/EnumerableSetLib.sol\";\nimport {Receiver} from \"solady/accounts/Receiver.sol\";\nimport {P256} from \"@openzeppelin/contracts/utils/cryptography/P256.sol\";\nimport {IAccount} from \"account-abstraction/interfaces/IAccount.sol\";\nimport {PackedUserOperation} from \"account-abstraction/interfaces/PackedUserOperation.sol\";\nimport {IERC1271} from \"./interfaces/IERC1271.sol\";\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {IERC7821} from \"./interfaces/IERC7821.sol\";\nimport {IHook} from \"./interfaces/IHook.sol\";\nimport {IKeyManagement} from \"./interfaces/IKeyManagement.sol\";\nimport {IMinimalDelegation} from \"./interfaces/IMinimalDelegation.sol\";\nimport {EIP712} from \"./EIP712.sol\";\nimport {ERC1271} from \"./ERC1271.sol\";\nimport {ERC4337Account} from \"./ERC4337Account.sol\";\nimport {ERC7201} from \"./ERC7201.sol\";\nimport {ERC7821} from \"./ERC7821.sol\";\nimport {ERC7914} from \"./ERC7914.sol\";\nimport {ERC7739} from \"./ERC7739.sol\";\nimport {KeyManagement} from \"./KeyManagement.sol\";\nimport {Multicall} from \"./Multicall.sol\";\nimport {NonceManager} from \"./NonceManager.sol\";\nimport {BatchedCallLib, BatchedCall} from \"./libraries/BatchedCallLib.sol\";\nimport {Call, CallLib} from \"./libraries/CallLib.sol\";\nimport {CalldataDecoder} from \"./libraries/CalldataDecoder.sol\";\nimport {ERC7739Utils} from \"./libraries/ERC7739Utils.sol\";\nimport {HooksLib} from \"./libraries/HooksLib.sol\";\nimport {Key, KeyLib, KeyType} from \"./libraries/KeyLib.sol\";\nimport {ModeDecoder} from \"./libraries/ModeDecoder.sol\";\nimport {Settings, SettingsLib} from \"./libraries/SettingsLib.sol\";\nimport {SignedBatchedCallLib, SignedBatchedCall} from \"./libraries/SignedBatchedCallLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\ncontract MinimalDelegation is\n    IMinimalDelegation,\n    ERC7821,\n    ERC1271,\n    ERC4337Account,\n    Receiver,\n    KeyManagement,\n    NonceManager,\n    ERC7914,\n    ERC7201,\n    ERC7739,\n    EIP712,\n    Multicall\n{\n    using EnumerableSetLib for EnumerableSetLib.Bytes32Set;\n    using CallLib for Call[];\n    using BatchedCallLib for BatchedCall;\n    using SignedBatchedCallLib for SignedBatchedCall;\n    using KeyLib for *;\n    using ModeDecoder for bytes32;\n    using CalldataDecoder for bytes;\n    using HooksLib for IHook;\n    using SettingsLib for Settings;\n    using ERC7739Utils for bytes;\n\n    /// @inheritdoc IMinimalDelegation\n    function execute(BatchedCall memory batchedCall) public payable {\n        bytes32 keyHash = msg.sender.toKeyHash();\n        if (!_isOwnerOrAdmin(keyHash)) revert Unauthorized();\n        _processBatch(batchedCall, keyHash);\n    }\n\n    /// @inheritdoc IMinimalDelegation\n    function execute(SignedBatchedCall memory signedBatchedCall, bytes memory wrappedSignature) public payable {\n        if (!_senderIsExecutor(signedBatchedCall.executor)) revert Unauthorized();\n        _handleVerifySignature(signedBatchedCall, wrappedSignature);\n        _processBatch(signedBatchedCall.batchedCall, signedBatchedCall.keyHash);\n    }\n\n    /// @inheritdoc IERC7821\n    function execute(bytes32 mode, bytes memory executionData) external payable override {\n        if (!mode.isBatchedCall()) revert IERC7821.UnsupportedExecutionMode();\n        Call[] memory calls = abi.decode(executionData, (Call[]));\n        BatchedCall memory batchedCall = BatchedCall({calls: calls, revertOnFailure: mode.revertOnFailure()});\n        execute(batchedCall);\n    }\n\n    /// @dev This function is executeable only by the EntryPoint contract, and is the main pathway for UserOperations to be executed.\n    /// UserOperations can be executed through the execute function, but another method of authorization (ie through a passed in signature) is required.\n    /// userOp.callData is abi.encodeCall(IAccountExecute.executeUserOp.selector, (abi.encode(Call[]), bool))\n    /// Note that this contract is only compatible with Entrypoint versions v0.7.0 and v0.8.0. It is not compatible with v0.6.0, as that version does not support the \"executeUserOp\" selector.\n    function executeUserOp(PackedUserOperation calldata userOp, bytes32) external onlyEntryPoint {\n        // Parse the keyHash from the signature. This is the keyHash that has been pre-validated as the correct signer over the UserOp data\n        // and must be used to check further on-chain permissions over the call execution.\n        (bytes32 keyHash,,) = abi.decode(userOp.signature, (bytes32, bytes, bytes));\n\n        // The mode is only passed in to signify the EXEC_TYPE of the calls.\n        bytes calldata executionData = userOp.callData.removeSelector();\n        (BatchedCall memory batchedCall) = abi.decode(executionData, (BatchedCall));\n\n        _processBatch(batchedCall, keyHash);\n    }\n\n    /// @inheritdoc IAccount\n    /// @dev Only return validationData if the signature from the key associated with `keyHash` is valid over the userOpHash\n    ///      - The ERC-4337 spec requires that `validateUserOp` does not early return if the signature is invalid such that accurate gas estimation can be done\n    /// @return validationData is (uint256(validAfter) << (160 + 48)) | (uint256(validUntil) << 160) | (isValid ? 0 : 1)\n    /// - `validAfter` is always 0.\n    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)\n        external\n        onlyEntryPoint\n        returns (uint256 validationData)\n    {\n        _payEntryPoint(missingAccountFunds);\n        (bytes32 keyHash, bytes memory signature, bytes memory hookData) =\n            abi.decode(userOp.signature, (bytes32, bytes, bytes));\n\n        /// The userOpHash does not need to be made replay-safe, as the EntryPoint will always call the sender contract of the UserOperation for validation.\n        Key memory key = getKey(keyHash);\n        bool isValid = key.verify(userOpHash, signature);\n\n        Settings settings = getKeySettings(keyHash);\n        settings.hook().handleAfterValidateUserOp(keyHash, userOp, userOpHash, hookData);\n\n        /// validationData is (uint256(validAfter) << (160 + 48)) | (uint256(validUntil) << 160) | (success ? 0 : 1)\n        /// `validAfter` is always 0.\n        validationData =\n            isValid ? uint256(settings.expiration()) << 160 | SIG_VALIDATION_SUCCEEDED : SIG_VALIDATION_FAILED;\n    }\n\n    /// @inheritdoc ERC1271\n    /// @dev wrappedSignature contains a keyHash, signature, and any optional hook data\n    ///      `signature` can contain extra fields used for webauthn verification or ERC7739 nested typed data verification\n    function isValidSignature(bytes32 digest, bytes calldata wrappedSignature)\n        public\n        view\n        override(ERC1271, IERC1271)\n        returns (bytes4)\n    {\n        // Per ERC-7739, return 0x77390001 for the sentinel hash value\n        unchecked {\n            if (wrappedSignature.length == uint256(0)) {\n                // Forces the compiler to optimize for smaller bytecode size.\n                if (uint256(digest) == ~wrappedSignature.length / 0xffff * 0x7739) return 0x77390001;\n            }\n        }\n\n        (bytes32 keyHash, bytes memory signature, bytes memory hookData) =\n            abi.decode(wrappedSignature, (bytes32, bytes, bytes));\n\n        Key memory key = getKey(keyHash);\n\n        /// There are 3 ways to validate a signature through ERC-1271:\n        /// 1. The caller is allowlisted, so we can validate the signature directly against the data.\n        /// 2. The caller is address(0), meaning it is an offchain call, so we can validate the signature as if it is a PersonalSign.\n        /// 3. If none of the above is true, the signature must be validated as a TypedDataSign struct according to ERC-7739.\n        bool isValid;\n        if (erc1271CallerIsSafe[msg.sender]) {\n            isValid = key.verify(digest, signature);\n        } else if (msg.sender == address(0)) {\n            // We only support PersonalSign for offchain calls\n            isValid = _isValidNestedPersonalSig(key, digest, domainSeparator(), signature);\n        } else {\n            isValid = _isValidTypedDataSig(key, digest, domainBytes(), signature);\n        }\n\n        // Early return if the signature is invalid\n        if (!isValid) return _1271_INVALID_VALUE;\n\n        Settings settings = getKeySettings(keyHash);\n        _checkExpiry(settings);\n\n        settings.hook().handleAfterIsValidSignature(keyHash, digest, hookData);\n\n        return _1271_MAGIC_VALUE;\n    }\n\n    /// @dev Iterates through calls, reverting according to specified failure mode\n    function _processBatch(BatchedCall memory batchedCall, bytes32 keyHash) private {\n        for (uint256 i = 0; i < batchedCall.calls.length; i++) {\n            (bool success, bytes memory output) = _process(batchedCall.calls[i], keyHash);\n            // Reverts with the first call that is unsuccessful if the EXEC_TYPE is set to force a revert.\n            if (!success && batchedCall.revertOnFailure) revert IMinimalDelegation.CallFailed(output);\n        }\n    }\n\n    /// @dev Executes a low level call using execution hooks if set\n    function _process(Call memory _call, bytes32 keyHash) private returns (bool success, bytes memory output) {\n        // Per ERC7821, replace address(0) with address(this)\n        address to = _call.to == address(0) ? address(this) : _call.to;\n\n        Settings settings = getKeySettings(keyHash);\n        if (!settings.isAdmin() && to == address(this)) revert IKeyManagement.OnlyAdminCanSelfCall();\n\n        IHook hook = settings.hook();\n        bytes memory beforeExecuteData = hook.handleBeforeExecute(keyHash, to, _call.value, _call.data);\n\n        (success, output) = to.call{value: _call.value}(_call.data);\n\n        hook.handleAfterExecute(keyHash, beforeExecuteData);\n    }\n\n    /// @dev This function is used to handle the verification of signatures sent through execute()\n    function _handleVerifySignature(SignedBatchedCall memory signedBatchedCall, bytes memory wrappedSignature)\n        private\n    {\n        _useNonce(signedBatchedCall.nonce);\n\n        (bytes memory signature, bytes memory hookData) = abi.decode(wrappedSignature, (bytes, bytes));\n\n        bytes32 digest = hashTypedData(signedBatchedCall.hash());\n\n        Key memory key = getKey(signedBatchedCall.keyHash);\n        bool isValid = key.verify(digest, signature);\n        if (!isValid) revert IMinimalDelegation.InvalidSignature();\n\n        Settings settings = getKeySettings(signedBatchedCall.keyHash);\n        _checkExpiry(settings);\n\n        settings.hook().handleAfterVerifySignature(signedBatchedCall.keyHash, digest, hookData);\n    }\n\n    /// @notice Returns true if the msg.sender is the executor or if the executor is address(0)\n    /// @param executor The address of the allowed executor of the signed batched call\n    function _senderIsExecutor(address executor) private view returns (bool) {\n        return executor == address(0) || executor == msg.sender;\n    }\n}\n"
+    }
+}

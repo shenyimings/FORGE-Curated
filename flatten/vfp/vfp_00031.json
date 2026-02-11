@@ -1,0 +1,101 @@
+{
+    "vfp_id": "vfp_00031",
+    "project_name": "Anvil Protocol Diff Audit.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Non-Explicit Imports",
+            "description": "The codebase uses global imports (e.g., `import \"@openzeppelin/contracts/token/ERC20/ERC20.sol\"`) instead of named imports. This practice reduces code clarity and increases the risk of naming conflicts, especially in files with multiple contracts or complex inheritance. The root cause is the use of non-specific import syntax. While this does not directly enable exploitation, it can lead to developer confusion and integration errors. The impact is limited to maintainability and readability, posing no direct security risk but potentially contributing to future vulnerabilities due to ambiguity in symbol resolution.\n",
+            "severity": "Informational",
+            "location": [
+                "Anvil.sol#4",
+                "AnvilGovernorDelegate.sol"
+            ],
+            "files": [
+                "anvil-contracts/contracts/governance/Anvil.sol",
+                "anvil-contracts/contracts/governance/AnvilGovernorDelegate.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Use Custom Errors",
+            "description": "The `AnvilGovernorDelegate` contract uses a plain `revert(\"Cannot upgrade the timelock\")` statement, which is less efficient and less readable than using custom errors introduced in Solidity 0.8.4. The cause is the use of string-based revert messages instead of defined custom errors. This leads to higher gas costs during reverts and less clarity for off-chain tools and users interpreting the reason for failure. There is no direct exploit path, but the impact includes increased gas usage and reduced user and developer experience. Replacing string reverts with custom errors would improve both efficiency and code quality.\n",
+            "severity": "Informational",
+            "location": [
+                "AnvilGovernorDelegate.sol::revert#125"
+            ],
+            "files": [
+                "anvil-contracts/contracts/governance/AnvilGovernorDelegate.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "EIP-712 Version Consistency in New ANVL Token Deployment",
+            "description": "The new ANVL token deployment retains the same EIP-712 version string as the legacy token, despite being deployed at a new address. While the `verifyingContract` field prevents signature replay, keeping the same version number may cause confusion for off-chain systems that rely on the domain separator for identifying contract versions. The root cause is the lack of semantic versioning in the EIP-712 domain. This could lead to misinterpretation of signatures or incorrect client behavior. The impact is limited to potential integration issues and user confusion, not direct fund loss or control exploits.\n",
+            "severity": "Informational",
+            "location": [
+                "Anvil.sol#20"
+            ],
+            "files": [
+                "anvil-contracts/contracts/governance/Anvil.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1111"
+                ]
+            },
+            "title": "Incomplete Docstring",
+            "description": "The `initialize` function in `AnvilGovernorDelegate.sol` lacks full documentation for several parameters (`timelock_`, `governanceToken_`, `votingPeriod_`, `votingDelay_`, `proposalThreshold_`). This reduces code readability and increases the risk of incorrect usage by developers or integrators. The cause is incomplete NatSpec comments. While this does not introduce a direct security vulnerability, it can lead to integration errors or misconfigurations in governance parameters. The impact is on maintainability and correctness of external interactions, especially in complex upgrade or deployment scenarios.\n",
+            "severity": "Informational",
+            "location": [
+                "AnvilGovernorDelegate.sol::initialize#87-102"
+            ],
+            "files": [
+                "anvil-contracts/contracts/governance/AnvilGovernorDelegate.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Anvil.sol": "// SPDX-License-Identifier: ISC\npragma solidity 0.8.25;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol\";\nimport \"@openzeppelin/contracts/utils/cryptography/EIP712.sol\";\n\n/**\n * @title Anvil Token\n * @notice Anvil governance token, using OZ ERC20Votes.\n *\n * @custom:security-contact security@af.xyz\n */\ncontract Anvil is ERC20Votes {\n    /**\n     * @notice Deploys the Anvil token, allocating the provided amount of tokens to the deployer.\n     *\n     * @param destinationAddress The address to which the tokens will be minted.\n     */\n    constructor(address destinationAddress) ERC20(\"Anvil\", \"ANVL\") EIP712(\"Anvil\", \"1\") {\n        _mint(destinationAddress, _maxSupply());\n    }\n\n    /**\n     * @dev Maximum token supply. Hardcoded because it cannot change.\n     */\n    function _maxSupply() internal view virtual override(ERC20Votes) returns (uint256) {\n        // NB: This is updated to return the constant supply\n        return 100_000_000_000 * 10 ** uint256(decimals());\n    }\n}\n",
+        "AnvilGovernorDelegate.sol": "// SPDX-License-Identifier: ISC\npragma solidity 0.8.25;\n\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorCountingSimpleUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorSettingsUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorStorageUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorTimelockControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorVotesUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/GovernorUpgradeable.sol\";\nimport \"@openzeppelin/contracts/governance/utils/IVotes.sol\";\n\n/**\n * @title This is version 2 of the Governor contract that is delegated to by `AnvilGovernorDelegator` for the Anvil\n * protocol to implement governance logic.\n *\n * @custom:security-contact security@af.xyz\n */\ncontract AnvilGovernorDelegate is\n    GovernorUpgradeable,\n    GovernorSettingsUpgradeable,\n    GovernorCountingSimpleUpgradeable,\n    GovernorVotesUpgradeable,\n    GovernorVotesQuorumFractionUpgradeable,\n    GovernorStorageUpgradeable,\n    GovernorTimelockControlUpgradeable\n{\n    /****************\n     * PUBLIC VIEWS *\n     ****************/\n\n    /// @inheritdoc IGovernor\n    function quorum(\n        uint256 blockNumber\n    ) public view override(GovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable) returns (uint256) {\n        return super.quorum(blockNumber);\n    }\n\n    /// @inheritdoc IGovernor\n    function proposalNeedsQueuing(\n        uint256 proposalId\n    ) public view virtual override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (bool) {\n        return super.proposalNeedsQueuing(proposalId);\n    }\n\n    /// @inheritdoc IGovernor\n    function proposalThreshold()\n        public\n        view\n        override(GovernorUpgradeable, GovernorSettingsUpgradeable)\n        returns (uint256)\n    {\n        return super.proposalThreshold();\n    }\n\n    /// @inheritdoc IGovernor\n    function state(\n        uint256 proposalId\n    ) public view override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (ProposalState) {\n        return super.state(proposalId);\n    }\n\n    /// @inheritdoc IERC165\n    function supportsInterface(bytes4 interfaceId) public view override(GovernorUpgradeable) returns (bool) {\n        return super.supportsInterface(interfaceId);\n    }\n\n    /// @inheritdoc IGovernor\n    function votingDelay() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {\n        return super.votingDelay();\n    }\n\n    /// @inheritdoc IGovernor\n    function votingPeriod() public view override(GovernorUpgradeable, GovernorSettingsUpgradeable) returns (uint256) {\n        return super.votingPeriod();\n    }\n\n    /*****************************\n     * STATE-MODIFYING FUNCTIONS *\n     *****************************/\n\n    /**\n     * Initializes this delegate so that it may be used, as it operates within the UpgradableProxy pattern, in which\n     * logic that would typically be contained within a constructor is moved to `initialize(...)` since the delegate\n     * must be deployed before it is used by the contract that delegates to it.\n     */\n    function initialize(\n        TimelockControllerUpgradeable timelock_,\n        address governanceToken_,\n        uint32 votingPeriod_,\n        uint48 votingDelay_,\n        uint256 proposalThreshold_\n    ) public initializer {\n        __Governor_init(\"AnvilGovernorDelegate\");\n        __GovernorSettings_init(votingDelay_, votingPeriod_, proposalThreshold_);\n        __GovernorCountingSimple_init();\n        __GovernorVotes_init(IVotes(governanceToken_));\n        // NB: initializes quorum to 5% of total supply\n        __GovernorVotesQuorumFraction_init(5);\n        __GovernorStorage_init();\n        __GovernorTimelockControl_init(timelock_);\n    }\n\n    /**\n     * Reinitializes the contract, updating the governance token.\n     *\n     * @dev Can only be called during execution of a governance proposal, and may only be called once due to the nature\n     * of the reinitializer modifier.\n     *\n     * @param newGovernanceToken_ Address of the new governance token.\n     */\n    function reinitializeGovernanceToken(address newGovernanceToken_) external reinitializer(2) onlyGovernance {\n        __GovernorVotes_init(IVotes(newGovernanceToken_));\n    }\n\n    /**\n     * NB: We do not want to allow for the upgrade of our Timelock, though we must inherit from the `GovernorTimelockControlUpgradeable`\n     * due to constraints within Solidity. Thus, we disable upgrade manually by overriding the `updateTimelock` function.\n     *\n     * @inheritdoc GovernorTimelockControlUpgradeable\n     */\n    function updateTimelock(\n        TimelockControllerUpgradeable\n    ) external override(GovernorTimelockControlUpgradeable) onlyGovernance {\n        revert(\"Cannot upgrade the timelock\");\n    }\n\n    /********************************\n     * PRIVATE / INTERNAL FUNCTIONS *\n     ********************************/\n\n    /// @inheritdoc GovernorUpgradeable\n    function _cancel(\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        bytes32 descriptionHash\n    ) internal override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (uint256) {\n        return super._cancel(targets, values, calldatas, descriptionHash);\n    }\n\n    /// @inheritdoc GovernorUpgradeable\n    function _executor()\n        internal\n        view\n        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)\n        returns (address)\n    {\n        return super._executor();\n    }\n\n    /// @inheritdoc GovernorUpgradeable\n    function _executeOperations(\n        uint256 proposalId,\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        bytes32 descriptionHash\n    ) internal virtual override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) {\n        super._executeOperations(proposalId, targets, values, calldatas, descriptionHash);\n    }\n\n    /// @inheritdoc GovernorUpgradeable\n    function _propose(\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        string memory description,\n        address proposer\n    ) internal virtual override(GovernorUpgradeable, GovernorStorageUpgradeable) returns (uint256) {\n        return super._propose(targets, values, calldatas, description, proposer);\n    }\n\n    /// @inheritdoc GovernorUpgradeable\n    function _queueOperations(\n        uint256 proposalId,\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        bytes32 descriptionHash\n    ) internal virtual override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) returns (uint48) {\n        return super._queueOperations(proposalId, targets, values, calldatas, descriptionHash);\n    }\n}\n"
+    }
+}

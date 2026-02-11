@@ -1,0 +1,33 @@
+{
+    "vfp_id": "vfp_00299",
+    "project_name": "ChainSecurity_Liquity_Bold_Audit.pdf",
+    "findings": [
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-755"
+                ],
+                "3": [
+                    "CWE-396"
+                ]
+            },
+            "title": "Out-of-gas May Lead to Shutdown",
+            "description": "The `MainnetPriceFeedBase.fetchPrice` function can trigger a system shutdown if the Chainlink oracle call runs out of gas, due to a catch block that treats all reverts as oracle failure.\n\nThe cause is that the try-catch block does not distinguish between out-of-gas reverts and actual oracle failures, leading to a false positive shutdown signal.\n\nAn attacker could call `fetchPrice` with a gas limit calibrated to cause the oracle call to exhaust gas, triggering an unintended shutdown if the remaining gas is sufficient to execute the shutdown logic.\n\nA temporary or permanent shutdown of the system could occur without an actual oracle failure, disrupting all operations. Although currently infeasible due to gas costs, future changes could make this attack viable.\n",
+            "severity": "Low",
+            "location": [
+                "MainnetPriceFeedBase._getCurrentChainlinkResponse",
+                "WSTETHPriceFeed._getCanonicalRate"
+            ],
+            "files": [
+                "bold/contracts/src/PriceFeeds/MainnetPriceFeedBase.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "MainnetPriceFeedBase.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.24;\n\nimport \"../Dependencies/AggregatorV3Interface.sol\";\nimport \"../Interfaces/IMainnetPriceFeed.sol\";\nimport \"../BorrowerOperations.sol\";\n\n// import \"forge-std/console2.sol\";\n\nabstract contract MainnetPriceFeedBase is IMainnetPriceFeed {\n    // Determines where the PriceFeed sources data from. Possible states:\n    // - primary: Uses the primary price calcuation, which depends on the specific feed\n    // - ETHUSDxCanonical: Uses Chainlink's ETH-USD multiplied by the LST' canonical rate\n    // - lastGoodPrice: the last good price recorded by this PriceFeed.\n    PriceSource public priceSource;\n\n    // Last good price tracker for the derived USD price\n    uint256 public lastGoodPrice;\n\n    struct Oracle {\n        AggregatorV3Interface aggregator;\n        uint256 stalenessThreshold;\n        uint8 decimals;\n    }\n\n    struct ChainlinkResponse {\n        uint80 roundId;\n        int256 answer;\n        uint256 timestamp;\n        bool success;\n    }\n\n    error InsufficientGasForExternalCall();\n\n    event ShutDownFromOracleFailure(address _failedOracleAddr);\n\n    Oracle public ethUsdOracle;\n\n    IBorrowerOperations borrowerOperations;\n\n    constructor(address _ethUsdOracleAddress, uint256 _ethUsdStalenessThreshold, address _borrowOperationsAddress) {\n        // Store ETH-USD oracle\n        ethUsdOracle.aggregator = AggregatorV3Interface(_ethUsdOracleAddress);\n        ethUsdOracle.stalenessThreshold = _ethUsdStalenessThreshold;\n        ethUsdOracle.decimals = ethUsdOracle.aggregator.decimals();\n\n        borrowerOperations = IBorrowerOperations(_borrowOperationsAddress);\n\n        assert(ethUsdOracle.decimals == 8);\n    }\n\n    function _getOracleAnswer(Oracle memory _oracle) internal view returns (uint256, bool) {\n        ChainlinkResponse memory chainlinkResponse = _getCurrentChainlinkResponse(_oracle.aggregator);\n\n        uint256 scaledPrice;\n        bool oracleIsDown;\n        // Check oracle is serving an up-to-date and sensible price. If not, shut down this collateral branch.\n        if (!_isValidChainlinkPrice(chainlinkResponse, _oracle.stalenessThreshold)) {\n            oracleIsDown = true;\n        } else {\n            scaledPrice = _scaleChainlinkPriceTo18decimals(chainlinkResponse.answer, _oracle.decimals);\n        }\n\n        return (scaledPrice, oracleIsDown);\n    }\n\n    function _shutDownAndSwitchToLastGoodPrice(address _failedOracleAddr) internal returns (uint256) {\n        // Shut down the branch\n        borrowerOperations.shutdownFromOracleFailure();\n\n        priceSource = PriceSource.lastGoodPrice;\n\n        emit ShutDownFromOracleFailure(_failedOracleAddr);\n        return lastGoodPrice;\n    }\n\n    function _getCurrentChainlinkResponse(AggregatorV3Interface _aggregator)\n        internal\n        view\n        returns (ChainlinkResponse memory chainlinkResponse)\n    {\n        uint256 gasBefore = gasleft();\n\n        // Try to get latest price data:\n        try _aggregator.latestRoundData() returns (\n            uint80 roundId, int256 answer, uint256, /* startedAt */ uint256 updatedAt, uint80 /* answeredInRound */\n        ) {\n            // If call to Chainlink succeeds, return the response and success = true\n            chainlinkResponse.roundId = roundId;\n            chainlinkResponse.answer = answer;\n            chainlinkResponse.timestamp = updatedAt;\n            chainlinkResponse.success = true;\n\n            return chainlinkResponse;\n        } catch {\n            // Require that enough gas was provided to prevent an OOG revert in the call to Chainlink\n            // causing a shutdown. Instead, just revert. Slightly conservative, as it includes gas used\n            // in the check itself.\n            if (gasleft() <= gasBefore / 64) revert InsufficientGasForExternalCall();\n\n            // If call to Chainlink aggregator reverts, return a zero response with success = false\n            return chainlinkResponse;\n        }\n    }\n\n    // False if:\n    // - Call to Chainlink aggregator reverts\n    // - price is too stale, i.e. older than the oracle's staleness threshold\n    // - Price answer is 0 or negative\n    function _isValidChainlinkPrice(ChainlinkResponse memory chainlinkResponse, uint256 _stalenessThreshold)\n        internal\n        view\n        returns (bool)\n    {\n        return chainlinkResponse.success && block.timestamp - chainlinkResponse.timestamp < _stalenessThreshold\n            && chainlinkResponse.answer > 0;\n    }\n\n    // Trust assumption: Chainlink won't change the decimal precision on any feed used in v2 after deployment\n    function _scaleChainlinkPriceTo18decimals(int256 _price, uint256 _decimals) internal pure returns (uint256) {\n        // Scale an int price to a uint with 18 decimals\n        return uint256(_price) * 10 ** (18 - _decimals);\n    }\n}\n"
+    }
+}

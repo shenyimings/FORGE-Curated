@@ -1,0 +1,35 @@
+{
+    "vfp_id": "vfp_00288",
+    "project_name": "Lido V3 _ Consensys Diligence.md",
+    "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
+                ]
+            },
+            "title": "PinnedBeaconProxy Can Hide Malicious Implementation via Constructor",
+            "description": "The vulnerability allows an attacker to deploy a malicious staking vault implementation by manipulating the constructor of the PinnedBeaconProxy, which is otherwise expected to point to a legitimate implementation. The root cause lies in the fact that the VaultHub validates only the proxy's codehash and the isOssified() status from the implementation, but does not verify the actual pinned implementation address in storage. Since the constructor of the proxy is not part of the runtime bytecode, an attacker can craft a malicious constructor that pre-initializes the PINNED_BEACON_STORAGE_SLOT with a malicious implementation address. This implementation can return false for isOssified(), bypassing the VaultHub’s checks. Once connected, the attacker can mint stETH against non-existent collateral and then drain all funds from the vault, leading to a loss of funds for the Lido protocol.\n",
+            "severity": "Critical",
+            "location": [
+                "PinnedBeaconProxy.sol::constructor#L25-L39",
+                "PinnedBeaconUtils.sol::getPinnedImplementation#L16-L30",
+                "StakingVault.sol::isOssified#L180-L182",
+                "PinnedBeaconUtils.sol::ossified#L36-L38"
+            ],
+            "files": [
+                "core/contracts/0.8.25/vaults/PinnedBeaconProxy.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "PinnedBeaconProxy.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\n\n// See contracts/COMPILERS.md\npragma solidity 0.8.25;\n\nimport {IBeacon} from \"@openzeppelin/contracts-v5.2/proxy/beacon/IBeacon.sol\";\nimport {BeaconProxy} from \"@openzeppelin/contracts-v5.2/proxy/beacon/BeaconProxy.sol\";\nimport {PinnedBeaconUtils} from \"./lib/PinnedBeaconUtils.sol\";\n\n/**\n * @title PinnedBeaconProxy\n * @author Lido\n * @notice\n *\n * PinnedBeaconProxy is an extended version of OpenZeppelin's BeaconProxy that adds the ability\n * to \"pin\" (ossify) specific implementation versions for individual proxy instances.\n *\n * Implementation details:\n * - Uses PinnedBeaconUtils library to manage pinned implementation state\n * - Pinned implementation is stored in a storage slot (keccak256(\"stakingVault.proxy.pinnedBeacon\") - 1)\n * - When ossified, the proxy will always use the pinned implementation instead of the beacon's implementation\n *\n */\ncontract PinnedBeaconProxy is BeaconProxy {\n    constructor(address beacon, bytes memory data) BeaconProxy(beacon, data) payable {}\n\n    function _implementation() internal view virtual override returns (address) {\n        address pinnedImpl = PinnedBeaconUtils.getPinnedImplementation();\n        if (pinnedImpl != address(0)) {\n            return pinnedImpl;\n        }\n        return IBeacon(_getBeacon()).implementation();\n    }\n\n    function implementation() external view returns (address) {\n        return _implementation();\n    }\n}\n"
+    }
+}

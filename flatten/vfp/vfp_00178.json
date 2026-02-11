@@ -1,0 +1,70 @@
+{
+    "vfp_id": "vfp_00178",
+    "project_name": "The Compact Audit.md",
+    "findings": [
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused Code",
+            "description": "The codebase contains numerous instances of unused imports, using statements, and functions that are not referenced anywhere in the project. These include imports of interfaces like `IAllocator`, `IEmissary`, and `ResetPeriod`, as well as utility functions such as `toBatchMessageHash` and `toCompactFlag`. The presence of unused code increases the attack surface and complicates audits by making it harder to distinguish relevant from irrelevant code. While not directly exploitable, it reduces code clarity and maintainability. An attacker could potentially exploit confusion caused by dead code to hide malicious logic in future updates. Removing unused elements would improve security posture and reduce deployment costs.\n",
+            "severity": "Informational",
+            "location": [
+                "AllocatorLib.sol::IAllocator#4",
+                "ClaimHashLib.sol::ResetPeriod#14",
+                "ClaimHashLib.sol::Scope#15",
+                "ClaimProcessorLogic.sol::ValidityLib#16",
+                "ComponentLib.sol::TransferComponent#8",
+                "ConstructorLogic.sol::Lock#4",
+                "ConstructorLogic.sol::ResetPeriod#5",
+                "ConstructorLogic.sol::Scope#6",
+                "DepositViaPermit2Logic.sol::Scope#6",
+                "DirectDepositLogic.sol::ResetPeriod#4",
+                "DirectDepositLogic.sol::Scope#5",
+                "EmissaryLib.sol::Scope#6",
+                "EmissaryLib.sol::IEmissary#9",
+                "EmissaryLogic.sol::IAllocator#6",
+                "EmissaryLogic.sol::ResetPeriod#7",
+                "EmissaryLogic.sol::Scope#8",
+                "EmissaryStatus.sol::ResetPeriod#4",
+                "HashLib.sol::TransferComponent#6",
+                "HashLib.sol::TransferFunctionCastLib#28",
+                "IdLib.sol::CompactCategory#9",
+                "RegistrationLogic.sol::ResetPeriod#7",
+                "TheCompact.sol::Lock#9",
+                "TransferBenchmarkLib.sol::ConstructorLogic#4",
+                "TransferBenchmarkLib.sol::IdLib#5",
+                "TransferBenchmarkLib.sol::BenchmarkERC20#9",
+                "TransferFunctionCastLib.sol::TransferComponent, ComponentsById#6",
+                "TransferLib.sol::ConstructorLogic#4",
+                "TransferLogic.sol::TransferComponent#6",
+                "TransferLogic.sol::using ValidityLib for bytes32#37",
+                "ValidityLib.sol::using IdLib for ResetPeriod#27",
+                "ValidityLib.sol::using EfficiencyLib for uint256#30",
+                "ValidityLib.sol::using EfficiencyLib for ResetPeriod#31",
+                "ValidityLib.sol::using ValidityLib for uint256#33",
+                "ValidityLib.sol::using FixedPointMathLib for uint256#36",
+                "ClaimProcessorLogic.sol::using ClaimProcessorLib for uint256#34",
+                "ClaimProcessorLogic.sol::using ClaimProcessorFunctionCastLib for functions#37-41",
+                "ClaimProcessorLogic.sol::using HashLib for uint256#43",
+                "HashLib.sol::toBatchMessageHash#272",
+                "IdLib.sol::toAllocatorIdIfRegistered#131",
+                "IdLib.sol::toCompactFlag#320",
+                "IdLib.sol::toId#455",
+                "MetadataLib.sol::readDecimalsWithDefaultValue#181"
+            ],
+            "files": [
+                "the-compact/src/lib/AllocatorLib.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "AllocatorLib.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport { IAllocator } from \"../interfaces/IAllocator.sol\";\n\nimport { IdLib } from \"./IdLib.sol\";\nimport { EfficiencyLib } from \"./EfficiencyLib.sol\";\n\n/**\n * @title AllocatorLib\n * @notice Library contract implementing logic for interacting with allocators, specifically\n * for checking for authorization during claim processing via a low-level call.\n */\nlibrary AllocatorLib {\n    using IdLib for uint256;\n    using EfficiencyLib for bool;\n\n    // bytes4(keccak256(\"authorizeClaim(bytes32,address,address,uint256,uint256,uint256[2][],bytes)\")).\n    uint32 private constant _AUTHORIZE_CLAIM_SELECTOR = 0x7bb023f7;\n    uint256 private constant _AUTHORIZE_CLAIM_IDS_AND_AMOUNTS_CALLDATA_POINTER = 0xe0;\n\n    /**\n     * @notice Internal function that calls an allocator's authorizeClaim function to validate\n     * that they have authorized the claim and that they are able to perform their own processing\n     * associated with that claim. Performs a low-level call to the allocator contract and verifies\n     * the response.\n     * @param allocator     The address of the allocator to call.\n     * @param claimHash     The message hash representing the claim.\n     * @param sponsor       The account to source the tokens from.\n     * @param nonce         A parameter to enforce replay protection, scoped to allocator.\n     * @param expires       The time at which the claim expires.\n     * @param idsAndAmounts The allocated token IDs and amounts.\n     * @param allocatorData Arbitrary data provided by the arbiter.\n     */\n    function callAuthorizeClaim(\n        address allocator,\n        bytes32 claimHash,\n        address sponsor,\n        uint256 nonce,\n        uint256 expires,\n        uint256[2][] memory idsAndAmounts,\n        bytes calldata allocatorData\n    ) internal {\n        assembly (\"memory-safe\") {\n            // Sanitize sponsor.\n            sponsor := shr(0x60, shl(0x60, sponsor))\n\n            // Retrieve the free memory pointer; memory will be left dirtieed.\n            let m := mload(0x40)\n\n            // Get length of idsAndAmounts array, both in elements and as data.\n            let totalIdsAndAmounts := mload(idsAndAmounts)\n            let totalIdsAndAmountsDataLength := shl(6, totalIdsAndAmounts)\n\n            // Prepare fixed-location components of calldata.\n            mstore(m, _AUTHORIZE_CLAIM_SELECTOR)\n            mstore(add(m, 0x20), claimHash)\n            mstore(add(m, 0x40), caller())\n            mstore(add(m, 0x60), sponsor)\n            mstore(add(m, 0x80), nonce)\n            mstore(add(m, 0xa0), expires)\n            mstore(add(m, 0xc0), _AUTHORIZE_CLAIM_IDS_AND_AMOUNTS_CALLDATA_POINTER)\n            mstore(add(m, 0xe0), add(totalIdsAndAmountsDataLength, 0x100))\n            mstore(add(m, 0x100), totalIdsAndAmounts)\n\n            {\n                // Copy each element from idsAndAmounts array in memory.\n                let dstStart := add(m, 0x120)\n                let totalIdsAndAmountsTimesOneWord := shl(5, totalIdsAndAmounts)\n                for { let i := 0 } lt(i, totalIdsAndAmountsTimesOneWord) { i := add(i, 0x20) } {\n                    let dstPos := add(dstStart, shl(1, i))\n                    let srcPos := mload(add(idsAndAmounts, add(i, 0x20)))\n                    mstore(dstPos, mload(srcPos))\n                    mstore(add(dstPos, 0x20), mload(add(srcPos, 0x20)))\n                }\n\n                // Copy allocator data from calldata.\n                let allocatorDataMemoryOffset := add(dstStart, totalIdsAndAmountsDataLength)\n                mstore(allocatorDataMemoryOffset, allocatorData.length)\n                calldatacopy(add(allocatorDataMemoryOffset, 0x20), allocatorData.offset, allocatorData.length)\n            }\n\n            // Ensure sure initial scratch space is cleared as an added precaution.\n            mstore(0, 0)\n\n            // Perform call to allocator and write response to scratch space.\n            let success :=\n                call(\n                    gas(),\n                    allocator,\n                    0,\n                    add(m, 0x1c),\n                    add(0x124, add(totalIdsAndAmountsDataLength, allocatorData.length)),\n                    0,\n                    0x20\n                )\n\n            // Revert if the required magic value was not received back or really huge idsAndAmounts was supplied.\n            if or(gt(totalIdsAndAmounts, 0xffffffff), iszero(eq(mload(0), shl(224, _AUTHORIZE_CLAIM_SELECTOR)))) {\n                // Bubble up revert if the call failed and there's data.\n                // NOTE: consider evaluating remaining gas to protect against revert bombing.\n                if iszero(or(success, iszero(returndatasize()))) {\n                    returndatacopy(0, 0, returndatasize())\n                    revert(0, returndatasize())\n                }\n\n                // revert InvalidAllocation(allocator)\n                mstore(0, 0x2ce89d2a)\n                mstore(0x20, shr(0x60, shl(0x60, allocator)))\n                revert(0x1c, 0x24)\n            }\n        }\n    }\n}\n"
+    }
+}

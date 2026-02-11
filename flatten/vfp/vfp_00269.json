@@ -1,0 +1,136 @@
+{
+    "vfp_id": "vfp_00269",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "findings": [
+        {
+            "id": 70,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Small borrows can create economically unviable liquidatable positions leading to bad debt accumulation",
+            "description": "The protocol allows very small borrow amounts, which may not be worth liquidating due to gas costs. The cause is the absence of a minimum borrow threshold. An attacker could create numerous tiny borrow positions that become undercollateralized but are never liquidated. This results in accumulated bad debt and increased protocol risk.\n",
+            "severity": "Low",
+            "location": [
+                "Lender.sol::borrow"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        },
+        {
+            "id": 72,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Protocol lacks bad debt management mechanisms, risking permanent insolvency",
+            "description": "The protocol does not have mechanisms to handle bad debt, such as an insurance fund or protocol-owned liquidity. The cause is the absence of risk mitigation infrastructure. In the event of large-scale defaults or oracle failures, the protocol could become insolvent. This poses a systemic risk to the entire system's financial health.\n",
+            "severity": "Medium",
+            "location": [
+                "Lender.sol",
+                "InsuranceFund.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Small borrows can create economically unviable liquidatable positions leading to bad debt accumulation",
+            "description": "The borrow function allows positions as small as 1 wei without a minimum borrow amount check. The root cause is the absence of economic viability safeguards in the borrowing logic. When such tiny positions become undercollateralized, the gas costs of liquidation exceed the liquidation value plus bonus, making it unprofitable for liquidators to act. This leads to the accumulation of bad debt in the system, as these positions remain outstanding indefinitely. While the impact is limited by the number of borrowable assets per agent, it still introduces a persistent solvency risk. The protocol effectively subsidizes spammy or malicious small borrowing behavior, weakening the overall health of the lending market.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/lendingPool/Lender.sol#L65-L69",
+                "Lender.sol::borrow"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        },
+        {
+            "id": 27,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Protocol lacks bad debt management mechanisms, risking permanent insolvency",
+            "description": "The protocol has no mechanism to handle accumulated bad debt from failed or uneconomical liquidations. The root cause is the absence of insurance or loss-socialization mechanisms. When bad debt accumulates—especially in conjunction with small, unviable borrowing positions—the loss is not distributed fairly. Instead, it creates a \"last withdrawer\" problem where early withdrawers redeem their full amounts while later users face shortfalls as the protocol runs out of physical tokens. This leads to permanent insolvency and unfair loss distribution. The impact is a systemic risk to user funds, where the timing of withdrawal determines whether a user loses money, undermining trust in the protocol's solvency guarantees.\n",
+            "severity": "Medium",
+            "location": [
+                "contracts/lendingPool/Lender.sol",
+                "Lender.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        },
+        {
+            "id": 62,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Liquidation mechanism can be permanently disabled by misconfigured grace and expiry periods",
+            "description": "If the grace period is set greater than the expiry period, the liquidation mechanism can be permanently disabled. The cause is the lack of validation in the Lender contract's initialize function. An attacker with configuration rights could set invalid periods to disable liquidations. This would prevent the protocol from recovering bad debt, leading to increased risk of insolvency.\n",
+            "severity": "Medium",
+            "location": [
+                "Lender.sol::initialize"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        },
+        {
+            "id": 58,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Discrepancy between health calculation and slashable collateral computation",
+            "description": "There is a mismatch between how an agent's health factor is calculated and how slashable collateral is computed, potentially leading to incorrect liquidation decisions. The cause is inconsistent logic in the two calculations. An attacker could exploit this by structuring their position to appear healthy while holding non-slashable collateral, avoiding liquidation. This increases protocol risk and can lead to bad debt accumulation.\n",
+            "severity": "High",
+            "location": [
+                "LiquidationEngine.sol",
+                "HealthCalculator.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/lendingPool/Lender.sol"
+            ]
+        }
+    ],
+    "affected_files": {
+        "Lender.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { ILender } from \"../interfaces/ILender.sol\";\nimport { LenderStorageUtils } from \"../storage/LenderStorageUtils.sol\";\nimport { BorrowLogic } from \"./libraries/BorrowLogic.sol\";\nimport { LiquidationLogic } from \"./libraries/LiquidationLogic.sol\";\nimport { ReserveLogic } from \"./libraries/ReserveLogic.sol\";\nimport { ViewLogic } from \"./libraries/ViewLogic.sol\";\n\n/// @title Lender for covered agents\n/// @author kexley, @capLabs\n/// @notice Whitelisted tokens are borrowed and repaid from this contract by covered agents.\n/// @dev Borrow interest rates are calculated from the underlying utilization rates of the assets\n/// in the vaults.\ncontract Lender is ILender, UUPSUpgradeable, Access, LenderStorageUtils {\n    /// @custom:oz-upgrades-unsafe-allow constructor\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the lender\n    /// @param _accessControl Access control address\n    /// @param _delegation Delegation address\n    /// @param _oracle Oracle address\n    /// @param _targetHealth Target health after liquidations (scaled by 1e27)\n    /// @param _grace Grace period in seconds before an agent becomes liquidatable\n    /// @param _expiry Expiry period in seconds after which an agent cannot be liquidated until called again\n    /// @param _bonusCap Bonus cap for liquidations (scaled by 1e27)\n    /// @param _emergencyLiquidationThreshold Liquidation threshold below which grace periods are voided (scaled by 1e27)\n    function initialize(\n        address _accessControl,\n        address _delegation,\n        address _oracle,\n        uint256 _targetHealth,\n        uint256 _grace,\n        uint256 _expiry,\n        uint256 _bonusCap,\n        uint256 _emergencyLiquidationThreshold\n    ) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n\n        if (_delegation == address(0) || _oracle == address(0)) revert ZeroAddressNotValid();\n        if (_grace > _expiry) revert GracePeriodGreaterThanExpiry();\n\n        LenderStorage storage $ = getLenderStorage();\n        $.delegation = _delegation;\n        $.oracle = _oracle;\n        $.targetHealth = _targetHealth;\n        $.grace = _grace;\n        $.expiry = _expiry;\n        $.bonusCap = _bonusCap;\n        $.emergencyLiquidationThreshold = _emergencyLiquidationThreshold;\n    }\n\n    /// @notice Borrow an asset\n    /// @param _asset Asset to borrow\n    /// @param _amount Amount to borrow\n    /// @param _receiver Receiver of the borrowed asset\n    function borrow(address _asset, uint256 _amount, address _receiver) external {\n        BorrowLogic.borrow(\n            getLenderStorage(), BorrowParams({ agent: msg.sender, asset: _asset, amount: _amount, receiver: _receiver })\n        );\n    }\n\n    /// @notice Repay an asset\n    /// @param _asset Asset to repay\n    /// @param _amount Amount to repay\n    /// @param _agent Repay on behalf of another borrower\n    /// @return repaid Actual amount repaid\n    function repay(address _asset, uint256 _amount, address _agent) external returns (uint256 repaid) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        repaid = BorrowLogic.repay(\n            getLenderStorage(), RepayParams({ agent: _agent, asset: _asset, amount: _amount, caller: msg.sender })\n        );\n    }\n\n    /// @notice Realize interest for an asset\n    /// @param _asset Asset to realize interest for\n    /// @return actualRealized Actual amount realized\n    function realizeInterest(address _asset) external returns (uint256 actualRealized) {\n        actualRealized = BorrowLogic.realizeInterest(getLenderStorage(), _asset);\n    }\n\n    /// @notice Realize interest for restaker debt of an agent for an asset\n    /// @param _agent Agent to realize interest for\n    /// @param _asset Asset to realize interest for\n    /// @return actualRealized Actual amount realized\n    function realizeRestakerInterest(address _agent, address _asset) external returns (uint256 actualRealized) {\n        actualRealized = BorrowLogic.realizeRestakerInterest(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Calculate the maximum interest that can be realized\n    /// @param _asset Asset to calculate max realization for\n    /// @return _maxRealization Maximum interest that can be realized\n    function maxRealization(address _asset) external view returns (uint256 _maxRealization) {\n        _maxRealization = BorrowLogic.maxRealization(getLenderStorage(), _asset);\n    }\n\n    /// @notice Calculate the maximum interest that can be realized for a restaker\n    /// @param _agent Agent to calculate max realization for\n    /// @param _asset Asset to calculate max realization for\n    /// @return newRealizedInterest Maximum interest that can be realized\n    /// @return newUnrealizedInterest Unrealized interest that will be added to the debt\n    function maxRestakerRealization(address _agent, address _asset)\n        external\n        view\n        returns (uint256 newRealizedInterest, uint256 newUnrealizedInterest)\n    {\n        (newRealizedInterest, newUnrealizedInterest) =\n            BorrowLogic.maxRestakerRealization(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Initiate liquidation of an agent when the health is below 1\n    /// @param _agent Agent address\n    function initiateLiquidation(address _agent) external {\n        LiquidationLogic.initiateLiquidation(getLenderStorage(), _agent);\n    }\n\n    /// @notice Cancel liquidation of an agent when the health is above 1\n    /// @param _agent Agent address\n    function cancelLiquidation(address _agent) external {\n        LiquidationLogic.cancelLiquidation(getLenderStorage(), _agent);\n    }\n\n    /// @notice Liquidate an agent when the health is below 1\n    /// @param _agent Agent address\n    /// @param _asset Asset to repay\n    /// @param _amount Amount of asset to repay on behalf of the agent\n    /// @param liquidatedValue Value of the liquidation returned to the liquidator\n    function liquidate(address _agent, address _asset, uint256 _amount) external returns (uint256 liquidatedValue) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        liquidatedValue = LiquidationLogic.liquidate(\n            getLenderStorage(), RepayParams({ agent: _agent, asset: _asset, amount: _amount, caller: msg.sender })\n        );\n    }\n\n    /// @notice Calculate the agent data\n    /// @param _agent Address of agent\n    /// @return totalDelegation Total delegation of an agent in USD, encoded with 8 decimals\n    /// @return totalSlashableCollateral Total slashable collateral of an agent in USD, encoded with 8 decimals\n    /// @return totalDebt Total debt of an agent in USD, encoded with 8 decimals\n    /// @return ltv Loan to value ratio, encoded in ray (1e27)\n    /// @return liquidationThreshold Liquidation ratio of an agent, encoded in ray (1e27)\n    /// @return health Health status of an agent, encoded in ray (1e27)\n    function agent(address _agent)\n        external\n        view\n        returns (\n            uint256 totalDelegation,\n            uint256 totalSlashableCollateral,\n            uint256 totalDebt,\n            uint256 ltv,\n            uint256 liquidationThreshold,\n            uint256 health\n        )\n    {\n        (totalDelegation, totalSlashableCollateral, totalDebt, ltv, liquidationThreshold, health) =\n            ViewLogic.agent(getLenderStorage(), _agent);\n    }\n\n    /// @notice Calculate the maximum amount that can be borrowed for a given asset\n    /// @param _agent Agent address\n    /// @param _asset Asset to borrow\n    /// @return maxBorrowableAmount Maximum amount that can be borrowed in asset decimals\n    function maxBorrowable(address _agent, address _asset) external view returns (uint256 maxBorrowableAmount) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        maxBorrowableAmount = ViewLogic.maxBorrowable(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Calculate the maximum amount that can be liquidated for a given asset\n    /// @param _agent Agent address\n    /// @param _asset Asset to liquidate\n    /// @return maxLiquidatableAmount Maximum amount that can be liquidated in asset decimals\n    function maxLiquidatable(address _agent, address _asset) external view returns (uint256 maxLiquidatableAmount) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        maxLiquidatableAmount = ViewLogic.maxLiquidatable(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Get the current debt balances for an agent for a specific asset\n    /// @param _agent Agent address to check debt for\n    /// @param _asset Asset to check debt for\n    /// @return totalDebt Total debt amount in asset decimals\n    function debt(address _agent, address _asset) external view returns (uint256 totalDebt) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        totalDebt = ViewLogic.debt(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Get the accrued restaker interest for an agent for a specific asset\n    /// @param _agent Agent address to check accrued restaker interest for\n    /// @param _asset Asset to check accrued restaker interest for\n    /// @return accruedInterest Accrued restaker interest in asset decimals\n    function accruedRestakerInterest(address _agent, address _asset) external view returns (uint256 accruedInterest) {\n        if (_agent == address(0) || _asset == address(0)) revert ZeroAddressNotValid();\n        accruedInterest = ViewLogic.accruedRestakerInterest(getLenderStorage(), _agent, _asset);\n    }\n\n    /// @notice Add an asset to the Lender\n    /// @param _params Parameters to add an asset\n    function addAsset(AddAssetParams calldata _params) external checkAccess(this.addAsset.selector) {\n        LenderStorage storage $ = getLenderStorage();\n        if (!ReserveLogic.addAsset($, _params)) ++$.reservesCount;\n    }\n\n    /// @notice Remove asset from lending when there is no borrows\n    /// @param _asset Asset address\n    function removeAsset(address _asset) external checkAccess(this.removeAsset.selector) {\n        if (_asset == address(0)) revert ZeroAddressNotValid();\n        ReserveLogic.removeAsset(getLenderStorage(), _asset);\n    }\n\n    /// @notice Pause an asset from being borrowed\n    /// @param _asset Asset address\n    /// @param _pause True if pausing or false if unpausing\n    function pauseAsset(address _asset, bool _pause) external checkAccess(this.pauseAsset.selector) {\n        if (_asset == address(0)) revert ZeroAddressNotValid();\n        ReserveLogic.pauseAsset(getLenderStorage(), _asset, _pause);\n    }\n\n    /// @notice Set the minimum borrow amount for an asset\n    /// @param _asset Asset address\n    /// @param _minBorrow Minimum borrow amount\n    function setMinBorrow(address _asset, uint256 _minBorrow) external checkAccess(this.setMinBorrow.selector) {\n        if (_asset == address(0)) revert ZeroAddressNotValid();\n        ReserveLogic.setMinBorrow(getLenderStorage(), _asset, _minBorrow);\n    }\n\n    /// @notice The total number of reserves\n    /// @return count Number of reserves\n    function reservesCount() external view returns (uint256 count) {\n        count = getLenderStorage().reservesCount;\n    }\n\n    /// @notice The grace period duration\n    /// @return gracePeriod Grace period in seconds\n    function grace() external view returns (uint256 gracePeriod) {\n        gracePeriod = getLenderStorage().grace;\n    }\n\n    /// @notice The expiry period duration\n    /// @return expiryPeriod Expiry period in seconds\n    function expiry() external view returns (uint256 expiryPeriod) {\n        expiryPeriod = getLenderStorage().expiry;\n    }\n\n    /// @notice The target health factor\n    /// @return target Target health factor scaled to 1e27\n    function targetHealth() external view returns (uint256 target) {\n        target = getLenderStorage().targetHealth;\n    }\n\n    /// @notice The liquidation bonus cap\n    /// @return cap Bonus cap scaled to 1e27\n    function bonusCap() external view returns (uint256 cap) {\n        cap = getLenderStorage().bonusCap;\n    }\n\n    /// @notice The emergency liquidation threshold\n    /// @return threshold Threshold scaled to 1e27\n    function emergencyLiquidationThreshold() external view returns (uint256 threshold) {\n        threshold = getLenderStorage().emergencyLiquidationThreshold;\n    }\n\n    /// @notice The liquidation start time for an agent\n    /// @param _agent Address of the agent\n    /// @return startTime Timestamp when liquidation was initiated\n    function liquidationStart(address _agent) external view returns (uint256 startTime) {\n        startTime = getLenderStorage().liquidationStart[_agent];\n    }\n\n    /// @notice The reserve data for an asset\n    /// @param _asset Address of the asset\n    /// @return id Id of the reserve\n    /// @return vault Address of the vault\n    /// @return debtToken Address of the debt token\n    /// @return interestReceiver Address of the interest receiver\n    /// @return decimals Decimals of the asset\n    /// @return paused True if the asset is paused, false otherwise\n    function reservesData(address _asset)\n        external\n        view\n        returns (\n            uint256 id,\n            address vault,\n            address debtToken,\n            address interestReceiver,\n            uint8 decimals,\n            bool paused,\n            uint256 minBorrow\n        )\n    {\n        ReserveData storage reserve = getLenderStorage().reservesData[_asset];\n        id = reserve.id;\n        vault = reserve.vault;\n        debtToken = reserve.debtToken;\n        interestReceiver = reserve.interestReceiver;\n        decimals = reserve.decimals;\n        paused = reserve.paused;\n        minBorrow = reserve.minBorrow;\n    }\n\n    /// @notice The unrealized restaker interest for an agent and asset\n    /// @param _agent Address of the agent\n    /// @param _asset Address of the asset\n    /// @return _unrealizedInterest Unrealized interest scaled to 1e27\n    function unrealizedInterest(address _agent, address _asset) external view returns (uint256 _unrealizedInterest) {\n        ReserveData storage reserve = getLenderStorage().reservesData[_asset];\n        _unrealizedInterest = reserve.unrealizedInterest[_agent];\n    }\n\n    function _authorizeUpgrade(address) internal override checkAccess(bytes4(0)) { }\n}\n"
+    }
+}
