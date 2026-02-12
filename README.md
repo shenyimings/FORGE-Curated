@@ -6,7 +6,7 @@
 
 **FORGE Curated** is a high-quality subset of the [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts), specifically designed to support advanced research in smart contract security, including AI-based auditing, vulnerability analysis, etc.
 
-Building upon feedback from users of the original [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts) and fulfilling our commitment to responsible maintenance outlined in our [ICSE'26 paper](https://arxiv.org/abs/2506.18795), we have compiled a new collection of audit reports. This dataset includes reports published between **December 2024 and February 2026** by **11 top-tier audit teams**.
+Building upon feedback from users of the original [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts) and fulfilling our commitment to responsible maintenance outlined in our [ICSE'26 paper](https://arxiv.org/abs/2506.18795), we have compiled a new collection of audit reports. This dataset includes reports published between **December 2024 and February 2026** by **[11 top-tier audit teams](dataset-curated/reports/README.md)**.
 
 Using the [FORGE framework](https://github.com/shenyimings/FORGE-Artifacts/tree/main/src), we extracted and classified vulnerability data from these reports, and then organized them into the [dataset-curated](dataset-curated) directory. We are conducting **manual verification** process to ensure accurate mapping between vulnerability findings and specific code locations.
 
@@ -275,10 +275,12 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 
 ### Q: How can I focus only on exploitable vulnerabilities (ignoring code quality/Gas optimization)?
 
-**A:** You can filter by the **Severity** field or specific **CWE types**.
+**A:** You can filter by the **Severity** field or specific **CWE types** (e.g., CWE-710).
 
-* *Note:* While categories like `CWE-710` (Code Quality) often contain non-exploitable issues (e.g., `CWE-1041`, `CWE-1164`), some sub-types like `CWE-657` (Violation of Secure Design Principles) can be high-severity. Always cross-reference with the finding title and description.
 * We provide a filtered example in the `flatten/vfp-vuln` directory, which retains only vulnerabilities with **Medium** severity and above(Medium, High, and Critical).
+
+> [!NOTE] 
+> While categories like `CWE-710` (Code Quality) often contain non-exploitable issues (e.g., `CWE-1041`, `CWE-1164`), some sub-types like `CWE-657` (Violation of Secure Design Principles) can be high-severity. Always cross-reference with the finding title and description.
 
 ### Q: Are there similar datasets for other ecosystems?
 
