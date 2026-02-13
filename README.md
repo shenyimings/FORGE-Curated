@@ -98,42 +98,47 @@ FORGE-Curated/
 
 ```
 
-
 ## Statistics
 
 ### General Overview
 
 | Metric | Value |
 | --- | --- |
-| **Total Projects** | 249 |
-| **Valid Projects** | 249 |
-| **Total Files Analyzed** | 209 |
+| **Total Projects** | 248 |
+| **Valid Projects** | 248 |
+| **Total Files Analyzed** | 208 |
 | **Total Findings** | 2,556 |
-| **Total Solidity Files** | 28,925 |
-| **Total Lines of Code (LoC)** | 4,724,389 |
-| **Avg. LoC per Project** | ~18,973 |
+| **Total Solidity Files** | 28,862 |
+| **Total Lines of Code (LoC)** | 4,720,377 |
+| **Avg. LoC per Project** | ~19,033 |
 | **Avg. Files per Project** | ~116 |
+| **Solidity Version Distribution** | --- |
+| ^0.8 | 198 |
+| ^0.7 | 2 |
+| ^0.6 | 5 |
+| ^0.5 | 1 |
+| ^0.4 | 2 |
 
 ### Findings by Severity
 
 | Severity Level | Count |
 | --- | --- |
-| **Critical** | 68 |
-| **High** | 254 |
-| **Medium** | 439 |
-| **Low** | 794 |
-| **Informational** | 908 |
+| **Critical** | 67 |
+| **High** | 251 |
+| **Medium** | 438 |
+| **Low** | 778 |
+| **Informational** | 887 |
 | **N/A** | 93 |
 
 ### Dataset Composition
 
 | Metric | Value |
 | --- | --- |
-| **Total Vulnerability-File Pairs (VFPs)** | 660 |
-| **High-Impact VFPs (Medium/High/Critical)** | 322 |
+| **Total Vulnerability-File Pairs (VFPs)** | 651 |
+| **High-Impact VFPs (Medium/High/Critical)** | 318 |
 
 > [!NOTE]
-> many to-many relationship between findings and files, so the number of VFPs is less than total findings
+> Many to-many relationship between findings and files, so the number of VFPs is less than total findings.
 
 
 ## Data Schema
