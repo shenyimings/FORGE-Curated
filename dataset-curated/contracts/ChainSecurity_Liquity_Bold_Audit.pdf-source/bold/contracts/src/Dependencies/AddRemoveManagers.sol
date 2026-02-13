@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity ^0.8.18;
 
 import "../Interfaces/IAddRemoveManagers.sol";
 import "../Interfaces/IAddressesRegistry.sol";
@@ -30,7 +30,6 @@ contract AddRemoveManagers is IAddRemoveManagers {
      * Only the address in this mapping, if any, and the trove owner, will be allowed.
      * Therefore, by default this permission is restricted to no one.
      * If the receiver is zero, the owner is assumed as the receiver.
-     * RemoveManager also assumes AddManager permission
      */
     mapping(uint256 => RemoveManagerReceiver) public removeManagerReceiverOf;
 
@@ -40,8 +39,6 @@ contract AddRemoveManagers is IAddRemoveManagers {
     error NotOwnerNorRemoveManager();
 
     event TroveNFTAddressChanged(address _newTroveNFTAddress);
-    event AddManagerUpdated(uint256 indexed _troveId, address _newAddManager);
-    event RemoveManagerAndReceiverUpdated(uint256 indexed _troveId, address _newRemoveManager, address _newReceiver);
 
     constructor(IAddressesRegistry _addressesRegistry) {
         troveNFT = _addressesRegistry.troveNFT();
@@ -55,7 +52,6 @@ contract AddRemoveManagers is IAddRemoveManagers {
 
     function _setAddManager(uint256 _troveId, address _manager) internal {
         addManagerOf[_troveId] = _manager;
-        emit AddManagerUpdated(_troveId, _manager);
     }
 
     function setRemoveManager(uint256 _troveId, address _manager) external {
@@ -71,14 +67,6 @@ contract AddRemoveManagers is IAddRemoveManagers {
         _requireNonZeroManagerUnlessWiping(_manager, _receiver);
         removeManagerReceiverOf[_troveId].manager = _manager;
         removeManagerReceiverOf[_troveId].receiver = _receiver;
-        emit RemoveManagerAndReceiverUpdated(_troveId, _manager, _receiver);
-    }
-
-    function _wipeAddRemoveManagers(uint256 _troveId) internal {
-        delete addManagerOf[_troveId];
-        delete removeManagerReceiverOf[_troveId];
-        emit AddManagerUpdated(_troveId, address(0));
-        emit RemoveManagerAndReceiverUpdated(_troveId, address(0), address(0));
     }
 
     function _requireNonZeroManagerUnlessWiping(address _manager, address _receiver) internal pure {
@@ -96,11 +84,7 @@ contract AddRemoveManagers is IAddRemoveManagers {
     function _requireSenderIsOwnerOrAddManager(uint256 _troveId, address _owner) internal view {
         address addManager = addManagerOf[_troveId];
         if (msg.sender != _owner && addManager != address(0) && msg.sender != addManager) {
-            // RemoveManager assumes AddManager permission too
-            address removeManager = removeManagerReceiverOf[_troveId].manager;
-            if (msg.sender != removeManager) {
-                revert NotOwnerNorAddManager();
-            }
+            revert NotOwnerNorAddManager();
         }
     }
 
@@ -114,7 +98,7 @@ contract AddRemoveManagers is IAddRemoveManagers {
         if (msg.sender != _owner && msg.sender != manager) {
             revert NotOwnerNorRemoveManager();
         }
-        if (receiver == address(0) || msg.sender != manager) {
+        if (receiver == address(0)) {
             return _owner;
         }
         return receiver;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity 0.8.18;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -27,7 +27,7 @@ contract CollSurplusPool is ICollSurplusPool {
     event TroveManagerAddressChanged(address _newTroveManagerAddress);
 
     event CollBalanceUpdated(address indexed _account, uint256 _newBalance);
-    event CollSent(address indexed _to, uint256 _amount);
+    event CollSent(address _to, uint256 _amount);
 
     constructor(IAddressesRegistry _addressesRegistry) {
         collToken = _addressesRegistry.collToken();

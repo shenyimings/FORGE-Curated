@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.0;
 
-import "./IZapper.sol";
+import "./IExchange.sol";
 
-interface ILeverageZapper is IZapper {
+interface ILeverageZapper {
     struct OpenLeveragedTroveParams {
         address owner;
         uint256 ownerIndex;
@@ -14,7 +14,6 @@ interface ILeverageZapper is IZapper {
         uint256 upperHint;
         uint256 lowerHint;
         uint256 annualInterestRate;
-        address batchManager;
         uint256 maxUpfrontFee;
         address addManager;
         address removeManager;
@@ -33,6 +32,8 @@ interface ILeverageZapper is IZapper {
         uint256 flashLoanAmount;
         uint256 minBoldAmount;
     }
+
+    function exchange() external returns (IExchange);
 
     function openLeveragedTroveWithRawETH(OpenLeveragedTroveParams calldata _params) external payable;
 

@@ -1,57 +1,34 @@
 {
     "vfp_id": "vfp_00530",
-    "project_name": "cantina_centrifuge_aug2025.pdf",
+    "project_name": "Uniswap Calibur Audit.md",
     "findings": [
         {
-            "id": 8,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-664"
                 ],
                 "2": [
-                    "CWE-1041"
-                ]
-            },
-            "title": "Redundant check in newManager()",
-            "description": "The newManager() function includes a check that the token address is not zero, but this is redundant because the Spoke::shareToken() function already performs the same validation. The cause is duplicated validation logic. This does not introduce a security risk but reduces code clarity and increases gas slightly due to an unnecessary check. The impact is minimal, but removing the redundant check would improve code maintainability and efficiency.\n",
-            "severity": null,
-            "location": [
-                "newManager",
-                "Spoke::shareToken"
-            ],
-            "files": [
-                "protocol-v3/src/managers/OnOfframpManager.sol"
-            ]
-        },
-        {
-            "id": 9,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
+                    "CWE-221"
                 ],
                 "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1099"
+                    "CWE-223"
                 ]
             },
-            "title": "Naming inconsistencies in OnOfframpManager",
-            "description": "The OnOfframpManager constructor uses a parameter named spoke_ which is assigned to the state variable contractUpdater, creating a naming mismatch. This is inconsistent with the OnOfframpManagerFactory, which uses contractUpdater_ as the parameter name. Additionally, the error NotSpoke() in the update function is outdated and does not align with standard authorization error naming. The cause is inconsistent naming conventions. This can lead to confusion during audits or maintenance, increasing the risk of human error. While not a direct vulnerability, it affects code readability and long-term security.\n",
-            "severity": null,
+            "title": "Hooks Do Not Receive All Relevant Data",
+            "description": "The hook system in the contract, designed to allow fine-grained validation logic, fails to pass critical execution data to certain hook functions. Specifically, the `handleAfterValidateUserOp` function does not receive the `validationData` parameter, which contains `validAfter`, `validUntil`, and `success` flags, and `handleAfterExecute` does not receive the call result or success status. This omission is caused by incomplete interface design in the hook contracts. An attacker or malicious relayer could exploit this lack of visibility by crafting transactions that pass validation but violate intended business logic that the hook cannot enforce due to missing data. The impact is reduced effectiveness of hook-based security controls, potentially allowing time-locked or conditional access rules to be bypassed, weakening the overall security model.\n",
+            "severity": "Medium",
             "location": [
-                "OnOfframpManager",
-                "OnOfframpManagerFactory"
+                "IValidationHook.sol::handleAfterValidateUserOp",
+                "MinimalDelegation.sol::validateUserOp#122",
+                "MinimalDelegation.sol::handleAfterExecute#195"
             ],
             "files": [
-                "protocol-v3/src/managers/OnOfframpManager.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/interfaces/IValidationHook.sol"
             ]
         }
     ],
     "affected_files": {
-        "OnOfframpManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.28;\n\nimport {IOnOfframpManager} from \"./interfaces/IOnOfframpManager.sol\";\nimport {IOnOfframpManagerFactory} from \"./interfaces/IOnOfframpManagerFactory.sol\";\nimport {IDepositManager, IWithdrawManager} from \"./interfaces/IBalanceSheetManager.sol\";\n\nimport {CastLib} from \"../misc/libraries/CastLib.sol\";\nimport {IERC165} from \"../misc/interfaces/IERC165.sol\";\nimport {SafeTransferLib} from \"../misc/libraries/SafeTransferLib.sol\";\n\nimport {PoolId} from \"../common/types/PoolId.sol\";\nimport {AssetId} from \"../common/types/AssetId.sol\";\nimport {ShareClassId} from \"../common/types/ShareClassId.sol\";\n\nimport {IBalanceSheet} from \"../spoke/interfaces/IBalanceSheet.sol\";\nimport {IUpdateContract} from \"../spoke/interfaces/IUpdateContract.sol\";\nimport {UpdateContractType, UpdateContractMessageLib} from \"../spoke/libraries/UpdateContractMessageLib.sol\";\n\n/// @title  OnOfframpManager\n/// @notice Balance sheet manager for depositing and withdrawing ERC20 assets.\n///         - Onramping is permissionless: once an asset is allowed to be onramped and ERC20 assets have been\n///           transferred to the manager, anyone can trigger the balance sheet deposit.\n///         - Offramping is permissioned: only predefined relayers can trigger withdrawals to predefined\n///           offramp accounts.\ncontract OnOfframpManager is IOnOfframpManager {\n    using CastLib for *;\n\n    PoolId public immutable poolId;\n    address public immutable contractUpdater;\n    ShareClassId public immutable scId;\n    IBalanceSheet public immutable balanceSheet;\n\n    mapping(address asset => bool) public onramp;\n    mapping(address relayer => bool) public relayer;\n    mapping(address asset => mapping(address receiver => bool isEnabled)) public offramp;\n\n    constructor(PoolId poolId_, ShareClassId scId_, address spoke_, IBalanceSheet balanceSheet_) {\n        poolId = poolId_;\n        scId = scId_;\n        contractUpdater = spoke_;\n        balanceSheet = balanceSheet_;\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Owner actions\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IUpdateContract\n    function update(PoolId poolId_, ShareClassId scId_, bytes calldata payload) external {\n        require(poolId == poolId_, InvalidPoolId());\n        require(scId == scId_, InvalidShareClassId());\n        require(msg.sender == contractUpdater, NotSpoke());\n\n        uint8 kind = uint8(UpdateContractMessageLib.updateContractType(payload));\n\n        if (kind == uint8(UpdateContractType.UpdateAddress)) {\n            UpdateContractMessageLib.UpdateContractUpdateAddress memory m =\n                UpdateContractMessageLib.deserializeUpdateContractUpdateAddress(payload);\n\n            if (m.kind == \"onramp\") {\n                (address asset, uint256 tokenId) = balanceSheet.spoke().idToAsset(AssetId.wrap(m.assetId));\n                require(tokenId == 0, ERC6909NotSupported());\n\n                onramp[asset] = m.isEnabled;\n\n                if (m.isEnabled) SafeTransferLib.safeApprove(asset, address(balanceSheet), type(uint256).max);\n                else SafeTransferLib.safeApprove(asset, address(balanceSheet), 0);\n\n                emit UpdateOnramp(asset, m.isEnabled);\n            } else if (m.kind == \"relayer\") {\n                address relayer_ = m.what.toAddress();\n\n                relayer[relayer_] = m.isEnabled;\n                emit UpdateRelayer(relayer_, m.isEnabled);\n            } else if (m.kind == \"offramp\") {\n                (address asset, uint256 tokenId) = balanceSheet.spoke().idToAsset(AssetId.wrap(m.assetId));\n                require(tokenId == 0, ERC6909NotSupported());\n                address receiver = m.what.toAddress();\n\n                offramp[asset][receiver] = m.isEnabled;\n                emit UpdateOfframp(asset, receiver, m.isEnabled);\n            } else {\n                revert UnknownUpdateContractKind();\n            }\n        } else {\n            revert UnknownUpdateContractType();\n        }\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Deposit & withdraw actions\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IDepositManager\n    function deposit(address asset, uint256, /* tokenId */ uint128 amount, address /* owner */ ) external {\n        require(onramp[asset], NotAllowedOnrampAsset());\n\n        balanceSheet.deposit(poolId, scId, asset, 0, amount);\n    }\n\n    /// @inheritdoc IWithdrawManager\n    function withdraw(address asset, uint256, /* tokenId */ uint128 amount, address receiver) external {\n        require(relayer[msg.sender], NotRelayer());\n        require(receiver != address(0) && offramp[asset][receiver], InvalidOfframpDestination());\n\n        balanceSheet.withdraw(poolId, scId, asset, 0, receiver, amount);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // ERC-165\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IERC165\n    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {\n        return interfaceId == type(IDepositManager).interfaceId || interfaceId == type(IWithdrawManager).interfaceId\n            || interfaceId == type(IERC165).interfaceId;\n    }\n}\n\ncontract OnOfframpManagerFactory is IOnOfframpManagerFactory {\n    address public immutable contractUpdater;\n    IBalanceSheet public immutable balanceSheet;\n\n    constructor(address contractUpdater_, IBalanceSheet balanceSheet_) {\n        contractUpdater = contractUpdater_;\n        balanceSheet = balanceSheet_;\n    }\n\n    /// @inheritdoc IOnOfframpManagerFactory\n    function newManager(PoolId poolId, ShareClassId scId) external returns (IOnOfframpManager) {\n        require(address(balanceSheet.spoke().shareToken(poolId, scId)) != address(0), InvalidIds());\n\n        OnOfframpManager manager = new OnOfframpManager{salt: keccak256(abi.encode(poolId.raw(), scId.raw()))}(\n            poolId, scId, contractUpdater, balanceSheet\n        );\n\n        emit DeployOnOfframpManager(poolId, scId, address(manager));\n        return IOnOfframpManager(manager);\n    }\n}\n"
+        "IValidationHook.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport {PackedUserOperation} from \"account-abstraction/interfaces/PackedUserOperation.sol\";\n\n/// @title IValidationHook\n/// @notice Hook interface for optional signature validation logic\n/// @dev The keyHash is validated against the signature before each hook is called, but\n///      the hookData is NOT signed over or validated within the account. It MUST be treated as unsafe and can be set by anybody.\ninterface IValidationHook {\n    /// @notice Hook called after `validateUserOp` is called on the account by the entrypoint\n    /// @param keyHash the key which signed over userOpHash\n    /// @param userOp UserOperation\n    /// @param userOpHash hash of the UserOperation\n    /// @param hookData any data to be passed to the hook. This has NOT been validated by the user signature\n    /// @return selector Must be afterValidateUserOp.selector\n    /// @dev The hook can revert to prevent the UserOperation from being validated.\n    function afterValidateUserOp(\n        bytes32 keyHash,\n        PackedUserOperation calldata userOp,\n        bytes32 userOpHash,\n        bytes calldata hookData\n    ) external view returns (bytes4 selector);\n\n    /// @notice Hook called after verifying a signature over a digest in an EIP-1271 callback. \n    /// @dev MUST revert to signal that validation should fail\n    /// @param keyHash the key which signed over digest\n    /// @param digest the digest to verify\n    /// @param hookData any data to be passed to the hook.This has NOT been validated by the user signature\n    /// @return selector Must be afterIsValidSignature.selector\n    function afterIsValidSignature(bytes32 keyHash, bytes32 digest, bytes calldata hookData)\n        external\n        view\n        returns (bytes4 selector);\n\n    /// @notice Hook called after verifying a signature over `SignedBatchedCall`. \n    /// @dev MUST revert to signal that validation should fail\n    /// @param keyHash the key which signed over digest\n    /// @param digest the digest to verify\n    /// @param hookData any data to be passed to the hook. This has NOT been validated by the user signature\n    /// @return selector Must be afterVerifySignature.selector\n    function afterVerifySignature(bytes32 keyHash, bytes32 digest, bytes calldata hookData)\n        external\n        view\n        returns (bytes4 selector);\n}\n"
     }
 }

@@ -1,32 +1,29 @@
 {
     "vfp_id": "vfp_00585",
-    "project_name": "cantina_virtuals_may2025.pdf",
+    "project_name": "blocksec_astherus_202502-signed.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 4,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-657"
-                ],
-                "3": [
-                    "CWE-637"
+                    "CWE-20"
                 ]
             },
-            "title": "Gas savings in Genesis Contract Deployment",
-            "description": "1. **Description:** The createGenesis function deploys a new Genesis contract, but the contract is unnecessarily marked as initializable, missing an opportunity for gas optimization.\n2. **Cause:** The contract is made initializable despite not requiring upgradability in this context, which adds overhead.\n3. **Exploitation:** This is not exploitable by an attacker but represents inefficient deployment design.\n4. **Impact:** Higher deployment and runtime gas costs than necessary, increasing transaction fees for users and deployers.\n",
-            "severity": "Informational",
+            "title": "Lack of non-zero check for key parameters",
+            "description": "The initialize() function in AsBnbOFT.sol grants roles to addresses without validating that they are non-zero. This could allow critical roles to be assigned to the zero address, rendering the contract unusable or insecure. The root cause is missing input validation for critical parameters during initialization. An attacker could exploit this if they influence deployment parameters, leading to loss of control. The impact is potential permanent lockout of administrative functions or misrouting of privileges.\n",
+            "severity": "Medium",
             "location": [
-                "GenesisLib.sol#L32"
+                "AsBnbOFT.sol::initialize"
             ],
             "files": [
-                "protocol-contracts/contracts/genesis/GenesisLib.sol"
+                "61fc9f5610914cf94dddc3ab83e21ca22d388e92/ass-bnb-earn-contract/src/oft/AsBnbOFT.sol"
             ]
         }
     ],
     "affected_files": {
-        "GenesisLib.sol": "// GenesisLib.sol\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {Genesis} from \"./Genesis.sol\";\nimport \"./GenesisTypes.sol\";\n\nlibrary GenesisLib {\n    function validateAndDeploy(\n        uint256 genesisID,\n        address factory,\n        GenesisCreationParams memory params,\n        bytes32 tbaSalt,\n        address tbaImpl,\n        uint32 daoVotingPeriod,\n        uint256 daoThreshold,\n        address agentFactoryAddress,\n        address virtualToken,\n        uint256 reserve,\n        uint256 maxContribution,\n        uint256 agentTokenTotalSupply,\n        uint256 agentTokenLpSupply,\n        bool noLpStake\n    ) internal returns (address) {\n        require(\n            bytes(params.genesisName).length > 0 &&\n                bytes(params.genesisTicker).length > 0 &&\n                params.genesisCores.length > 0,\n            \"Invalid params\"\n        );\n\n        Genesis newGenesis = new Genesis();\n\n        GenesisInitParams memory initParams = GenesisInitParams({\n            genesisID: genesisID,\n            factory: factory,\n            startTime: params.startTime,\n            endTime: params.endTime,\n            genesisName: params.genesisName,\n            genesisTicker: params.genesisTicker,\n            genesisCores: params.genesisCores,\n            tbaSalt: tbaSalt,\n            tbaImplementation: tbaImpl,\n            daoVotingPeriod: daoVotingPeriod,\n            daoThreshold: daoThreshold,\n            agentFactoryAddress: agentFactoryAddress,\n            virtualTokenAddress: virtualToken,\n            reserveAmount: reserve,\n            maxContributionVirtualAmount: maxContribution,\n            agentTokenTotalSupply: agentTokenTotalSupply,\n            agentTokenLpSupply: agentTokenLpSupply,\n            noLpStake: noLpStake\n        });\n\n        newGenesis.initialize(initParams);\n        return address(newGenesis);\n    }\n}\n"
+        "AsBnbOFT.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.10;\n\nimport \"@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport { TransferLimiter } from \"./TransferLimiter.sol\";\n\ncontract AsBnbOFT is\n  OFTUpgradeable,\n  TransferLimiter,\n  ERC20PermitUpgradeable,\n  AccessControlUpgradeable,\n  PausableUpgradeable,\n  UUPSUpgradeable\n{\n  // pause role\n  bytes32 public constant PAUSER = keccak256(\"PAUSER\");\n  // manager role\n  bytes32 public constant MANAGER = keccak256(\"MANAGER\");\n\n  constructor(address _lzEndpoint) OFTUpgradeable(_lzEndpoint) {\n    _disableInitializers();\n  }\n\n  /**\n   * @dev Initializes the AsBnbOFT\n   * @param _admin The address of the admin.\n   * @param _manager The address of the manager.\n   * @param _pauser The address of the pauser.\n   * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.\n   */\n  function initialize(\n    address _admin,\n    address _manager,\n    address _pauser,\n    string memory _name,\n    string memory _symbol,\n    address _delegate\n  ) external initializer {\n    __OFT_init(_name, _symbol, _delegate);\n    __Ownable_init(_delegate);\n    __AccessControl_init();\n    __Pausable_init();\n    __ERC20Permit_init(_name);\n    __UUPSUpgradeable_init();\n\n    _grantRole(DEFAULT_ADMIN_ROLE, _admin);\n    _grantRole(MANAGER, _manager);\n    _grantRole(PAUSER, _pauser);\n  }\n\n  /**\n   * @dev Credits user with the token if the contract is not paused.\n   * @param _to The address of the user to be credited.\n   * @param _amountLD The amount of tokens to be transferred.\n   * @return amountReceivedLD The actual amount of tokens received.\n   */\n  function _credit(\n    address _to,\n    uint256 _amountLD,\n    uint32 _srcEid\n  ) internal virtual override whenNotPaused returns (uint256 amountReceivedLD) {\n    return super._credit(_to, _amountLD, _srcEid);\n  }\n\n  /**\n   * @dev Checks and updates the rate limit before initiating a token transfer.\n   * @param _amountLD The amount of tokens to be transferred.\n   * @param _minAmountLD The minimum amount of tokens expected to be received.\n   * @param _dstEid The destination endpoint identifier.\n   * @return amountSentLD The actual amount of tokens sent.\n   * @return amountReceivedLD The actual amount of tokens received.\n   */\n  function _debit(\n    address _from,\n    uint256 _amountLD,\n    uint256 _minAmountLD,\n    uint32 _dstEid\n  ) internal virtual override whenNotPaused returns (uint256 amountSentLD, uint256 amountReceivedLD) {\n    // remove dust before checking\n    uint256 _amount = _removeDust(_amountLD);\n    _checkAndUpdateTransferLimit(_dstEid, _amount, _from);\n    return super._debit(_from, _amountLD, _minAmountLD, _dstEid);\n  }\n\n  /* ============================\n          Admin Functions\n  ============================ */\n  /**\n   * @dev Flips the pause state\n   */\n  function unpause() external onlyRole(MANAGER) {\n    _unpause();\n  }\n\n  /**\n   * @dev pause the contract\n   */\n  function pause() external onlyRole(PAUSER) {\n    _pause();\n  }\n\n  /**\n   * @dev Sets the transfer limit configurations based on TransferLimit array. Only callable by the owner or the rate limiter.\n   * @param _transferLimitConfigs An array of TransferLimit structures defining the transfer limits.\n   */\n  function setTransferLimitConfigs(TransferLimit[] calldata _transferLimitConfigs) external onlyRole(MANAGER) {\n    _setTransferLimitConfigs(_transferLimitConfigs);\n  }\n\n  /* ============================\n         Internal Functions\n  ============================ */\n  function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}\n}\n"
     }
 }

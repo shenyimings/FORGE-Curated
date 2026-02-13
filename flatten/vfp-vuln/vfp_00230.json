@@ -1,29 +1,224 @@
 {
     "vfp_id": "vfp_00230",
-    "project_name": "Forta Firewall Incremental Audit.md",
+    "project_name": "OpenZeppelin Uniswap Hooks v1.1.0 RC 1 Audit.md",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-424"
+                ]
+            },
+            "title": "JIT Liquidity Penalty Can Be Bypassed",
+            "description": "The `LiquidityPenaltyHook` contract is designed to penalize Just-In-Time (JIT) liquidity provision by donating a portion of earned fees back to the pool when liquidity is added and removed within a short timeframe defined by `blockNumberOffset`. This mechanism aims to prevent attackers from extracting fees without bearing market risk by rapidly adding and removing liquidity around large swaps.\n\nThe root cause of the vulnerability lies in the fact that the penalty is calculated based on `feeDelta` during the `_afterRemoveLiquidity` hook, which only considers uncollected fees at the time of removal. However, Uniswap V4 automatically collects all accrued fees when `increaseLiquidity` is called on an existing position, resetting `feesOwed` to zero. This behavior is not accounted for in the penalty logic.\n\nAn attacker can exploit this by first adding a liquidity position, waiting for a target swap to generate fees, then calling `increaseLiquidity` with a minimal amount (e.g., 1 wei) to collect all accrued fees. This action triggers the `_afterAddLiquidity` hook, which only records the block number but does not apply penalties. Since the fees are now collected and `feesOwed` is reset to zero, when the attacker removes the liquidity, the `feeDelta` is zero, resulting in no penalty being applied.\n\nThe impact is critical: the entire economic deterrent of the `LiquidityPenaltyHook` is neutralized. Attackers can perform JIT liquidity attacks with zero cost, extracting value from honest traders and undermining the fairness and security of the pool. This completely defeats the purpose of the contract.\n",
+            "severity": "Critical",
+            "location": [
+                "LiquidityPenaltyHook.sol::afterRemoveLiquidity#105",
+                "LiquidityPenaltyHook.sol::afterAddLiquidity#92",
+                "LiquidityPenaltyHook.sol#61"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ]
+            },
+            "title": "Asymmetric First In-Block Swap Initialization Leads to Stale State",
+            "description": "The `AntiSandwichHook` contract aims to prevent sandwich attacks by enforcing that swaps adhere to prices from the beginning of the block. It uses a checkpoint stored in `_lastCheckpoints` to simulate expected outputs. However, the initialization of the full state (including `ticks`, `liquidity`, and `slot0`) is asymmetrically handled between `_beforeSwap` and `_afterSwap`.\n\nThe vulnerability arises because only `slot0` is updated in `_beforeSwap` at the start of a new block, while the full `_lastCheckpoints[poolId].state` (including `ticks`) is populated in `_afterSwap` after the first swap. The loop that populates `ticks` runs only if the tick after the first swap (`tickAfter`) is strictly greater than the initial tick. If the first swap does not advance the tick (or moves it backward), the loop does not execute, leaving `state.ticks` uninitialized or stale.\n\nDespite this, `_lastCheckpoint.blockNumber` is updated to the current block, preventing any subsequent `_afterSwap` calls in the same block from reinitializing the state. As a result, subsequent swaps in the block use stale or incorrect tick data when calculating `targetOutput` in `_getTargetOutput`, potentially allowing sandwich attacks to succeed.\n\nThe impact is critical: the core anti-sandwich protection can be completely bypassed in blocks where the first swap does not advance the tick. This allows attackers to execute profitable sandwich attacks under common market conditions, negating the security guarantee of the hook.\n",
+            "severity": "Critical",
+            "location": [
+                "AntiSandwichHook.sol::_beforeSwap#88",
+                "AntiSandwichHook.sol::_afterSwap#106",
+                "AntiSandwichHook.sol#131",
+                "AntiSandwichHook.sol#119"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
                     "CWE-682"
                 ],
                 "2": [
-                    "CWE-190"
+                    "CWE-191"
                 ]
             },
-            "title": "Overflow in quantize Function Can Cause a DoS",
-            "description": "The vulnerability exists in the `quantize` function where an intermediate overflow occurs during the calculation due to the operation `2 ** offset` when `offset = 256`. This causes the entire expression to revert because Solidity performs arithmetic operations sequentially, and the overflow happens before the final subtraction.\nThe root cause is the order of operations in the return statement, which leads to an intermediate result exceeding the `uint256` limit, triggering a revert.\nAn attacker could exploit this by providing a sufficiently large input value `n` that results in `offset = 256`, causing any call to `quantize` to fail and revert execution.\nThe impact is a denial of service (DoS) condition in any function relying on `quantize`, potentially disrupting critical functionality that depends on this calculation.\n",
-            "severity": "High",
+            "title": "Integer Underflow in `_getTargetOutput` Due to Improper Type Casting",
+            "description": "In the `_getTargetOutput` function of `AntiSandwichHook`, a negative `int128` value is directly cast to `uint128` without sign correction, causing an integer underflow. This results in `targetOutput` being set to a very large value (e.g., 2^128 - 1). The root cause is improper type casting when handling the `target` value derived from `targetDelta.amount0()` or `amount1()`, depending on swap direction. An attacker can exploit this by executing a final swap in a block with a positive `amountSpecified` in a `zeroForOne` direction, causing the unspecified input (negative) to be misinterpreted as an extremely high output. This breaks the anti-sandwich mechanism, allowing the attacker to extract profits without penalty. The impact is a complete bypass of the anti-sandwich protection, enabling profitable sandwich attacks.\n",
+            "severity": "Critical",
             "location": [
-                "Quantization.sol::quantize#20-24"
+                "AntiSandwichHook.sol::_getTargetOutput#196"
             ],
             "files": [
-                "forta-firewall-contracts/src/Quantization.sol"
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Liquidity Penalty Can Be Circumvented Using Secondary Accounts",
+            "description": "The `LiquidityPenaltyHook` donates fees to in-range liquidity providers when a position is removed within the penalty window. However, this donation mechanism can be exploited by using two coordinated accounts to redirect the donated fees to a secondary account that was not involved in the original fee generation.\n\nThe vulnerability stems from the fact that the hook does not verify the continuity or intent of liquidity provision. An attacker can use Account A to add liquidity, earn fees from a victim's swap, and then remove liquidity (incurring the penalty). Simultaneously, Account B can position itself in an out-of-range tick, and when A moves the price into B's range during removal, B becomes the sole in-range provider and receives the donated fees.\n\nThe attack sequence is: (1) B adds liquidity in an out-of-range tick, (2) A adds liquidity and earns fees, (3) A swaps to move price into B's range, (4) A removes liquidity (fees donated), (5) B removes liquidity and collects donated fees, (6) A swaps back. This allows A and B to coordinate and fully bypass the penalty.\n\nThe impact is high: the penalty mechanism is effectively nullified through coordination. Attackers can extract full fees from JIT liquidity without penalty, undermining the economic security of the pool and enabling repeated exploitation.\n",
+            "severity": "High",
+            "location": [
+                "LiquidityPenaltyHook.sol::afterRemoveLiquidity#121",
+                "LiquidityPenaltyHook.sol#61",
+                "LimitOrderHook.sol::withdraw#342"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Incorrect Unspecified Amount Handling Breaks Anti-Sandwich Logic",
+            "description": "The `AntiSandwichHook` incorrectly assumes that the \"unspecified amount\" in a swap always refers to the output amount the user will receive. However, in Uniswap V4, the unspecified amount can also represent the input amount the user is willing to pay. This flawed assumption breaks the anti-sandwich protection in certain swap directions.\n\nThe root cause is in the `_getTargetOutput` function, which compares the unspecified amount directly to `targetOutput` without distinguishing whether it represents input or output. When the unspecified amount is an input (e.g., in a `zeroForOne = false` swap), the logic incorrectly caps `targetOutput` if it exceeds the unspecified amount, allowing the swap to proceed even when it should be restricted.\n\nAn attacker can exploit this by executing a sandwich attack where the closing leg uses an unspecified input amount. For example: (1) attacker swaps token0 to token1 (specifying input), (2) victim swaps, (3) attacker swaps token1 back to token0, specifying only how much token0 they want to receive (unspecified amount is input of token1). The hook calculates `targetOutput` based on initial state (e.g., 12,000 token0), but since unspecified amount is 10,000 token1, and `targetOutput > unspecified amount`, it caps `targetOutput` to 10,000, allowing the profitable swap.\n\nThe impact is high: attackers can successfully execute sandwich attacks that bypass the hook's protection, extracting value from victims. This undermines the core security guarantee of the contract and exposes users to front-running.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::_getTargetOutput#167",
+                "AntiSandwichHook.sol#198"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Handling of `unspecifiedAmount` Leads to Overcharging",
+            "description": "The `AntiSandwichHook` contract incorrectly assumes that `unspecifiedAmount` in a swap always represents the output amount a user will receive. However, `unspecifiedAmount` can also represent the input amount the user must pay. When it represents input and exceeds `_targetOutput`, the code calculates the difference as a fee, mints additional tokens, and overcharges the user. The root cause is the lack of distinction between input and output cases in the fee calculation logic. For example, if a user intends to pay 15,000 token₁ to receive 10,000 token₀, but `_targetOutput` is capped at 9,000 due to a prior swap, the system calculates a fee of 6,000 and charges 21,000 instead of 15,000. An attacker could manipulate block state to trigger this overcharge condition. The impact is that users may be overcharged significantly, leading to loss of funds and incorrect token minting, undermining trust in the swap mechanism.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::_afterSwap#167-198",
+                "AntiSandwichHook.sol::_getTargetOutput#196"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-807"
+                ]
+            },
+            "title": "Sandwich Attack Possible via JIT Attack in `AntiSandwichHook`",
+            "description": "The `AntiSandwichHook` contract attempts to prevent sandwich attacks by enforcing that swaps do not execute at prices better than those available at the beginning of the block, using a penalty fee redistributed to liquidity providers (LPs). However, this mechanism can be circumvented through Just-In-Time (JIT) liquidity manipulation. An attacker can initiate a swap to set a favorable price checkpoint, wait for a victim swap, then add concentrated liquidity at the resulting tick before triggering the fee donation. Due to the proportional distribution of the penalty to LPs at the final tick, the attacker receives most of the donated fee back. The root cause is the permissionless and costless nature of liquidity provision within the same block, combined with the redistribution logic that does not account for transient liquidity positions. An attacker can exploit this by timing liquidity additions and removals around victim swaps. The impact is that the anti-sandwich protection is effectively neutralized, allowing profitable sandwich attacks despite the intended penalty mechanism.\n",
+            "severity": "High",
+            "location": [
+                "AntiSandwichHook.sol::deposit#138",
+                "AntiSandwichHook.sol::_afterSwapHandler#167",
+                "AntiSandwichHook.sol::donate#206"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Block Number Dependency",
+            "description": "The `AntiSandwichHook` and `LiquidityPenaltyHook` contracts rely on `block.number` to enforce time-sensitive logic, such as price anchoring and JIT liquidity penalties. However, on L2 chains like Arbitrum, `block.number` reflects the L1 block number, meaning multiple L2 blocks can share the same `block.number`. This causes the hooks' one-block constraints to persist across several L2 blocks, making them over-constrained. The root cause is the assumption that `block.number` increments per block on all chains, which does not hold on rollups. An attacker could exploit timing windows across L2 blocks, or legitimate users may face unexpected restrictions. The impact is degraded user experience, reduced liquidity efficiency, and potential failure of the intended economic incentives.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol#118",
+                "LiquidityPenaltyHook.sol#115"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol",
+                "uniswap-hooks/src/general/LiquidityPenaltyHook.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Anti-Sandwich Mechanism Also Breaks Price Reliability at the Start of a Block",
+            "description": "The `AntiSandwichHook` assumes that the price at the start of a block is fair, as it would be in a standard Uniswap pool due to arbitrage. However, the hook's own mechanism prevents arbitrage within the block by redistributing excess gains to LPs, removing the incentive for arbitrageurs to correct manipulated prices. The root cause is a flawed assumption about market efficiency under the hook's influence. An attacker can manipulate the price at the end of a prior block, and since no arbitrage occurs, the manipulated price becomes the anchor for the next block. The impact is that users are forced to trade against an inaccurate, potentially adversarially set price, leading to unfair execution and loss of funds.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol#47",
+                "AntiSandwichHook.sol#118"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Incorrect `slot0` Persistence on `!zeroForOne` Swaps Causes Inconsistent Pricing Logic",
+            "description": "In `_getTargetOutput`, when handling a `!zeroForOne` swap, the contract persistently overwrites `_lastCheckpoint.state.slot0` with a stale value. This modified state is not reset, so subsequent `zeroForOne` swaps use an outdated price instead of the current pool state. The root cause is improper state management where a temporary price lock affects future unrelated swaps. For example, after a `token1 → token0` swap locks a stale price, the next `token0 → token1` swap uses that stale price for calculations. The impact is inconsistent and incorrect pricing logic, leading to miscalculated outputs and potential financial loss for users depending on swap direction.\n",
+            "severity": "Medium",
+            "location": [
+                "AntiSandwichHook.sol::_getTargetOutput#176-178"
+            ],
+            "files": [
+                "uniswap-hooks/src/general/AntiSandwichHook.sol"
             ]
         }
     ],
     "affected_files": {
-        "Quantization.sol": "// SPDX-License-Identifier: GNU General Public License Version 3\n// See license at: https://github.com/forta-network/forta-firewall-contracts/blob/master/LICENSE-GPLv3.md\n\npragma solidity ^0.8.25;\n\nimport {Math} from \"@openzeppelin/contracts/utils/math/Math.sol\";\n\n/**\n * @notice Until the attestation can arrive on chain and the user transaction can be executed,\n * the asset amounts that will be processed can fluctuate slightly and cause different hashes\n * to be produced during the real execution and a mismatch with the values in the attestation.\n * This library solves this problem by quantizing the reference value used in checkpoint hash\n * computation.\n */\nlibrary Quantization {\n    /**\n     * @notice Quantizes the given value by zeroing the smaller digits.\n     * @param n Input value.\n     */\n    function quantize(uint256 n) public pure returns (uint256) {\n        uint256 offset = 8 * Math.log256(n);\n        return ((n >> offset) << offset) + (2 ** offset) - 1;\n    }\n}\n"
+        "LiquidityPenaltyHook.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Uniswap Hooks (last updated v0.1.1) (src/general/LiquidityPenaltyHook.sol)\n\npragma solidity ^0.8.24;\n\nimport {BaseHook} from \"src/base/BaseHook.sol\";\nimport {Pool} from \"v4-core/src/libraries/Pool.sol\";\nimport {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from \"v4-core/src/types/BalanceDelta.sol\";\nimport {IPoolManager} from \"v4-core/src/interfaces/IPoolManager.sol\";\nimport {Position} from \"v4-core/src/libraries/Position.sol\";\nimport {SafeCast} from \"v4-core/src/libraries/SafeCast.sol\";\nimport {StateLibrary} from \"v4-core/src/libraries/StateLibrary.sol\";\nimport {PoolKey} from \"v4-core/src/types/PoolKey.sol\";\nimport {Hooks} from \"v4-core/src/libraries/Hooks.sol\";\nimport {PoolId} from \"v4-core/src/types/PoolId.sol\";\nimport {FullMath} from \"v4-core/src/libraries/FullMath.sol\";\nimport {CurrencySettler} from \"src/utils/CurrencySettler.sol\";\nimport {Currency} from \"v4-core/src/types/Currency.sol\";\n\n/**\n * @dev This hook implements a mechanism penalize liquidity provision based on time of adding and removal of liquidty.\n * The main purpose is to prevent JIT (Just in Time) attacks on liquidity pools. Specifically,\n * it checks if a liquidity position was added to the pool within a certain block number range (at least 1 block)\n * and if so, it donates some of the fees to the pool (up to 100% of the fees). This way, the hook effectively taxes JIT attackers by donating their\n * expected profits back to the pool.\n * The hook calculates the fee donation based on the block number when the liquidity was added\n * and the block number offset.\n *\n * At constructor, the hook requires a block number offset. This offset is the number of blocks at which the hook\n * will donate the fees to the pool. The minimum value is 1.\n *\n * NOTE: The hook donates the fees to the current in range liquidity providers (at the time of liquidity removal).\n * If the block number offset is much later than the actual block number when the liquidity was added, the\n * liquidity providers who benefited from the fees will be the ones in range at the time of liquidity removal, not\n * the ones in range at the time of liquidity addition.\n *\n * WARNING: This is experimental software and is provided on an \"as is\" and \"as available\" basis. We do\n * not give any warranties and will not be liable for any losses incurred through any use of this code\n * base.\n *\n * _Available since v0.1.1_\n */\ncontract LiquidityPenaltyHook is BaseHook {\n    using CurrencySettler for Currency;\n    using StateLibrary for IPoolManager;\n    using SafeCast for uint256;\n\n    /**\n     * @notice The minimum block number amount for the offset.\n     */\n    uint256 public constant MIN_BLOCK_NUMBER_OFFSET = 1;\n\n    /**\n     * @notice Tracks the last block number when a liquidity position was added to the pool.\n     */\n    mapping(PoolId id => mapping(bytes32 positionKey => uint256 blockNumber)) public lastAddedLiquidity;\n\n    /**\n     * @notice The block number offset before which if the liquidity is removed, the fees will be donated to the pool.\n     */\n    uint256 public immutable blockNumberOffset;\n\n    /**\n     * @dev Hook was attempted to be deployed with a block number offset that is too low.\n     */\n    error BlockNumberOffsetTooLow();\n\n    /**\n     * @dev Set the `PoolManager` address and the block number offset.\n     */\n    constructor(IPoolManager _poolManager, uint256 _blockNumberOffset) BaseHook(_poolManager) {\n        if (_blockNumberOffset < MIN_BLOCK_NUMBER_OFFSET) revert BlockNumberOffsetTooLow();\n        blockNumberOffset = _blockNumberOffset;\n    }\n\n    /**\n     * @dev Hooks into the `afterAddLiquidity` hook to record the block number when the liquidity was added to track\n     * JIT liquidity positions.\n     */\n    function _afterAddLiquidity(\n        address sender,\n        PoolKey calldata key,\n        IPoolManager.ModifyLiquidityParams calldata params,\n        BalanceDelta,\n        BalanceDelta,\n        bytes calldata\n    ) internal virtual override returns (bytes4, BalanceDelta) {\n        // Get the position key\n        bytes32 positionKey = Position.calculatePositionKey(sender, params.tickLower, params.tickUpper, params.salt);\n\n        // Record the block number when the liquidity was added\n        lastAddedLiquidity[key.toId()][positionKey] = block.number;\n\n        return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);\n    }\n\n    /**\n     * @dev Hooks into the `afterRemoveLiquidity` hook to donate accumulated fees for a JIT liquidity position created.\n     */\n    function _afterRemoveLiquidity(\n        address sender,\n        PoolKey calldata key,\n        IPoolManager.ModifyLiquidityParams calldata params,\n        BalanceDelta,\n        BalanceDelta feeDelta,\n        bytes calldata\n    ) internal virtual override returns (bytes4, BalanceDelta) {\n        PoolId id = key.toId();\n\n        bytes32 positionKey = Position.calculatePositionKey(sender, params.tickLower, params.tickUpper, params.salt);\n\n        uint128 liquidity = poolManager.getLiquidity(id);\n\n        // We need to check if the liquidity is greater than 0 to prevent donating when there are no liquidity positions.\n        if (block.number - lastAddedLiquidity[id][positionKey] < blockNumberOffset && liquidity > 0) {\n            // If the liquidity provider removes liquidity before the block number offset, the hook donates\n            // a part of the fees to the pool (i.e., in range liquidity providers at the time of liquidity removal).\n\n            BalanceDelta liquidityPenalty = _calculateLiquidityPenalty(feeDelta, id, positionKey);\n\n            BalanceDelta deltaHook = poolManager.donate(\n                key, uint256(int256(liquidityPenalty.amount0())), uint256(int256(liquidityPenalty.amount1())), \"\"\n            );\n\n            BalanceDelta returnDelta = toBalanceDelta(-deltaHook.amount0(), -deltaHook.amount1());\n\n            return (this.afterRemoveLiquidity.selector, returnDelta);\n        }\n\n        return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);\n    }\n\n    /**\n     * @dev Calculates the fee donation when a liquidity position is removed before the block number offset.\n     *\n     * @param feeDelta The `BalanceDelta` of the fees from the position.\n     * @param poolId The `PoolId` of the pool.\n     * @param positionKey The `bytes32` key of the position.\n     * @return liquidityPenalty The `BalanceDelta` of the liquidity penalty.\n     */\n    function _calculateLiquidityPenalty(BalanceDelta feeDelta, PoolId poolId, bytes32 positionKey)\n        internal\n        virtual\n        returns (BalanceDelta liquidityPenalty)\n    {\n        int128 amount0FeeDelta = feeDelta.amount0();\n        int128 amount1FeeDelta = feeDelta.amount1();\n\n        // amount0 and amount1 are necesseraly greater than or equal to 0, since they are fee rewards\n        // This is the implementation of a linear penalty on the fees, where the penalty decreases linearly from 100% of the fees at the block\n        // where liquidity was added to the pool to 0% after the block number offset.\n        // The formula is:\n        // liquidityPenalty = feeDelta * ( 1 - (block.number - lastAddedLiquidity[id][positionKey]) / blockNumberOffset)\n        // NOTE: this function is called only if the liquidity is removed before the block number offset, i.e.,\n        // block.number - lastAddedLiquidity[poolId][positionKey] < blockNumberOffset\n        // so the subtraction is safe and won't overflow\n        uint256 amount0LiquidityPenalty = FullMath.mulDiv(\n            SafeCast.toUint128(amount0FeeDelta),\n            blockNumberOffset - (block.number - lastAddedLiquidity[poolId][positionKey]), // wont't overflow, since block.number - lastAddedLiquidity[poolId][positionKey] < blockNumberOffset\n            blockNumberOffset\n        );\n        uint256 amount1LiquidityPenalty = FullMath.mulDiv(\n            SafeCast.toUint128(amount1FeeDelta),\n            blockNumberOffset - (block.number - lastAddedLiquidity[poolId][positionKey]),\n            blockNumberOffset\n        );\n\n        // although the amounts are returned as uint256, they must fit in int128, since they are fee rewards\n        liquidityPenalty = toBalanceDelta(amount0LiquidityPenalty.toInt128(), amount1LiquidityPenalty.toInt128());\n    }\n\n    /**\n     * Set the hooks permissions, specifically `afterAddLiquidity`, `afterRemoveLiquidity` and `afterRemoveLiquidityReturnDelta`.\n     *\n     * @return permissions The permissions for the hook.\n     */\n    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {\n        return Hooks.Permissions({\n            beforeInitialize: false,\n            afterInitialize: false,\n            beforeAddLiquidity: false,\n            afterAddLiquidity: true,\n            beforeRemoveLiquidity: false,\n            afterRemoveLiquidity: true,\n            beforeSwap: false,\n            afterSwap: false,\n            beforeDonate: false,\n            afterDonate: false,\n            beforeSwapReturnDelta: false,\n            afterSwapReturnDelta: false,\n            afterAddLiquidityReturnDelta: false,\n            afterRemoveLiquidityReturnDelta: true\n        });\n    }\n}\n",
+        "AntiSandwichHook.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Uniswap Hooks (last updated v1.1.0) (src/general/AntiSandwichHook.sol)\n\npragma solidity ^0.8.24;\n\n// Internal imports\nimport {BaseDynamicAfterFee} from \"../fee/BaseDynamicAfterFee.sol\";\nimport {CurrencySettler} from \"../utils/CurrencySettler.sol\";\n\n// External imports\nimport {BalanceDelta} from \"v4-core/src/types/BalanceDelta.sol\";\nimport {Pool} from \"v4-core/src/libraries/Pool.sol\";\nimport {PoolId} from \"v4-core/src/types/PoolId.sol\";\nimport {Hooks} from \"v4-core/src/libraries/Hooks.sol\";\nimport {PoolKey} from \"v4-core/src/types/PoolKey.sol\";\nimport {IPoolManager} from \"v4-core/src/interfaces/IPoolManager.sol\";\nimport {BeforeSwapDelta, BeforeSwapDeltaLibrary} from \"v4-core/src/types/BeforeSwapDelta.sol\";\nimport {Slot0} from \"v4-core/src/types/Slot0.sol\";\nimport {StateLibrary} from \"v4-core/src/libraries/StateLibrary.sol\";\nimport {Currency} from \"v4-core/src/types/Currency.sol\";\n\n/**\n * @dev Sandwich-resistant hook, based on\n * https://github.com/cairoeth/sandwich-resistant-hook/blob/master/src/srHook.sol[this]\n * implementation.\n *\n * This hook implements the sandwich-resistant AMM design introduced\n * https://www.umbraresearch.xyz/writings/sandwich-resistant-amm[here]. Specifically,\n * this hook guarantees that no swaps get filled at a price better than the price at\n * the beginning of the slot window (i.e. one block).\n *\n * Within a slot window, swaps impact the pool asymmetrically for buys and sells.\n * When a buy order is executed, the offer on the pool increases in accordance with\n * the xy=k curve. However, the bid price remains constant, instead increasing the\n * amount of liquidity on the bid. Subsequent sells eat into this liquidity, while\n * decreasing the offer price according to xy=k.\n *\n * NOTE: Swaps in the other direction do not get the positive price difference\n * compared to the initial price before the first swap in the block.\n *\n * WARNING: This is experimental software and is provided on an \"as is\" and \"as available\" basis. We do\n * not give any warranties and will not be liable for any losses incurred through any use of this code\n * base.\n *\n * _Available since v1.1.0_\n */\ncontract AntiSandwichHook is BaseDynamicAfterFee {\n    using Pool for *;\n    using StateLibrary for IPoolManager;\n    using CurrencySettler for Currency;\n\n    /// @dev Represents a checkpoint of the pool state at the beginning of a block.\n    struct Checkpoint {\n        uint48 blockNumber;\n        Slot0 slot0;\n        Pool.State state;\n    }\n\n    mapping(PoolId id => Checkpoint) private _lastCheckpoints;\n\n    constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}\n\n    /**\n     * @dev Handles the before swap hook, setting up checkpoints at the beginning of blocks\n     * and calculating target outputs for subsequent swaps.\n     *\n     * For the first swap in a block:\n     * - Saves the current pool state as a checkpoint\n     *\n     * For subsequent swaps in the same block:\n     * - Calculates a target output based on the beginning-of-block state\n     * - Sets the inherited `_targetOutput` and `_applyTargetOutput` variables to enforce price limits\n     *\n     * NOTE: This implementation skips calling `super._beforeSwap` in the first swap of the block. Consider\n     * execution side effects might be missed if there is more than one definition for this function.\n     */\n    function _beforeSwap(\n        address sender,\n        PoolKey calldata key,\n        IPoolManager.SwapParams calldata params,\n        bytes calldata hookData\n    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {\n        PoolId poolId = key.toId();\n        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];\n\n        // update the top-of-block `slot0` if new block\n        if (_lastCheckpoint.blockNumber != uint48(block.number)) {\n            _lastCheckpoint.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));\n            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);\n        }\n\n        return super._beforeSwap(sender, key, params, hookData);\n    }\n\n    /**\n     * @dev Handles the after swap hook, initializing the full pool state checkpoint for the first\n     * swap in a block and updating the target output if needed.\n     *\n     * For the first swap in a block:\n     * - Saves a detailed checkpoint of the pool state including liquidity and tick information\n     * - This checkpoint will be used for subsequent swaps to calculate fair execution prices\n     *\n     * For all swaps:\n     * - Caps the target output to the actual swap amount to prevent excessive fee collection\n     */\n    function _afterSwap(\n        address sender,\n        PoolKey calldata key,\n        IPoolManager.SwapParams calldata params,\n        BalanceDelta delta,\n        bytes calldata hookData\n    ) internal override returns (bytes4, int128) {\n        uint48 blockNumber = uint48(block.number);\n        PoolId poolId = key.toId();\n        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];\n\n        // after the first swap in block, initialize the temporary pool state\n        if (_lastCheckpoint.blockNumber != blockNumber) {\n            _lastCheckpoint.blockNumber = blockNumber;\n\n            // iterate over ticks\n            (, int24 tickAfter,,) = poolManager.getSlot0(poolId);\n            for (int24 tick = _lastCheckpoint.slot0.tick(); tick < tickAfter; tick += key.tickSpacing) {\n                (\n                    uint128 liquidityGross,\n                    int128 liquidityNet,\n                    uint256 feeGrowthOutside0X128,\n                    uint256 feeGrowthOutside1X128\n                ) = poolManager.getTickInfo(poolId, tick);\n\n                _lastCheckpoint.state.ticks[tick].liquidityGross = liquidityGross;\n                _lastCheckpoint.state.ticks[tick].liquidityNet = liquidityNet;\n                _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128 = feeGrowthOutside0X128;\n                _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128 = feeGrowthOutside1X128;\n            }\n\n            // deep copy only values that are used and change in fair delta calculation\n            _lastCheckpoint.state.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));\n            (_lastCheckpoint.state.feeGrowthGlobal0X128, _lastCheckpoint.state.feeGrowthGlobal1X128) =\n                poolManager.getFeeGrowthGlobals(poolId);\n            _lastCheckpoint.state.liquidity = poolManager.getLiquidity(poolId);\n        }\n        int128 unspecifiedAmount = (params.amountSpecified < 0 == params.zeroForOne) ? delta.amount1() : delta.amount0();\n\n        if (unspecifiedAmount < 0) {\n            unspecifiedAmount = -unspecifiedAmount;\n        }\n\n        // update target output if it exceeds the swap amount\n        if (_targetOutput > uint128(unspecifiedAmount)) {\n            _targetOutput = uint128(unspecifiedAmount);\n        }\n\n        return super._afterSwap(sender, key, params, delta, hookData);\n    }\n\n    /**\n     * @dev Calculates the fair output amount based on the pool state at the beginning of the block.\n     * This prevents sandwich attacks by ensuring trades can't get better prices than what was available\n     * at the start of the block.\n     *\n     * The anti-sandwich mechanism works by:\n     * * For currency0 to currency1 swaps (zeroForOne = true): The pool behaves normally with xy=k curve\n     * * For currency1 to currency0 swaps (zeroForOne = false): The price is fixed at the beginning-of-block\n     *   price, which prevents attackers from manipulating the price within a block\n     */\n    function _getTargetOutput(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)\n        internal\n        override\n        returns (uint256 targetOutput, bool applyTargetOutput)\n    {\n        PoolId poolId = key.toId();\n        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];\n\n        // constant bid price\n        if (!params.zeroForOne) {\n            _lastCheckpoint.state.slot0 = _lastCheckpoint.slot0;\n        }\n\n        // calculate target output\n        // NOTE: this functions does not execute the swap, it only calculates the output of a swap in the given state\n        (BalanceDelta targetDelta,,,) = Pool.swap(\n            _lastCheckpoint.state,\n            Pool.SwapParams({\n                tickSpacing: key.tickSpacing,\n                zeroForOne: params.zeroForOne,\n                amountSpecified: params.amountSpecified,\n                sqrtPriceLimitX96: params.sqrtPriceLimitX96,\n                lpFeeOverride: 0\n            })\n        );\n\n        int128 target =\n            (params.amountSpecified < 0 == params.zeroForOne) ? targetDelta.amount1() : targetDelta.amount0();\n\n        targetOutput = uint256(uint128(target));\n        applyTargetOutput = true;\n    }\n\n    /**\n     * @dev Handles the excess tokens collected during the swap due to the anti-sandwich mechanism.\n     * When a swap executes at a worse price than what's currently available in the pool (due to\n     * enforcing the beginning-of-block price), the excess tokens are donated back to the pool\n     * to benefit all liquidity providers.\n     */\n    function _afterSwapHandler(\n        PoolKey calldata key,\n        IPoolManager.SwapParams calldata params,\n        BalanceDelta,\n        uint256,\n        uint256 feeAmount\n    ) internal override {\n        Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);\n        (uint256 amount0, uint256 amount1) = unspecified == key.currency0\n            ? (uint256(uint128(feeAmount)), uint256(0))\n            : (uint256(0), uint256(uint128(feeAmount)));\n\n        // reset apply flag\n        _applyTargetOutput = false;\n\n        // settle and donate execess tokens to the pool\n        poolManager.donate(key, amount0, amount1, \"\");\n        unspecified.settle(poolManager, address(this), feeAmount, true);\n    }\n\n    /**\n     * @dev Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.\n     *\n     * @return permissions The hook permissions.\n     */\n    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {\n        return Hooks.Permissions({\n            beforeInitialize: false,\n            afterInitialize: false,\n            beforeAddLiquidity: false,\n            afterAddLiquidity: false,\n            beforeRemoveLiquidity: false,\n            afterRemoveLiquidity: false,\n            beforeSwap: true,\n            afterSwap: true,\n            beforeDonate: false,\n            afterDonate: false,\n            beforeSwapReturnDelta: false,\n            afterSwapReturnDelta: true,\n            afterAddLiquidityReturnDelta: false,\n            afterRemoveLiquidityReturnDelta: false\n        });\n    }\n}\n"
     }
 }

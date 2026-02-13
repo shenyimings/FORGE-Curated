@@ -1,50 +1,29 @@
 {
     "vfp_id": "vfp_00544",
-    "project_name": "Uniswap Calibur Audit.md",
+    "project_name": "Mitosis (May) - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 8,
+            "id": 5,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-664"
                 ],
                 "2": [
-                    "CWE-758"
+                    "CWE-669"
                 ]
             },
-            "title": "Different Pragma Directives Are Used",
-            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
-            "severity": "Low",
+            "title": "Missing instance index update in migration function",
+            "description": "The migrate function in EOLVaultFactory.sol adds an instance to the destination vault type's instances array but fails to update the instanceIndex mapping for that instance. While the source index is properly deleted, the destination index is not set, breaking the bidirectional consistency between the array and the mapping. This could lead to incorrect index lookups or failed removal operations in the future. The issue stems from incomplete state maintenance during migration. Although this does not directly affect fund security, it could cause administrative operations to fail or behave unpredictably, especially when trying to remove or query the migrated instance.\n",
+            "severity": "Informational",
             "location": [
-                "ERC4337Account.sol#2",
-                "ERC7739Utils.sol#2"
+                "protocol/src/hub/eol/EOLVaultFactory.sol"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1068"
-                ]
-            },
-            "title": "Misleading Docstring",
-            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
-            "severity": "Low",
-            "location": [
-                "IERC4337Account.sol#18"
-            ],
-            "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/eol/EOLVaultFactory.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC4337Account.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {EntrypointLib} from \"./libraries/EntrypointLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\n/// @title ERC4337Account\n/// @notice A base contract which allows for the entrypoint to have a default value that can be updated\nabstract contract ERC4337Account is IERC4337Account, BaseAuthorization {\n    using EntrypointLib for *;\n\n    /// ERC-4337 defined constants\n    uint256 internal constant SIG_VALIDATION_SUCCEEDED = 0;\n    uint256 internal constant SIG_VALIDATION_FAILED = 1;\n\n    /// @notice The cached entrypoint address\n    uint256 internal _CACHED_ENTRYPOINT;\n\n    modifier onlyEntryPoint() {\n        if (msg.sender != ENTRY_POINT()) revert NotEntryPoint();\n        _;\n    }\n\n    /// @inheritdoc IERC4337Account\n    function updateEntryPoint(address entryPoint) external onlyThis {\n        _CACHED_ENTRYPOINT = entryPoint.pack();\n        emit EntryPointUpdated(entryPoint);\n    }\n\n    /// @inheritdoc IERC4337Account\n    function ENTRY_POINT() public view override returns (address) {\n        return _CACHED_ENTRYPOINT.isOverriden() ? _CACHED_ENTRYPOINT.unpack() : Static.ENTRY_POINT_V_0_8;\n    }\n\n    // https://github.com/coinbase/smart-wallet/blob/main/src/CoinbaseSmartWallet.sol#L100\n    function _payEntryPoint(uint256 missingAccountFunds) internal {\n        assembly (\"memory-safe\") {\n            if missingAccountFunds {\n                // Ignore failure (it's EntryPoint's job to verify, not the account's).\n                pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))\n            }\n        }\n    }\n}\n"
+        "EOLVaultFactory.sol": "// SPDX-License-Identifier: MIT\npragma solidity >=0.8.23 <0.9.0;\n\nimport { IERC20Metadata } from '@oz/interfaces/IERC20Metadata.sol';\nimport { Ownable2StepUpgradeable } from '@ozu/access/Ownable2StepUpgradeable.sol';\nimport { UUPSUpgradeable } from '@ozu/proxy/utils/UUPSUpgradeable.sol';\n\nimport { UpgradeableBeacon } from '@solady/utils/UpgradeableBeacon.sol';\n\nimport { IEOLVaultFactory } from '../../interfaces/hub/eol/IEOLVaultFactory.sol';\nimport { ERC7201Utils } from '../../lib/ERC7201Utils.sol';\nimport { BeaconProxy, IBeaconProxy } from '../../lib/proxy/BeaconProxy.sol';\nimport { EOLVault } from './EOLVault.sol';\n\ncontract EOLVaultFactory is IEOLVaultFactory, Ownable2StepUpgradeable, UUPSUpgradeable {\n  using ERC7201Utils for string;\n\n  struct BeaconInfo {\n    bool initialized;\n    address beacon;\n    address[] instances;\n    mapping(address => uint256) instanceIndex;\n  }\n\n  struct Storage {\n    mapping(address instance => bool) isInstance;\n    mapping(VaultType vaultType => BeaconInfo) infos;\n  }\n\n  string private constant _NAMESPACE = 'mitosis.storage.EOLVaultFactory';\n  bytes32 private immutable _slot = _NAMESPACE.storageSlot();\n\n  function _getStorage() private view returns (Storage storage $) {\n    bytes32 slot = _slot;\n    // slither-disable-next-line assembly\n    assembly {\n      $.slot := slot\n    }\n  }\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  function initialize(address owner_) external initializer {\n    __Ownable2Step_init();\n    __Ownable_init(owner_);\n    __UUPSUpgradeable_init();\n  }\n\n  function beacon(VaultType t) external view returns (address) {\n    return address(_getStorage().infos[t].beacon);\n  }\n\n  function isInstance(address instance) external view returns (bool) {\n    return _getStorage().isInstance[instance];\n  }\n\n  function isInstance(VaultType t, address instance) external view returns (bool) {\n    return _isInstance(_getStorage(), t, instance);\n  }\n\n  function instances(VaultType t, uint256 index) external view returns (address) {\n    return _getStorage().infos[t].instances[index];\n  }\n\n  function instances(VaultType t, uint256[] memory indexes) external view returns (address[] memory) {\n    BeaconInfo storage info = _getStorage().infos[t];\n\n    address[] memory result = new address[](indexes.length);\n    for (uint256 i = 0; i < indexes.length; i++) {\n      result[i] = info.instances[indexes[i]];\n    }\n    return result;\n  }\n\n  function instancesLength(VaultType t) external view returns (uint256) {\n    return _getStorage().infos[t].instances.length;\n  }\n\n  function initVaultType(VaultType vaultType, address initialImpl) external onlyOwner {\n    require(vaultType != VaultType.Unset, IEOLVaultFactory__InvalidVaultType());\n\n    Storage storage $ = _getStorage();\n    require(!$.infos[vaultType].initialized, IEOLVaultFactory__AlreadyInitialized());\n\n    $.infos[vaultType].initialized = true;\n    $.infos[vaultType].beacon = address(new UpgradeableBeacon(address(this), initialImpl));\n\n    emit VaultTypeInitialized(vaultType, address($.infos[vaultType].beacon));\n  }\n\n  function vaultTypeInitialized(VaultType t) external view returns (bool) {\n    return _getStorage().infos[t].initialized;\n  }\n\n  /**\n   * @dev used to migrate the beacon implementation - see `UpgradeableBeacon.upgradeTo`\n   */\n  function callBeacon(VaultType t, bytes calldata data) external onlyOwner returns (bytes memory) {\n    Storage storage $ = _getStorage();\n    require($.infos[t].initialized, IEOLVaultFactory__NotInitialized());\n\n    (bool success, bytes memory result) = address($.infos[t].beacon).call(data);\n    require(success, IEOLVaultFactory__CallBeaconFailed(result));\n\n    emit BeaconCalled(_msgSender(), t, data, success, result);\n\n    return result;\n  }\n\n  function create(VaultType t, bytes calldata args) external onlyOwner returns (address) {\n    Storage storage $ = _getStorage();\n    require($.infos[t].initialized, IEOLVaultFactory__NotInitialized());\n\n    address instance;\n\n    if (t == VaultType.Basic) instance = _create($, abi.decode(args, (BasicVaultInitArgs)));\n    else revert IEOLVaultFactory__InvalidVaultType();\n\n    emit EOLVaultCreated(t, instance, args);\n    return instance;\n  }\n\n  function migrate(VaultType from, VaultType to, address instance, bytes calldata data) external onlyOwner {\n    Storage storage $ = _getStorage();\n    require($.infos[from].initialized, IEOLVaultFactory__NotInitialized());\n    require($.infos[to].initialized, IEOLVaultFactory__NotInitialized());\n    require(_isInstance($, from, instance), IEOLVaultFactory__NotAnInstance());\n\n    // Remove instance from 'from' type's tracking\n    uint256 index = $.infos[from].instanceIndex[instance];\n    if ($.infos[from].instances.length > 1) {\n      // Move last element to the removed index and update its index mapping\n      address last = $.infos[from].instances[$.infos[from].instances.length - 1];\n      $.infos[from].instances[index] = last;\n      $.infos[from].instanceIndex[last] = index;\n    }\n    $.infos[from].instances.pop();\n    delete $.infos[from].instanceIndex[instance]; // Use delete instead of setting to 0\n\n    $.infos[to].instances.push(instance);\n    IBeaconProxy(instance).upgradeBeaconToAndCall($.infos[to].beacon, data);\n\n    emit EOLVaultMigrated(from, to, instance);\n  }\n\n  function _isInstance(Storage storage $, VaultType t, address instance) private view returns (bool) {\n    if (!$.infos[t].initialized) return false;\n    if ($.infos[t].instances.length == 0) return false;\n    uint256 index = $.infos[t].instanceIndex[instance];\n    return !(index == 0 && $.infos[t].instances[index] != instance);\n  }\n\n  function _create(Storage storage $, BasicVaultInitArgs memory args) private returns (address) {\n    BeaconInfo storage info = $.infos[VaultType.Basic];\n\n    bytes memory data = abi.encodeCall(\n      EOLVault.initialize, //\n      (args.owner, args.asset, args.name, args.symbol)\n    );\n    address instance = address(new BeaconProxy(address(info.beacon), data));\n\n    info.instances.push(instance);\n    info.instanceIndex[instance] = info.instances.length - 1;\n\n    return instance;\n  }\n\n  function _authorizeUpgrade(address) internal override onlyOwner { }\n}\n"
     }
 }

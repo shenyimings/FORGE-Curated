@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.24;
+pragma solidity ^0.8.18;
 
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./Balancer/vault/IVault.sol";
@@ -10,13 +10,20 @@ import "../../Interfaces/ILeverageZapper.sol";
 import "../../Interfaces/IFlashLoanReceiver.sol";
 import "../../Interfaces/IFlashLoanProvider.sol";
 
+// import "forge-std/console2.sol";
+
 contract BalancerFlashLoan is IFlashLoanRecipient, IFlashLoanProvider {
     using SafeERC20 for IERC20;
 
     IVault private constant vault = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
-    IFlashLoanReceiver public receiver;
 
-    function makeFlashLoan(IERC20 _token, uint256 _amount, Operation _operation, bytes calldata _params) external {
+    function makeFlashLoan(
+        IERC20 _token,
+        uint256 _amount,
+        IFlashLoanReceiver _caller, // TODO: should it always be msg.sender?
+        Operation _operation,
+        bytes calldata _params
+    ) external {
         IERC20[] memory tokens = new IERC20[](1);
         tokens[0] = _token;
         uint256[] memory amounts = new uint256[](1);
@@ -27,24 +34,18 @@ contract BalancerFlashLoan is IFlashLoanRecipient, IFlashLoanProvider {
         if (_operation == Operation.OpenTrove) {
             ILeverageZapper.OpenLeveragedTroveParams memory openTroveParams =
                 abi.decode(_params, (ILeverageZapper.OpenLeveragedTroveParams));
-            userData = abi.encode(_operation, openTroveParams);
+            userData = abi.encode(_caller, _operation, openTroveParams);
         } else if (_operation == Operation.LeverUpTrove) {
             ILeverageZapper.LeverUpTroveParams memory leverUpTroveParams =
                 abi.decode(_params, (ILeverageZapper.LeverUpTroveParams));
-            userData = abi.encode(_operation, leverUpTroveParams);
+            userData = abi.encode(_caller, _operation, leverUpTroveParams);
         } else if (_operation == Operation.LeverDownTrove) {
             ILeverageZapper.LeverDownTroveParams memory leverDownTroveParams =
                 abi.decode(_params, (ILeverageZapper.LeverDownTroveParams));
-            userData = abi.encode(_operation, leverDownTroveParams);
-        } else if (_operation == Operation.CloseTrove) {
-            IZapper.CloseTroveParams memory closeTroveParams = abi.decode(_params, (IZapper.CloseTroveParams));
-            userData = abi.encode(_operation, closeTroveParams);
+            userData = abi.encode(_caller, _operation, leverDownTroveParams);
         } else {
             revert("LZ: Wrong Operation");
         }
-
-        // This will be used by the callback below no
-        receiver = IFlashLoanReceiver(msg.sender);
 
         vault.flashLoan(this, tokens, amounts, userData);
     }
@@ -56,60 +57,44 @@ contract BalancerFlashLoan is IFlashLoanRecipient, IFlashLoanProvider {
         bytes calldata userData
     ) external override {
         require(msg.sender == address(vault), "Caller is not Vault");
-        require(address(receiver) != address(0), "Flash loan not properly initiated");
 
-        // Cache and reset receiver, to comply with CEI pattern, as some callbacks in zappers do raw calls
-        // It’s not necessary, as Balancer flash loans are protected against re-entrancy
-        // But it’s safer, specially if someone tries to reuse this code, and more gas efficient
-        IFlashLoanReceiver receiverCached = receiver;
-        receiver = IFlashLoanReceiver(address(0));
-
-        // decode and operation
-        Operation operation = abi.decode(userData[0:32], (Operation));
+        // decode receiver and operation
+        IFlashLoanReceiver receiver = IFlashLoanReceiver(abi.decode(userData[0:32], (address)));
+        Operation operation = abi.decode(userData[32:64], (Operation));
 
         if (operation == Operation.OpenTrove) {
             // Open
             // decode params
             ILeverageZapper.OpenLeveragedTroveParams memory openTroveParams =
-                abi.decode(userData[32:], (ILeverageZapper.OpenLeveragedTroveParams));
+                abi.decode(userData[64:], (ILeverageZapper.OpenLeveragedTroveParams));
             // Flash loan minus fees
             uint256 effectiveFlashLoanAmount = amounts[0] - feeAmounts[0];
             // We send only effective flash loan, keeping fees here
-            tokens[0].safeTransfer(address(receiverCached), effectiveFlashLoanAmount);
+            tokens[0].safeTransfer(address(receiver), effectiveFlashLoanAmount);
             // Zapper callback
-            receiverCached.receiveFlashLoanOnOpenLeveragedTrove(openTroveParams, effectiveFlashLoanAmount);
+            receiver.receiveFlashLoanOnOpenLeveragedTrove(openTroveParams, effectiveFlashLoanAmount);
         } else if (operation == Operation.LeverUpTrove) {
             // Lever up
             // decode params
             ILeverageZapper.LeverUpTroveParams memory leverUpTroveParams =
-                abi.decode(userData[32:], (ILeverageZapper.LeverUpTroveParams));
+                abi.decode(userData[64:], (ILeverageZapper.LeverUpTroveParams));
             // Flash loan minus fees
             uint256 effectiveFlashLoanAmount = amounts[0] - feeAmounts[0];
             // We send only effective flash loan, keeping fees here
-            tokens[0].safeTransfer(address(receiverCached), effectiveFlashLoanAmount);
+            tokens[0].safeTransfer(address(receiver), effectiveFlashLoanAmount);
             // Zapper callback
-            receiverCached.receiveFlashLoanOnLeverUpTrove(leverUpTroveParams, effectiveFlashLoanAmount);
+            receiver.receiveFlashLoanOnLeverUpTrove(leverUpTroveParams, effectiveFlashLoanAmount);
         } else if (operation == Operation.LeverDownTrove) {
             // Lever down
             // decode params
             ILeverageZapper.LeverDownTroveParams memory leverDownTroveParams =
-                abi.decode(userData[32:], (ILeverageZapper.LeverDownTroveParams));
+                abi.decode(userData[64:], (ILeverageZapper.LeverDownTroveParams));
             // Flash loan minus fees
             uint256 effectiveFlashLoanAmount = amounts[0] - feeAmounts[0];
             // We send only effective flash loan, keeping fees here
-            tokens[0].safeTransfer(address(receiverCached), effectiveFlashLoanAmount);
+            tokens[0].safeTransfer(address(receiver), effectiveFlashLoanAmount);
             // Zapper callback
-            receiverCached.receiveFlashLoanOnLeverDownTrove(leverDownTroveParams, effectiveFlashLoanAmount);
-        } else if (operation == Operation.CloseTrove) {
-            // Close trove
-            // decode params
-            IZapper.CloseTroveParams memory closeTroveParams = abi.decode(userData[32:], (IZapper.CloseTroveParams));
-            // Flash loan minus fees
-            uint256 effectiveFlashLoanAmount = amounts[0] - feeAmounts[0];
-            // We send only effective flash loan, keeping fees here
-            tokens[0].safeTransfer(address(receiverCached), effectiveFlashLoanAmount);
-            // Zapper callback
-            receiverCached.receiveFlashLoanOnCloseTroveFromCollateral(closeTroveParams, effectiveFlashLoanAmount);
+            receiver.receiveFlashLoanOnLeverDownTrove(leverDownTroveParams, effectiveFlashLoanAmount);
         } else {
             revert("LZ: Wrong Operation");
         }

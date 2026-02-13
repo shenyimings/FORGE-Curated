@@ -1,82 +1,49 @@
 {
     "vfp_id": "vfp_00543",
-    "project_name": "Uniswap Calibur Audit.md",
+    "project_name": "Mitosis (May) - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 19,
+            "id": 3,
             "category": {
                 "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-345"
-                ],
-                "3": [
-                    "CWE-347"
+                    "CWE-682"
                 ]
             },
-            "title": "Missing Signature Deadlines",
-            "description": "The signature validation logic only checks whether the associated key has expired, based on the key's settings, but does not enforce per-signature deadlines. This means a valid signature can be replayed at any time before the key expires, deviating from best practices that include time-limited signatures. The root cause is the lack of a deadline parameter in the signature verification flow. An attacker could capture a valid signature (e.g., via a compromised frontend or phishing) and replay it at a later time to execute unauthorized transactions. The impact includes replay attacks, loss of fine-grained control over permissions, and increased window of exposure for stolen signatures.\n",
+            "title": "Incorrect cap reset in setCap function",
+            "description": "The _setCap function in MitosisVault.sol resets the availableCap to the new cap value without accounting for the amount already deposited. This means that if a deposit has already been made, calling setCap will reset the tracking mechanism, allowing additional deposits up to the new cap value on top of existing deposits. The flaw lies in the failure to subtract the current balance from the new cap when updating availableCap. An attacker or malicious actor with access to setCap could exploit this to deposit more assets than the intended maximum cap, potentially violating economic assumptions and leading to over-collateralization or other protocol-level disruptions.\n",
             "severity": "Medium",
             "location": [
-                "KeyManagement.sol::settings expiry check#77"
+                "protocol/src/hub/vault/MitosisVault.sol"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/branch/MitosisVault.sol"
             ]
         },
         {
-            "id": 12,
+            "id": 4,
             "category": {
                 "1": [
                     "CWE-664"
                 ],
                 "2": [
-                    "CWE-665"
+                    "CWE-221"
                 ],
                 "3": [
-                    "CWE-909"
-                ],
-                "4": [
-                    "CWE-456"
+                    "CWE-223"
                 ]
             },
-            "title": "A Newly Registered Key Has No Expiration Date",
-            "description": "Keys registered via the `register` function are created without an expiration date because no entry is made in the `keySettings` mapping, which defaults to no expiry. This violates the principle of least privilege. The cause is incomplete initialization logic in `KeyManagement.sol`. An attacker who gains access to a forgotten admin key could exploit this to maintain long-term access. The impact is prolonged exposure from orphaned or forgotten keys, increasing the attack surface over time.\n",
+            "title": "Missing availableCap update in withdraw function",
+            "description": "The withdraw function in MitosisVault.sol does not update the availableCap state when funds are withdrawn, while the _deposit function correctly decreases availableCap. This creates an imbalance where availableCap only decreases on deposit but never increases on withdrawal, leading to a permanently shrinking available capacity. The root cause is the omission of a line to increase availableCap by the withdrawn amount. Over time, this results in the vault incorrectly reporting less available capacity than it actually has, eventually preventing legitimate deposits even when the vault is well below its maximum cap. This is a state inconsistency issue that degrades the functionality of the vault over time.\n",
             "severity": "Low",
             "location": [
-                "KeyManagement.sol::register#21",
-                "SettingsLib.sol#52"
+                "protocol/src/branch/MitosisVault.sol"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-284"
-                ],
-                "2": [
-                    "CWE-285"
-                ],
-                "3": [
-                    "CWE-863"
-                ]
-            },
-            "title": "Unrestricted Admin Keys",
-            "description": "Admin keys can register new keys and update any key's settings, including their own, allowing them to remove expiration dates or grant admin privileges to others. This creates a trust escalation issue where any admin can become permanent and grant further privileges, effectively making the wallet a 1-of-n multisig with no limits. The cause is overly permissive access control in `KeyManagement.sol`. An attacker who compromises an admin key could exploit this to grant themselves permanent access and bypass time-based restrictions. The impact is a weakened security model where the compromise of a single admin key can lead to full and permanent control of the wallet.\n",
-            "severity": "Low",
-            "location": [
-                "KeyManagement.sol::update#32"
-            ],
-            "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/branch/MitosisVault.sol"
             ]
         }
     ],
     "affected_files": {
-        "KeyManagement.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {EnumerableSetLib} from \"solady/utils/EnumerableSetLib.sol\";\nimport {IKeyManagement} from \"./interfaces/IKeyManagement.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {Key, KeyLib, KeyType} from \"./libraries/KeyLib.sol\";\nimport {Settings, SettingsLib} from \"./libraries/SettingsLib.sol\";\n\n/// @dev A base contract for managing keys\nabstract contract KeyManagement is IKeyManagement, BaseAuthorization {\n    using EnumerableSetLib for EnumerableSetLib.Bytes32Set;\n    using KeyLib for *;\n    using SettingsLib for Settings;\n\n    EnumerableSetLib.Bytes32Set keyHashes;\n    mapping(bytes32 keyHash => bytes encodedKey) keyStorage;\n    mapping(bytes32 keyHash => Settings settings) keySettings;\n\n    /// @inheritdoc IKeyManagement\n    function register(Key memory key) external onlyThis {\n        if (key.isRootKey()) revert CannotRegisterRootKey();\n\n        bytes32 keyHash = key.hash();\n        keyStorage[keyHash] = abi.encode(key);\n        keyHashes.add(keyHash);\n\n        emit Registered(keyHash, key);\n    }\n\n    /// @inheritdoc IKeyManagement\n    function update(bytes32 keyHash, Settings settings) external onlyThis {\n        if (keyHash.isRootKey()) revert CannotUpdateRootKey();\n        if (!isRegistered(keyHash)) revert KeyDoesNotExist();\n        keySettings[keyHash] = settings;\n    }\n\n    /// @inheritdoc IKeyManagement\n    function revoke(bytes32 keyHash) external onlyThis {\n        if (!keyHashes.remove(keyHash)) revert KeyDoesNotExist();\n        delete keyStorage[keyHash];\n        keySettings[keyHash] = SettingsLib.DEFAULT;\n\n        emit Revoked(keyHash);\n    }\n\n    /// @inheritdoc IKeyManagement\n    function keyCount() external view returns (uint256) {\n        return keyHashes.length();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function keyAt(uint256 i) external view returns (Key memory) {\n        return getKey(keyHashes.at(i));\n    }\n\n    /// @inheritdoc IKeyManagement\n    function getKey(bytes32 keyHash) public view returns (Key memory) {\n        if (keyHash.isRootKey()) return KeyLib.toRootKey();\n        if (isRegistered(keyHash)) return abi.decode(keyStorage[keyHash], (Key));\n        revert KeyDoesNotExist();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function getKeySettings(bytes32 keyHash) public view returns (Settings) {\n        if (keyHash.isRootKey()) return SettingsLib.ROOT_KEY_SETTINGS;\n        if (isRegistered(keyHash)) return keySettings[keyHash];\n        revert KeyDoesNotExist();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function isRegistered(bytes32 keyHash) public view returns (bool) {\n        return keyHashes.contains(keyHash);\n    }\n\n    /// @notice Reverts if the key settings are expired\n    function _checkExpiry(Settings settings) internal view {\n        (bool isExpired, uint40 expiry) = settings.isExpired();\n        if (isExpired) revert IKeyManagement.KeyExpired(expiry);\n    }\n\n    /// @notice Check if the keyHash is the root key or an admin key\n    function _isOwnerOrAdmin(bytes32 keyHash) internal view returns (bool) {\n        if (keyHash.isRootKey()) return true;\n        if (!isRegistered(keyHash)) return false;\n        Settings settings = keySettings[keyHash];\n        if (settings.isAdmin()) return true;\n        return false;\n    }\n}\n"
+        "MitosisVault.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { IERC20 } from '@oz/token/ERC20/IERC20.sol';\nimport { SafeERC20 } from '@oz/token/ERC20/utils/SafeERC20.sol';\nimport { Ownable2StepUpgradeable } from '@ozu/access/Ownable2StepUpgradeable.sol';\nimport { UUPSUpgradeable } from '@ozu/proxy/utils/UUPSUpgradeable.sol';\n\nimport { AssetAction, IMitosisVault } from '../interfaces/branch/IMitosisVault.sol';\nimport { IMitosisVaultEntrypoint } from '../interfaces/branch/IMitosisVaultEntrypoint.sol';\nimport { ERC7201Utils } from '../lib/ERC7201Utils.sol';\nimport { Pausable } from '../lib/Pausable.sol';\nimport { StdError } from '../lib/StdError.sol';\nimport { MitosisVaultEOL } from './MitosisVaultEOL.sol';\nimport { MitosisVaultMatrix } from './MitosisVaultMatrix.sol';\n\ncontract MitosisVault is\n  IMitosisVault,\n  Pausable,\n  Ownable2StepUpgradeable,\n  UUPSUpgradeable,\n  MitosisVaultMatrix,\n  MitosisVaultEOL\n{\n  using SafeERC20 for IERC20;\n  using ERC7201Utils for string;\n\n  struct AssetInfo {\n    bool initialized;\n    uint256 maxCap;\n    uint256 availableCap;\n    mapping(AssetAction => bool) isHalted;\n  }\n\n  struct StorageV1 {\n    IMitosisVaultEntrypoint entrypoint;\n    mapping(address asset => AssetInfo) assets;\n  }\n\n  string private constant _NAMESPACE = 'mitosis.storage.MitosisVaultStorage.v1';\n  bytes32 private immutable _slot = _NAMESPACE.storageSlot();\n\n  function _getStorageV1() internal view returns (StorageV1 storage $) {\n    bytes32 slot = _slot;\n    // slither-disable-next-line assembly\n    assembly {\n      $.slot := slot\n    }\n  }\n\n  //=========== NOTE: INITIALIZATION FUNCTIONS ===========//\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  fallback() external payable {\n    revert StdError.NotSupported();\n  }\n\n  receive() external payable {\n    revert StdError.NotSupported();\n  }\n\n  function initialize(address owner_) public initializer {\n    __Pausable_init();\n    __Ownable2Step_init();\n    __Ownable_init(owner_);\n    __UUPSUpgradeable_init();\n  }\n\n  //=========== NOTE: VIEW FUNCTIONS ===========//\n\n  function maxCap(address asset) external view returns (uint256) {\n    return _getStorageV1().assets[asset].maxCap;\n  }\n\n  function availableCap(address asset) external view returns (uint256) {\n    return _getStorageV1().assets[asset].availableCap;\n  }\n\n  function isAssetActionHalted(address asset, AssetAction action) external view returns (bool) {\n    return _isHalted(_getStorageV1(), asset, action);\n  }\n\n  function isAssetInitialized(address asset) external view returns (bool) {\n    return _isAssetInitialized(_getStorageV1(), asset);\n  }\n\n  function entrypoint() public view override(IMitosisVault, MitosisVaultMatrix, MitosisVaultEOL) returns (address) {\n    return address(_getStorageV1().entrypoint);\n  }\n\n  //=========== NOTE: MUTATIVE - ASSET FUNCTIONS ===========//\n\n  function initializeAsset(address asset) external whenNotPaused {\n    StorageV1 storage $ = _getStorageV1();\n\n    _assertOnlyEntrypoint($);\n    _assertAssetNotInitialized($, asset);\n\n    $.assets[asset].initialized = true;\n    emit AssetInitialized(asset);\n\n    // NOTE: we halt deposit and keep the cap at zero by default.\n    _haltAsset($, asset, AssetAction.Deposit);\n  }\n\n  function deposit(address asset, address to, uint256 amount) external whenNotPaused {\n    StorageV1 storage $ = _getStorageV1();\n\n    _deposit(asset, to, amount);\n\n    $.entrypoint.deposit(asset, to, amount);\n    emit Deposited(asset, to, amount);\n  }\n\n  function withdraw(address asset, address to, uint256 amount) external whenNotPaused {\n    StorageV1 storage $ = _getStorageV1();\n\n    _assertOnlyEntrypoint($);\n    _assertAssetInitialized(asset);\n\n    IERC20(asset).safeTransfer(to, amount);\n\n    emit Withdrawn(asset, to, amount);\n  }\n\n  //=========== NOTE: OWNABLE FUNCTIONS ===========//\n\n  function _authorizeUpgrade(address) internal override onlyOwner { }\n\n  function _authorizePause(address) internal view override onlyOwner { }\n\n  function setEntrypoint(address entrypoint_) external onlyOwner {\n    _getStorageV1().entrypoint = IMitosisVaultEntrypoint(entrypoint_);\n    emit EntrypointSet(address(entrypoint_));\n  }\n\n  function setCap(address asset, uint256 newCap) external onlyOwner {\n    StorageV1 storage $ = _getStorageV1();\n    _assertAssetInitialized(asset);\n\n    _setCap($, asset, newCap);\n  }\n\n  function haltAsset(address asset, AssetAction action) external onlyOwner {\n    StorageV1 storage $ = _getStorageV1();\n    _assertAssetInitialized(asset);\n    return _haltAsset($, asset, action);\n  }\n\n  function resumeAsset(address asset, AssetAction action) external onlyOwner {\n    StorageV1 storage $ = _getStorageV1();\n    _assertAssetInitialized(asset);\n    return _resumeAsset($, asset, action);\n  }\n\n  //=========== NOTE: INTERNAL FUNCTIONS ===========//\n\n  function _assertOnlyEntrypoint(StorageV1 storage $) internal view {\n    require(_msgSender() == address($.entrypoint), StdError.Unauthorized());\n  }\n\n  function _assertCapNotExceeded(StorageV1 storage $, address asset, uint256 amount) internal view {\n    uint256 available = $.assets[asset].availableCap;\n    require(available >= amount, IMitosisVault__ExceededCap(asset, amount, available));\n  }\n\n  function _assertAssetInitialized(address asset) internal view override(MitosisVaultMatrix, MitosisVaultEOL) {\n    require(_isAssetInitialized(_getStorageV1(), asset), IMitosisVault__AssetNotInitialized(asset));\n  }\n\n  function _assertAssetNotInitialized(StorageV1 storage $, address asset) internal view {\n    require(!_isAssetInitialized($, asset), IMitosisVault__AssetAlreadyInitialized(asset));\n  }\n\n  function _assertNotHalted(StorageV1 storage $, address asset, AssetAction action) internal view {\n    require(!_isHalted($, asset, action), StdError.Halted());\n  }\n\n  function _isHalted(StorageV1 storage $, address asset, AssetAction action) internal view returns (bool) {\n    return $.assets[asset].isHalted[action];\n  }\n\n  function _isAssetInitialized(StorageV1 storage $, address asset) internal view returns (bool) {\n    return $.assets[asset].initialized;\n  }\n\n  function _setCap(StorageV1 storage $, address asset, uint256 newCap) internal {\n    AssetInfo storage assetInfo = $.assets[asset];\n    uint256 prevCap = assetInfo.maxCap;\n    assetInfo.maxCap = newCap;\n    assetInfo.availableCap = newCap;\n    emit CapSet(_msgSender(), asset, prevCap, newCap);\n  }\n\n  function _haltAsset(StorageV1 storage $, address asset, AssetAction action) internal {\n    $.assets[asset].isHalted[action] = true;\n    emit AssetHalted(asset, action);\n  }\n\n  function _resumeAsset(StorageV1 storage $, address asset, AssetAction action) internal {\n    $.assets[asset].isHalted[action] = false;\n    emit AssetResumed(asset, action);\n  }\n\n  function _deposit(address asset, address to, uint256 amount) internal override(MitosisVaultMatrix, MitosisVaultEOL) {\n    StorageV1 storage $ = _getStorageV1();\n    require(to != address(0), StdError.ZeroAddress('to'));\n    require(amount != 0, StdError.ZeroAmount());\n\n    _assertAssetInitialized(asset);\n    _assertNotHalted($, asset, AssetAction.Deposit);\n    _assertCapNotExceeded($, asset, amount);\n\n    $.assets[asset].availableCap -= amount;\n    IERC20(asset).safeTransferFrom(_msgSender(), address(this), amount);\n  }\n}\n"
     }
 }

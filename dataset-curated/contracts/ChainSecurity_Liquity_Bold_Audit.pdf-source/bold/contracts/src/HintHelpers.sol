@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity 0.8.18;
 
 import "./Interfaces/ICollateralRegistry.sol";
 import "./Dependencies/LiquityMath.sol";
 import "./Dependencies/Constants.sol";
 import "./Interfaces/IHintHelpers.sol";
+
+// import "forge-std/console2.sol";
 
 contract HintHelpers is IHintHelpers {
     string public constant NAME = "HintHelpers";
@@ -49,7 +51,7 @@ contract HintHelpers is IHintHelpers {
             uint256 arrayIndex = latestRandomSeed % arrayLength;
             uint256 currentId = troveManager.getTroveFromTroveIdsArray(arrayIndex);
 
-            // Skip this Trove if it's zombie and not in the sorted list
+            // Skip this Trove if it's unredeeamable and not in the sorted list
             if (!sortedTroves.contains(currentId)) continue;
 
             uint256 currentInterestRate = troveManager.getTroveAnnualInterestRate(currentId);
@@ -93,10 +95,7 @@ contract HintHelpers is IHintHelpers {
         IActivePool activePool = troveManager.activePool();
         LatestTroveData memory trove = troveManager.getLatestTroveData(_troveId);
 
-        if (
-            _newInterestRate == trove.annualInterestRate
-                || block.timestamp >= trove.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN
-        ) {
+        if (block.timestamp >= trove.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN) {
             return 0;
         }
 
@@ -170,10 +169,7 @@ contract HintHelpers is IHintHelpers {
         IActivePool activePool = troveManager.activePool();
         LatestBatchData memory batch = troveManager.getLatestBatchData(_batchAddress);
 
-        if (
-            _newInterestRate == batch.annualInterestRate
-                || block.timestamp >= batch.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN
-        ) {
+        if (block.timestamp >= batch.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN) {
             return 0;
         }
 
@@ -216,15 +212,40 @@ contract HintHelpers is IHintHelpers {
         LatestTroveData memory trove = troveManager.getLatestTroveData(_troveId);
         LatestBatchData memory batch = troveManager.getLatestBatchData(_batchAddress);
 
-        TroveChange memory newBatchTroveChange;
-        newBatchTroveChange.appliedRedistBoldDebtGain = trove.redistBoldDebtGain;
-        newBatchTroveChange.batchAccruedManagementFee = batch.accruedManagementFee;
-        newBatchTroveChange.oldWeightedRecordedDebt = batch.weightedRecordedDebt + trove.weightedRecordedDebt;
-        newBatchTroveChange.newWeightedRecordedDebt =
-            (batch.entireDebtWithoutRedistribution + trove.entireDebt) * batch.annualInterestRate;
+        if (block.timestamp >= trove.lastInterestRateAdjTime + INTEREST_RATE_ADJ_COOLDOWN) {
+            return 0;
+        }
 
-        uint256 avgInterestRate = activePool.getNewApproxAvgInterestRateFromTroveChange(newBatchTroveChange);
-        return _calcUpfrontFee(trove.entireDebt, avgInterestRate);
+        return _predictJoinBatchInterestRateUpfrontFee(activePool, trove, batch);
+    }
+
+    function forcePredictJoinBatchInterestRateUpfrontFee(uint256 _collIndex, uint256 _troveId, address _batchAddress)
+        external
+        view
+        returns (uint256)
+    {
+        ITroveManager troveManager = collateralRegistry.getTroveManager(_collIndex);
+        IActivePool activePool = troveManager.activePool();
+        LatestTroveData memory trove = troveManager.getLatestTroveData(_troveId);
+        LatestBatchData memory batch = troveManager.getLatestBatchData(_batchAddress);
+
+        return _predictJoinBatchInterestRateUpfrontFee(activePool, trove, batch);
+    }
+
+    function _predictJoinBatchInterestRateUpfrontFee(
+        IActivePool _activePool,
+        LatestTroveData memory _trove,
+        LatestBatchData memory _batch
+    ) internal view returns (uint256) {
+        TroveChange memory newBatchTroveChange;
+        newBatchTroveChange.appliedRedistBoldDebtGain = _trove.redistBoldDebtGain;
+        newBatchTroveChange.batchAccruedManagementFee = _batch.accruedManagementFee;
+        newBatchTroveChange.oldWeightedRecordedDebt = _batch.weightedRecordedDebt + _trove.weightedRecordedDebt;
+        newBatchTroveChange.newWeightedRecordedDebt =
+            (_batch.entireDebtWithoutRedistribution + _trove.entireDebt) * _batch.annualInterestRate;
+
+        uint256 avgInterestRate = _activePool.getNewApproxAvgInterestRateFromTroveChange(newBatchTroveChange);
+        return _calcUpfrontFee(_trove.entireDebt, avgInterestRate);
     }
 
     function predictRemoveFromBatchUpfrontFee(uint256 _collIndex, uint256 _troveId, uint256 _newInterestRate)

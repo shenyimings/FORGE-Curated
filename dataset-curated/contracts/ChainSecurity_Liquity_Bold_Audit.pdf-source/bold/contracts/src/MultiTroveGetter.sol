@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity 0.8.18;
 
 import "./Interfaces/ICollateralRegistry.sol";
 import "./Interfaces/IMultiTroveGetter.sol";
@@ -58,28 +58,17 @@ contract MultiTroveGetter is IMultiTroveGetter {
     function _getOneTrove(ITroveManager _troveManager, uint256 _id, CombinedTroveData memory _out) internal view {
         _out.id = _id;
 
-        LatestTroveData memory troveData = _troveManager.getLatestTroveData(_id);
-        _out.entireDebt = troveData.entireDebt;
-        _out.entireColl = troveData.entireColl;
-        _out.redistBoldDebtGain = troveData.redistBoldDebtGain;
-        _out.redistCollGain = troveData.redistCollGain;
-        _out.accruedInterest = troveData.accruedInterest;
-        _out.recordedDebt = troveData.recordedDebt;
-        _out.annualInterestRate = troveData.annualInterestRate;
-        _out.accruedBatchManagementFee = troveData.accruedBatchManagementFee;
-        _out.lastInterestRateAdjTime = troveData.lastInterestRateAdjTime;
-
         (
-            , // debt
-            , // coll
+            _out.debt,
+            _out.coll,
             _out.stake,
             , // status
             , // arrayIndex
+            _out.annualInterestRate,
             _out.lastDebtUpdateTime,
-            , // lastInterestRateAdjTime
-            , // annualInterestRate
+            _out.lastInterestRateAdjTime,
             _out.interestBatchManager,
-            _out.batchDebtShares
+            //_out.batchDebtShares,
         ) = _troveManager.Troves(_id);
 
         (_out.snapshotETH, _out.snapshotBoldDebt) = _troveManager.rewardSnapshots(_id);
@@ -137,7 +126,7 @@ contract MultiTroveGetter is IMultiTroveGetter {
         assert(address(sortedTroves) != address(0));
 
         data = new DebtPerInterestRate[](_maxIterations);
-        currId = _startId == 0 ? sortedTroves.getLast() : _startId;
+        currId = sortedTroves.getPrev(_startId);
 
         for (uint256 i = 0; i < _maxIterations; ++i) {
             if (currId == 0) break;

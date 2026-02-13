@@ -43,7 +43,6 @@ interface IAddressesRegistry {
     function CCR() external returns (uint256);
     function SCR() external returns (uint256);
     function MCR() external returns (uint256);
-    function BCR() external returns (uint256);
     function LIQUIDATION_PENALTY_SP() external returns (uint256);
     function LIQUIDATION_PENALTY_REDISTRIBUTION() external returns (uint256);
 

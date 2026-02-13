@@ -1,52 +1,47 @@
 {
     "vfp_id": "vfp_00554",
-    "project_name": "Mitosis (May) - Zellic Audit Report.pdf",
+    "project_name": "cantina_seamless_sep2025.pdf",
     "findings": [
-        {
-            "id": 7,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
-                ]
-            },
-            "title": "Missing public-key validation",
-            "description": "The LibSecp256k1.sol library lacks proper public key validation before performing cryptographic operations. This could allow invalid or malformed public keys to be processed, potentially leading to unexpected behavior or edge-case vulnerabilities in signature verification. The absence of checks for curve membership, point validity, or canonical form increases the attack surface, especially in contexts where untrusted public keys are accepted. While no immediate exploit is evident, this represents a deviation from cryptographic best practices and could be leveraged in combination with other issues. Proper validation should be enforced to ensure only valid secp256k1 points are accepted.\n",
-            "severity": "Informational",
-            "location": [
-                "protocol/src/lib/LibSecp256k1.sol"
-            ],
-            "files": [
-                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
-            ]
-        },
         {
             "id": 8,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-682"
                 ],
                 "2": [
-                    "CWE-20"
+                    "CWE-1339"
                 ]
             },
-            "title": "Missing Curve Validation in LibSecp256k1.uncompressPubkey",
-            "description": "The uncompressPubkey function in the LibSecp256k1 library fails to validate that the decompressed (x, y) coordinates lie on the Secp256k1 elliptic curve. This is a critical cryptographic requirement, as public keys must represent valid curve points to ensure cryptographic soundness. The root cause is the absence of a post-decompression check using the curve equation y² ≡ x³ + ax + b (mod p). An attacker could supply a compressed public key that decompresses to a point off the curve, potentially leading to incorrect cryptographic operations or side-channel vulnerabilities. Although the impact is currently mitigated because this code is not directly used in production, the vulnerability could be exploited if this function is later integrated into signature verification or key agreement logic, undermining the security assumptions of the protocol.\n",
+            "title": "PricingAdapter should be discouraged for on-chain use",
+            "description": "1. **Description:** The getLeverageTokenPriceAdjusted function may return imprecise or zero values due to rounding, especially when oracle precision and base asset decimals differ significantly.\n2. **Cause:** The calculation involves multiple divisions and rounding steps that can erase value in extreme cases.\n3. **Exploitation:** On-chain integrators relying on this price feed could make incorrect decisions due to inaccurate pricing.\n4. **Impact:** Risk of incorrect valuation in on-chain logic, leading to potential financial loss if used in critical paths.\n",
             "severity": "Informational",
             "location": [
-                "LibSecp256k1.sol::uncompressPubkey"
+                "PricingAdapter.sol#L56-L73"
             ],
             "files": [
-                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "PricingAdapter doesn't account for fee adjusted supply, leading to potential overpricing",
+            "description": "1. **Description:** The PricingAdapter contract calculates leverage token prices using totalSupply(), which does not account for accrued management fees. This results in an underreported supply and thus an overpriced output.\n2. **Cause:** The use of raw totalSupply() instead of getFeeAdjustedTotalSupply(ILeverageToken token) fails to reflect the true economic supply after fee accrual.\n3. **Exploitation:** Off-chain or on-chain systems relying on PricingAdapter for pricing data may overvalue tokens, leading to incorrect valuations in trading, lending, or analytics platforms.\n4. **Impact:** Mispricing can lead to financial losses for users or integrators who rely on accurate pricing data, especially in automated systems.\n",
+            "severity": "Low",
+            "location": [
+                "PricingAdapter.sol#L26-L38",
+                "PricingAdapter.sol#L41-L53"
+            ],
+            "files": [
+                "leverage-tokens/src/periphery/PricingAdapter.sol"
             ]
         }
     ],
     "affected_files": {
-        "LibSecp256k1.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { EllipticCurve } from '@elliptic-curve-solidity/contracts/EllipticCurve.sol';\n\nimport { StdError } from './StdError.sol';\n\nlibrary LibSecp256k1 {\n  uint256 constant AA = 0;\n  uint256 constant BB = 7;\n  uint256 constant PP = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F;\n\n  /**\n   * @notice Verifies that the given key is a compressed 33-byte secp256k1 public key on the curve.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   */\n  function verifyCmpPubkey(bytes memory cmpPubkey) internal pure {\n    uncompressPubkey(cmpPubkey);\n  }\n\n  /**\n   * @notice Verifies that the given key is a uncompressed 65-byte secp256k1 public key on the curve.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   */\n  function verifyUncmpPubkey(bytes memory uncmpPubkey) internal pure {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    bool isOnCurve = EllipticCurve.isOnCurve(x, y, AA, BB, PP);\n    require(isOnCurve, StdError.InvalidParameter('uncmpPubkey: not on curve'));\n  }\n\n  /**\n   * @notice Verifies that the given public key is a compressed 33-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the compressed public key\n   */\n  function verifyCmpPubkeyWithAddress(bytes memory cmpPubkey, address expectedAddress) internal pure {\n    bytes memory uncmpPubkey = uncompressPubkey(cmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Verifies that the given public key is a uncompressed 65-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the uncompressed public key\n   */\n  function verifyUncmpPubkeyWithAddress(bytes memory uncmpPubkey, address expectedAddress) internal pure {\n    verifyUncmpPubkey(uncmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Uncompresses a compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   * @return uncmpPubkey The uncompressed 65-byte public key\n   */\n  function uncompressPubkey(bytes memory cmpPubkey) internal pure returns (bytes memory uncmpPubkey) {\n    require(cmpPubkey.length == 33, StdError.InvalidParameter('cmpPubKey.length'));\n    require(cmpPubkey[0] == 0x02 || cmpPubkey[0] == 0x03, StdError.InvalidParameter('cmpPubKey[0]'));\n\n    uint8 prefix = uint8(cmpPubkey[0]);\n    uint256 x;\n    assembly {\n      x := mload(add(cmpPubkey, 0x21))\n    }\n    uint256 y = EllipticCurve.deriveY(prefix, x, AA, BB, PP);\n\n    uncmpPubkey = new bytes(65);\n    uncmpPubkey[0] = 0x04;\n    assembly {\n      mstore(add(uncmpPubkey, 0x21), x)\n      mstore(add(uncmpPubkey, 0x41), y)\n    }\n    return uncmpPubkey;\n  }\n\n  /**\n   * @notice Compresses an uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   * @return cmpPubkey The compressed 33-byte public key\n   */\n  function compressPubkey(bytes memory uncmpPubkey) internal pure returns (bytes memory cmpPubkey) {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    cmpPubkey = new bytes(33);\n    cmpPubkey[0] = bytes1(uint8(y % 2 == 0 ? 0x02 : 0x03));\n    assembly {\n      mstore(add(cmpPubkey, 0x21), x)\n    }\n    return cmpPubkey;\n  }\n\n  /**\n   * @notice Derives an EVM address from an uncompressed 65-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   */\n  function deriveAddressFromUncmpPubkey(bytes memory uncmpPubkey) internal pure returns (address) {\n    bytes memory noPrefix = new bytes(64);\n\n    // Copy uncmpPubkey[1:] to noPrefix\n    assembly {\n      mcopy(add(noPrefix, 0x20), add(uncmpPubkey, 0x21), 0x40)\n    }\n\n    return address(uint160(uint256(keccak256(noPrefix))));\n  }\n\n  /**\n   * @notice Derives an EVM address from a compressed 33-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   */\n  function deriveAddressFromCmpPubkey(bytes memory cmpPubkey) internal pure returns (address) {\n    return deriveAddressFromUncmpPubkey(uncompressPubkey(cmpPubkey));\n  }\n}\n"
+        "PricingAdapter.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IERC20Metadata} from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\nimport {IAggregatorV2V3Interface} from \"../interfaces/periphery/IAggregatorV2V3Interface.sol\";\nimport {ILendingAdapter} from \"../interfaces/ILendingAdapter.sol\";\nimport {ILeverageToken} from \"../interfaces/ILeverageToken.sol\";\nimport {ILeverageManager} from \"../interfaces/ILeverageManager.sol\";\nimport {IPricingAdapter} from \"../interfaces/periphery/IPricingAdapter.sol\";\n\n/// @custom:contact security@seamlessprotocol.com\ncontract PricingAdapter is IPricingAdapter {\n    uint256 internal constant WAD = 1e18;\n\n    /// @inheritdoc IPricingAdapter\n    ILeverageManager public immutable leverageManager;\n\n    /// @notice Constructor\n    /// @param _leverageManager The LeverageManager contract\n    constructor(ILeverageManager _leverageManager) {\n        leverageManager = _leverageManager;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInCollateral(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInCollateralAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInCollateralAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInCollateralAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInDebt(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInDebtAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInDebtAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInDebtAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceAdjusted(\n        ILeverageToken leverageToken,\n        IAggregatorV2V3Interface chainlinkOracle,\n        bool isBaseDebtAsset\n    ) public view returns (int256) {\n        uint256 priceInBaseAsset = isBaseDebtAsset\n            ? getLeverageTokenPriceInDebt(leverageToken)\n            : getLeverageTokenPriceInCollateral(leverageToken);\n        uint256 baseAssetDecimals = isBaseDebtAsset\n            ? IERC20Metadata(address(leverageManager.getLeverageTokenDebtAsset(leverageToken))).decimals()\n            : IERC20Metadata(address(leverageManager.getLeverageTokenCollateralAsset(leverageToken))).decimals();\n\n        int256 oraclePrice = chainlinkOracle.latestAnswer();\n\n        int256 adjustedPrice = (oraclePrice * int256(priceInBaseAsset)) / int256(10 ** baseAssetDecimals);\n\n        return adjustedPrice;\n    }\n}\n"
     }
 }

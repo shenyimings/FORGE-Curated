@@ -1,32 +1,61 @@
 {
     "vfp_id": "vfp_00474",
-    "project_name": "cantina_stryke_aug2025.pdf",
+    "project_name": "ackee-blockchain-let's-get-hai-new-core-features-report.pdf",
     "findings": [
         {
-            "id": 27,
+            "id": 24,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
+                    "CWE-1076"
                 ]
             },
-            "title": "Missing validation in PoolSpotPrice._getPrice function",
-            "description": "The _getPrice function in PoolSpotPrice accepts a callAsset address but does not verify it is one of the pool's tokens. The root cause is missing input validation. If a wrong asset is passed, the function returns a price in incorrect units, leading to miscalculations in premiums and fees. The impact is silent propagation of wrong prices, potentially causing over- or under-charging, though the team claims it's only called internally with correct values.\n",
+            "title": "Variables should be immutable",
+            "description": "Several state variables across multiple contracts (e.g., `protocolToken`, `rewardToken`, `factory`, `veloPool`, `veloLpOracle`) are declared as public but not marked as immutable, even though they are intended to remain constant after deployment. The root cause is the omission of the `immutable` keyword, which is a best practice for such variables. While these variables are not intended to be changed, not marking them as immutable may mislead developers into thinking they are mutable, and it also misses optimization opportunities. The impact is primarily on code clarity and gas efficiency, with no direct exploit path.\n",
             "severity": "Informational",
             "location": [
-                "PoolSpotPrice.sol#L19"
+                "StakingToken.sol::protocolToken#39",
+                "StakingManager.sol::protocolToken#35",
+                "StakingManager.sol::stakingToken#38",
+                "RewardPool.sol::rewardToken#30",
+                "FactoryChild.sol::factory#14",
+                "AbstractVeloVaultRelayer.sol::veloPool#20",
+                "AbstractVeloVaultRelayer.sol::veloLpOracle#23"
             ],
             "files": [
-                "contracts/src/apps/options/pricing/PoolSpotPrice.sol"
+                "core/src/contracts/tokens/StakingToken.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "StakingToken.burnFrom function does not emit StakingTokenBurn event",
+            "description": "The StakingToken contract emits a StakingTokenBurn event in the burn function when tokens are burned by the owner, but fails to emit the same event in the burnFrom function, which allows approved spenders to burn tokens on behalf of another account. This inconsistency in event emission leads to incomplete off-chain tracking of token burns, as external systems relying on events will miss burns performed via burnFrom. The root cause is the omission of the event emission statement in the burnFrom function, despite calling _burn internally. This can result in inaccurate reporting of total burned supply and reduced transparency, potentially causing external services or users to lose trust in the protocol's data integrity.\n",
+            "severity": "Low",
+            "location": [
+                "StakingToken.sol::burnFrom#77-80"
+            ],
+            "files": [
+                "core/src/contracts/tokens/StakingToken.sol"
             ]
         }
     ],
     "affected_files": {
-        "PoolSpotPrice.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity >=0.8.0 <0.9.0;\n\nimport {IVerifiedSpotPrice} from \"../../../interfaces/IVerifiedSpotPrice.sol\";\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {FullMath} from \"@uniswap/v3-core/contracts/libraries/FullMath.sol\";\n\ncontract PoolSpotPrice is IVerifiedSpotPrice {\n    function getSpotPrice(IUniswapV3Pool pool, address callAsset, uint8 callAssetDecimals)\n        external\n        view\n        returns (uint256)\n    {\n        (, bytes memory result) = address(pool).staticcall(abi.encodeWithSignature(\"slot0()\"));\n        uint160 sqrtPriceX96 = abi.decode(result, (uint160));\n        return _getPrice(pool, sqrtPriceX96, callAsset, callAssetDecimals);\n    }\n\n    function _getPrice(IUniswapV3Pool _pool, uint160 sqrtPriceX96, address callAsset, uint8 callAssetDecimals)\n        internal\n        view\n        returns (uint256 price)\n    {\n        if (sqrtPriceX96 <= type(uint128).max) {\n            uint256 priceX192 = uint256(sqrtPriceX96) * sqrtPriceX96;\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX192, 10 ** callAssetDecimals, 1 << 192)\n                : FullMath.mulDiv(1 << 192, 10 ** callAssetDecimals, priceX192);\n        } else {\n            uint256 priceX128 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);\n\n            price = callAsset == _pool.token0()\n                ? FullMath.mulDiv(priceX128, 10 ** callAssetDecimals, 1 << 128)\n                : FullMath.mulDiv(1 << 128, 10 ** callAssetDecimals, priceX128);\n        }\n    }\n}\n"
+        "StakingToken.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.20;\n\nimport {IProtocolToken} from '@interfaces/tokens/IProtocolToken.sol';\nimport {IStakingToken} from '@interfaces/tokens/IStakingToken.sol';\n\nimport {IStakingManager} from '@interfaces/tokens/IStakingManager.sol';\n\nimport {ERC20} from '@openzeppelin/contracts/token/ERC20/ERC20.sol';\nimport {ERC20Permit, IERC20Permit} from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';\nimport {ERC20Votes} from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol';\nimport {ERC20Burnable} from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol';\nimport {Time} from '@openzeppelin/contracts/utils/types/Time.sol';\nimport {Nonces} from '@openzeppelin/contracts/utils/Nonces.sol';\n\nimport {Authorizable} from '@contracts/utils/Authorizable.sol';\nimport {Modifiable} from '@contracts/utils/Modifiable.sol';\n\nimport {Encoding} from '@libraries/Encoding.sol';\nimport {Assertions} from '@libraries/Assertions.sol';\n\n/**\n * @title  StakingToken\n * @notice This contract represents the staked protocol ERC20Votes token\n *         ERC20Votes is to potentially support voting with staked tokens in the future\n */\ncontract StakingToken is ERC20, ERC20Permit, ERC20Votes, ERC20Burnable, Authorizable, Modifiable, IStakingToken {\n  using Encoding for bytes;\n  using Assertions for address;\n\n  // --- Data ---\n\n  /// @notice Whether token transfers are enabled\n  bool public transfersEnabled;\n\n  // --- Registry ---\n\n  /// @inheritdoc IStakingToken\n  IProtocolToken public protocolToken;\n\n  /// @inheritdoc IStakingToken\n  IStakingManager public stakingManager;\n\n  // --- Init ---\n\n  /**\n   * @param  _name String with the name of the token\n   * @param  _symbol String with the symbol of the token\n   * @param  _protocolToken Address of the protocol token\n   */\n  constructor(\n    string memory _name,\n    string memory _symbol,\n    address _protocolToken\n  ) ERC20(_name, _symbol) ERC20Permit(_name) Authorizable(msg.sender) {\n    if (_protocolToken == address(0)) {\n      revert StakingToken_NullProtocolToken();\n    }\n    protocolToken = IProtocolToken(_protocolToken);\n  }\n\n  // --- Methods ---\n\n  /// @inheritdoc IStakingToken\n  function mint(address _dst, uint256 _wad) external isAuthorized {\n    _mint(_dst, _wad);\n    emit StakingTokenMint(_dst, _wad);\n  }\n\n  /// @inheritdoc IStakingToken\n  function burn(uint256 _wad) public override(ERC20Burnable, IStakingToken) {\n    _burn(msg.sender, _wad);\n    emit StakingTokenBurn(msg.sender, _wad);\n  }\n\n  /// @inheritdoc IStakingToken\n  function burnFrom(address _account, uint256 _wad) public override(ERC20Burnable, IStakingToken) {\n    _spendAllowance(_account, msg.sender, _wad);\n    _burn(_account, _wad);\n  }\n\n  // --- Overrides ---\n\n  function _update(address _from, address _to, uint256 _value) internal override(ERC20, ERC20Votes) {\n    if (address(stakingManager) == address(0)) {\n      revert StakingToken_NullStakingManager();\n    }\n\n    // Check if transfers are enabled (skip check for minting and burning)\n    if (_from != address(0) && _to != address(0) && !transfersEnabled) {\n      revert StakingToken_TransfersDisabled();\n    }\n    stakingManager.checkpoint([_from, _to]);\n    super._update(_from, _to, _value);\n  }\n\n  function nonces(address _owner) public view override(ERC20Permit, IERC20Permit, Nonces) returns (uint256 _nonce) {\n    return super.nonces(_owner);\n  }\n\n  /**\n   * Set the clock to block timestamp, as opposed to the default block number.\n   */\n  function clock() public view override returns (uint48 _timestamp) {\n    return Time.timestamp();\n  }\n\n  // solhint-disable-next-line func-name-mixedcase\n  function CLOCK_MODE() public view virtual override returns (string memory _mode) {\n    return 'mode=timestamp';\n  }\n\n  // --- Administration ---\n\n  /// @inheritdoc Modifiable\n  function _modifyParameters(bytes32 _param, bytes memory _data) internal override {\n    if (_param == 'stakingManager') {\n      stakingManager = IStakingManager(_data.toAddress());\n    } else if (_param == 'transfersEnabled') {\n      transfersEnabled = _data.toBool();\n    } else {\n      revert UnrecognizedParam();\n    }\n  }\n\n  /// @inheritdoc Modifiable\n  function _validateParameters() internal view override {\n    address(stakingManager).assertHasCode();\n  }\n}\n"
     }
 }

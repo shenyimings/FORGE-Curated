@@ -1,59 +1,34 @@
 {
     "vfp_id": "vfp_00566",
-    "project_name": "Across Audit.md",
+    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 24,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-285"
-                ],
-                "3": [
-                    "CWE-862"
+                    "CWE-477"
                 ]
             },
-            "title": "Missing Access Control for `setDestinationSettler`",
-            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
-            "severity": "Critical",
+            "title": "Multiple legacy and safety issues in WDIA inherited from WETH9",
+            "description": "The WDIA contract inherits several issues from WETH9, including silent fallback behavior, lack of overflow protection, unrestricted compiler version, missing zero address checks, and front-running risk in approve(). The root cause is outdated code patterns. These issues collectively reduce security and compatibility. An attacker could exploit the silent fallback to trick users into unintended deposits, or front-run approve calls to drain allowances. The impact includes potential fund loss and reduced interoperability.\n",
+            "severity": "Low",
             "location": [
-                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
-                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
-                "ERC7683OrderDepositor.sol::_resolveFor#161",
-                "ERC7683OrderDepositor.sol#L216"
+                "WDIA::fallback",
+                "WDIA::deposit",
+                "WDIA::withdraw",
+                "WDIA::transfer",
+                "WDIA::transferFrom",
+                "WDIA::approve"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-755"
-                ]
-            },
-            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
-            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
-            "severity": "Medium",
-            "location": [
-                "ERC7683OrderDepositorExternal.sol#L58",
-                "ERC7683OrderDepositorExternal.sol#L60-L73",
-                "ZkStack_Adapter.sol#L147",
-                "ZkStack_CustomGasToken_Adapter.sol#L189",
-                "ZkSync_Adapter.sol#L241"
-            ],
-            "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/WDIA.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC7683OrderDepositorExternal.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { ERC7683OrderDepositor } from \"./ERC7683OrderDepositor.sol\";\nimport \"../SpokePool.sol\";\nimport \"../external/interfaces/IPermit2.sol\";\nimport \"@uma/core/contracts/common/implementation/MultiCaller.sol\";\n\n/**\n * @notice ERC7683OrderDepositorExternal processes an external order type and translates it into an AcrossV3Deposit\n * that it sends to the SpokePool contract.\n * @custom:security-contact bugs@across.to\n */\ncontract ERC7683OrderDepositorExternal is ERC7683OrderDepositor, Ownable, MultiCaller {\n    using SafeERC20 for IERC20;\n\n    event SetDestinationSettler(\n        uint256 indexed chainId,\n        address indexed prevDestinationSettler,\n        address indexed destinationSettler\n    );\n\n    SpokePool public immutable SPOKE_POOL;\n\n    // Mapping of chainIds to destination settler addresses.\n    mapping(uint256 => address) public destinationSettlers;\n\n    constructor(\n        SpokePool _spokePool,\n        IPermit2 _permit2,\n        uint256 _quoteBeforeDeadline\n    ) ERC7683OrderDepositor(_permit2, _quoteBeforeDeadline) {\n        SPOKE_POOL = _spokePool;\n    }\n\n    function setDestinationSettler(uint256 chainId, address destinationSettler) external {\n        address prevDestinationSettler = destinationSettlers[chainId];\n        destinationSettlers[chainId] = destinationSettler;\n        emit SetDestinationSettler(chainId, prevDestinationSettler, destinationSettler);\n    }\n\n    function _callDeposit(\n        address depositor,\n        address recipient,\n        address inputToken,\n        address outputToken,\n        uint256 inputAmount,\n        uint256 outputAmount,\n        uint256 destinationChainId,\n        address exclusiveRelayer,\n        uint32 quoteTimestamp,\n        uint32 fillDeadline,\n        uint32 exclusivityDeadline,\n        bytes memory message\n    ) internal override {\n        IERC20(inputToken).safeIncreaseAllowance(address(SPOKE_POOL), inputAmount);\n\n        SPOKE_POOL.depositV3(\n            depositor,\n            recipient,\n            inputToken,\n            outputToken,\n            inputAmount,\n            outputAmount,\n            destinationChainId,\n            exclusiveRelayer,\n            quoteTimestamp,\n            fillDeadline,\n            exclusivityDeadline,\n            message\n        );\n    }\n\n    function _currentDepositId() internal view override returns (uint32) {\n        return SPOKE_POOL.numberOfDeposits();\n    }\n\n    function _destinationSettler(uint256 chainId) internal view override returns (address) {\n        return destinationSettlers[chainId];\n    }\n}\n"
+        "WDIA.sol": "// SPDX-License-Identifier: MIT\npragma solidity >=0.4.23;\n\ncontract WDIA {\n    string public name = \"Wrapped DIA\";\n    string public symbol = \"DIA\";\n    uint8 public decimals = 18;\n\n    event Approval(address indexed src, address indexed guy, uint wad);\n    event Transfer(address indexed src, address indexed dst, uint wad);\n    event Deposit(address indexed dst, uint wad);\n    event Withdrawal(address indexed src, uint wad);\n\n    mapping(address => uint) public balanceOf;\n    mapping(address => mapping(address => uint)) public allowance;\n\n    function() external payable {\n        deposit();\n    }\n    function deposit() public payable {\n        balanceOf[msg.sender] += msg.value;\n        emit Deposit(msg.sender, msg.value);\n    }\n    function withdraw(uint wad) public {\n        require(balanceOf[msg.sender] >= wad);\n        balanceOf[msg.sender] -= wad;\n        msg.sender.transfer(wad);\n        emit Withdrawal(msg.sender, wad);\n    }\n\n    function totalSupply() public view returns (uint) {\n        return address(this).balance;\n    }\n\n    function approve(address guy, uint wad) public returns (bool) {\n        allowance[msg.sender][guy] = wad;\n        emit Approval(msg.sender, guy, wad);\n        return true;\n    }\n\n    function transfer(address dst, uint wad) public returns (bool) {\n        return transferFrom(msg.sender, dst, wad);\n    }\n\n    function transferFrom(\n        address src,\n        address dst,\n        uint wad\n    ) public returns (bool) {\n        require(balanceOf[src] >= wad);\n\n        if (src != msg.sender && allowance[src][msg.sender] != uint(-1)) {\n            require(allowance[src][msg.sender] >= wad);\n            allowance[src][msg.sender] -= wad;\n        }\n\n        balanceOf[src] -= wad;\n        balanceOf[dst] += wad;\n\n        emit Transfer(src, dst, wad);\n\n        return true;\n    }\n}\n"
     }
 }

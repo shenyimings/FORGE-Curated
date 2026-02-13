@@ -1,99 +1,87 @@
 {
     "vfp_id": "vfp_00419",
-    "project_name": "ChainSecurity_Liquity_Bold_Audit (1).pdf",
+    "project_name": "cantina_panoptic_sep2025.pdf",
     "findings": [
         {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-862"
+                ]
+            },
+            "title": "Anyone can call claim for any account",
+            "description": "1. **Description:** The `claim` function in the MerkleDistributor contract allows any third party to initiate a claim on behalf of any account, as long as they provide a valid Merkle proof. The tokens are sent to the account specified in the Merkle leaf, not necessarily the caller.\n2. **Cause:** The function does not require the caller (`msg.sender`) to be the same as the account receiving the tokens, enabling permissionless claiming.\n3. **Exploitation:** A malicious actor or griefer could monitor the distribution and front-run intended recipients by submitting claims for accounts they believe are inactive or unwilling to claim, sending funds to potentially incorrect or unintended addresses.\n4. **Impact:** If a leaf contains an incorrect account address, a third party could claim tokens to that address, permanently preventing recovery via the admin's `withdrawUnclaimed` function after the clawback period, leading to loss of user funds.\n",
+            "severity": "Medium",
+            "location": [
+                "MerkleDistributor.sol::claim#61"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        },
+        {
             "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Admin key is a single EOA set to msg.sender and immutable",
+            "description": "1. **Description:** The `admin` role is set to the deployer's externally owned account (EOA) during construction and cannot be changed due to immutability. There is no mechanism to recover or transfer admin privileges.\n2. **Cause:** The admin address is hardcoded to `msg.sender` at deployment and stored in an immutable variable, with no upgrade or recovery functionality.\n3. **Exploitation:** If the admin's private key is lost or compromised, an attacker could wait until the `withdrawableAt` timestamp and then withdraw all unclaimed funds. No recovery is possible.\n4. **Impact:** Permanent loss of unclaimed tokens in the contract if the admin key is compromised or lost, with no governance or recovery mechanism in place.\n",
+            "severity": "Low",
+            "location": [
+                "MerkleDistributor.sol::constructor#37"
+            ],
+            "files": [
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
+            ]
+        },
+        {
+            "id": 2,
             "category": {
                 "1": [
                     "CWE-435"
                 ]
             },
-            "title": "Discrepancy in swapFromBold Behavior",
-            "description": "The UniV3Exchange and CurveExchange contracts both implement the swapFromBold function, but they behave differently despite being intended as interchangeable. UniV3Exchange uses an ExactOutput swap, which ensures the exact amount of collateral tokens is received and may leave excess BOLD tokens. In contrast, CurveExchange uses an ExactInput swap (via Curve's exchange function), which swaps the full BOLD input and may leave excess collateral tokens.\n\nThe root cause is inconsistent implementation across exchange adapters, violating the principle of uniform behavior when interfaces are meant to be substitutable. This discrepancy can lead to unexpected token balances and user confusion when different exchanges are used under the same expected behavior.\n\nAn attacker or user could exploit this by choosing the exchange that best suits their slippage or surplus token strategy, potentially leading to inefficient trades or unexpected leftover tokens in the calling contract. The impact is primarily on user experience and economic efficiency, with potential for minor fund loss due to mismanagement of excess tokens.\n\nLiquity acknowledged the issue and noted that while ExactOutput is more natural, they cannot guarantee all future exchanges will support it, leaving the inconsistency unresolved.\n",
-            "severity": "Low",
-            "location": [],
-            "files": [
-                "bold/contracts/src/Zappers/Modules/Exchanges/UniV3Exchange.sol",
-                "bold/contracts/src/Zappers/Modules/Exchanges/CurveExchange.sol"
-            ]
-        },
-        {
-            "id": 19,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
-                ]
-            },
-            "title": "User-provided transferFrom Source Address",
-            "description": "The `UniV3Exchange` and `CurveExchange` contracts use a user-provided `_zapper` address in `transferFrom`, allowing arbitrary token pulls from approved addresses.\n\nThe root cause is using a user-controlled address as the `from` parameter in `transferFrom`, violating secure token interaction patterns.\n\nAn attacker could trick a user into approving the exchange contract and then drain their tokens by specifying their address as `_zapper`.\n\nThe impact is risk of token theft from users who mistakenly approve the contract, though the actual impact is limited since zappers are not intended to hold balances.\n",
-            "severity": "Low",
+            "title": "Token registry uses mapping + array instead of an enumerable set",
+            "description": "1. **Description:** The contract uses a combination of a `mapping(address => bool)` and an array `tokenList` to track supported tokens. This dual structure is error-prone and can lead to inconsistencies.\n2. **Cause:** Manual management of both data structures increases the risk of bugs such as duplicate entries, failed removals, or desynchronization between the mapping and array.\n3. **Exploitation:** While not currently enforced during `claim`, if future logic were to rely on these structures, inconsistencies could lead to incorrect behavior, such as blocking valid claims or allowing unsupported tokens.\n4. **Impact:** Increased maintenance burden and potential for logic errors in future updates. Currently, the impact is limited since these structures are only used for off-chain reading.\n",
+            "severity": "Informational",
             "location": [
-                "UniV3Exchange.swapFromBold",
-                "UniV3Exchange.SwapToBold",
-                "CurveExchange.swapFromBold",
-                "CurveExchange.SwapToBold"
+                "MerkleDistributor.sol::supportedTokens#17",
+                "MerkleDistributor.sol::tokenList#18"
             ],
             "files": [
-                "bold/contracts/src/Zappers/Modules/Exchanges/UniV3Exchange.sol"
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
             ]
         },
         {
             "id": 4,
             "category": {
                 "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-404"
-                ],
-                "3": [
-                    "CWE-459"
+                    "CWE-710"
                 ]
             },
-            "title": "Leverage Zappers Do Not Return Swap Excess",
-            "description": "The leverage zapper contracts fail to return excess tokens to users after swap operations. When using UniV3Exchange.swapFromBold(), an ExactOutput swap may leave excess BOLD tokens in the exchange contract. Similarly, ExactInput swaps in UniV3Exchange.swapToBold(), CurveExchange.swapFromBold(), and CurveExchange.swapToBold() may result in excess output tokens being sent to the zapper but not forwarded to the user.\n\nThe root cause is the lack of post-swap balance checks and token return logic in the zapper functions. This oversight leads to user funds being stranded in the zapper or exchange contracts.\n\nAn attacker or any user could later claim these stranded tokens (as noted in the related finding \"Zappers Can Lose User Funds\"), but the primary impact is user fund loss due to poor handling of expected surplus from decentralized exchange trades. Market volatility between transaction submission and execution makes such surpluses common.\n\nThe issue was resolved in Version 2 by implementing _setInitialBalancesAndReceiver() to record token balances before swaps and _returnLeftovers() to transfer any excess back to the caller. This ensures all leftover tokens are returned, regardless of swap type.\n",
-            "severity": "High",
+            "title": "Using MerkleProof.verify (memory) instead of verifyCalldata",
+            "description": "1. **Description:** The contract uses `MerkleProof.verify`, which copies the Merkle proof from calldata to memory, incurring unnecessary gas costs.\n2. **Cause:** The proof is passed as calldata but is processed using a function that requires memory, resulting in a redundant data copy.\n3. **Exploitation:** Attackers cannot exploit this directly, but every claim operation wastes gas due to the memory copy.\n4. **Impact:** Higher transaction costs for users claiming tokens, reducing efficiency and increasing the economic barrier for small claims.\n",
+            "severity": "Informational",
             "location": [
-                "UniV3Exchange.sol::swapFromBold#",
-                "CurveExchange.sol::swapFromBold#",
-                "UniV3Exchange.sol::swapToBold#",
-                "CurveExchange.sol::swapToBold#"
+                "MerkleDistributor.sol::verify#71"
             ],
             "files": [
-                "bold/contracts/src/Zappers/Modules/Exchanges/UniV3Exchange.sol",
-                "bold/contracts/src/Zappers/Modules/Exchanges/CurveExchange.sol"
-            ]
-        },
-        {
-            "id": 17,
-            "category": {
-                "1": [
-                    "CWE-697"
-                ],
-                "2": [
-                    "CWE-1023"
-                ]
-            },
-            "title": "Price Limit in UniV3Exchange Is Too Strict",
-            "description": "The price limit in `UniV3Exchange.getBoldAmountToSwap` is based on a strict post-trade price check, which may prevent valid swaps even when the average price is acceptable.\n\nThe root cause is that the function uses a maximum price ratio that is too restrictive, not accounting for the difference between instantaneous and average trade price.\n\nUsers may be forced to use looser price bounds, increasing slippage and allowing MEV bots to extract more value during large swaps.\n\nThe impact is reduced swap efficiency and increased vulnerability to front-running and value extraction by bots, degrading user experience and economic fairness.\n",
-            "severity": "Low",
-            "location": [
-                "UniV3Exchange.getBoldAmountToSwap"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/Modules/Exchanges/UniV3Exchange.sol"
+                "multitoken-merkle-distributor/contracts/MerkleDistributor.sol"
             ]
         }
     ],
     "affected_files": {
-        "CurveExchange.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.24;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport \"../../../Interfaces/IBoldToken.sol\";\nimport \"./Curve/ICurvePool.sol\";\nimport \"../../Interfaces/IExchange.sol\";\n\ncontract CurveExchange is IExchange {\n    using SafeERC20 for IERC20;\n\n    IERC20 public immutable collToken;\n    IBoldToken public immutable boldToken;\n    ICurvePool public immutable curvePool;\n    uint256 public immutable COLL_TOKEN_INDEX;\n    uint256 public immutable BOLD_TOKEN_INDEX;\n\n    constructor(\n        IERC20 _collToken,\n        IBoldToken _boldToken,\n        ICurvePool _curvePool,\n        uint256 _collIndex,\n        uint256 _boldIndex\n    ) {\n        collToken = _collToken;\n        boldToken = _boldToken;\n        curvePool = _curvePool;\n        COLL_TOKEN_INDEX = _collIndex;\n        BOLD_TOKEN_INDEX = _boldIndex;\n    }\n\n    function swapFromBold(uint256 _boldAmount, uint256 _minCollAmount) external {\n        ICurvePool curvePoolCached = curvePool;\n        uint256 initialBoldBalance = boldToken.balanceOf(address(this));\n        boldToken.transferFrom(msg.sender, address(this), _boldAmount);\n        boldToken.approve(address(curvePoolCached), _boldAmount);\n\n        uint256 output = curvePoolCached.exchange(BOLD_TOKEN_INDEX, COLL_TOKEN_INDEX, _boldAmount, _minCollAmount);\n        collToken.safeTransfer(msg.sender, output);\n\n        uint256 currentBoldBalance = boldToken.balanceOf(address(this));\n        if (currentBoldBalance > initialBoldBalance) {\n            boldToken.transfer(msg.sender, currentBoldBalance - initialBoldBalance);\n        }\n    }\n\n    function swapToBold(uint256 _collAmount, uint256 _minBoldAmount) external returns (uint256) {\n        ICurvePool curvePoolCached = curvePool;\n        uint256 initialCollBalance = collToken.balanceOf(address(this));\n        collToken.safeTransferFrom(msg.sender, address(this), _collAmount);\n        collToken.approve(address(curvePoolCached), _collAmount);\n\n        uint256 output = curvePoolCached.exchange(COLL_TOKEN_INDEX, BOLD_TOKEN_INDEX, _collAmount, _minBoldAmount);\n        boldToken.transfer(msg.sender, output);\n\n        uint256 currentCollBalance = collToken.balanceOf(address(this));\n        if (currentCollBalance > initialCollBalance) {\n            collToken.safeTransfer(msg.sender, currentCollBalance - initialCollBalance);\n        }\n\n        return output;\n    }\n}\n",
-        "UniV3Exchange.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.24;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"openzeppelin-contracts/contracts/utils/math/Math.sol\";\n\nimport \"../../LeftoversSweep.sol\";\nimport \"../../../Interfaces/IBoldToken.sol\";\nimport \"./UniswapV3/ISwapRouter.sol\";\nimport \"./UniswapV3/UniPriceConverter.sol\";\nimport \"../../Interfaces/IExchange.sol\";\nimport {DECIMAL_PRECISION} from \"../../../Dependencies/Constants.sol\";\n\ncontract UniV3Exchange is LeftoversSweep, UniPriceConverter, IExchange {\n    using SafeERC20 for IERC20;\n\n    IERC20 public immutable collToken;\n    IBoldToken public immutable boldToken;\n    uint24 public immutable fee;\n    ISwapRouter public immutable uniV3Router;\n\n    constructor(IERC20 _collToken, IBoldToken _boldToken, uint24 _fee, ISwapRouter _uniV3Router) {\n        collToken = _collToken;\n        boldToken = _boldToken;\n        fee = _fee;\n        uniV3Router = _uniV3Router;\n    }\n\n    function swapFromBold(uint256 _boldAmount, uint256 _minCollAmount) external {\n        ISwapRouter uniV3RouterCached = uniV3Router;\n\n        // Set initial balances to make sure there are not lefovers\n        InitialBalances memory initialBalances;\n        _setInitialTokensAndBalances(collToken, boldToken, initialBalances);\n\n        boldToken.transferFrom(msg.sender, address(this), _boldAmount);\n        boldToken.approve(address(uniV3RouterCached), _boldAmount);\n\n        ISwapRouter.ExactOutputSingleParams memory params = ISwapRouter.ExactOutputSingleParams({\n            tokenIn: address(boldToken),\n            tokenOut: address(collToken),\n            fee: fee,\n            recipient: msg.sender,\n            deadline: block.timestamp,\n            amountOut: _minCollAmount,\n            amountInMaximum: _boldAmount,\n            sqrtPriceLimitX96: 0 // See: https://ethereum.stackexchange.com/a/156018/9205\n        });\n\n        uniV3RouterCached.exactOutputSingle(params);\n\n        // return leftovers to user\n        _returnLeftovers(initialBalances);\n    }\n\n    function swapToBold(uint256 _collAmount, uint256 _minBoldAmount) external returns (uint256) {\n        ISwapRouter uniV3RouterCached = uniV3Router;\n\n        // Set initial balances to make sure there are not lefovers\n        InitialBalances memory initialBalances;\n        _setInitialTokensAndBalances(collToken, boldToken, initialBalances);\n\n        collToken.safeTransferFrom(msg.sender, address(this), _collAmount);\n        collToken.approve(address(uniV3RouterCached), _collAmount);\n\n        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({\n            tokenIn: address(collToken),\n            tokenOut: address(boldToken),\n            fee: fee,\n            recipient: msg.sender,\n            deadline: block.timestamp,\n            amountIn: _collAmount,\n            amountOutMinimum: _minBoldAmount,\n            sqrtPriceLimitX96: 0 // See: https://ethereum.stackexchange.com/a/156018/9205\n        });\n\n        uint256 amountOut = uniV3RouterCached.exactInputSingle(params);\n\n        // return leftovers to user\n        _returnLeftovers(initialBalances);\n\n        return amountOut;\n    }\n\n    function priceToSqrtPrice(IBoldToken _boldToken, IERC20 _collToken, uint256 _price) public pure returns (uint160) {\n        // inverse price if Bold goes first\n        uint256 price = _zeroForOne(_boldToken, _collToken) ? DECIMAL_PRECISION * DECIMAL_PRECISION / _price : _price;\n        return priceToSqrtPriceX96(price);\n    }\n\n    // See: https://github.com/Uniswap/v3-periphery/blob/main/contracts/lens/QuoterV2.sol#L207C9-L207C60\n    function _zeroForOne(IBoldToken _boldToken, IERC20 _collToken) internal pure returns (bool) {\n        return address(_boldToken) < address(_collToken);\n    }\n}\n"
+        "MerkleDistributor.sol": "// SPDX-License-Identifier: GPL-3.0-or-later\npragma solidity ^0.8.22;\n\nimport {IERC20, SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport {MerkleProof} from \"@openzeppelin/contracts/utils/cryptography/MerkleProof.sol\";\nimport {IMultiTokenMerkleDistributor} from \"./interfaces/IMerkleDistributor.sol\";\n\nerror AlreadyClaimed();\nerror InvalidProof();\nerror TokensAmountsMismatch();\nerror OnlyAdmin();\nerror WithdrawTooEarly();\n\ncontract MerkleDistributor is IMultiTokenMerkleDistributor {\n    using SafeERC20 for IERC20;\n\n    mapping(address => bool) public supportedTokens;\n    address[] public tokenList;\n    bytes32 public immutable override merkleRoot;\n\n    // This is a packed array of booleans.\n    mapping(uint256 => uint256) private claimedBitMap;\n\n    address public immutable admin;\n    uint256 public immutable withdrawableAt;\n\n    constructor(bytes32 merkleRoot_, address[] memory tokens_, uint256 withdrawableAt_, address admin_) {\n        merkleRoot = merkleRoot_;\n\n        for (uint256 i = 0; i < tokens_.length; i++) {\n            if (!supportedTokens[tokens_[i]]) {\n                supportedTokens[tokens_[i]] = true;\n                tokenList.push(tokens_[i]);\n            }\n        }\n\n        admin = admin_;\n        withdrawableAt = withdrawableAt_;\n    }\n\n    function isClaimed(uint256 index) public view override returns (bool) {\n        unchecked {\n            uint256 claimedWordIndex = index / 256;\n            uint256 claimedBitIndex = index % 256;\n            uint256 claimedWord = claimedBitMap[claimedWordIndex];\n            uint256 mask = (1 << claimedBitIndex);\n            return claimedWord & mask == mask;\n        }\n    }\n\n    function _setClaimed(uint256 index) private {\n        unchecked {\n            uint256 claimedWordIndex = index / 256;\n            uint256 claimedBitIndex = index % 256;\n            claimedBitMap[claimedWordIndex] = claimedBitMap[claimedWordIndex] | (1 << claimedBitIndex);\n        }\n    }\n\n    function claim(\n        uint256 index,\n        address account,\n        address[] calldata tokens,\n        uint256[] calldata amounts,\n        bytes32[] calldata merkleProof\n    ) public virtual override {\n        if (isClaimed(index)) revert AlreadyClaimed();\n        if (tokens.length != amounts.length) revert TokensAmountsMismatch();\n        require(msg.sender == account, \"Only the claim owner may execute their claim\");\n\n        // Verify the merkle proof with the new leaf structure\n        bytes32 node = keccak256(abi.encodePacked(index, account, tokens, amounts));\n        if (!MerkleProof.verifyCalldata(merkleProof, merkleRoot, node)) revert InvalidProof();\n\n        // Mark it claimed and send the token.\n        _setClaimed(index);\n        for (uint256 i = 0; i < tokens.length; i++) {\n            // No need to check for presence in supportedTokens - this is done implicitly in the MerkleProof.verify,\n            // so long as the supported tokens supplied to the constructor correctly included all tokens found in each claim\n            // require(supportedTokens[tokens[i]], \"Token not supported\");\n            if (amounts[i] > 0) {\n                IERC20(tokens[i]).safeTransfer(account, amounts[i]);\n            }\n        }\n\n        emit Claimed(index, account, tokens, amounts);\n    }\n\n    function withdrawUnclaimed(address[] calldata tokens, address to) external {\n        if (msg.sender != admin) revert OnlyAdmin();\n        if (block.number < withdrawableAt) revert WithdrawTooEarly();\n\n        for (uint256 i = 0; i < tokens.length; i++) {\n            IERC20 token = IERC20(tokens[i]);\n            uint256 balance = token.balanceOf(address(this));\n            if (balance > 0) {\n                token.safeTransfer(to, balance);\n            }\n        }\n    }\n}\n"
     }
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity 0.8.18;
 
 import "./Constants.sol";
 import "./LiquityMath.sol";
@@ -9,6 +9,8 @@ import "../Interfaces/IActivePool.sol";
 import "../Interfaces/IDefaultPool.sol";
 import "../Interfaces/IPriceFeed.sol";
 import "../Interfaces/ILiquityBase.sol";
+
+// import "forge-std/console2.sol";
 
 /*
 * Base contract for TroveManager, BorrowerOperations and StabilityPool. Contains global system constants and
@@ -34,14 +36,14 @@ contract LiquityBase is ILiquityBase {
     }
     // --- Gas compensation functions ---
 
-    function getEntireBranchColl() public view returns (uint256 entireSystemColl) {
+    function getEntireSystemColl() public view returns (uint256 entireSystemColl) {
         uint256 activeColl = activePool.getCollBalance();
         uint256 liquidatedColl = defaultPool.getCollBalance();
 
         return activeColl + liquidatedColl;
     }
 
-    function getEntireBranchDebt() public view returns (uint256 entireSystemDebt) {
+    function getEntireSystemDebt() public view returns (uint256 entireSystemDebt) {
         uint256 activeDebt = activePool.getBoldDebt();
         uint256 closedDebt = defaultPool.getBoldDebt();
 
@@ -49,8 +51,8 @@ contract LiquityBase is ILiquityBase {
     }
 
     function _getTCR(uint256 _price) internal view returns (uint256 TCR) {
-        uint256 entireSystemColl = getEntireBranchColl();
-        uint256 entireSystemDebt = getEntireBranchDebt();
+        uint256 entireSystemColl = getEntireSystemColl();
+        uint256 entireSystemDebt = getEntireSystemDebt();
 
         TCR = LiquityMath._computeCR(entireSystemColl, entireSystemDebt, _price);
 

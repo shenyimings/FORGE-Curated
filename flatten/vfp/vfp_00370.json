@@ -3,30 +3,24 @@
     "project_name": "Sponsored Periphery Audit.md",
     "findings": [
         {
-            "id": 19,
+            "id": 13,
             "category": {
                 "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1164"
-                ],
-                "3": [
-                    "CWE-561"
+                    "CWE-693"
                 ]
             },
-            "title": "Unused Imports",
-            "description": "The `Structs.sol` file imports `SendParam` and `MessagingFee` from `IOFT.sol` but does not use them.\nThe root cause is an unnecessary import that was not cleaned up.\nUnused imports increase compilation cost and reduce code clarity.\nThe impact is minor but contributes to technical debt and reduces code quality.\n",
-            "severity": "Informational",
+            "title": "Unnecessary `payable` Fallback Function",
+            "description": "The `fallback` function in `BaseModuleHandler` is marked `payable`, allowing it to receive native assets, but the target logic in `HyperCoreFlowExecutor` does not contain any `payable` functions.\nThe root cause is the inclusion of the `payable` modifier without a functional need.\nAn attacker could send native tokens to the contract, which cannot be retrieved through normal means, potentially leading to loss of funds.\nThe impact is an increased attack surface and potential loss of native assets sent to the contract, reducing the contract's security posture.\n",
+            "severity": "Medium",
             "location": [
-                "Structs.sol::import#4"
+                "BaseModuleHandler.sol::fallback#34-36"
             ],
             "files": [
-                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/Structs.sol"
+                "758570a9ace4a3c2335d2628342f71a33fbbc908/contracts/contracts/periphery/mintburn/BaseModuleHandler.sol"
             ]
         }
     ],
     "affected_files": {
-        "Structs.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { HyperCoreLib } from \"../../libraries/HyperCoreLib.sol\";\nimport { SwapHandler } from \"./SwapHandler.sol\";\n\n// Info about the token on HyperCore.\nstruct CoreTokenInfo {\n    // The token info on HyperCore.\n    HyperCoreLib.TokenInfo tokenInfo;\n    // The HyperCore index id of the token.\n    uint64 coreIndex;\n    // Whether the token can be used for account activation fee.\n    bool canBeUsedForAccountActivation;\n    // The account activation fee for the token.\n    uint256 accountActivationFeeEVM;\n    // The account activation fee for the token on Core.\n    uint64 accountActivationFeeCore;\n    // Bridge buffer to use when checking safety of bridging evm -> core. In core units\n    uint64 bridgeSafetyBufferCore;\n}\n\nstruct FinalTokenInfo {\n    // The index of the market where we're going to swap baseToken -> finalToken\n    uint32 spotIndex;\n    // To go baseToken -> finalToken, do we have to enqueue a buy or a sell?\n    bool isBuy;\n    // The fee Hyperliquid charges for Limit orders in the market; in parts per million, e.g. 1.4 bps = 140 ppm\n    uint32 feePpm;\n    // When enqueuing a limit order, use this to set a price \"a bit worse than market\" for faster execution\n    uint32 suggestedDiscountBps;\n    // Contract where the accounting for all baseToken -> finalToken accounting happens. One pre finalToken\n    SwapHandler swapHandler;\n}\n\n/// @notice Common parameters shared across flow execution functions\nstruct CommonFlowParams {\n    uint256 amountInEVM;\n    bytes32 quoteNonce;\n    address finalRecipient;\n    address finalToken;\n    uint256 maxBpsToSponsor;\n    uint256 extraFeesIncurred;\n}\n\n/// @notice Parameters for executing flows with arbitrary EVM actions\nstruct EVMFlowParams {\n    CommonFlowParams commonParams;\n    address initialToken;\n    bytes actionData;\n    bool transferToCore;\n}\n"
+        "BaseModuleHandler.sol": "//SPDX-License-Identifier: Unlicense\npragma solidity ^0.8.0;\n\nimport { AuthorizedFundedFlow } from \"./AuthorizedFundedFlow.sol\";\nimport { HyperCoreFlowExecutor } from \"./HyperCoreFlowExecutor.sol\";\nimport { HyperCoreFlowRoles } from \"./HyperCoreFlowRoles.sol\";\n\n// Note: v5 is necessary since v4 does not use ERC-7201.\nimport { AccessControlUpgradeable } from \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport { ReentrancyGuard } from \"@openzeppelin/contracts-v4/security/ReentrancyGuard.sol\";\n\n/**\n * @notice Base contract for module handlers that use delegatecall to interact with HyperCoreFlowExecutor\n * @dev Uses AccessControlUpgradeable to ensure storage compatibility with HyperCoreFlowExecutor when using delegatecall\n */\nabstract contract BaseModuleHandler is\n    AccessControlUpgradeable,\n    ReentrancyGuard,\n    AuthorizedFundedFlow,\n    HyperCoreFlowRoles\n{\n    /// @notice Address of the underlying hypercore module\n    address public immutable hyperCoreModule;\n\n    constructor(address _donationBox, address _baseToken, bytes32 _roleAdmin) {\n        hyperCoreModule = address(new HyperCoreFlowExecutor(_donationBox, _baseToken));\n\n        _setRoleAdmin(PERMISSIONED_BOT_ROLE, _roleAdmin);\n        _setRoleAdmin(FUNDS_SWEEPER_ROLE, _roleAdmin);\n    }\n\n    /// @notice Fallback function to proxy all calls to the HyperCore module via delegatecall\n    /// @dev Permissioning is enforced by the delegated function's own modifiers (e.g. onlyPermissionedBot)\n    fallback(bytes calldata data) external nonReentrant returns (bytes memory) {\n        return _delegateToHyperCore(data);\n    }\n\n    /// @notice Internal delegatecall helper\n    function _delegateToHyperCore(bytes memory data) internal returns (bytes memory) {\n        (bool success, bytes memory ret) = hyperCoreModule.delegatecall(data);\n        if (!success) {\n            assembly {\n                revert(add(ret, 32), mload(ret))\n            }\n        }\n        return ret;\n    }\n}\n"
     }
 }

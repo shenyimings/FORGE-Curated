@@ -3,64 +3,7 @@
     "project_name": "cantina_rocketpool_jun2025.pdf",
     "findings": [
         {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-755"
-                ],
-                "3": [
-                    "CWE-390"
-                ]
-            },
-            "title": "Missed exit challenges by oDAO will lead to loss of user capital",
-            "description": "The protocol relies on the oDAO to challenge validator exits, but there is no mechanism to ensure these challenges are timely or enforced.\n\nThe root cause is the lack of automated or incentivized challenge mechanisms for validator exits. If the oDAO fails to act on an invalid exit notification, the protocol may incorrectly treat borrowed user capital as rewards.\n\nAn attacker could submit a fraudulent exit with an inflated balance, and if the oDAO does not challenge it within the window, the excess amount would be distributed as rewards instead of being returned to the deposit pool.\n\nThe impact is a loss of user capital due to unchallenged fraudulent exits, undermining the integrity of the staking pool and reward distribution system.\n",
-            "severity": "Low",
-            "location": [
-                "RocketMegapoolManager.sol::challengeExit#132-147"
-            ],
-            "files": [
-                "rocketpool/contracts/contract/megapool/RocketMegapoolManager.sol"
-            ]
-        },
-        {
-            "id": 12,
-            "category": {
-                "1": [
-                    "CWE-435"
-                ]
-            },
-            "title": "Two compromised oDAO members could collude to temporarily prevent reward distributions",
-            "description": "A malicious pair of oDAO members could collude to alternately call challengeExit() to lock up to 49 validators each time, preventing them from receiving rewards. This is possible because the function only prevents the same oDAO member from challenging repeatedly but does not prevent two members from taking turns.\n\nThe root cause is the lack of on-chain logic to detect and ban repeated invalid challenges from a pair of members. The current system relies on optimistic trust and governance-based resolution, which is slow (up to seven weeks).\n\nAn attacker (two compromised oDAO members) could exploit this by repeatedly challenging validators to force node operators to exit without claiming rewards, potentially gaining an unfair share of future rewards (e.g., from MEV blocks).\n\nThe impact is temporary disruption of reward distribution and potential unfair advantage for malicious actors, though the bonded RPL forfeiture (1750 RPL per member) provides economic disincentive.\n",
-            "severity": "Low",
-            "location": [
-                "RocketMegapoolManager.sol#L135"
-            ],
-            "files": [
-                "rocketpool/contracts/contract/megapool/RocketMegapoolManager.sol"
-            ]
-        },
-        {
-            "id": 13,
-            "category": {
-                "1": [
-                    "CWE-697"
-                ]
-            },
-            "title": "challengeExit() allows less than intended challenges",
-            "description": "The challengeExit() function is intended to allow 50 challenges per call, but due to a logic error using the < operator instead of <=, it only allows 49 challenges.\n\nThe root cause is an incorrect comparison in the require statement that limits the number of challenges. This off-by-one error reduces the intended functionality.\n\nAn attacker (malicious or compromised oDAO member) could exploit this to slightly reduce the efficiency of the challenge process, though the impact is minimal since 49 out of 50 challenges still succeed.\n\nThe impact is a minor reduction in the protocol's ability to challenge exiting validators in a single transaction, potentially increasing gas costs or requiring additional transactions.\n",
-            "severity": "Low",
-            "location": [
-                "RocketMegapoolManager.sol#L145-L146"
-            ],
-            "files": [
-                "rocketpool/contracts/contract/megapool/RocketMegapoolManager.sol"
-            ]
-        },
-        {
-            "id": 53,
+            "id": 32,
             "category": {
                 "1": [
                     "CWE-707"
@@ -69,25 +12,76 @@
                     "CWE-20"
                 ],
                 "3": [
-                    "CWE-1287"
+                    "CWE-1284"
                 ]
             },
-            "title": "RocketMegapoolManager functions can make arbitrary external calls",
-            "description": "Functions in RocketMegapoolManager (stake, dissolve, notifyExit, etc.) make external calls to provided megapool addresses without validating that they are registered megapools. This allows arbitrary contract interaction.\nThe root cause is the lack of a guard like onlyRegisteredMegapool() to restrict calls to known, valid contracts.\nAn attacker could pass a malicious contract address, leading to unexpected behavior or potential reentrancy or phishing attacks if context changes.\nThe impact is low, as no immediate exploit is possible, but it violates secure coding practices and increases risk in future upgrades.\n",
-            "severity": "Informational",
+            "title": "Missing upper guardrail for node.voting.power.stake.maximum allows bypass of RPL clamping to increase voting power",
+            "description": "The node.voting.power.stake.maximum parameter, which caps the effective RPL stake used in voting power calculations (default 1.5 ether), lacks an upper guardrail. This allows the pDAO to set it to an extremely high value, effectively bypassing the clamping mechanism in calculateVotingPower(). The root cause is the missing upper bound validation. A malicious pDAO could exploit this to allow large stakeholders to gain disproportionate voting power, undermining governance fairness. The impact is centralization of voting power and potential capture of pDAO governance.\n",
+            "severity": "Low",
             "location": [
-                "RocketMegapoolManager.sol#L63",
-                "RocketMegapoolManager.sol#L81",
-                "RocketMegapoolManager.sol#L99",
-                "RocketMegapoolManager.sol#L116",
-                "RocketMegapoolManager.sol#L141"
+                "RocketDAOProtocolSettingsNode.sol#L35",
+                "RocketNetworkSnapshots.sol#L20",
+                "RocketNetworkVoting.sol#L77-L80",
+                "RocketNetworkVoting.sol#L88-L96"
             ],
             "files": [
-                "rocketpool/contracts/contract/megapool/RocketMegapoolManager.sol"
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing lower guardrail for reduced.bond may allow validators to stake with lower bond than expected",
+            "description": "The protocol lacks a minimum guardrail for the reduced.bond setting, which determines the required ETH bond per validator for node operators staking more than two validators.\n\nThe root cause is the absence of input validation when updating the reduced.bond parameter via DAO governance. While RPIP-42 specifies a reduction from 4 ETH to 1.5 ETH, the system allows the pDAO to set this value to zero or any arbitrarily low amount.\n\nA malicious or compromised pDAO could set reduced.bond to zero, enabling node operators to stake with no bonded ETH. This allows them to earn commission rewards without financial skin in the game.\n\nThe impact includes increased risk of validator slashing and abandonment, 100% loan-to-value (LTV) staking, and erosion of protocol security, as node operators have no economic incentive to act honestly.\n",
+            "severity": "Medium",
+            "location": [
+                "RocketDAOProtocolSettingsNode.sol#24",
+                "RocketDAOProtocolSettingsNode.sol#31-44",
+                "RocketMegapoolDelegate.sol#177",
+                "RocketMegapoolDelegate.sol#251",
+                "RocketMegapoolDelegate.sol#720",
+                "RocketNodeDeposit.sol#38-53"
+            ],
+            "files": [
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing guardrails for node.unstaking.period can cause unexpected withdrawal behaviors",
+            "description": "The node.unstaking.period setting is initialized to 28 days as per RPIP-30, but no guardrails exist to limit its value. This allows the pDAO to set it to zero (allowing immediate withdrawals) or an extremely high value (indefinitely blocking withdrawals), both of which can disrupt staking incentives and reward gaming resistance. The root cause is the absence of upper and lower bounds in the specification. A malicious pDAO majority could exploit this to either encourage reward farming or lock user funds. The impact includes potential gaming of staking rewards and user fund accessibility issues.\n",
+            "severity": "Low",
+            "location": [
+                "RocketDAOProtocolSettingsNode.sol#L25",
+                "RocketDAOProtocolSettingsNode.sol#L31-L44"
+            ],
+            "files": [
+                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsNode.sol"
             ]
         }
     ],
     "affected_files": {
-        "RocketMegapoolManager.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity 0.8.30;\n\nimport {RocketMegapoolStorageLayout} from \"./RocketMegapoolStorageLayout.sol\";\nimport {RocketBase} from \"../RocketBase.sol\";\nimport {RocketMegapoolInterface} from \"../../interface/megapool/RocketMegapoolInterface.sol\";\nimport {RocketStorageInterface} from \"../../interface/RocketStorageInterface.sol\";\nimport {RocketMegapoolManagerInterface} from \"../../interface/megapool/RocketMegapoolManagerInterface.sol\";\nimport {BeaconStateVerifierInterface, ValidatorProof, Withdrawal, WithdrawalProof} from \"../../interface/util/BeaconStateVerifierInterface.sol\";\n\n/// @notice Handles protocol-level megapool functionality\ncontract RocketMegapoolManager is RocketBase, RocketMegapoolManagerInterface {\n    // Immutables\n    bytes32 immutable internal challengerKey;\n    bytes32 immutable internal setCountKey;\n\n    // Constants\n    uint256 constant internal farFutureEpoch = 2 ** 64 - 1;\n\n    constructor(RocketStorageInterface _rocketStorageAddress) RocketBase(_rocketStorageAddress) {\n        version = 1;\n        // Precompute static storage keys\n        challengerKey = keccak256(\"last.trusted.node.megapool.challenger\");\n        setCountKey = keccak256(\"megapool.validator.set.count\");\n    }\n\n    /// @notice Returns the total number validators across all megapools\n    function getValidatorCount() override external view returns (uint256) {\n        return getUint(setCountKey);\n    }\n\n    /// @notice Adds a validator record to the global megapool validator set\n    /// @param _megapoolAddress Address of the megapool which manages this validator\n    /// @param _validatorId Internal validator ID of the new validator\n    function addValidator(address _megapoolAddress, uint32 _validatorId) override external onlyLatestContract(\"rocketMegapoolManager\", address(this)) onlyLatestContract(\"rocketNodeDeposit\", msg.sender) {\n        uint256 index = getUint(setCountKey);\n        setUint(setCountKey, index + 1);\n        uint256 encoded = (uint256(uint160(_megapoolAddress)) << 96) | uint32(_validatorId);\n        setUint(keccak256(abi.encodePacked(\"megapool.validator.set\", index)), encoded);\n    }\n\n    /// @notice Returns the last trusted member to execute a challenge\n    function getLastChallenger() override external view returns (address) {\n        return getAddress(challengerKey);\n    }\n\n    /// @notice Returns validator info for the given global megapool validator index\n    /// @param _index The index of the validator to query\n    function getValidatorInfo(uint256 _index) override external view returns (bytes memory pubkey, RocketMegapoolStorageLayout.ValidatorInfo memory validatorInfo, address megapool, uint32 validatorId) {\n        // Retrieve and decode entry\n        uint256 encoded = getUint(keccak256(abi.encodePacked(\"megapool.validator.set\", _index)));\n        megapool = address(uint160(encoded >> 96));\n        validatorId = uint32(encoded);\n        // Fetch and return info\n        RocketMegapoolInterface rocketMegapool = RocketMegapoolInterface(megapool);\n        (validatorInfo, pubkey) = rocketMegapool.getValidatorInfoAndPubkey(validatorId);\n    }\n\n    /// @notice Verifies a validator state proof then calls stake on the megapool\n    /// @param _megapool Address of the megapool which the validator belongs to\n    /// @param _validatorId Internal ID of the validator within the megapool\n    /// @param _proof State proof of the validator\n    function stake(RocketMegapoolInterface _megapool, uint32 _validatorId, ValidatorProof calldata _proof) override external {\n        // Verify state proof\n        BeaconStateVerifierInterface beaconStateVerifier = BeaconStateVerifierInterface(getContractAddress(\"beaconStateVerifier\"));\n        require(beaconStateVerifier.verifyValidator(_proof), \"Invalid proof\");\n        // Verify matching withdrawal credentials\n        bytes32 withdrawalCredentials = _megapool.getWithdrawalCredentials();\n        require(_proof.validator.withdrawalCredentials == withdrawalCredentials, \"Invalid withdrawal credentials\");\n        // Verify matching pubkey\n        bytes memory pubkey = _megapool.getValidatorPubkey(_validatorId);\n        require(keccak256(_proof.validator.pubkey) == keccak256(pubkey), \"Pubkey does not match\");\n        // Perform the stake\n        _megapool.stake(_validatorId, _proof.validatorIndex);\n    }\n\n    /// @notice Immediately dissolves a validator if withdrawal credentials are incorrect\n    /// @param _megapool Address of the megapool which the validator belongs to\n    /// @param _validatorId Internal ID of the validator within the megapool\n    /// @param _proof State proof of the validator\n    function dissolve(RocketMegapoolInterface _megapool, uint32 _validatorId, ValidatorProof calldata _proof) override external {\n        // Verify state proof\n        BeaconStateVerifierInterface beaconStateVerifier = BeaconStateVerifierInterface(getContractAddress(\"beaconStateVerifier\"));\n        require(beaconStateVerifier.verifyValidator(_proof), \"Invalid proof\");\n        // Verify matching withdrawal credentials\n        bytes32 withdrawalCredentials = _megapool.getWithdrawalCredentials();\n        require(_proof.validator.withdrawalCredentials != withdrawalCredentials, \"Valid withdrawal credentials\");\n        // Verify matching pubkey\n        bytes memory pubkey = _megapool.getValidatorPubkey(_validatorId);\n        require(keccak256(_proof.validator.pubkey) == keccak256(pubkey), \"Pubkey does not match\");\n        // Dissolve the validator\n        _megapool.dissolveValidator(_validatorId);\n    }\n\n    /// @notice Verifies a validator state proof then notifies megapool about the exit\n    /// @param _megapool Address of the megapool which the validator belongs to\n    /// @param _validatorId Internal ID of the validator within the megapool\n    /// @param _proof State proof of the validator\n    function notifyExit(RocketMegapoolInterface _megapool, uint32 _validatorId, ValidatorProof calldata _proof) override external {\n        // Verify state proof\n        BeaconStateVerifierInterface beaconStateVerifier = BeaconStateVerifierInterface(getContractAddress(\"beaconStateVerifier\"));\n        require(beaconStateVerifier.verifyValidator(_proof), \"Invalid proof\");\n        // Verify correct withdrawable_epoch\n        require(_proof.validator.withdrawableEpoch < farFutureEpoch, \"Validator not exiting\");\n        // Verify matching validator index\n        RocketMegapoolStorageLayout.ValidatorInfo memory validatorInfo = _megapool.getValidatorInfo(_validatorId);\n        require(_proof.validatorIndex == validatorInfo.validatorIndex, \"Invalid proof\");\n        // Notify megapool\n        _megapool.notifyExit(_validatorId, _proof.validator.withdrawableEpoch);\n    }\n\n    /// @notice Verifies a validator state proof then notifies megapool that this validator was not exiting at given slot\n    /// @param _megapool Address of the megapool which the validator belongs to\n    /// @param _validatorId Internal ID of the validator within the megapool\n    /// @param _proof State proof of the validator\n    function notifyNotExit(RocketMegapoolInterface _megapool, uint32 _validatorId, ValidatorProof calldata _proof) override external {\n        // Verify state proof\n        BeaconStateVerifierInterface beaconStateVerifier = BeaconStateVerifierInterface(getContractAddress(\"beaconStateVerifier\"));\n        require(beaconStateVerifier.verifyValidator(_proof), \"Invalid proof\");\n        // Verify correct withdrawable_epoch\n        require(_proof.validator.withdrawableEpoch == farFutureEpoch, \"Validator is exiting\");\n        // Verify matching validator index\n        RocketMegapoolStorageLayout.ValidatorInfo memory validatorInfo = _megapool.getValidatorInfo(_validatorId);\n        require(_proof.validatorIndex == validatorInfo.validatorIndex, \"Invalid proof\");\n        // Notify the megapool that the specified validator was not exiting at the proven slot\n        _megapool.notifyNotExit(_validatorId, _proof.slot);\n    }\n\n    /// @notice Asserts that one or more megapool validators are exiting but a proof has not been supplied by the node operator\n    /// @param _challenges List of challenges to submit\n    /// @dev Only a trusted node can submit challenges\n    function challengeExit(ExitChallenge[] calldata _challenges) override external onlyTrustedNode(msg.sender) {\n        // Check if this member was the previous one to challenge\n        address lastSubmitter = getAddress(challengerKey);\n        require(msg.sender != lastSubmitter, \"Member was last to challenge\");\n        setAddress(challengerKey, msg.sender);\n        // Deliver challenges\n        uint256 totalChallenges = 0;\n        for (uint256 i = 0; i < _challenges.length; ++i) {\n            for (uint256 j = 0; j < _challenges[i].validatorIds.length; ++j) {\n                _challenges[i].megapool.challengeExit(_challenges[i].validatorIds[j]);\n                totalChallenges += 1;\n            }\n        }\n        // Only allow up to 50 total challenges at a time\n        require(totalChallenges < 50, \"Too many challenges\");\n    }\n\n    /// @notice Verifies a withdrawal state proof then notifies megapool of the final balance\n    /// @param _megapool Address of the megapool which the validator belongs to\n    /// @param _validatorId Internal ID of the validator within the megapool\n    /// @param _proof State proof of the withdrawal\n    function notifyFinalBalance(RocketMegapoolInterface _megapool, uint32 _validatorId, WithdrawalProof calldata _proof) override external {\n        // Verify state proof\n        BeaconStateVerifierInterface beaconStateVerifier = BeaconStateVerifierInterface(getContractAddress(\"beaconStateVerifier\"));\n        require(beaconStateVerifier.verifyWithdrawal(_proof), \"Invalid proof\");\n        // Verify matching validator index\n        RocketMegapoolStorageLayout.ValidatorInfo memory validatorInfo = _megapool.getValidatorInfo(_validatorId);\n        require(_proof.withdrawal.validatorIndex == validatorInfo.validatorIndex, \"Invalid proof\");\n        // Notify megapool\n        _megapool.notifyFinalBalance(_validatorId, _proof.withdrawal.amountInGwei, msg.sender, _proof.withdrawalSlot);\n    }\n}\n"
+        "RocketDAOProtocolSettingsNode.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity 0.8.30;\n\nimport {RocketStorageInterface} from \"../../../../interface/RocketStorageInterface.sol\";\nimport {RocketDAOProtocolSettings} from \"./RocketDAOProtocolSettings.sol\";\nimport {RocketDAOProtocolSettingsNodeInterface} from \"../../../../interface/dao/protocol/settings/RocketDAOProtocolSettingsNodeInterface.sol\";\nimport {RocketNetworkSnapshotsInterface} from \"../../../../interface/network/RocketNetworkSnapshotsInterface.sol\";\n\n/// @notice Network auction settings\ncontract RocketDAOProtocolSettingsNode is RocketDAOProtocolSettings, RocketDAOProtocolSettingsNodeInterface {\n    // Construct\n    constructor(RocketStorageInterface _rocketStorageAddress) RocketDAOProtocolSettings(_rocketStorageAddress, \"node\") {\n        // Set version\n        version = 5;\n        // Initialise settings on deployment\n        if (!rocketStorage.getDeployedStatus()) {\n            // Set defaults\n            setSettingBool(\"node.registration.enabled\", false);\n            setSettingBool(\"node.smoothing.pool.registration.enabled\", true);\n            setSettingBool(\"node.deposit.enabled\", false);\n            setSettingBool(\"node.vacant.minipools.enabled\", false);\n            _setSettingUint(\"node.per.minipool.stake.minimum\", 0.1 ether);      // 10% of user ETH value (borrowed ETH)\n            _setSettingUint(\"node.per.minipool.stake.maximum\", 1.5 ether);      // 150% of node ETH value (bonded ETH)\n            _setSettingUint(\"reduced.bond\", 4 ether);                           // 4 ETH (RPIP-42)\n            _setSettingUint(\"node.unstaking.period\", 28 days);                  // 28 days (RPIP-30)\n            // Update deployed flag\n            setBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")), true);\n        }\n    }\n\n    /// @notice Update a setting, overrides inherited setting method with extra checks for this contract\n    function setSettingUint(string memory _settingPath, uint256 _value) override public onlyDAOProtocolProposal {\n        if(getBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")))) {\n            bytes32 settingKey = keccak256(bytes(_settingPath));\n            if(settingKey == keccak256(bytes(\"node.voting.power.stake.maximum\"))) {\n                // Redirect the setting change to push a new value into the snapshot system instead\n                RocketNetworkSnapshotsInterface rocketNetworkSnapshots = RocketNetworkSnapshotsInterface(getContractAddress(\"rocketNetworkSnapshots\"));\n                rocketNetworkSnapshots.push(settingKey, uint224(_value));\n                return;\n            }\n        }\n        // Update setting now\n        _setSettingUint(_settingPath, _value);\n    }\n\n    /// @dev Directly updates a setting, no guardrails applied\n    function _setSettingUint(string memory _settingPath, uint256 _value) internal {\n        setUint(keccak256(abi.encodePacked(settingNameSpace, _settingPath)), _value);\n    }\n\n    // Node registrations currently enabled\n    function getRegistrationEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.registration.enabled\");\n    }\n\n    // Node smoothing pool registrations currently enabled\n    function getSmoothingPoolRegistrationEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.smoothing.pool.registration.enabled\");\n    }\n\n    // Node deposits currently enabled\n    function getDepositEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.deposit.enabled\");\n    }\n\n    // Vacant minipools currently enabled\n    function getVacantMinipoolsEnabled() override external view returns (bool) {\n        return getSettingBool(\"node.vacant.minipools.enabled\");\n    }\n\n    // Minimum RPL stake per minipool as a fraction of assigned user ETH value\n    function getMinimumPerMinipoolStake() override external view returns (uint256) {\n        return getSettingUint(\"node.per.minipool.stake.minimum\");\n    }\n\n    // Maximum RPL stake per minipool as a fraction of assigned user ETH value\n    function getMaximumPerMinipoolStake() override external view returns (uint256) {\n        return getSettingUint(\"node.per.minipool.stake.maximum\");\n    }\n\n    // Maximum staked RPL that applies to voting power per minipool as a fraction of assigned user ETH value\n    function getMaximumStakeForVotingPower() override external view returns (uint256) {\n        bytes32 settingKey = keccak256(bytes(\"node.voting.power.stake.maximum\"));\n        RocketNetworkSnapshotsInterface rocketNetworkSnapshots = RocketNetworkSnapshotsInterface(getContractAddress(\"rocketNetworkSnapshots\"));\n        return uint256(rocketNetworkSnapshots.latestValue(settingKey));\n    }\n\n    /// @notice Returns the `reduced_bond` variable used in bond requirements calculation\n    function getReducedBond() override external view returns (uint256) {\n        return getSettingUint(\"reduced.bond\");\n    }\n\n    /// @notice Returns the `base_bond_array` mapping of number of validators to cumulative bond requirement\n    function getBaseBondArray() override public pure returns (uint256[] memory) {\n        uint256[] memory amounts = new uint256[](2);\n        amounts[0] = 4 ether;\n        amounts[1] = 8 ether;\n        return amounts;\n    }\n\n    /// @notice Returns the amount of time that must be waiting after unstaking RPL before it can be returned\n    function getUnstakingPeriod() override external view returns (uint256) {\n        return getSettingUint(\"node.unstaking.period\");\n    }\n}\n"
     }
 }

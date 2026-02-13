@@ -3,57 +3,52 @@
     "project_name": "Across Audit.md",
     "findings": [
         {
-            "id": 0,
+            "id": 8,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-285"
+                    "CWE-228"
                 ],
                 "3": [
-                    "CWE-862"
+                    "CWE-241"
                 ]
             },
-            "title": "Missing Access Control for `setDestinationSettler`",
-            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
-            "severity": "Critical",
+            "title": "Incorrect Parameters Passed to permitWitnessTransferFrom",
+            "description": "The `PERMIT2_ORDER_TYPE` variable incorrectly defines the witness data type as `CrossChainOrder`, while the actual data being hashed is of type `GaslessCrossChainOrder`. This discrepancy, along with the omission of key struct members like `orderDataType`, `exclusiveRelayer`, and `depositNonce` in the hash calculation, violates EIP-712 standards and undermines the integrity of the permit signature. The root cause is incorrect struct type specification and incomplete hashing logic. An attacker could potentially exploit this by crafting malformed orders that pass validation due to incorrect type hashing, leading to unauthorized transfers or failed executions. The impact includes potential fund loss or order manipulation due to flawed signature verification.\n",
+            "severity": "High",
             "location": [
-                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
-                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
-                "ERC7683OrderDepositor.sol::_resolveFor#161",
-                "ERC7683OrderDepositor.sol#L216"
+                "ERC7683Across.sol::PERMIT2_ORDER_TYPE#67",
+                "ERC7683Across.sol::witness#80-91",
+                "ERC7683.sol::GaslessCrossChainOrder#6",
+                "ERC7683Across.sol::CROSS_CHAIN_ORDER_TYPE#55"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "contracts/contracts/erc7683/ERC7683Across.sol"
             ]
         },
         {
-            "id": 6,
+            "id": 5,
             "category": {
                 "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-755"
+                    "CWE-710"
                 ]
             },
-            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
-            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
+            "title": "Types Incompatible With `ERC-7683`",
+            "description": "The `AcrossOrderData` struct in `ERC7683Across.sol` uses outdated types: `destinationChainId` is `uint32` and `recipient` is `address`, while the latest `ERC-7683` standard specifies `uint64` and `bytes32`, respectively. \nThe root cause is a failure to update the struct definition to match the new standard, leading to type mismatches during order processing and event emission. \nAn attacker could exploit this by crafting orders with chain IDs > 2^32 or non-standard recipient encodings, causing silent truncation or incorrect routing. This could lead to funds being sent to unintended destinations. \nThe impact is medium: potential misrouting of funds due to type truncation or encoding errors, violating the expected behavior of the cross-chain standard.\n",
             "severity": "Medium",
             "location": [
-                "ERC7683OrderDepositorExternal.sol#L58",
-                "ERC7683OrderDepositorExternal.sol#L60-L73",
-                "ZkStack_Adapter.sol#L147",
-                "ZkStack_CustomGasToken_Adapter.sol#L189",
-                "ZkSync_Adapter.sol#L241"
+                "ERC7683Across.sol#L8-L18",
+                "ERC7683Across.sol::destinationChainId#13",
+                "ERC7683Across.sol::recipient#14"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "contracts/contracts/erc7683/ERC7683Across.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC7683OrderDepositorExternal.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { ERC7683OrderDepositor } from \"./ERC7683OrderDepositor.sol\";\nimport \"../SpokePool.sol\";\nimport \"../external/interfaces/IPermit2.sol\";\nimport \"@uma/core/contracts/common/implementation/MultiCaller.sol\";\n\n/**\n * @notice ERC7683OrderDepositorExternal processes an external order type and translates it into an AcrossV3Deposit\n * that it sends to the SpokePool contract.\n * @custom:security-contact bugs@across.to\n */\ncontract ERC7683OrderDepositorExternal is ERC7683OrderDepositor, Ownable, MultiCaller {\n    using SafeERC20 for IERC20;\n\n    event SetDestinationSettler(\n        uint256 indexed chainId,\n        address indexed prevDestinationSettler,\n        address indexed destinationSettler\n    );\n\n    SpokePool public immutable SPOKE_POOL;\n\n    // Mapping of chainIds to destination settler addresses.\n    mapping(uint256 => address) public destinationSettlers;\n\n    constructor(\n        SpokePool _spokePool,\n        IPermit2 _permit2,\n        uint256 _quoteBeforeDeadline\n    ) ERC7683OrderDepositor(_permit2, _quoteBeforeDeadline) {\n        SPOKE_POOL = _spokePool;\n    }\n\n    function setDestinationSettler(uint256 chainId, address destinationSettler) external {\n        address prevDestinationSettler = destinationSettlers[chainId];\n        destinationSettlers[chainId] = destinationSettler;\n        emit SetDestinationSettler(chainId, prevDestinationSettler, destinationSettler);\n    }\n\n    function _callDeposit(\n        address depositor,\n        address recipient,\n        address inputToken,\n        address outputToken,\n        uint256 inputAmount,\n        uint256 outputAmount,\n        uint256 destinationChainId,\n        address exclusiveRelayer,\n        uint32 quoteTimestamp,\n        uint32 fillDeadline,\n        uint32 exclusivityDeadline,\n        bytes memory message\n    ) internal override {\n        IERC20(inputToken).safeIncreaseAllowance(address(SPOKE_POOL), inputAmount);\n\n        SPOKE_POOL.depositV3(\n            depositor,\n            recipient,\n            inputToken,\n            outputToken,\n            inputAmount,\n            outputAmount,\n            destinationChainId,\n            exclusiveRelayer,\n            quoteTimestamp,\n            fillDeadline,\n            exclusivityDeadline,\n            message\n        );\n    }\n\n    function _currentDepositId() internal view override returns (uint32) {\n        return SPOKE_POOL.numberOfDeposits();\n    }\n\n    function _destinationSettler(uint256 chainId) internal view override returns (address) {\n        return destinationSettlers[chainId];\n    }\n}\n"
+        "ERC7683Across.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"../external/interfaces/IPermit2.sol\";\nimport { GaslessCrossChainOrder } from \"./ERC7683.sol\";\n\n// Data unique to every CrossChainOrder settled on Across\nstruct AcrossOrderData {\n    address inputToken;\n    uint256 inputAmount;\n    address outputToken;\n    uint256 outputAmount;\n    uint32 destinationChainId;\n    address recipient;\n    address exclusiveRelayer;\n    uint32 exclusivityPeriod;\n    bytes message;\n}\n\nstruct AcrossOriginFillerData {\n    address exclusiveRelayer;\n}\n\nstruct AcrossDestinationFillerData {\n    uint256 repaymentChainId;\n}\n\nbytes constant ACROSS_ORDER_DATA_TYPE = abi.encodePacked(\n    \"AcrossOrderData(\",\n    \"address inputToken,\",\n    \"uint256 inputAmount,\",\n    \"address outputToken,\",\n    \"uint256 outputAmount,\",\n    \"uint32 destinationChainId,\",\n    \"address recipient,\",\n    \"address exclusiveRelayer,\"\n    \"uint32 exclusivityPeriod,\",\n    \"bytes message)\"\n);\n\nbytes32 constant ACROSS_ORDER_DATA_TYPE_HASH = keccak256(ACROSS_ORDER_DATA_TYPE);\n\n/**\n * @notice ERC7683Permit2Lib knows how to process a particular type of external Permit2Order so that it can be used in Across.\n * @dev This library is responsible for definining the ERC712 type strings/hashes and performing hashes on the types.\n * @custom:security-contact bugs@across.to\n */\nlibrary ERC7683Permit2Lib {\n    bytes internal constant CROSS_CHAIN_ORDER_TYPE =\n        abi.encodePacked(\n            \"GaslessCrossChainOrder(\",\n            \"address originSettler,\",\n            \"address user,\",\n            \"uint256 nonce,\",\n            \"uint32 originChainId,\",\n            \"uint32 openDeadline,\",\n            \"uint32 fillDeadline,\",\n            \"bytes32 orderDataType,\",\n            \"AcrossOrderData orderData)\"\n        );\n\n    bytes internal constant CROSS_CHAIN_ORDER_EIP712_TYPE =\n        abi.encodePacked(CROSS_CHAIN_ORDER_TYPE, ACROSS_ORDER_DATA_TYPE);\n    bytes32 internal constant CROSS_CHAIN_ORDER_TYPE_HASH = keccak256(CROSS_CHAIN_ORDER_EIP712_TYPE);\n\n    string private constant TOKEN_PERMISSIONS_TYPE = \"TokenPermissions(address token,uint256 amount)\";\n    string internal constant PERMIT2_ORDER_TYPE =\n        string(\n            abi.encodePacked(\n                \"CrossChainOrder witness)\",\n                ACROSS_ORDER_DATA_TYPE,\n                CROSS_CHAIN_ORDER_TYPE,\n                TOKEN_PERMISSIONS_TYPE\n            )\n        );\n\n    // Hashes an order to get an order hash. Needed for permit2.\n    function hashOrder(GaslessCrossChainOrder memory order, bytes32 orderDataHash) internal pure returns (bytes32) {\n        return\n            keccak256(\n                abi.encode(\n                    CROSS_CHAIN_ORDER_TYPE_HASH,\n                    order.originSettler,\n                    order.user,\n                    order.nonce,\n                    order.originChainId,\n                    order.openDeadline,\n                    order.fillDeadline,\n                    orderDataHash\n                )\n            );\n    }\n\n    function hashOrderData(AcrossOrderData memory orderData) internal pure returns (bytes32) {\n        return\n            keccak256(\n                abi.encode(\n                    ACROSS_ORDER_DATA_TYPE_HASH,\n                    orderData.inputToken,\n                    orderData.inputAmount,\n                    orderData.outputToken,\n                    orderData.outputAmount,\n                    orderData.destinationChainId,\n                    orderData.recipient,\n                    orderData.exclusivityPeriod,\n                    keccak256(orderData.message)\n                )\n            );\n    }\n}\n"
     }
 }

@@ -1,32 +1,133 @@
 {
     "vfp_id": "vfp_00647",
-    "project_name": "2026-1-offchain-arbitrum-quorum-changes-securityreview.pdf",
+    "project_name": "cantina_byzantine_dec2025.pdf",
     "findings": [
         {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-431"
+                ]
+            },
+            "title": "Missing receive / fallback, ERC721 & ERC1155 token accepting hooks",
+            "description": "The Atlas.sol contract lacks a receive or fallback function, which prevents it from accepting Ether during execution of calls or batch operations. This causes transactions sending Ether to the delegated address to revert. Additionally, the contract does not implement the onERC721Received or onERC1155Received / onERC1155BatchReceived hooks, making it unable to receive ERC721 and ERC1155 tokens. The root cause is the absence of required functions to handle incoming Ether and token transfers. An attacker cannot directly exploit this for financial gain, but users lose functionality and may experience failed transactions when attempting to send Ether or tokens to the delegation. The impact is a degradation of contract functionality and reduced interoperability with other protocols expecting standard receiving capabilities.\n",
+            "severity": "High",
+            "location": [
+                "Atlas.sol::#L142"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
             "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Signature replay due to shared storage in EIP-7702 context",
+            "description": "The usedNonces mapping in Atlas.sol uses standard storage slots that reside on the delegating EOA in an EIP-7702 context. When a user switches delegations (e.g., Atlas → OtherImpl → Atlas), the intermediate contract may overwrite the storage slots used by Atlas, resetting nonce values to false. This allows previously consumed signatures to be replayed if they are still within their validity period. The root cause is the use of non-namespaced storage, which is vulnerable to collision when multiple delegation targets share the same EOA storage. An attacker could replay a valid signature after a delegation switch, leading to unauthorized execution of a previously used call. The impact includes potential loss of funds or unauthorized state changes due to signature replay.\n",
+            "severity": "Medium",
+            "location": [
+                "Atlas.sol::#L44"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Atlas delegation does not implement EIP-1271 isValidSignature",
+            "description": "The Atlas contract, while designed as an EIP-7702 delegation target, does not implement the EIP-1271 isValidSignature function. As a result, when protocols check whether an address is a contract (via code.length > 0) and attempt to validate signatures using isValidSignature, the call will revert because the function is not present. The root cause is the omission of a standard interface required for contract-based signature validation. This leads to incompatibility with protocols that rely on EIP-1271 for signature verification, potentially blocking user interactions or causing transaction failures. The impact is reduced interoperability and usability, especially in wallet and dApp ecosystems that expect EIP-1271 compliance.\n",
+            "severity": "Low",
+            "location": [
+                "Atlas.sol::#L32"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 3,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-684"
-                ],
-                "3": [
-                    "CWE-440"
+                    "CWE-571"
                 ]
             },
-            "title": "L2ArbitrumGovernor does not align with the expected EIP-165 interface",
-            "description": "The L2ArbitrumGovernor contract implements EIP-165 via the supportsInterface function but fails to properly reflect its full public interface. Specifically, after PR #365 introduced a new public function 'cancel', the supportsInterface function was not updated to return true for the corresponding interface ID. The root cause is a failure to maintain interface consistency when extending the contract's public API. This could mislead external systems or tooling that rely on EIP-165 to determine which functions are available, leading to incorrect assumptions about contract capabilities. While this does not directly enable malicious exploitation, it undermines the reliability of interface detection mechanisms. The impact is a potential mismatch between expected and actual contract behavior from the perspective of integrators or automated tools, reducing interoperability and security assurance.\n",
+            "title": "Unnecessary zero-address check on recovered address",
+            "description": "The contract performs a redundant check `recoveredAddress != address(0)` before verifying `recoveredAddress == address(this)`. Since the ECDSA recover function (e.g., from OpenZeppelin) reverts if the recovered address is zero, this check is unnecessary and wastes gas. The root cause is inefficient code logic that adds an extra opcode without providing additional security. While the vulnerability does not lead to security breaches, it increases the gas cost of each signature verification. The impact is higher transaction costs for users, which affects the economic efficiency of the contract but does not compromise security.\n",
             "severity": "Informational",
             "location": [
-                "governance/src/L2ArbitrumGovernor.sol::supportsInterface"
+                "Atlas.sol::#L67",
+                "Atlas.sol::#L99"
             ],
             "files": [
-                "governance/src/L2ArbitrumGovernor.sol"
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Uninformative logging and no logging of return data",
+            "description": "The contract emits a CallExecuted event that logs the input calldata, which is already available in transaction data and thus redundant. At the same time, it discards the return data from external calls, which is often more relevant for off-chain observers. The root cause is suboptimal event design that prioritizes less useful data. This leads to increased gas costs due to logging large calldata and makes it harder for external systems to monitor or react to actual execution results. The impact includes higher operational costs and reduced observability, making debugging and integration more difficult for third-party services.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L129-L131"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ]
+            },
+            "title": "Missing fields in EIP712 domain",
+            "description": "The EIP712 domain in Atlas.sol does not include the name and version fields in the DOMAIN_TYPEHASH, which can cause certain wallets to display the signing request opaquely or even reject it due to non-compliance with expected standards. The root cause is an incomplete EIP712 domain separator configuration. This can lead to poor user experience during signature operations, as users may not clearly understand what they are signing. The impact is reduced usability and potential rejection of valid transactions by wallet software, although it does not directly affect security.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L37"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
             ]
         }
     ],
     "affected_files": {
-        "L2ArbitrumGovernor.sol": "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.16;\n\nimport \"@openzeppelin/contracts-upgradeable/governance/GovernorUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorSettingsUpgradeable.sol\";\nimport\n    \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol\";\nimport\n    \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorPreventLateQuorumUpgradeable.sol\";\nimport\n    \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorCountingSimpleUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorVotesUpgradeable.sol\";\nimport\n    \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorTimelockControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport {L2ArbitrumToken} from \"./L2ArbitrumToken.sol\";\n\n/// @title  L2ArbitrumGovernor\n/// @notice Governance controls for the Arbitrum DAO\n/// @dev    Standard governor with some special functionality to avoid counting\n///         votes of some excluded tokens. Also allows for an owner to set parameters by calling\n///         relay.\ncontract L2ArbitrumGovernor is\n    Initializable,\n    GovernorSettingsUpgradeable,\n    GovernorCountingSimpleUpgradeable,\n    GovernorVotesUpgradeable,\n    GovernorTimelockControlUpgradeable,\n    GovernorVotesQuorumFractionUpgradeable,\n    GovernorPreventLateQuorumUpgradeable,\n    OwnableUpgradeable\n{\n    /// @notice address for which votes will not be counted toward quorum\n    /// @dev    A portion of the Arbitrum tokens will be held by entities (eg the treasury) that\n    ///         are not eligible to vote. However, even if their voting/delegation is restricted their\n    ///         tokens will still count towards the total supply, and will therefore affect the quorum.\n    ///         Restricted addresses should be forced to delegate their votes to this special exclude\n    ///         addresses which is not counted when calculating quorum\n    ///         Example address that should be excluded: DAO treasury, foundation, unclaimed tokens,\n    ///         burned tokens and swept (see TokenDistributor) tokens.\n    ///         Note that Excluded Address is a readable name with no code of PK associated with it, and thus can't vote.\n    address public constant EXCLUDE_ADDRESS = address(0xA4b86);\n\n    /// @notice Maximum quorum allowed for a proposal\n    /// @dev    Since the setting is not checkpointed, it is possible that an existing proposal\n    ///         with quorum greater than the maximum can have its quorum suddenly jump to equal maximumQuorum\n    uint256 public maximumQuorum;\n    /// @notice Minimum quorum allowed for a proposal\n    /// @dev    Since the setting is not checkpointed, it is possible that an existing proposal\n    ///         with quorum lesser than the minimum can have its quorum suddenly jump to equal minimumQuorum\n    uint256 public minimumQuorum;\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @param _token The token to read vote delegation from\n    /// @param _timelock A time lock for proposal execution\n    /// @param _owner The executor through which all upgrades should be finalised\n    /// @param _votingDelay The delay between a proposal submission and voting starts\n    /// @param _votingPeriod The period for which the vote lasts\n    /// @param _quorumNumerator The proportion of the circulating supply required to reach a quorum\n    /// @param _proposalThreshold The number of delegated votes required to create a proposal\n    /// @param _minPeriodAfterQuorum The minimum number of blocks available for voting after the quorum is reached\n    function initialize(\n        IVotesUpgradeable _token,\n        TimelockControllerUpgradeable _timelock,\n        address _owner,\n        uint256 _votingDelay,\n        uint256 _votingPeriod,\n        uint256 _quorumNumerator,\n        uint256 _proposalThreshold,\n        uint64 _minPeriodAfterQuorum\n    ) external initializer {\n        __Governor_init(\"L2ArbitrumGovernor\");\n        __GovernorSettings_init(_votingDelay, _votingPeriod, _proposalThreshold);\n        __GovernorCountingSimple_init();\n        __GovernorVotes_init(_token);\n        __GovernorTimelockControl_init(_timelock);\n        __GovernorVotesQuorumFraction_init(_quorumNumerator);\n        __GovernorPreventLateQuorum_init(_minPeriodAfterQuorum);\n        _transferOwnership(_owner);\n    }\n\n    /// @notice Allows the owner to make calls from the governor\n    /// @dev    We want the owner to be able to upgrade settings and parametes on this Governor\n    ///         however we can't use onlyGovernance as it requires calls originate from the governor\n    ///         contract. The normal flow for onlyGovernance to work is to call execute on the governor\n    ///         which will then call out to the _executor(), which will then call back in to the governor to set\n    ///         a parameter. At the point of setting the parameter onlyGovernance is checked, and this includes\n    ///         a check this call originated in the execute() function. The purpose of this is an added\n    ///         safety measure that ensure that all calls originate at the governor, and if second entrypoint is\n    ///         added to the _executor() contract, that new entrypoint will not be able to pass the onlyGovernance check.\n    ///         You can read more about this in the comments on onlyGovernance()\n    ///         This flow doesn't work for Arbitrum governance as we require an proposal on L2 to first\n    ///         be relayed to L1, and then back again to L2 before calling into the governor to update\n    ///         settings. This means that updating settings can't be done in a single transaction.\n    ///         There are two potential solutions to this problem:\n    ///         1.  Use a more persistent record that a specific upgrade is taking place. This adds\n    ///             a lot of complexity, as we have multiple layers of calldata wrapping each other to\n    ///             define the multiple transactions that occur in a round-trip upgrade. So safely recording\n    ///             execution of the would be difficult and brittle.\n    ///         2.  Override this protection and just ensure elsewhere that the executor only has the\n    ///             the correct entrypoints and access control. We've gone for this option.\n    ///         By overriding the relay function we allow the executor to make any call originating\n    ///         from the governor, and by setting the _executor() to be the governor itself we can use the\n    ///         relay function to call back into the governor to update settings e.g:\n    ///\n    ///         l2ArbitrumGovernor.relay(\n    ///             address(l2ArbitrumGovernor),\n    ///             0,\n    ///             abi.encodeWithSelector(l2ArbitrumGovernor.updateQuorumNumerator.selector, 4)\n    ///         );\n    function relay(address target, uint256 value, bytes calldata data)\n        external\n        virtual\n        override\n        onlyOwner\n    {\n        AddressUpgradeable.functionCallWithValue(target, data, value);\n    }\n\n    /// @notice returns l2 executor address; used internally for onlyGovernance check\n    function _executor()\n        internal\n        view\n        override(GovernorTimelockControlUpgradeable, GovernorUpgradeable)\n        returns (address)\n    {\n        return address(this);\n    }\n\n    /// @notice Set the quorum minimum and maximum\n    /// @dev    Since the setting is not checkpointed, it is possible that an existing proposal\n    ///         with quorum outside the new min/max can have its quorum suddenly jump to equal\n    ///         the new min or max\n    function setQuorumMinAndMax(uint256 _minimumQuorum, uint256 _maximumQuorum)\n        external\n        onlyGovernance\n    {\n        require(_minimumQuorum < _maximumQuorum, \"L2ArbitrumGovernor: MIN_GT_MAX\");\n        minimumQuorum = _minimumQuorum;\n        maximumQuorum = _maximumQuorum;\n    }\n\n    /// @notice Get \"circulating\" votes supply; i.e., total minus excluded vote exclude address.\n    function getPastCirculatingSupply(uint256 blockNumber) public view virtual returns (uint256) {\n        return\n            token.getPastTotalSupply(blockNumber) - token.getPastVotes(EXCLUDE_ADDRESS, blockNumber);\n    }\n\n    /// @notice Get total delegated votes minus excluded votes\n    /// @dev    If the block number is prior to the first total delegation checkpoint, returns 0\n    ///         Can also return 0 if excluded > total delegation, which is extremely unlikely but possible\n    ///         since L2ArbitrumToken.getTotalDelegationAt is initially an estimate\n    function getPastTotalDelegatedVotes(uint256 blockNumber) public view returns (uint256) {\n        uint256 totalDvp = L2ArbitrumToken(address(token)).getTotalDelegationAt(blockNumber);\n\n        // getTotalDelegationAt may return 0 if the requested block is before the first checkpoint\n        if (totalDvp == 0) {\n            return 0;\n        }\n\n        uint256 excluded = token.getPastVotes(EXCLUDE_ADDRESS, blockNumber);\n\n        // it is possible (but unlikely) that excluded > totalDvp\n        // this is because getTotalDelegationAt is initially an _estimate_ of the total delegation\n        return totalDvp > excluded ? totalDvp - excluded : 0;\n    }\n\n    /// @notice Calculates the quorum size, excludes token delegated to the exclude address\n    /// @dev    The calculated quorum is clamped between minimumQuorum and maximumQuorum\n    function quorum(uint256 blockNumber)\n        public\n        view\n        override(IGovernorUpgradeable, GovernorVotesQuorumFractionUpgradeable)\n        returns (uint256)\n    {\n        uint256 pastTotalDelegatedVotes = getPastTotalDelegatedVotes(blockNumber);\n\n        // if pastTotalDelegatedVotes is 0, then blockNumber is almost certainly prior to the first totalDelegatedVotes checkpoint\n        // in this case we should use getPastCirculatingSupply to ensure quorum of pre-existing proposals is unchanged\n        // in the unlikely event that totalDvp is 0 for a block _after_ the dvp update, getPastCirculatingSupply will be used with a larger quorumNumerator, \n        // resulting in a much higher calculated quorum. This is okay because quorum is clamped.\n        uint256 calculatedQuorum = (\n            (\n                pastTotalDelegatedVotes == 0\n                    ? getPastCirculatingSupply(blockNumber)\n                    : pastTotalDelegatedVotes\n            ) * quorumNumerator(blockNumber)\n        ) / quorumDenominator();\n\n        // clamp the calculated quorum between minimumQuorum and maximumQuorum\n        if (calculatedQuorum < minimumQuorum) {\n            return minimumQuorum;\n        } else if (calculatedQuorum > maximumQuorum) {\n            return maximumQuorum;\n        } else {\n            return calculatedQuorum;\n        }\n    }\n\n    /// @inheritdoc GovernorVotesQuorumFractionUpgradeable\n    function quorumDenominator()\n        public\n        pure\n        override(GovernorVotesQuorumFractionUpgradeable)\n        returns (uint256)\n    {\n        // update to 10k to allow for higher precision\n        return 10_000;\n    }\n\n    // Overrides:\n\n    // @notice Votes required for proposal.\n    function proposalThreshold()\n        public\n        view\n        override(GovernorSettingsUpgradeable, GovernorUpgradeable)\n        returns (uint256)\n    {\n        return GovernorSettingsUpgradeable.proposalThreshold();\n    }\n\n    function state(uint256 proposalId)\n        public\n        view\n        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)\n        returns (ProposalState)\n    {\n        return GovernorTimelockControlUpgradeable.state(proposalId);\n    }\n\n    function _castVote(\n        uint256 proposalId,\n        address account,\n        uint8 support,\n        string memory reason,\n        bytes memory params\n    )\n        internal\n        override(GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable)\n        returns (uint256)\n    {\n        return GovernorPreventLateQuorumUpgradeable._castVote(\n            proposalId, account, support, reason, params\n        );\n    }\n\n    function proposalDeadline(uint256 proposalId)\n        public\n        view\n        override(IGovernorUpgradeable, GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable)\n        returns (uint256)\n    {\n        return GovernorPreventLateQuorumUpgradeable.proposalDeadline(proposalId);\n    }\n\n    function _execute(\n        uint256 proposalId,\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        bytes32 descriptionHash\n    ) internal override(GovernorUpgradeable, GovernorTimelockControlUpgradeable) {\n        GovernorTimelockControlUpgradeable._execute(\n            proposalId, targets, values, calldatas, descriptionHash\n        );\n    }\n\n    function _cancel(\n        address[] memory targets,\n        uint256[] memory values,\n        bytes[] memory calldatas,\n        bytes32 descriptionHash\n    )\n        internal\n        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)\n        returns (uint256)\n    {\n        return\n            GovernorTimelockControlUpgradeable._cancel(targets, values, calldatas, descriptionHash);\n    }\n\n    function supportsInterface(bytes4 interfaceId)\n        public\n        view\n        override(GovernorUpgradeable, GovernorTimelockControlUpgradeable)\n        returns (bool)\n    {\n        return GovernorTimelockControlUpgradeable.supportsInterface(interfaceId);\n    }\n\n    /**\n     * @dev This empty reserved space is put in place to allow future versions to add new\n     * variables without shifting down storage in the inheritance chain.\n     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps\n     */\n    uint256[48] private __gap;\n}\n"
+        "Atlas.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.30;\n\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ninterface IAtlas {\n    event CallExecuted(address indexed sender, address indexed to, uint256 value, bytes data);\n\n    error InvalidSigner();\n    error ExpiredSignature();\n    error Unauthorized();\n    error NonceAlreadyUsed();\n    error CallReverted();\n\n    /// @notice Represents a single call within a batch.\n    struct Call {\n        address to;\n        uint256 value;\n        bytes data;\n    }\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCall(Call calldata call) external payable;\n    function executeCalls(Call[] calldata calls) external payable;\n}\n\ncontract Atlas is IAtlas {\n    /*\n        Storage\n    */\n\n    bytes32 constant DOMAIN_TYPEHASH = keccak256(\"EIP712Domain(uint256 chainId,address verifyingContract)\");\n    bytes32 constant CALL_TYPEHASH = keccak256(\"Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALLS_TYPEHASH =\n        keccak256(\"ExecuteCalls(Call[] calls,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALL_TYPEHASH =\n        keccak256(\"ExecuteCall(Call call,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n\n    mapping(uint256 => bool) public usedNonces;\n\n    /*\n        External functions\n    */\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encode(CALL_TYPEHASH, call.to, call.value, keccak256(call.data)));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALL_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Hash each call individually\n        bytes32[] memory callStructHashes = new bytes32[](calls.length);\n        for (uint256 i; i < calls.length; ++i) {\n            callStructHashes[i] =\n                keccak256(abi.encode(CALL_TYPEHASH, calls[i].to, calls[i].value, keccak256(calls[i].data)));\n        }\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encodePacked(callStructHashes));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALLS_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeBatch(calls);\n    }\n\n    function executeCall(Call calldata call) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeBatch(calls);\n    }\n\n    /*\n        Private functions\n    */\n\n    function _executeBatch(Call[] calldata calls) private {\n        for (uint256 i; i < calls.length; ++i) {\n            _executeCall(calls[i]);\n        }\n    }\n\n    function _executeCall(Call calldata callItem) private {\n        // address(this) in the contract equals the EOA address NOT the contract address\n        (bool success,) = callItem.to.call{value: callItem.value}(callItem.data);\n        require(success, CallReverted());\n        emit CallExecuted(msg.sender, callItem.to, callItem.value, callItem.data);\n    }\n\n    /*\n        Views\n    */\n\n    function DOMAIN_SEPARATOR() public view returns (bytes32) {\n        return keccak256(abi.encode(DOMAIN_TYPEHASH, block.chainid, address(this)));\n    }\n}\n"
     }
 }

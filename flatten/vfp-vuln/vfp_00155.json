@@ -1,32 +1,76 @@
 {
     "vfp_id": "vfp_00155",
-    "project_name": "cantina_charm_june2025.pdf",
+    "project_name": "Virtuals Protocol AI Agents - Zenith Audit Report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-664"
                 ],
                 "2": [
-                    "CWE-20"
+                    "CWE-404"
                 ],
                 "3": [
-                    "CWE-1288"
+                    "CWE-772"
                 ]
             },
-            "title": "Insufficient factory check during vault creation",
-            "description": "1. **Description:** When creating a new vault in AlphaProVaultFactory, the contract checks for a field but does not verify that the provided Uniswap V3 pool address is valid for the given token pair and fee.\n2. **Cause:** The factory does not perform a lookup or validation to confirm that the provided pool address corresponds to the correct (token0, token1, fee) triplet.\n3. **Exploitation:** An attacker could provide a fake or incorrect pool address during vault creation, leading to integration with a malicious or non-functional pool.\n4. **Impact:** This could result in loss of funds or inability to operate the vault correctly due to interaction with an invalid Uniswap V3 pool.\n",
-            "severity": "Medium",
+            "title": "When migrating an Agent via AgentMigrator::migrateAgent() the old sAgentToken will still be locked preventing the creator from retrieving VIRTUAL tokens",
+            "description": "The AgentMigrator::migrateAgent() function allows migration of an existing agent to new contracts, including a new AgentToken and Uniswap pool. However, the original sAgentToken tokens, which represent staked LP tokens from the old Uniswap pool, remain locked for the full 10-year maturity duration. This prevents the agent creator from redeeming the old LP tokens and retrieving the underlying VIRTUAL tokens used as initial liquidity. The root cause is the lack of logic in the migration process to unlock or transfer the old staked LP position. An attacker cannot directly exploit this, but the legitimate creator is permanently locked out of their funds. The impact is loss of access to VIRTUAL tokens that were originally provided as liquidity, effectively resulting in a permanent loss of capital for the agent creator.\n",
+            "severity": "High",
             "location": [
-                "AlphaProVaultFactory.sol#L46-L47"
+                "AgentMigrator.sol"
             ],
             "files": [
-                "alpha-contracts-v2.1/contracts/AlphaProVaultFactory.sol"
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-669"
+                ]
+            },
+            "title": "Agent token holders do not receive refunds when token migrates",
+            "description": "When an Agent is migrated using AgentMigrator, holders of the old Agent token are forced to sell in the old pool and buy the new token, causing potential losses due to price volatility and slippage. The root cause is the lack of a direct redemption or migration mechanism for existing token holders. An attacker could exploit high volatility in the old pool to profit from the forced sell-off, while legitimate holders incur losses. This leads to an unfair migration process and potential loss of user funds, damaging user trust and economic fairness in the migration mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol#110-160"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Founder of AgentDAO can prevent proposal execution by migrating the Agent",
+            "description": "The ServiceNFT::mint function requires the caller to be the current AgentDAO. If the Agent is migrated, the old AgentDAO is replaced, making it impossible to execute proposals that require minting a serviceNFT, as the old DAO can no longer call the function. The root cause is the lack of support for legacy DAOs in the minting logic. A malicious founder could exploit this by migrating the Agent to block execution of unfavorable proposals, even if they passed. This leads to a loss of proposal finality and undermines the integrity of the governance process, enabling unilateral censorship by the founder.\n",
+            "severity": "Medium",
+            "location": [
+                "AgentMigrator.sol",
+                "ServiceNf.solt"
+            ],
+            "files": [
+                "protocol-contracts/contracts/virtualPersona/AgentMigrator.sol"
             ]
         }
     ],
     "affected_files": {
-        "AlphaProVaultFactory.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.0;\npragma abicoder v2;\n\nimport {Clones} from \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {IUniswapV3Factory} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol\";\nimport \"./AlphaProVault.sol\";\n\n/**\n * @title   Alpha Pro Vault Factory\n * @notice  A factory contract for creating new vaults\n */\ncontract AlphaProVaultFactory {\n    event NewVault(address vault);\n    event UpdateProtocolFee(uint24 protocolFee);\n\n    event UpdateGovernance(address governance);\n\n    address public immutable template;\n    address[] public vaults;\n    mapping(address => bool) public isVault;\n    mapping(address => bool) public allowedFactories;\n\n    address public governance;\n    address public pendingGovernance;\n    uint24 public protocolFee;\n\n    /**\n     * @param _template A deployed AlphaProVault contract\n     * @param _governance Charm Finance governance address\n     * @param _protocolFee Fee multiplied by 1e6. Hard capped at 25%.\n     */\n    constructor(address _template, address _governance, uint24 _protocolFee) {\n        template = _template;\n        governance = _governance;\n        protocolFee = _protocolFee;\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n    }\n\n    /**\n     * @notice Create a new Alpha Pro Vault\n     * @param params InitizalizeParams Underlying Uniswap V3 pool address\n     */\n    function createVault(VaultParams calldata params) external returns (address vaultAddress) {\n        IUniswapV3Pool pool = IUniswapV3Pool(params.pool);\n        IUniswapV3Factory poolFactory = IUniswapV3Factory(pool.factory());\n        require(allowedFactories[address(poolFactory)], \"allowedFactories\");\n        require(params.pool == poolFactory.getPool(pool.token0(), pool.token1(), pool.fee()), \"pool mismatch\");\n        vaultAddress =\n            Clones.cloneDeterministic(template, keccak256(abi.encode(msg.sender, block.chainid, numVaults())));\n        AlphaProVault(vaultAddress).initialize(params, address(this));\n        vaults.push(vaultAddress);\n        isVault[vaultAddress] = true;\n        emit NewVault(vaultAddress);\n    }\n\n    function setAllowedFactory(address factory, bool allowed) external onlyGovernance {\n        allowedFactories[factory] = allowed;\n    }\n\n    function numVaults() public view returns (uint256) {\n        return vaults.length;\n    }\n\n    /**\n     * @notice Change the protocol fee charged on pool fees earned from\n     * Uniswap, expressed as multiple of 1e-6. Fee is hard capped at 25%.\n     */\n    function setProtocolFee(uint24 _protocolFee) external onlyGovernance {\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n        protocolFee = _protocolFee;\n        emit UpdateProtocolFee(_protocolFee);\n    }\n\n    /**\n     * @notice Governance address is not updated until the new governance\n     * address has called `acceptGovernance()` to accept this responsibility.\n     */\n    function setGovernance(address _governance) external onlyGovernance {\n        pendingGovernance = _governance;\n    }\n\n    /**\n     * @notice `setGovernance()` should be called by the existing fee recipient\n     * address prior to calling this function.\n     */\n    function acceptGovernance() external {\n        require(msg.sender == pendingGovernance, \"pendingGovernance\");\n        governance = msg.sender;\n        emit UpdateGovernance(msg.sender);\n    }\n\n    modifier onlyGovernance() {\n        require(msg.sender == governance, \"governance\");\n        _;\n    }\n}\n"
+        "AgentMigrator.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/governance/IGovernor.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"@openzeppelin/contracts/utils/Pausable.sol\";\n\nimport \"./AgentNftV2.sol\";\nimport \"./IAgentVeToken.sol\";\nimport \"./IAgentDAO.sol\";\nimport \"./IAgentToken.sol\";\n\ncontract AgentMigrator is Ownable, Pausable {\n    AgentNftV2 private _nft;\n\n    bytes private _tokenSupplyParams;\n    bytes private _tokenTaxParams;\n    address private _tokenAdmin;\n    address private _assetToken;\n    address private _uniswapRouter;\n    uint256 public initialAmount;\n    address public tokenImplementation;\n    address public daoImplementation;\n    address public veTokenImplementation;\n    uint256 public maturityDuration;\n\n    mapping(uint256 => bool) public migratedAgents;\n\n    bool internal locked;\n\n    event AgentMigrated(\n        uint256 virtualId,\n        address dao,\n        address token,\n        address lp,\n        address veToken\n    );\n\n    modifier noReentrant() {\n        require(!locked, \"cannot reenter\");\n        locked = true;\n        _;\n        locked = false;\n    }\n\n    constructor(address agentNft_) Ownable(_msgSender()) {\n        _nft = AgentNftV2(agentNft_);\n    }\n\n    function setInitParams(\n        address tokenAdmin_,\n        address assetToken_,\n        address uniswapRouter_,\n        uint256 initialAmount_,\n        uint256 maturityDuration_\n    ) external onlyOwner {\n        _tokenAdmin = tokenAdmin_;\n        _assetToken = assetToken_;\n        _uniswapRouter = uniswapRouter_;\n        initialAmount = initialAmount_;\n        maturityDuration = maturityDuration_;\n    }\n\n    function setTokenSupplyParams(\n        uint256 maxSupply,\n        uint256 lpSupply,\n        uint256 vaultSupply,\n        uint256 maxTokensPerWallet,\n        uint256 maxTokensPerTxn,\n        uint256 botProtectionDurationInSeconds,\n        address vault\n    ) public onlyOwner {\n        _tokenSupplyParams = abi.encode(\n            maxSupply,\n            lpSupply,\n            vaultSupply,\n            maxTokensPerWallet,\n            maxTokensPerTxn,\n            botProtectionDurationInSeconds,\n            vault\n        );\n    }\n\n    function setTokenTaxParams(\n        uint256 projectBuyTaxBasisPoints,\n        uint256 projectSellTaxBasisPoints,\n        uint256 taxSwapThresholdBasisPoints,\n        address projectTaxRecipient\n    ) public onlyOwner {\n        _tokenTaxParams = abi.encode(\n            projectBuyTaxBasisPoints,\n            projectSellTaxBasisPoints,\n            taxSwapThresholdBasisPoints,\n            projectTaxRecipient\n        );\n    }\n\n    function setImplementations(\n        address token,\n        address veToken,\n        address dao\n    ) external onlyOwner {\n        tokenImplementation = token;\n        daoImplementation = dao;\n        veTokenImplementation = veToken;\n    }\n\n    function migrateAgent(\n        uint256 id,\n        string memory name,\n        string memory symbol,\n        bool canStake\n    ) external noReentrant {\n        require(!migratedAgents[id], \"Agent already migrated\");\n\n        IAgentNft.VirtualInfo memory virtualInfo = _nft.virtualInfo(id);\n        address founder = virtualInfo.founder;\n        require(founder == _msgSender(), \"Not founder\");\n\n        // Deploy Agent token & LP\n        address token = _createNewAgentToken(name, symbol);\n        address lp = IAgentToken(token).liquidityPools()[0];\n        IERC20(_assetToken).transferFrom(founder, token, initialAmount);\n        IAgentToken(token).addInitialLiquidity(address(this));\n\n        // Deploy AgentVeToken\n        address veToken = _createNewAgentVeToken(\n            string.concat(\"Staked \", name),\n            string.concat(\"s\", symbol),\n            lp,\n            founder,\n            canStake\n        );\n\n        // Deploy DAO\n        IGovernor oldDAO = IGovernor(virtualInfo.dao);\n        address payable dao = payable(\n            _createNewDAO(\n                oldDAO.name(),\n                IVotes(veToken),\n                uint32(oldDAO.votingPeriod()),\n                oldDAO.proposalThreshold()\n            )\n        );\n        // Update AgentNft\n        _nft.migrateVirtual(id, dao, token, lp, veToken);\n\n        IERC20(lp).approve(veToken, type(uint256).max);\n        IAgentVeToken(veToken).stake(\n            IERC20(lp).balanceOf(address(this)),\n            founder,\n            founder\n        );\n\n        migratedAgents[id] = true;\n\n        emit AgentMigrated(id, dao, token, lp, veToken);\n    }\n\n    function _createNewDAO(\n        string memory name,\n        IVotes token,\n        uint32 daoVotingPeriod,\n        uint256 daoThreshold\n    ) internal returns (address instance) {\n        instance = Clones.clone(daoImplementation);\n        IAgentDAO(instance).initialize(\n            name,\n            token,\n            address(_nft),\n            daoThreshold,\n            daoVotingPeriod\n        );\n\n        return instance;\n    }\n\n    function _createNewAgentVeToken(\n        string memory name,\n        string memory symbol,\n        address stakingAsset,\n        address founder,\n        bool canStake\n    ) internal returns (address instance) {\n        instance = Clones.clone(veTokenImplementation);\n        IAgentVeToken(instance).initialize(\n            name,\n            symbol,\n            founder,\n            stakingAsset,\n            block.timestamp + maturityDuration,\n            address(_nft),\n            canStake\n        );\n\n        return instance;\n    }\n\n    function _createNewAgentToken(\n        string memory name,\n        string memory symbol\n    ) internal returns (address instance) {\n        instance = Clones.clone(tokenImplementation);\n        IAgentToken(instance).initialize(\n            [_tokenAdmin, _uniswapRouter, _assetToken],\n            abi.encode(name, symbol),\n            _tokenSupplyParams,\n            _tokenTaxParams\n        );\n\n        return instance;\n    }\n\n    function pause() external onlyOwner {\n        super._pause();\n    }\n\n    function unpause() external onlyOwner {\n        super._unpause();\n    }\n\n    function reset(uint256 id) external onlyOwner {\n        migratedAgents[id] = false;\n    }\n}\n"
     }
 }

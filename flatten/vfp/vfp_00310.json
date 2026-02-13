@@ -3,28 +3,164 @@
     "project_name": "Across Protocol OFT Integration Differential Audit.md",
     "findings": [
         {
-            "id": 10,
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Insufficient Validation of Sent Amount in OFTTransportAdapter",
+            "description": "The `_transferViaOFT` function in the OFTTransportAdapter contract validates only the `amountReceivedLD` from the `OFTReceipt`, ensuring it matches the intended transfer amount. However, it does not validate the `amountSentLD` field, which represents how much the messenger actually debits from the origin chain.\n\nThe cause is incomplete validation logic. LayerZero's OFT implementation allows `amountSentLD` to differ from `amountReceivedLD` due to fees, but the current code assumes the messenger will not take more than necessary. The `forceApprove` call does not fully mitigate this, as some token implementations may allow spending beyond the intended amount.\n\nAn attacker controlling or manipulating the messenger contract could cause it to withdraw more tokens than intended at the origin while delivering the correct amount at the destination. This would pass the current validation but result in unexpected token loss on the source chain.\n\nThe impact is potential loss of funds due to excess token deductions during cross-chain transfers, especially if the messenger is malicious or compromised. This undermines the economic integrity of the bridging mechanism.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#94-97"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "OFT Transfer Might Revert Due to Non-Zero ZRO Token Fee Quote",
+            "description": "The `_transferViaOFT` function quotes LayerZero fees using `quoteSend`, which returns both native and ZRO token fees. Although the protocol intends to pay in native tokens, it does not validate that the `lzTokenFee` (ZRO fee) is zero before passing it to the `send` function. If the messenger expects ZRO payment when this value is non-zero, the call may revert.\n\nThe cause is missing input validation. The LayerZero documentation specifies that `lzTokenFee` should be zero when paying in native tokens, but the current implementation does not enforce this.\n\nA malicious or misconfigured messenger could return a non-zero `lzTokenFee`, causing the `send` call to revert even if sufficient native gas is provided. This could be exploited to disrupt transfers.\n\nThe impact is unexpected transaction reverts during cross-chain transfers, leading to failed rebalances and relayer reimbursements, resulting in operational delays and potential financial loss.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#85",
+                "OFTTransportAdapter.sol::_transferViaOFT#94"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "LayerZero's Dust Removal Might Revert OFT Transfers",
+            "description": "The `_transferViaOFT` function in the `OFTTransportAdapter` contract verifies that the input amount matches the amount received at the destination. However, LayerZero's `_removeDust` function removes decimal precision beyond `sharedDecimals` (default 6), which can cause the received amount to be less than the input due to \"dust\" being stripped. This discrepancy causes the final validation check to revert the transaction. The root cause is the lack of pre-emptive rounding of the input amount to match the precision enforced by LayerZero. An attacker or malfunctioning Dataworker could trigger this by sending amounts with extra decimal digits, leading to transaction failure. The impact is potential disruption of cross-chain transfers, especially when precise decimal amounts are used, resulting in failed bundles and operational issues.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::deposit#97",
+                "OFTTransportAdapter.sol::deposit#69-71"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ]
+            },
+            "title": "OFT Transfers Revert if Chains Have Different Local Decimals",
+            "description": "The `_transferViaOFT` function in the `OFTTransportAdapter` contract reverts when transferring tokens between chains with different local decimals because it compares the sent amount in source chain decimals with the received amount in destination chain decimals. The root cause is the lack of decimal conversion logic during the validation step, assuming both chains use the same decimal precision. An attacker cannot directly exploit this, but legitimate transfers will fail if the chains have different decimals, stalling cross-chain movement. This leads to a denial of service for OFT-based transfers in heterogeneous decimal environments, even though it works when decimals match.\n",
+            "severity": "Medium",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#97",
+                "OFTCore.sol::_debitView#349"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Protocol Cannot Overcome OFT Fee Increase Without Upgrading",
+            "description": "The `OFTTransportAdapter` uses an immutable `OFT_FEE_CAP` to prevent excessive fees, but this value cannot be updated without redeploying the adapter or `SpokePool`. The root cause is immutability of a critical parameter. If LayerZero messaging fees exceed the cap, OFT transfers will permanently fail until a contract upgrade. This could delay bundle execution and relayer repayments, though core user functions remain operational. The lack of an upgrade mechanism reduces protocol resilience to economic changes and requires manual intervention.\n",
+            "severity": "Low",
+            "location": [
+                "OFTTransportAdapter.sol#21-L25",
+                "OFTTransportAdapter.sol#88",
+                "Arbitrum_Adapter.sol#81",
+                "SpokePool.sol#226",
+                "HubPool.sol#338"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1023"
+                ]
+            },
+            "title": "Transfers of Fee-On-Transfer Tokens Will Revert",
+            "description": "The `_transferViaOFT` function reverts when used with fee-on-transfer tokens because it compares the input `_amount` with `amountReceivedLD`, which will differ due to the transfer fee. The root cause is the absence of fee tolerance or adjustment logic in the validation step. This prevents the use of any token that charges fees on transfer, limiting protocol flexibility. While the team plans to only support non-fee tokens, this restriction should be clearly documented to avoid integration attempts with incompatible tokens.\n",
+            "severity": "Low",
+            "location": [
+                "OFTTransportAdapter.sol::_transferViaOFT#57",
+                "OFTTransportAdapter.sol#97"
+            ],
+            "files": [
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
+            ]
+        },
+        {
+            "id": 29,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-1068"
+                    "CWE-477"
                 ]
             },
-            "title": "Misleading Documentation",
-            "description": "Several parts of the codebase contain outdated or incorrect documentation. For example, the `Universal_Adapter` contract claims to only use `CircleCCTPAdapter` for USDC, but it also supports OFT. Similarly, a comment in `AlephZero_SpokePool` claims Arbitrum only supports Solidity 0.8.19, which is false. The root cause is failure to update comments after implementation changes. This can mislead developers and auditors, leading to incorrect assumptions about functionality and potentially introducing bugs during maintenance or integration. While not directly exploitable, it increases operational risk.\n",
+            "title": "Custom Errors in require Statements",
+            "description": "The code uses `if-revert` patterns instead of the newer `require(condition, CustomError())` syntax, which is supported since Solidity 0.8.27. Examples include checks in `OFTTransportAdapter.sol` and `SpokePool.sol`. The root cause is the use of older control flow patterns. While functionally equivalent, `require` with custom errors is more concise and gas-efficient. The impact is slightly higher gas usage and reduced code modernity, though no security risk is introduced.\n",
             "severity": "Low",
             "location": [
-                "Universal_Adapter.sol#74",
-                "AlephZero_SpokePool.sol#3"
+                "OFTTransportAdapter.sol#88",
+                "OFTTransportAdapter.sol#89",
+                "OFTTransportAdapter.sol#97",
+                "SpokePool.sol#1740-1742"
             ],
             "files": [
-                "contracts/contracts/chain-adapters/Universal_Adapter.sol"
+                "contracts/contracts/libraries/OFTTransportAdapter.sol"
             ]
         }
     ],
     "affected_files": {
-        "Universal_Adapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport \"./interfaces/AdapterInterface.sol\";\n\nimport \"../libraries/CircleCCTPAdapter.sol\";\nimport { SpokePoolInterface } from \"../interfaces/SpokePoolInterface.sol\";\nimport { HubPoolStore } from \"./utilities/HubPoolStore.sol\";\nimport { IOFT } from \"../interfaces/IOFT.sol\";\n\nimport \"../libraries/OFTTransportAdapterWithStore.sol\";\n\ninterface IOwnable {\n    function owner() external view returns (address);\n}\n\n/**\n * @notice Stores data that can be relayed to L2 SpokePool using storage proof verification and light client contracts\n * on the L2 where the SpokePool is deployed. Designed to be used as a singleton contract that can be used to relay\n * messages to multiple SpokePools on different chains.\n * @dev This contract should NOT be reused to send messages to SpokePools that have the same address on different L2s.\n * @dev This contract can be redeployed to point to a new HubPoolStore if the data store gets corrupted and new data\n * can't get written to the store for some reason. The corresponding Universal_SpokePool contract will\n * also need to be redeployed to point to the new HubPoolStore.\n * @custom:security-contact bugs@across.to\n */\ncontract Universal_Adapter is AdapterInterface, CircleCCTPAdapter, OFTTransportAdapterWithStore {\n    /// @notice Contract that stores calldata to be relayed to L2 via storage proofs.\n    HubPoolStore public immutable DATA_STORE;\n\n    error NotImplemented();\n\n    constructor(\n        HubPoolStore _store,\n        IERC20 _l1Usdc,\n        ITokenMessenger _cctpTokenMessenger,\n        uint32 _cctpDestinationDomainId,\n        address _adapterStore,\n        uint32 _oftDstEid,\n        uint256 _oftFeeCap\n    )\n        CircleCCTPAdapter(_l1Usdc, _cctpTokenMessenger, _cctpDestinationDomainId)\n        OFTTransportAdapterWithStore(_oftDstEid, _oftFeeCap, _adapterStore)\n    {\n        DATA_STORE = _store;\n    }\n\n    /**\n     * @notice Saves calldata in a simple storage contract whose state can be proven and relayed to L2.\n     * @param target Contract on the destination that will receive the message. Unused if the message is created\n     * by the HubPool admin.\n     * @param message Data to send to target.\n     */\n    function relayMessage(address target, bytes calldata message) external payable override {\n        // Admin messages are stored differently in the data store than non-admin messages, because admin\n        // messages must only be sent to a single target on a specific L2 chain. Non-admin messages are sent\n        // to any target on any L2 chain because the only type of an non-admin message is the result of a\n        // HubPool.executeRootBundle() call which attempts to relay a relayRootBundle() call to all SpokePools using\n        // this adapter. Therefore, non-admin messages are stored optimally in the data store\n        // by only storing the message once and allowing any SpokePool target to read it via storage proofs.\n\n        // We assume that the HubPool is delegatecall-ing into this function, therefore address(this) is the HubPool's\n        // address. As a result, we can determine whether this message is an admin function based on the msg.sender.\n        // If an admin sends a message that could have been relayed as a non-admin message (e.g. the admin\n        // calls executeRootBundle()), then the message won't be stored optimally in the data store, but the\n        // message can still be delivered to the target.\n        bool isAdminSender = msg.sender == IOwnable(address(this)).owner();\n        DATA_STORE.storeRelayMessageCalldata(target, message, isAdminSender);\n        emit MessageRelayed(target, message);\n    }\n\n    /**\n     * @notice Relays tokens from L1 to L2.\n     * @dev This function only uses the CircleCCTPAdapter to relay USDC tokens to CCTP enabled L2 chains.\n     * Relaying other tokens will cause this function to revert.\n     * @param l1Token Address of the token on L1.\n     * @param l2Token Address of the token on L2. Unused\n     * @param amount Amount of tokens to relay.\n     * @param to Address to receive the tokens on L2. Should be SpokePool address.\n     */\n    function relayTokens(\n        address l1Token,\n        address l2Token,\n        uint256 amount,\n        address to\n    ) external payable override {\n        address oftMessenger = _getOftMessenger(l1Token);\n        if (_isCCTPEnabled() && l1Token == address(usdcToken)) {\n            _transferUsdc(to, amount);\n        } else if (oftMessenger != address(0)) {\n            _transferViaOFT(IERC20(l1Token), IOFT(oftMessenger), to, amount);\n        } else {\n            revert NotImplemented();\n        }\n    }\n}\n"
+        "OFTTransportAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { IOFT, SendParam, MessagingFee, OFTReceipt } from \"../interfaces/IOFT.sol\";\nimport { AddressToBytes32 } from \"../libraries/AddressConverters.sol\";\n\n/**\n * @notice Facilitate bridging tokens via LayerZero's OFT.\n * @dev This contract is intended to be inherited by other chain-specific adapters and spoke pools.\n * @custom:security-contact bugs@across.to\n */\ncontract OFTTransportAdapter {\n    using SafeERC20 for IERC20;\n    using AddressToBytes32 for address;\n\n    bytes public constant EMPTY_MSG_BYTES = new bytes(0);\n\n    /**\n     * @dev a fee cap we check against before sending a message with value to OFTMessenger as fees.\n     * @dev this cap should be pretty conservative (high) to not interfere with operations under normal conditions.\n     */\n    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable\n    uint256 public immutable OFT_FEE_CAP;\n\n    /**\n     * @notice The destination endpoint id in the OFT messaging protocol.\n     * @dev Source https://docs.layerzero.network/v2/developers/evm/technical-reference/deployed-contracts.\n     */\n    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable\n    uint32 public immutable OFT_DST_EID;\n\n    error OftFeeCapExceeded();\n    error OftInsufficientBalanceForFee();\n    error OftIncorrectAmountReceivedLD();\n\n    /**\n     * @notice intiailizes the OFTTransportAdapter contract.\n     * @param _oftDstEid the endpoint ID that OFT protocol will transfer funds to.\n     * @param _feeCap a fee cap we check against before sending a message with value to OFTMessenger as fees.\n     */\n    /// @custom:oz-upgrades-unsafe-allow constructor\n    constructor(uint32 _oftDstEid, uint256 _feeCap) {\n        OFT_DST_EID = _oftDstEid;\n        OFT_FEE_CAP = _feeCap;\n    }\n\n    /**\n     * @notice transfer token to the other dstEid (e.g. chain) via OFT messaging protocol\n     * @dev the caller has to provide both _token and _messenger. The caller is responsible for knowing the correct _messenger\n     * @param _token token we're sending on current chain.\n     * @param _messenger corresponding OFT messenger on current chain.\n     * @param _to address to receive a trasnfer on the destination chain.\n     * @param _amount amount to send.\n     */\n    function _transferViaOFT(\n        IERC20 _token,\n        IOFT _messenger,\n        address _to,\n        uint256 _amount\n    ) internal {\n        bytes32 to = _to.toBytes32();\n\n        SendParam memory sendParam = SendParam(\n            OFT_DST_EID,\n            to,\n            /**\n             * _amount, _amount here specify `amountLD` and `minAmountLD`. Setting `minAmountLD` equal to `amountLD` protects us\n             * from any changes to the sent amount due to internal OFT contract logic, e.g. `_removeDust`. Meaning that if any\n             * dust is subtracted, the `.send()` should revert\n             */\n            _amount,\n            _amount,\n            /**\n             * EMPTY_MSG_BYTES, EMPTY_MSG_BYTES, EMPTY_MSG_BYTES here specify `extraOptions`, `composeMsg` and `oftCmd`.\n             * These can be set to empty bytes arrays for the purposes of sending a simple cross-chain transfer.\n             */\n            EMPTY_MSG_BYTES,\n            EMPTY_MSG_BYTES,\n            EMPTY_MSG_BYTES\n        );\n\n        // `false` in the 2nd param here refers to `bool _payInLzToken`. We will pay in native token, so set to `false`\n        MessagingFee memory fee = _messenger.quoteSend(sendParam, false);\n        // Create a stack variable to optimize gas usage on subsequent reads\n        uint256 nativeFee = fee.nativeFee;\n        if (nativeFee > OFT_FEE_CAP) revert OftFeeCapExceeded();\n        if (nativeFee > address(this).balance) revert OftInsufficientBalanceForFee();\n\n        // Approve the exact _amount for `_messenger` to spend. Fee will be paid in native token\n        _token.forceApprove(address(_messenger), _amount);\n\n        (, OFTReceipt memory oftReceipt) = _messenger.send{ value: nativeFee }(sendParam, fee, address(this));\n\n        // The HubPool expects that the amount received by the SpokePool is exactly the sent amount\n        if (_amount != oftReceipt.amountReceivedLD) revert OftIncorrectAmountReceivedLD();\n    }\n}\n"
     }
 }

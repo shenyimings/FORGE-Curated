@@ -1,246 +1,35 @@
 {
     "vfp_id": "vfp_00557",
-    "project_name": "cantina_eco_february2025.pdf",
+    "project_name": "Across Audit.md",
     "findings": [
         {
-            "id": 1,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-284"
                 ],
                 "2": [
-                    "CWE-172"
-                ]
-            },
-            "title": "ERC-7683 intents can never be filled because of an incorrectly encoded contract address",
-            "description": "The Eco7683OriginSettler contract incorrectly sets the `FillInstruction.destinationSettler` field by using `bytes20(uint160(Eco7683DestinationSettler))`, which does not resolve to the correct contract address. This breaks the ERC-7683 compliance, as the destination settler address must point to a contract that implements the `fill()` function.\n\nThe cause is a hardcoded or incorrectly referenced address in the struct assignment, which results in the `destinationSettler` pointing to an invalid or non-existent contract on the destination chain.\n\nWhen an ERC-7683-aware filler attempts to fill an intent, it calls the `fill()` function on the address specified in `destinationSettler`. Since this address does not implement the required function, the call reverts, making it impossible to fulfill any ERC-7683-compliant intent.\n\nThe impact is high because it renders the entire ERC-7683 integration non-functional, preventing interoperability with external fillers and limiting the protocol's utility.\n",
-            "severity": "High",
-            "location": [
-                "Eco7683OriginSettler.sol#L186-L190",
-                "Eco7683OriginSettler.sol#L280-L282",
-                "ERC7683.sol#L96"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 3,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
+                    "CWE-285"
                 ],
                 "3": [
-                    "CWE-1288"
+                    "CWE-862"
                 ]
             },
-            "title": "Missing enforcement of route.destination check may allow fillers to solve intents on other supported chains",
-            "description": "The protocol does not enforce that `route.destination` matches the current chain ID (`block.chainid`) in either `Eco7683DestinationSettler.fill()` or `Inbox._fulfill()`. This allows fillers to fulfill intents on chains different from the intended destination, as long as the required contracts exist at the same addresses.\n\nThe cause is the absence of a validation check comparing `route.destination` with `block.chainid`, which is a critical security control for cross-chain systems.\n\nAn attacker can exploit this by fulfilling an intent on a different chain than specified, potentially leading to unexpected outcomes such as incorrect asset transfers or arbitrage manipulation. This is especially dangerous for native gas tokens, where the economic impact is direct.\n\nThe impact is high for native tokens due to potential profit from misrouted intents, and lower for ERC20s depending on address consistency across chains. However, it violates the expected behavior of cross-chain routing and undermines system integrity.\n",
-            "severity": "High",
+            "title": "Missing Access Control for `setDestinationSettler`",
+            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
+            "severity": "Critical",
             "location": [
-                "Eco7683DestinationSettler.sol#L46-L107",
-                "Inbox.sol#L380-L446"
+                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
+                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
+                "ERC7683OrderDepositor.sol::_resolveFor#161",
+                "ERC7683OrderDepositor.sol#L216"
             ],
             "files": [
-                "eco-routes/contracts/Eco7683DestinationSettler.sol",
-                "eco-routes/contracts/Inbox.sol"
-            ]
-        },
-        {
-            "id": 4,
-            "category": {
-                "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-358"
-                ]
-            },
-            "title": "Missing enforcement of openDeadline check breaks ERC-7683 requirement and user expectations",
-            "description": "The `openFor()` function in `Eco7683OriginSettler` does not enforce the `openDeadline` timestamp, which is a required field in the `GaslessCrossChainOrder` struct per ERC-7683. This allows fillers to open intents beyond the user-specified deadline.\n\nThe cause is the omission of a `block.timestamp <= openDeadline` check in the `openFor()` function, which should be present to comply with the standard and protect user intent validity.\n\nAn attacker or careless filler can exploit this by opening time-sensitive intents (e.g., arbitrage opportunities) after the intended deadline, potentially capturing value that should no longer be available.\n\nThe impact is medium, as it primarily affects time-sensitive intents and may lead to user dissatisfaction or financial loss in specific scenarios, but does not result in direct fund loss from the protocol.\n",
-            "severity": "Medium",
-            "location": [
-                "Eco7683OriginSettler.sol#L88-L122",
-                "Eco7683OriginSettler.sol#L211",
-                "Eco7683OriginSettler.sol#L310"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
-                ]
-            },
-            "title": "Missing enforcement of fillDeadline check breaks ERC-7683 requirement and may lead to loss of filler rewards",
-            "description": "The `fill()` function in `Eco7683DestinationSettler` does not enforce the `fillDeadline` check against `block.timestamp`, allowing fillers to attempt fulfillment after the deadline has passed. Although rewards are not claimable due to checks in `withdrawRewards()`, the filler still incurs gas costs for a futile transaction.\n\nThe root cause is the lack of a defensive `block.timestamp <= order.fillDeadline` check in the `fill()` function, which is required by ERC-7683 and necessary for user and filler protection.\n\nA filler may accidentally or intentionally call `fill()` after the deadline. While the protocol eventually prevents reward withdrawal, the filler loses gas and time due to the missing early validation.\n\nThe impact is medium, as it breaks ERC-7683 compliance and may lead to economic loss for fillers, though funds are not permanently lost from the system.\n",
-            "severity": "Medium",
-            "location": [],
-            "files": [
-                "eco-routes/contracts/Eco7683DestinationSettler.sol"
+                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
             ]
         },
         {
             "id": 6,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-116"
-                ]
-            },
-            "title": "ERC-7683 intents can never be filled because of incorrectly encoded originData",
-            "description": "The `resolve()` and `resolveFor()` functions in `Eco7683OriginSettler` incorrectly encode `onchainCrosschainOrderData.route.calls[j]` into `FillInstruction.originData`, instead of the full `onchainCrosschainOrderData` struct. This causes the `Eco7683DestinationSettler.fill()` function to fail when attempting to decode the data.\n\nThe cause is a logic error in data serialization, where only a subset of the required data is encoded, violating the expected format defined in ERC-7683.\n\nWhen a filler calls `fill()` on the destination chain, the contract attempts to decode `originData` as a full `OnchainCrosschainOrderData` struct, but receives only a fragment, leading to decoding failure and transaction revert.\n\nThe impact is medium, as it prevents ERC-7683-compliant intents from being fulfilled, reducing interoperability. However, sophisticated fillers might work around it by re-encoding correctly.\n",
-            "severity": "Medium",
-            "location": [],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol",
-                "eco-routes/contracts/Eco7683DestinationSettler.sol"
-            ]
-        },
-        {
-            "id": 7,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-372"
-                ]
-            },
-            "title": "Intents can be published multiple times due to default claim state",
-            "description": "The `publishIntent()` function in `IntentSource` checks if an intent is already published by comparing `claims[intentHash].status` to `ClaimStatus.Initiated`. However, since uninitialized mappings default to 0 (the same value as `Initiated`), new intents appear as already initiated.\n\nThe root cause is the lack of a dedicated `Uninitialized` state in the enum, leading to ambiguity between uninitialized and initiated intents.\n\nAn attacker can exploit this by publishing the same intent multiple times, potentially leading to duplicated processing or confusion in intent tracking.\n\nThe impact is low, as it does not lead to fund loss, but can cause operational issues and incorrect state tracking.\n",
-            "severity": "Medium",
-            "location": [
-                "IntentSource.sol#L204-L206"
-            ],
-            "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ]
-            },
-            "title": "Missing nonce tracking in EIP-7683 integration allows for duplicate intent openings",
-            "description": "The `openFor()` function in `Eco7683OriginSettler` does not track or validate nonces, allowing a relayer to reuse a valid user signature to open the same intent multiple times.\n\nThe nonce is used only as a salt in the `Route` struct but is not stored or checked for uniqueness, enabling replay attacks.\n\nA malicious relayer can obtain a single signature and repeatedly call `openFor()` to create duplicate intents, potentially draining user funds or causing unintended side effects.\n\nThe impact is medium, as users may lose excess funds transferred, though they can eventually recover them. The likelihood is low due to specific conditions required for exploitation.\n",
-            "severity": "Medium",
-            "location": [
-                "Eco7683OriginSettler.sol#L319-L339"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 9,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
-                ]
-            },
-            "title": "Fund intent allows creation with invalid or incorrect route parameters",
-            "description": "The `fundIntent()` function accepts a `routeHash` without validating the underlying parameters, and `publishIntent()` allows funding even when `route.source` does not match the current chain ID.\n\nThis allows creation of intents with invalid routes or on incorrect chains, potentially leading to funds being locked in vaults until expiration.\n\nThe cause is missing validation logic in both functions to ensure route integrity and chain correctness.\n\nAn attacker or user error can result in intents that cannot be fulfilled, locking funds until expiration. This undermines user trust and capital efficiency.\n\nThe impact is high due to potential fund lockup, and the likelihood is medium due to both malicious and accidental vectors.\n",
-            "severity": "Medium",
-            "location": [
-                "IntentSource.sol#L120-L128"
-            ],
-            "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 10,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-669"
-                ]
-            },
-            "title": "Opening ERC-7683 gasless cross-chain orders on behalf of users may lead to loss of native tokens for fillers",
-            "description": "In `openFor()`, the `reward.nativeValue` is incorrectly transferred from `msg.sender` (the filler) instead of the user, leading to unintended loss of native tokens for the filler.\n\nThe cause is a logic error in fund handling, where the filler's ETH is used instead of the user's, despite the user being the intended funder.\n\nA filler calling `openFor()` will lose their own ETH if `reward.nativeValue > 0`, as the contract transfers from `msg.value` without refunding.\n\nThe impact is medium, as it leads to direct financial loss for fillers, though the likelihood is low due to expected due diligence.\n",
-            "severity": "Low",
-            "location": [
-                "Eco7683OriginSettler.sol#L354-L365"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Missing checks for overfunding of intents will lock up creator funds until rewards withdrawal or intent expiration",
-            "description": "The protocol lacks checks to prevent overfunding of intent vaults with native or ERC20 tokens beyond the specified reward amounts. Excess funds remain locked until withdrawal or expiration.\n\nFunctions like `open()` and `openFor()` do not check if the intent is already fully funded, allowing repeated funding.\n\nA creator or filler can accidentally or intentionally overfund an intent, leading to temporary lockup of excess capital.\n\nThe impact is low, as funds are not lost, only locked. The likelihood is low due to accidental or griefing scenarios.\n",
-            "severity": "Low",
-            "location": [],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol",
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 13,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
-                ]
-            },
-            "title": "Missing route and reward validations allows creating economically non-viable intents",
-            "description": "The `IntentSource` contract lacks basic sanity checks for route and reward parameters, allowing creation of intents that are economically unprofitable or nonsensical.\n\nThis could lead to wasted effort by solvers who attempt to fulfill intents that yield no profit.\n\nWhile the protocol assumes solvers perform their own checks, adding low-cost validations could improve UX and reduce spam.\n\nThe impact is medium, but the likelihood is low as solvers are expected to filter unprofitable intents.\n",
-            "severity": "Low",
-            "location": [
-                "IntentSource.sol#L120-L254"
-            ],
-            "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 14,
             "category": {
                 "1": [
                     "CWE-703"
@@ -249,175 +38,22 @@
                     "CWE-755"
                 ]
             },
-            "title": "Permit call success check enables front-running DoS",
-            "description": "The `fundIntent()` function requires each `permit` call to succeed, which can be exploited by an attacker to front-run and invalidate the permit, causing the entire transaction to revert.\n\nRemoving the success check or handling failures gracefully would mitigate this.\n\nThe impact is low, as it enables a denial-of-service vector but does not lead to fund loss.\n",
-            "severity": "Low",
+            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
+            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
+            "severity": "Medium",
             "location": [
-                "IntentSource.sol#L162-L166"
+                "ERC7683OrderDepositorExternal.sol#L58",
+                "ERC7683OrderDepositorExternal.sol#L60-L73",
+                "ZkStack_Adapter.sol#L147",
+                "ZkStack_CustomGasToken_Adapter.sol#L189",
+                "ZkSync_Adapter.sol#L241"
             ],
             "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 15,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-754"
-                ]
-            },
-            "title": "Accidentally sent native currency is not refunded for intents",
-            "description": "If an intent creator sends ETH to `fundIntent()` or `_openEcoIntent()` when `reward.nativeValue == 0`, the excess ETH is not refunded and remains stuck in the contract.\n\nThe refund logic is conditional on `reward.nativeValue > 0`, so no refund occurs when it's zero.\n\nUsers can lose funds due to simple mistakes.\n\nThe impact is low, as it affects only accidental payments, but still represents a loss of user funds.\n",
-            "severity": "Low",
-            "location": [
-                "Eco7683OriginSettler.sol#L354-L365",
-                "IntentSource.sol#L137-L155"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 16,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
-                ]
-            },
-            "title": "Add contract existence checks when intent specifies calldata",
-            "description": "The `Inbox` contract does not verify that target addresses contain code when `calldata` is present, allowing calls to EOAs or non-existent contracts.\n\nThis can lead to failed executions or unintended behavior.\n\nAdding `extcodesize` checks would prevent this.\n\nThe impact is low, as it improves robustness but does not expose critical vulnerabilities.\n",
-            "severity": "Low",
-            "location": [
-                "Inbox.sol#L432-L442"
-            ],
-            "files": [
-                "eco-routes/contracts/Inbox.sol"
-            ]
-        },
-        {
-            "id": 18,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-669"
-                ]
-            },
-            "title": "Prefer call over transfer for native token transfers",
-            "description": "The protocol uses `.transfer()` which forwards only 2300 gas, risking failure when sending to contracts that require more gas for fallback functions.\n\nUsing `.call()` is safer and more flexible.\n\nThe impact is low, as current usage is between trusted contracts, but it's a best practice to use `.call()`.\n\nEco has acknowledged but not fixed this, citing internal trust.\n",
-            "severity": "Low",
-            "location": [
-                "Eco7683OriginSettler.sol#L359",
-                "IntentSource.sol#L142",
-                "IntentSource.sol#L231"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683OriginSettler.sol"
-            ]
-        },
-        {
-            "id": 19,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-74"
-                ]
-            },
-            "title": "Restrict arbitrary calls in fund intent to permit operations only",
-            "description": "The `fundIntent()` function allows arbitrary calls via `permitCalls`, which could be abused to execute unintended logic.\n\nLimiting this to a strict permit interface would reduce risk.\n\nThe impact is low, as the current implementation has been fixed to use safer patterns.\n",
-            "severity": "Low",
-            "location": [
-                "IntentSource.sol#L157-L162"
-            ],
-            "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 20,
-            "category": {
-                "1": [
-                    "CWE-697"
-                ]
-            },
-            "title": "Reward claims should be allowed until end of deadline",
-            "description": "The `IntentVault` contract uses `< deadline` instead of `<= deadline`, disallowing claims at the exact deadline timestamp.\n\nThis reduces UX and may unfairly deny legitimate claims.\n\nThe impact is informational, as it's a minor logic inconsistency.\n",
-            "severity": "Informational",
-            "location": [
-                "IntentVault.sol#L39-L50"
-            ],
-            "files": [
-                "eco-routes/contracts/IntentSource.sol"
-            ]
-        },
-        {
-            "id": 23,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
-                ]
-            },
-            "title": "Missing sanity checks on solver whitelisting may cause unexpected behavior",
-            "description": "The protocol uses a solver whitelist to restrict intent fulfillment to whitelisted solvers, but only when isSolvingPublic is set to false. The current implementation does not enforce a conditional check to ensure that the solver whitelist is only modified or applied when isSolvingPublic is false. This lack of validation during construction and during calls to changeSolverWhitelist means that whitelist changes could be made in a state where they are irrelevant or ineffective, leading to potential confusion or incorrect assumptions by off-chain systems. An attacker or misconfigured owner could manipulate the whitelist in a public solving context where it should not apply, potentially leading to inconsistent behavior. While the impact is limited due to the logic being state-consistent, the absence of sanity checks increases the risk of operational errors and reduces code clarity.\n",
-            "severity": "Informational",
-            "location": [
-                "Inbox.sol#L43-L52",
-                "Inbox.sol#L350-L369"
-            ],
-            "files": [
-                "eco-routes/contracts/Inbox.sol"
-            ]
-        },
-        {
-            "id": 24,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-221"
-                ],
-                "3": [
-                    "CWE-223"
-                ],
-                "4": [
-                    "CWE-778"
-                ]
-            },
-            "title": "Missing emit of orderFilled event in Eco7683DestinationSettler may affect offchain monitoring",
-            "description": "The Eco7683DestinationSettler contract declares an event orderFilled(bytes32 _orderId, address _solver) intended to signal when an intent is fulfilled using Hyperlane instant proving. However, this event is not emitted in the fill() function, which is one of the key entry points for intent fulfillment. As a result, off-chain monitoring systems that rely on this event to track order settlements may fail to detect certain fulfillment actions, leading to incomplete or inaccurate data. The cause is the omission of the event emission in the relevant function. An attacker cannot directly exploit this, but it could enable front-running or manipulation in systems that depend on timely and complete event data. The impact is primarily on observability and integration reliability rather than direct fund loss.\n",
-            "severity": "Informational",
-            "location": [
-                "Eco7683DestinationSettler.sol#L25-L30",
-                "Eco7683DestinationSettler.sol#L85-L104"
-            ],
-            "files": [
-                "eco-routes/contracts/Eco7683DestinationSettler.sol"
+                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
             ]
         }
     ],
     "affected_files": {
-        "Inbox.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IMailbox, IPostDispatchHook} from \"@hyperlane-xyz/core/contracts/interfaces/IMailbox.sol\";\nimport {Eco7683DestinationSettler} from \"./Eco7683DestinationSettler.sol\";\nimport {TypeCasts} from \"@hyperlane-xyz/core/contracts/libs/TypeCasts.sol\";\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport {IInbox} from \"./interfaces/IInbox.sol\";\nimport {Intent, Route, Call, TokenAmount} from \"./types/Intent.sol\";\nimport {Semver} from \"./libs/Semver.sol\";\n\n/**\n * @title Inbox\n * @notice Main entry point for fulfilling intents\n * @dev Validates intent hash authenticity and executes calldata. Enables provers\n * to claim rewards on the source chain by checking the fulfilled mapping\n */\ncontract Inbox is IInbox, Eco7683DestinationSettler, Ownable, Semver {\n    using TypeCasts for address;\n    using SafeERC20 for IERC20;\n\n    // Mapping of intent hash on the src chain to its fulfillment\n    mapping(bytes32 => address) public fulfilled;\n\n    // Mapping of solvers to if they are whitelisted\n    mapping(address => bool) public solverWhitelist;\n\n    // address of local hyperlane mailbox\n    address public mailbox;\n\n    // Is solving public\n    bool public isSolvingPublic;\n\n    /**\n     * @notice Initializes the Inbox contract\n     * @param _owner Address with access to privileged functions\n     * @param _isSolvingPublic Whether solving is public at start\n     * @param _solvers Initial whitelist of solvers (only relevant if solving is not public)\n     */\n    constructor(\n        address _owner,\n        bool _isSolvingPublic,\n        address[] memory _solvers\n    ) Ownable(_owner) {\n        isSolvingPublic = _isSolvingPublic;\n        for (uint256 i = 0; i < _solvers.length; ++i) {\n            solverWhitelist[_solvers[i]] = true;\n            emit SolverWhitelistChanged(_solvers[i], true);\n        }\n    }\n\n    /**\n     * @notice Fulfills an intent to be proven via storage proofs\n     * @param _route The route of the intent\n     * @param _rewardHash The hash of the reward\n     * @param _claimant The address that will receive the reward on the source chain\n     * @param _expectedHash The hash of the intent as created on the source chain\n     * @return Array of execution results from each call\n     */\n    function fulfillStorage(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash\n    )\n        public\n        payable\n        override(IInbox, Eco7683DestinationSettler)\n        returns (bytes[] memory)\n    {\n        bytes[] memory result = _fulfill(\n            _route,\n            _rewardHash,\n            _claimant,\n            _expectedHash\n        );\n\n        emit ToBeProven(_expectedHash, _route.source, _claimant);\n\n        return result;\n    }\n\n    /**\n     * @notice Fulfills an intent to be proven immediately via Hyperlane's mailbox\n     * @dev More expensive but faster than hyperbatched. Requires fee for Hyperlane infrastructure\n     * @param _route The route of the intent\n     * @param _rewardHash The hash of the reward\n     * @param _claimant The address that will receive the reward on the source chain\n     * @param _expectedHash The hash of the intent as created on the source chain\n     * @param _prover The address of the hyperprover on the source chain\n     * @return Array of execution results from each call\n     */\n    function fulfillHyperInstant(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash,\n        address _prover\n    ) external payable returns (bytes[] memory) {\n        return\n            fulfillHyperInstantWithRelayer(\n                _route,\n                _rewardHash,\n                _claimant,\n                _expectedHash,\n                _prover,\n                bytes(\"\"),\n                address(0)\n            );\n    }\n\n    /**\n     * @notice Fulfills an intent to be proven immediately via Hyperlane's mailbox with relayer support\n     * @dev More expensive but faster than hyperbatched. Requires fee for Hyperlane infrastructure\n     * @param _route The route of the intent\n     * @param _rewardHash The hash of the reward\n     * @param _claimant The address that will receive the reward on the source chain\n     * @param _expectedHash The hash of the intent as created on the source chain\n     * @param _prover The address of the hyperprover on the source chain\n     * @param _metadata Metadata for postDispatchHook (empty bytes if not applicable)\n     * @param _postDispatchHook Address of postDispatchHook (zero address if not applicable)\n     * @return Array of execution results from each call\n     */\n    function fulfillHyperInstantWithRelayer(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash,\n        address _prover,\n        bytes memory _metadata,\n        address _postDispatchHook\n    )\n        public\n        payable\n        override(IInbox, Eco7683DestinationSettler)\n        returns (bytes[] memory)\n    {\n        bytes32[] memory hashes = new bytes32[](1);\n        address[] memory claimants = new address[](1);\n        hashes[0] = _expectedHash;\n        claimants[0] = _claimant;\n\n        bytes memory messageBody = abi.encode(hashes, claimants);\n        bytes32 _prover32 = _prover.addressToBytes32();\n\n        emit HyperInstantFulfillment(_expectedHash, _route.source, _claimant);\n\n        uint256 fee = fetchFee(\n            _route.source,\n            _prover32,\n            messageBody,\n            _metadata,\n            _postDispatchHook\n        );\n        bytes[] memory results = _fulfill(\n            _route,\n            _rewardHash,\n            _claimant,\n            _expectedHash\n        );\n\n        uint256 currentBalance = address(this).balance;\n        if (currentBalance < fee) {\n            revert InsufficientFee(fee);\n        }\n        if (currentBalance > fee) {\n            (bool success, ) = payable(msg.sender).call{\n                value: currentBalance - fee\n            }(\"\");\n            if (!success) {\n                revert NativeTransferFailed();\n            }\n        }\n        if (_postDispatchHook == address(0)) {\n            IMailbox(mailbox).dispatch{value: fee}(\n                uint32(_route.source),\n                _prover32,\n                messageBody\n            );\n        } else {\n            IMailbox(mailbox).dispatch{value: fee}(\n                uint32(_route.source),\n                _prover32,\n                messageBody,\n                _metadata,\n                IPostDispatchHook(_postDispatchHook)\n            );\n        }\n        return results;\n    }\n\n    /**\n     * @notice Fulfills an intent to be proven in a batch via Hyperlane's mailbox\n     * @dev Less expensive but slower than hyperinstant. Batch dispatched when sendBatch is called.\n     * @param _route The route of the intent\n     * @param _rewardHash The hash of the reward\n     * @param _claimant The address that will receive the reward on the source chain\n     * @param _expectedHash The hash of the intent as created on the source chain\n     * @param _prover The address of the hyperprover on the source chain\n     * @return Array of execution results from each call\n     */\n    function fulfillHyperBatched(\n        Route calldata _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash,\n        address _prover\n    ) external payable returns (bytes[] memory) {\n        emit AddToBatch(_expectedHash, _route.source, _claimant, _prover);\n\n        bytes[] memory results = _fulfill(\n            _route,\n            _rewardHash,\n            _claimant,\n            _expectedHash\n        );\n\n        return results;\n    }\n\n    /**\n     * @notice Sends a batch of fulfilled intents to the mailbox\n     * @dev Intent hashes must correspond to fulfilled intents from specified source chain\n     * @param _sourceChainID Chain ID of the source chain\n     * @param _prover Address of the hyperprover on the source chain\n     * @param _intentHashes Hashes of the intents to be proven\n     */\n    function sendBatch(\n        uint256 _sourceChainID,\n        address _prover,\n        bytes32[] calldata _intentHashes\n    ) external payable {\n        sendBatchWithRelayer(\n            _sourceChainID,\n            _prover,\n            _intentHashes,\n            bytes(\"\"),\n            address(0)\n        );\n    }\n\n    /**\n     * @notice Sends a batch of fulfilled intents to the mailbox with relayer support\n     * @dev Intent hashes must correspond to fulfilled intents from specified source chain\n     * @param _sourceChainID Chain ID of the source chain\n     * @param _prover Address of the hyperprover on the source chain\n     * @param _intentHashes Hashes of the intents to be proven\n     * @param _metadata Metadata for postDispatchHook\n     * @param _postDispatchHook Address of postDispatchHook\n     */\n    function sendBatchWithRelayer(\n        uint256 _sourceChainID,\n        address _prover,\n        bytes32[] calldata _intentHashes,\n        bytes memory _metadata,\n        address _postDispatchHook\n    ) public payable {\n        uint256 size = _intentHashes.length;\n        address[] memory claimants = new address[](size);\n        for (uint256 i = 0; i < size; ++i) {\n            address claimant = fulfilled[_intentHashes[i]];\n            if (claimant == address(0)) {\n                revert IntentNotFulfilled(_intentHashes[i]);\n            }\n            claimants[i] = claimant;\n        }\n\n        emit BatchSent(_intentHashes, _sourceChainID);\n\n        bytes memory messageBody = abi.encode(_intentHashes, claimants);\n        bytes32 _prover32 = _prover.addressToBytes32();\n        uint256 fee = fetchFee(\n            _sourceChainID,\n            _prover32,\n            messageBody,\n            _metadata,\n            _postDispatchHook\n        );\n        if (msg.value < fee) {\n            revert InsufficientFee(fee);\n        }\n        if (msg.value > fee) {\n            (bool success, ) = payable(msg.sender).call{value: msg.value - fee}(\n                \"\"\n            );\n            if (!success) {\n                revert NativeTransferFailed();\n            }\n        }\n        if (_postDispatchHook == address(0)) {\n            IMailbox(mailbox).dispatch{value: fee}(\n                uint32(_sourceChainID),\n                _prover32,\n                messageBody\n            );\n        } else {\n            IMailbox(mailbox).dispatch{value: fee}(\n                uint32(_sourceChainID),\n                _prover32,\n                messageBody,\n                _metadata,\n                IPostDispatchHook(_postDispatchHook)\n            );\n        }\n    }\n\n    /**\n     * @notice Quotes the fee required for message dispatch\n     * @dev Used to determine fees for fulfillHyperInstant or sendBatch\n     * @param _sourceChainID Chain ID of the source chain\n     * @param _prover Address of the hyperprover on the source chain\n     * @param _messageBody Message being sent over the bridge\n     * @param _metadata Metadata for postDispatchHook\n     * @param _postDispatchHook Address of postDispatchHook\n     * @return fee The required fee amount\n     */\n    function fetchFee(\n        uint256 _sourceChainID,\n        bytes32 _prover,\n        bytes memory _messageBody,\n        bytes memory _metadata,\n        address _postDispatchHook\n    ) public view returns (uint256 fee) {\n        return (\n            _postDispatchHook == address(0)\n                ? IMailbox(mailbox).quoteDispatch(\n                    uint32(_sourceChainID),\n                    _prover,\n                    _messageBody\n                )\n                : IMailbox(mailbox).quoteDispatch(\n                    uint32(_sourceChainID),\n                    _prover,\n                    _messageBody,\n                    _metadata,\n                    IPostDispatchHook(_postDispatchHook)\n                )\n        );\n    }\n\n    /**\n     * @notice Sets the mailbox address\n     * @dev Can only be called when mailbox is not set\n     * @param _mailbox Address of the Hyperlane mailbox\n     */\n    function setMailbox(address _mailbox) public onlyOwner {\n        if (mailbox == address(0)) {\n            mailbox = _mailbox;\n            emit MailboxSet(_mailbox);\n        }\n    }\n\n    /**\n     * @notice Makes solving public if currently restricted\n     * @dev Cannot be reversed once made public\n     */\n    function makeSolvingPublic() public onlyOwner {\n        if (!isSolvingPublic) {\n            isSolvingPublic = true;\n            emit SolvingIsPublic();\n        }\n    }\n\n    /**\n     * @notice Updates the solver whitelist\n     * @dev Whitelist is ignored if solving is public\n     * @param _solver Address of the solver\n     * @param _canSolve Whether solver should be whitelisted\n     */\n    function changeSolverWhitelist(\n        address _solver,\n        bool _canSolve\n    ) public onlyOwner {\n        solverWhitelist[_solver] = _canSolve;\n        emit SolverWhitelistChanged(_solver, _canSolve);\n    }\n\n    /**\n     * @notice Internal function to fulfill intents\n     * @dev Validates intent and executes calls\n     * @param _route The route of the intent\n     * @param _rewardHash The hash of the reward\n     * @param _claimant The reward recipient address\n     * @param _expectedHash The expected intent hash\n     * @return Array of execution results\n     */\n    function _fulfill(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash\n    ) internal returns (bytes[] memory) {\n        if (_route.destination != block.chainid) {\n            revert WrongChain(_route.destination);\n        }\n\n        if (!isSolvingPublic && !solverWhitelist[msg.sender]) {\n            revert UnauthorizedSolveAttempt(msg.sender);\n        }\n\n        bytes32 routeHash = keccak256(abi.encode(_route));\n        bytes32 intentHash = keccak256(\n            abi.encodePacked(routeHash, _rewardHash)\n        );\n\n        if (_route.inbox != address(this)) {\n            revert InvalidInbox(_route.inbox);\n        }\n\n        if (intentHash != _expectedHash) {\n            revert InvalidHash(_expectedHash);\n        }\n        if (fulfilled[intentHash] != address(0)) {\n            revert IntentAlreadyFulfilled(intentHash);\n        }\n        if (_claimant == address(0)) {\n            revert ZeroClaimant();\n        }\n\n        fulfilled[intentHash] = _claimant;\n        emit Fulfillment(_expectedHash, _route.source, _claimant);\n\n        uint256 routeTokenCount = _route.tokens.length;\n        // Transfer ERC20 tokens to the inbox\n        for (uint256 i = 0; i < routeTokenCount; ++i) {\n            TokenAmount memory approval = _route.tokens[i];\n            IERC20(approval.token).safeTransferFrom(\n                msg.sender,\n                address(this),\n                approval.amount\n            );\n        }\n\n        // Store the results of the calls\n        bytes[] memory results = new bytes[](_route.calls.length);\n\n        for (uint256 i = 0; i < _route.calls.length; ++i) {\n            Call memory call = _route.calls[i];\n            if (call.target.code.length == 0 && call.data.length > 0) {\n                // no code at this address\n                revert CallToEOA(call.target);\n            }\n            if (call.target == mailbox) {\n                // no executing calls on the mailbox\n                revert CallToMailbox();\n            }\n            (bool success, bytes memory result) = call.target.call{\n                value: call.value\n            }(call.data);\n            if (!success) {\n                revert IntentCallFailed(\n                    call.target,\n                    call.data,\n                    call.value,\n                    result\n                );\n            }\n            results[i] = result;\n        }\n        return results;\n    }\n\n    receive() external payable {}\n}\n",
-        "Eco7683OriginSettler.sol": "/* -*- c-basic-offset: 4 -*- */\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {OnchainCrossChainOrder, ResolvedCrossChainOrder, GaslessCrossChainOrder, Output, FillInstruction} from \"./types/ERC7683.sol\";\nimport {IOriginSettler} from \"./interfaces/ERC7683/IOriginSettler.sol\";\nimport {Intent, Reward, Route, Call, TokenAmount} from \"./types/Intent.sol\";\nimport {OnchainCrosschainOrderData, GaslessCrosschainOrderData, ONCHAIN_CROSSCHAIN_ORDER_DATA_TYPEHASH, GASLESS_CROSSCHAIN_ORDER_DATA_TYPEHASH} from \"./types/EcoERC7683.sol\";\nimport {IntentSource} from \"./IntentSource.sol\";\nimport {Semver} from \"./libs/Semver.sol\";\nimport {ECDSA} from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport {EIP712} from \"@openzeppelin/contracts/utils/cryptography/EIP712.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/**\n * @title Eco7683OriginSettler\n * @notice Entry point to Eco Protocol via EIP-7683\n * @dev functionality is somewhat limited compared to interacting with Eco Protocol directly\n */\ncontract Eco7683OriginSettler is IOriginSettler, Semver, EIP712 {\n    using ECDSA for bytes32;\n    using SafeERC20 for IERC20;\n\n    /// @notice typehash for gasless crosschain _order\n    bytes32 public GASLESS_CROSSCHAIN_ORDER_TYPEHASH =\n        keccak256(\n            \"GaslessCrossChainOrder(address originSettler,address user,uint256 nonce,uint256 originChainId,uint32 openDeadline,uint32 fillDeadline,bytes32 orderDataType,bytes32 orderDataHash)\"\n        );\n\n    /// @notice address of IntentSource contract where intents are actually published\n    address public immutable INTENT_SOURCE;\n\n    /**\n     * @notice Initializes the Eco7683OriginSettler\n     * @param _name the name of the contract for EIP712\n     * @param _version the version of the contract for EIP712\n     * @param _intentSource the address of the IntentSource contract\n     */\n    constructor(\n        string memory _name,\n        string memory _version,\n        address _intentSource\n    ) EIP712(_name, _version) {\n        INTENT_SOURCE = _intentSource;\n    }\n\n    /**\n     * @notice Opens an Eco intent directly on chain\n     * @dev to be called by the user\n     * @dev assumes user has erc20 funds approved for the intent, and includes any reward native token in msg.value\n     * @dev transfers the reward tokens at time of open\n     * @param _order the OnchainCrossChainOrder that will be opened as an eco intent\n     */\n    function open(\n        OnchainCrossChainOrder calldata _order\n    ) external payable override {\n        if (_order.orderDataType != ONCHAIN_CROSSCHAIN_ORDER_DATA_TYPEHASH) {\n            revert TypeSignatureMismatch();\n        }\n\n        OnchainCrosschainOrderData memory onchainCrosschainOrderData = abi\n            .decode(_order.orderData, (OnchainCrosschainOrderData));\n\n        if (onchainCrosschainOrderData.route.source != block.chainid) {\n            revert OriginChainIDMismatch();\n        }\n\n        Intent memory intent = Intent(\n            onchainCrosschainOrderData.route,\n            Reward(\n                onchainCrosschainOrderData.creator,\n                onchainCrosschainOrderData.prover,\n                _order.fillDeadline,\n                onchainCrosschainOrderData.nativeValue,\n                onchainCrosschainOrderData.rewardTokens\n            )\n        );\n\n        bytes32 orderId = _openEcoIntent(intent, msg.sender);\n\n        emit Open(orderId, resolve(_order));\n    }\n\n    /**\n     * @notice Opens an Eco intent on behalf of a user\n     * @notice This method is made payable in the event that the caller of this method (a solver) wants to open\n     * an intent that has native token as a reward. In this case, the solver would need to send the native\n     * token as part of the transaction. How the intent's creator pays the solver is not covered by this method.\n     * @dev to be called by the intent's solver\n     * @dev assumes user has erc20 funds approved for the intent, and includes any reward native token in msg.value\n     * @dev transfers the reward tokens at time of open\n     * @param _order the GaslessCrossChainOrder that will be opened as an eco intent\n     * @param _signature the signature of the user authorizing the intent to be opened\n     * @param _originFillerData filler data for the origin chain (vestigial, not used)\n     */\n    function openFor(\n        GaslessCrossChainOrder calldata _order,\n        bytes calldata _signature,\n        bytes calldata _originFillerData\n    ) external payable override {\n        if (block.timestamp > _order.openDeadline) {\n            revert OpenDeadlinePassed();\n        }\n        if (!_verifyOpenFor(_order, _signature)) {\n            revert BadSignature();\n        }\n\n        if (_order.orderDataType != GASLESS_CROSSCHAIN_ORDER_DATA_TYPEHASH) {\n            revert TypeSignatureMismatch();\n        }\n\n        GaslessCrosschainOrderData memory gaslessCrosschainOrderData = abi\n            .decode(_order.orderData, (GaslessCrosschainOrderData));\n\n        if (_order.originChainId != block.chainid) {\n            revert OriginChainIDMismatch();\n        }\n\n        Intent memory intent = Intent(\n            Route(\n                bytes32(_order.nonce),\n                _order.originChainId,\n                gaslessCrosschainOrderData.destination,\n                gaslessCrosschainOrderData.inbox,\n                gaslessCrosschainOrderData.routeTokens,\n                gaslessCrosschainOrderData.calls\n            ),\n            Reward(\n                _order.user,\n                gaslessCrosschainOrderData.prover,\n                _order.fillDeadline,\n                gaslessCrosschainOrderData.nativeValue,\n                gaslessCrosschainOrderData.rewardTokens\n            )\n        );\n\n        bytes32 orderId = _openEcoIntent(intent, _order.user);\n\n        emit Open(orderId, resolveFor(_order, _originFillerData));\n    }\n\n    /**\n     * @notice resolves an OnchainCrossChainOrder to a ResolvedCrossChainOrder\n     * @param _order the OnchainCrossChainOrder to be resolved\n     */\n    function resolve(\n        OnchainCrossChainOrder calldata _order\n    ) public view override returns (ResolvedCrossChainOrder memory) {\n        OnchainCrosschainOrderData memory onchainCrosschainOrderData = abi\n            .decode(_order.orderData, (OnchainCrosschainOrderData));\n        uint256 routeTokenCount = onchainCrosschainOrderData\n            .route\n            .tokens\n            .length;\n        Output[] memory maxSpent = new Output[](routeTokenCount);\n        for (uint256 i = 0; i < routeTokenCount; ++i) {\n            TokenAmount memory approval = onchainCrosschainOrderData\n                .route\n                .tokens[i];\n            maxSpent[i] = Output(\n                bytes32(uint256(uint160(approval.token))),\n                approval.amount,\n                bytes32(uint256(uint160(address(0)))), //filler is not known\n                onchainCrosschainOrderData.route.destination\n            );\n        }\n        uint256 rewardTokenCount = onchainCrosschainOrderData\n            .rewardTokens\n            .length;\n        Output[] memory minReceived = new Output[](\n            rewardTokenCount +\n                (onchainCrosschainOrderData.nativeValue > 0 ? 1 : 0)\n        ); //rewards are fixed\n\n        for (uint256 i = 0; i < rewardTokenCount; ++i) {\n            minReceived[i] = Output(\n                bytes32(\n                    uint256(\n                        uint160(\n                            onchainCrosschainOrderData.rewardTokens[i].token\n                        )\n                    )\n                ),\n                onchainCrosschainOrderData.rewardTokens[i].amount,\n                bytes32(uint256(uint160(address(0)))), //filler is not known\n                onchainCrosschainOrderData.route.destination\n            );\n        }\n        if (onchainCrosschainOrderData.nativeValue > 0) {\n            minReceived[rewardTokenCount] = Output(\n                bytes32(uint256(uint160(address(0)))),\n                onchainCrosschainOrderData.nativeValue,\n                bytes32(uint256(uint160(address(0)))),\n                onchainCrosschainOrderData.route.destination\n            );\n        }\n\n        Intent memory intent = Intent(\n            onchainCrosschainOrderData.route,\n            Reward(\n                onchainCrosschainOrderData.creator,\n                onchainCrosschainOrderData.prover,\n                _order.fillDeadline,\n                onchainCrosschainOrderData.nativeValue,\n                onchainCrosschainOrderData.rewardTokens\n            )\n        );\n\n        FillInstruction[] memory fillInstructions = new FillInstruction[](1);\n        fillInstructions[0] = FillInstruction(\n            uint64(onchainCrosschainOrderData.route.destination),\n            bytes32(uint256(uint160(onchainCrosschainOrderData.route.inbox))),\n            abi.encode(intent)\n        );\n\n        (bytes32 intentHash, , ) = IntentSource(INTENT_SOURCE).getIntentHash(\n            intent\n        );\n        return\n            ResolvedCrossChainOrder(\n                onchainCrosschainOrderData.creator,\n                onchainCrosschainOrderData.route.source,\n                _order.fillDeadline,\n                _order.fillDeadline,\n                intentHash,\n                maxSpent,\n                minReceived,\n                fillInstructions\n            );\n    }\n\n    /**\n     * @notice resolves GaslessCrossChainOrder to a ResolvedCrossChainOrder\n     * @param _order the GaslessCrossChainOrder to be resolved\n     * param _originFillerData filler data for the origin chain (not used)\n     */\n    function resolveFor(\n        GaslessCrossChainOrder calldata _order,\n        bytes calldata // _originFillerData keeping it for purpose of interface\n    ) public view override returns (ResolvedCrossChainOrder memory) {\n        GaslessCrosschainOrderData memory gaslessCrosschainOrderData = abi\n            .decode(_order.orderData, (GaslessCrosschainOrderData));\n        uint256 routeTokenCount = gaslessCrosschainOrderData.routeTokens.length;\n        Output[] memory maxSpent = new Output[](routeTokenCount);\n        for (uint256 i = 0; i < routeTokenCount; ++i) {\n            TokenAmount memory requirement = gaslessCrosschainOrderData\n                .routeTokens[i];\n            maxSpent[i] = Output(\n                bytes32(uint256(uint160(requirement.token))),\n                requirement.amount,\n                bytes32(uint256(uint160(address(0)))), //filler is not known\n                gaslessCrosschainOrderData.destination\n            );\n        }\n        uint256 rewardTokenCount = gaslessCrosschainOrderData\n            .rewardTokens\n            .length;\n        Output[] memory minReceived = new Output[](\n            rewardTokenCount +\n                (gaslessCrosschainOrderData.nativeValue > 0 ? 1 : 0)\n        ); //rewards are fixed\n\n        for (uint256 i = 0; i < rewardTokenCount; ++i) {\n            minReceived[i] = Output(\n                bytes32(\n                    uint256(\n                        uint160(\n                            gaslessCrosschainOrderData.rewardTokens[i].token\n                        )\n                    )\n                ),\n                gaslessCrosschainOrderData.rewardTokens[i].amount,\n                bytes32(uint256(uint160(address(0)))), //filler is not known\n                gaslessCrosschainOrderData.destination\n            );\n        }\n        if (gaslessCrosschainOrderData.nativeValue > 0) {\n            minReceived[rewardTokenCount] = Output(\n                bytes32(uint256(uint160(address(0)))),\n                gaslessCrosschainOrderData.nativeValue,\n                bytes32(uint256(uint160(address(0)))),\n                gaslessCrosschainOrderData.destination\n            );\n        }\n\n        Intent memory intent = Intent(\n            Route(\n                bytes32(_order.nonce),\n                _order.originChainId,\n                gaslessCrosschainOrderData.destination,\n                gaslessCrosschainOrderData.inbox,\n                gaslessCrosschainOrderData.routeTokens,\n                gaslessCrosschainOrderData.calls\n            ),\n            Reward(\n                _order.user,\n                gaslessCrosschainOrderData.prover,\n                _order.fillDeadline,\n                gaslessCrosschainOrderData.nativeValue,\n                gaslessCrosschainOrderData.rewardTokens\n            )\n        );\n\n        FillInstruction[] memory fillInstructions = new FillInstruction[](1);\n        fillInstructions[0] = FillInstruction(\n            uint64(gaslessCrosschainOrderData.destination),\n            bytes32(uint256(uint160(gaslessCrosschainOrderData.inbox))),\n            abi.encode(intent)\n        );\n\n        (bytes32 intentHash, , ) = IntentSource(INTENT_SOURCE).getIntentHash(\n            intent\n        );\n        return\n            ResolvedCrossChainOrder(\n                _order.user,\n                _order.originChainId,\n                _order.openDeadline,\n                _order.fillDeadline,\n                intentHash,\n                maxSpent,\n                minReceived,\n                fillInstructions\n            );\n    }\n\n    /// @notice helper method for signature verification\n    function _verifyOpenFor(\n        GaslessCrossChainOrder calldata _order,\n        bytes calldata _signature\n    ) internal view returns (bool) {\n        if (_order.originSettler != address(this)) {\n            return false;\n        }\n        bytes32 structHash = keccak256(\n            abi.encode(\n                GASLESS_CROSSCHAIN_ORDER_TYPEHASH,\n                _order.originSettler,\n                _order.user,\n                _order.nonce,\n                _order.originChainId,\n                _order.openDeadline,\n                _order.fillDeadline,\n                _order.orderDataType,\n                keccak256(_order.orderData)\n            )\n        );\n\n        bytes32 hash = _hashTypedDataV4(structHash);\n        address signer = hash.recover(_signature);\n\n        return signer == _order.user;\n    }\n\n    /// @notice helper method that actually opens the intent\n    function _openEcoIntent(\n        Intent memory _intent,\n        address _user\n    ) internal returns (bytes32 intentHash) {\n        if (!IntentSource(INTENT_SOURCE).isIntentFunded(_intent)) {\n            address vault = IntentSource(INTENT_SOURCE).intentVaultAddress(\n                _intent\n            );\n\n            if (_intent.reward.nativeValue > 0) {\n                if (msg.value < _intent.reward.nativeValue) {\n                    revert InsufficientNativeReward();\n                }\n\n                payable(vault).transfer(_intent.reward.nativeValue);\n            }\n            uint256 rewardsLength = _intent.reward.tokens.length;\n            for (uint256 i = 0; i < rewardsLength; ++i) {\n                address token = _intent.reward.tokens[i].token;\n                uint256 amount = _intent.reward.tokens[i].amount;\n\n                IERC20(token).safeTransferFrom(_user, vault, amount);\n            }\n        }\n\n        payable(msg.sender).transfer(address(this).balance);\n\n        return IntentSource(INTENT_SOURCE).publish(_intent);\n    }\n\n    /// @notice EIP712 domain separator\n    function domainSeparatorV4() public view returns (bytes32) {\n        return _domainSeparatorV4();\n    }\n}\n",
-        "Eco7683DestinationSettler.sol": "/* -*- c-basic-offset: 4 -*- */\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {OnchainCrossChainOrder, ResolvedCrossChainOrder, GaslessCrossChainOrder, Output, FillInstruction} from \"./types/ERC7683.sol\";\nimport {IOriginSettler} from \"./interfaces/ERC7683/IOriginSettler.sol\";\nimport {IDestinationSettler} from \"./interfaces/ERC7683/IDestinationSettler.sol\";\nimport {Intent, Reward, Route, TokenAmount} from \"./types/Intent.sol\";\nimport {IntentSource} from \"./IntentSource.sol\";\nimport {IProver} from \"./interfaces/IProver.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {ECDSA} from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport {EIP712} from \"@openzeppelin/contracts/utils/cryptography/EIP712.sol\";\n\nabstract contract Eco7683DestinationSettler is IDestinationSettler {\n    using ECDSA for bytes32;\n\n    /**\n     * @notice Fills a single leg of a particular order on the destination chain\n     * @dev _originData is of type OnchainCrossChainOrder\n     * @dev _fillerData is encoded bytes consisting of the uint256 prover type and the address claimant if the prover type is Storage (0)\n     * and the address claimant, the address postDispatchHook, and the bytes metadata if the prover type is Hyperlane (1)\n     * @param _orderId Unique order identifier for this order\n     * @param _originData Data emitted on the origin to parameterize the fill: an encoded Intent struct, or the originData from the fillInstruction of the ResolvedCrossChainOrder\n     * @param _fillerData Data provided by the filler to inform the fill or express their preferences\n     */\n    function fill(\n        bytes32 _orderId,\n        bytes calldata _originData,\n        bytes calldata _fillerData\n    ) external payable {\n        Intent memory intent = abi.decode(_originData, (Intent));\n        if (block.timestamp > intent.reward.deadline) {\n            revert FillDeadlinePassed();\n        }\n\n        emit OrderFilled(_orderId, msg.sender);\n\n        bytes32 rewardHash = keccak256(abi.encode(intent.reward));\n        IProver.ProofType proofType = abi.decode(\n            _fillerData,\n            (IProver.ProofType)\n        );\n        if (proofType == IProver.ProofType.Storage) {\n            (, address claimant) = abi.decode(\n                _fillerData,\n                (IProver.ProofType, address)\n            );\n            fulfillStorage(intent.route, rewardHash, claimant, _orderId);\n        } else if (proofType == IProver.ProofType.Hyperlane) {\n            (\n                ,\n                address claimant,\n                address postDispatchHook,\n                bytes memory metadata\n            ) = abi.decode(\n                    _fillerData,\n                    (IProver.ProofType, address, address, bytes)\n                );\n            fulfillHyperInstantWithRelayer(\n                intent.route,\n                rewardHash,\n                claimant,\n                _orderId,\n                intent.reward.prover,\n                metadata,\n                postDispatchHook\n            );\n        }\n    }\n\n    function fulfillStorage(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash\n    ) public payable virtual returns (bytes[] memory);\n\n    function fulfillHyperInstantWithRelayer(\n        Route memory _route,\n        bytes32 _rewardHash,\n        address _claimant,\n        bytes32 _expectedHash,\n        address _prover,\n        bytes memory _metadata,\n        address _postDispatchHook\n    ) public payable virtual returns (bytes[] memory);\n}\n",
-        "IntentSource.sol": "/* -*- c-basic-offset: 4 -*- */\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport {IIntentSource} from \"./interfaces/IIntentSource.sol\";\nimport {BaseProver} from \"./prover/BaseProver.sol\";\nimport {Intent, Route, Reward, Call} from \"./types/Intent.sol\";\nimport {Semver} from \"./libs/Semver.sol\";\n\nimport {Vault} from \"./Vault.sol\";\n\n/**\n * @title IntentSource\n * @notice Source chain contract for the Eco Protocol's intent system\n * @dev Used to create intents and withdraw associated rewards. Works in conjunction with\n *      an inbox contract on the destination chain. Verifies intent fulfillment through\n *      a prover contract on the source chain\n * @dev This contract should not hold any funds or hold any roles for other contracts,\n *      as it executes arbitrary calls to other contracts when funding intents.\n */\ncontract IntentSource is IIntentSource, Semver {\n    using SafeERC20 for IERC20;\n\n    mapping(bytes32 intentHash => VaultStorage) public vaults;\n\n    constructor() {}\n\n    /**\n     * @notice Retrieves reward status for a given intent hash\n     * @param intentHash Hash of the intent to query\n     * @return status Current status of the intent\n     */\n    function getRewardStatus(\n        bytes32 intentHash\n    ) external view returns (RewardStatus status) {\n        return RewardStatus(vaults[intentHash].state.status);\n    }\n\n    /**\n     * @notice Retrieves vault state for a given intent hash\n     * @param intentHash Hash of the intent to query\n     * @return VaultState struct containing vault information\n     */\n    function getVaultState(\n        bytes32 intentHash\n    ) external view returns (VaultState memory) {\n        return vaults[intentHash].state;\n    }\n\n    /**\n     * @notice Retrieves the permitContact address funding an intent\n     */\n    function getPermitContract(\n        bytes32 intentHash\n    ) external view returns (address) {\n        return vaults[intentHash].permitContract;\n    }\n\n    /**\n     * @notice Calculates the hash of an intent and its components\n     * @param intent The intent to hash\n     * @return intentHash Combined hash of route and reward\n     * @return routeHash Hash of the route component\n     * @return rewardHash Hash of the reward component\n     */\n    function getIntentHash(\n        Intent calldata intent\n    )\n        public\n        pure\n        returns (bytes32 intentHash, bytes32 routeHash, bytes32 rewardHash)\n    {\n        routeHash = keccak256(abi.encode(intent.route));\n        rewardHash = keccak256(abi.encode(intent.reward));\n        intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n    }\n\n    /**\n     * @notice Calculates the deterministic address of the intent vault\n     * @param intent Intent to calculate vault address for\n     * @return Address of the intent vault\n     */\n    function intentVaultAddress(\n        Intent calldata intent\n    ) external view returns (address) {\n        (bytes32 intentHash, bytes32 routeHash, ) = getIntentHash(intent);\n        return _getIntentVaultAddress(intentHash, routeHash, intent.reward);\n    }\n\n    /**\n     * @notice Creates an intent without funding\n     * @param intent The complete intent struct to be published\n     * @return intentHash Hash of the created intent\n     */\n    function publish(\n        Intent calldata intent\n    ) external returns (bytes32 intentHash) {\n        (intentHash, , ) = getIntentHash(intent);\n        VaultState memory state = vaults[intentHash].state;\n\n        _validateAndPublishIntent(intent, intentHash, state);\n    }\n\n    /**\n     * @notice Creates and funds an intent in a single transaction\n     * @param intent The complete intent struct to be published and funded\n     * @return intentHash Hash of the created and funded intent\n     */\n    function publishAndFund(\n        Intent calldata intent\n    ) external payable returns (bytes32 intentHash) {\n        bytes32 routeHash;\n        (intentHash, routeHash, ) = getIntentHash(intent);\n        VaultState memory state = vaults[intentHash].state;\n\n        _validateInitialFundingState(state, intentHash);\n        _validateSourceChain(intent.route.source, intentHash);\n        _validateAndPublishIntent(intent, intentHash, state);\n\n        address vault = _getIntentVaultAddress(\n            intentHash,\n            routeHash,\n            intent.reward\n        );\n        _fundIntent(intentHash, intent.reward, vault, msg.sender);\n\n        _returnExcessEth(intentHash, address(this).balance);\n    }\n\n    /**\n     * @notice Funds an existing intent\n     * @param routeHash Hash of the route component\n     * @param reward Reward structure containing distribution details\n     * @return intentHash Hash of the funded intent\n     */\n    function fund(\n        bytes32 routeHash,\n        Reward calldata reward\n    ) external payable returns (bytes32 intentHash) {\n        bytes32 rewardHash = keccak256(abi.encode(reward));\n        intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n        VaultState memory state = vaults[intentHash].state;\n\n        _validateInitialFundingState(state, intentHash);\n\n        address vault = _getIntentVaultAddress(intentHash, routeHash, reward);\n        _fundIntent(intentHash, reward, vault, msg.sender);\n    }\n\n    /**\n     * @notice Funds an intent for a user with allowance/permit\n     * @param routeHash Hash of the route component\n     * @param reward Reward structure containing distribution details\n     * @param funder Address to fund the intent from\n     * @param permitContact Address of the permitContact instance\n     * @param allowPartial Whether to allow partial funding\n     * @return intentHash Hash of the funded intent\n     */\n    function fundFor(\n        bytes32 routeHash,\n        Reward calldata reward,\n        address funder,\n        address permitContact,\n        bool allowPartial\n    ) external returns (bytes32 intentHash) {\n        bytes32 rewardHash = keccak256(abi.encode(reward));\n        intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n        VaultState memory state = vaults[intentHash].state;\n\n        address vault = _getIntentVaultAddress(intentHash, routeHash, reward);\n\n        _fundIntentFor(\n            state,\n            reward,\n            intentHash,\n            routeHash,\n            vault,\n            funder,\n            permitContact,\n            allowPartial\n        );\n    }\n\n    /**\n     * @notice Creates and funds an intent using permit/allowance\n     * @param intent The complete intent struct\n     * @return intentHash Hash of the created and funded intent\n     */\n    function publishAndFundFor(\n        Intent calldata intent,\n        address funder,\n        address permitContact,\n        bool allowPartial\n    ) external returns (bytes32 intentHash) {\n        bytes32 routeHash;\n        (intentHash, routeHash, ) = getIntentHash(intent);\n        VaultState memory state = vaults[intentHash].state;\n\n        _validateAndPublishIntent(intent, intentHash, state);\n        _validateSourceChain(intent.route.source, intentHash);\n\n        address vault = _getIntentVaultAddress(\n            intentHash,\n            routeHash,\n            intent.reward\n        );\n\n        _fundIntentFor(\n            state,\n            intent.reward,\n            intentHash,\n            routeHash,\n            vault,\n            funder,\n            permitContact,\n            allowPartial\n        );\n    }\n\n    /**\n     * @notice Checks if an intent is properly funded\n     * @param intent Intent to validate\n     * @return True if intent is properly funded, false otherwise\n     */\n    function isIntentFunded(\n        Intent calldata intent\n    ) external view returns (bool) {\n        if (intent.route.source != block.chainid) return false;\n\n        (bytes32 intentHash, bytes32 routeHash, ) = getIntentHash(intent);\n        address vault = _getIntentVaultAddress(\n            intentHash,\n            routeHash,\n            intent.reward\n        );\n\n        return _isRewardFunded(intent.reward, vault);\n    }\n\n    /**\n     * @notice Withdraws rewards associated with an intent to its claimant\n     * @param routeHash Hash of the intent's route\n     * @param reward Reward structure of the intent\n     */\n    function withdrawRewards(bytes32 routeHash, Reward calldata reward) public {\n        bytes32 rewardHash = keccak256(abi.encode(reward));\n        bytes32 intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n\n        address claimant = BaseProver(reward.prover).provenIntents(intentHash);\n        VaultState memory state = vaults[intentHash].state;\n\n        // Claim the rewards if the intent has not been claimed\n        if (\n            claimant != address(0) &&\n            state.status != uint8(RewardStatus.Claimed) &&\n            state.status != uint8(RewardStatus.Refunded)\n        ) {\n            state.status = uint8(RewardStatus.Claimed);\n            state.mode = uint8(VaultMode.Claim);\n            state.allowPartialFunding = 0;\n            state.usePermit = 0;\n            state.target = claimant;\n            vaults[intentHash].state = state;\n\n            emit Withdrawal(intentHash, claimant);\n\n            new Vault{salt: routeHash}(intentHash, reward);\n\n            return;\n        }\n\n        if (claimant == address(0)) {\n            revert UnauthorizedWithdrawal(intentHash);\n        } else {\n            revert RewardsAlreadyWithdrawn(intentHash);\n        }\n    }\n\n    /**\n     * @notice Batch withdraws multiple intents\n     * @param routeHashes Array of route hashes for the intents\n     * @param rewards Array of reward structures for the intents\n     */\n    function batchWithdraw(\n        bytes32[] calldata routeHashes,\n        Reward[] calldata rewards\n    ) external {\n        uint256 length = routeHashes.length;\n\n        if (length != rewards.length) {\n            revert ArrayLengthMismatch();\n        }\n\n        for (uint256 i = 0; i < length; ++i) {\n            withdrawRewards(routeHashes[i], rewards[i]);\n        }\n    }\n\n    /**\n     * @notice Refunds rewards to the intent creator\n     * @param routeHash Hash of the intent's route\n     * @param reward Reward structure of the intent\n     */\n    function refund(bytes32 routeHash, Reward calldata reward) external {\n        bytes32 rewardHash = keccak256(abi.encode(reward));\n        bytes32 intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n\n        VaultState memory state = vaults[intentHash].state;\n\n        if (\n            state.status != uint8(RewardStatus.Claimed) &&\n            state.status != uint8(RewardStatus.Refunded) &&\n            block.timestamp <= reward.deadline\n        ) {\n            revert IntentNotExpired(intentHash);\n        }\n\n        if (state.status != uint8(RewardStatus.Claimed)) {\n            state.status = uint8(RewardStatus.Refunded);\n        }\n\n        state.mode = uint8(VaultMode.Refund);\n        state.allowPartialFunding = 0;\n        state.usePermit = 0;\n        state.target = address(0);\n        vaults[intentHash].state = state;\n\n        emit Refund(intentHash, reward.creator);\n\n        new Vault{salt: routeHash}(intentHash, reward);\n    }\n\n    /**\n     * @notice Recover tokens that were sent to the intent vault by mistake\n     * @dev Must not be among the intent's rewards\n     * @param routeHash Hash of the intent's route\n     * @param reward Reward structure of the intent\n     * @param token Optional token address for handling incorrect vault transfers\n     */\n    function recoverToken(\n        bytes32 routeHash,\n        Reward calldata reward,\n        address token\n    ) external {\n        if (token == address(0)) {\n            revert InvalidRefundToken();\n        }\n\n        bytes32 rewardHash = keccak256(abi.encode(reward));\n        bytes32 intentHash = keccak256(abi.encodePacked(routeHash, rewardHash));\n\n        VaultState memory state = vaults[intentHash].state;\n\n        // selfdestruct() will refund all native tokens to the creator\n        // we can't refund native intents before the claim/refund happens\n        // because deploying and destructing the vault will refund the native reward prematurely\n        if (\n            state.status != uint8(RewardStatus.Claimed) &&\n            state.status != uint8(RewardStatus.Refunded) &&\n            reward.nativeValue > 0\n        ) {\n            revert IntentNotClaimed(intentHash);\n        }\n\n        // Check if the token is part of the reward\n        for (uint256 i = 0; i < reward.tokens.length; ++i) {\n            if (reward.tokens[i].token == token) {\n                revert InvalidRefundToken();\n            }\n        }\n\n        state.mode = uint8(VaultMode.RecoverToken);\n        state.allowPartialFunding = 0;\n        state.usePermit = 0;\n        state.target = token;\n        vaults[intentHash].state = state;\n\n        emit Refund(intentHash, reward.creator);\n\n        new Vault{salt: routeHash}(intentHash, reward);\n    }\n\n    /**\n     * @notice Validates that an intent's vault holds sufficient rewards\n     * @dev Checks both native token and ERC20 token balances\n     * @param reward Reward to validate\n     * @param vault Address of the intent's vault\n     * @return True if vault has sufficient funds, false otherwise\n     */\n    function _isRewardFunded(\n        Reward calldata reward,\n        address vault\n    ) internal view returns (bool) {\n        uint256 rewardsLength = reward.tokens.length;\n\n        if (vault.balance < reward.nativeValue) return false;\n\n        for (uint256 i = 0; i < rewardsLength; ++i) {\n            address token = reward.tokens[i].token;\n            uint256 amount = reward.tokens[i].amount;\n            uint256 balance = IERC20(token).balanceOf(vault);\n\n            if (balance < amount) return false;\n        }\n\n        return true;\n    }\n\n    /**\n     * @notice Calculates the deterministic address of an intent vault using CREATE2\n     * @dev Follows EIP-1014 for address calculation\n     * @param intentHash Hash of the full intent\n     * @param routeHash Hash of the route component\n     * @param reward Reward structure\n     * @return The calculated vault address\n     */\n    function _getIntentVaultAddress(\n        bytes32 intentHash,\n        bytes32 routeHash,\n        Reward calldata reward\n    ) internal view returns (address) {\n        /* Convert a hash which is bytes32 to an address which is 20-byte long\n        according to https://docs.soliditylang.org/en/v0.8.9/control-structures.html?highlight=create2#salted-contract-creations-create2 */\n        return\n            address(\n                uint160(\n                    uint256(\n                        keccak256(\n                            abi.encodePacked(\n                                hex\"ff\",\n                                address(this),\n                                routeHash,\n                                keccak256(\n                                    abi.encodePacked(\n                                        type(Vault).creationCode,\n                                        abi.encode(intentHash, reward)\n                                    )\n                                )\n                            )\n                        )\n                    )\n                )\n            );\n    }\n\n    /**\n     * @notice Validates and publishes a new intent\n     * @param intent The intent to validate and publish\n     * @param intentHash Hash of the intent\n     * @param state Current vault state\n     */\n    function _validateAndPublishIntent(\n        Intent calldata intent,\n        bytes32 intentHash,\n        VaultState memory state\n    ) internal {\n        if (\n            state.status == uint8(RewardStatus.Claimed) ||\n            state.status == uint8(RewardStatus.Refunded)\n        ) {\n            revert IntentAlreadyExists(intentHash);\n        }\n\n        emit IntentCreated(\n            intentHash,\n            intent.route.salt,\n            intent.route.source,\n            intent.route.destination,\n            intent.route.inbox,\n            intent.route.tokens,\n            intent.route.calls,\n            intent.reward.creator,\n            intent.reward.prover,\n            intent.reward.deadline,\n            intent.reward.nativeValue,\n            intent.reward.tokens\n        );\n    }\n\n    /**\n     * @notice Disabling fundFor for native intents\n     * @dev Deploying vault in Fund mode might cause a loss of native reward\n     * @param reward Reward structure to validate\n     * @param vault Address of the intent vault\n     * @param intentHash Hash of the intent\n     */\n    function _disableNativeReward(\n        Reward calldata reward,\n        address vault,\n        bytes32 intentHash\n    ) internal view {\n        // selfdestruct() will refund all native tokens to the creator\n        // we can't use Fund mode for intents with native value\n        // because deploying and destructing the vault will refund the native reward prematurely\n        if (reward.nativeValue > 0 && vault.balance > 0) {\n            revert CannotFundForWithNativeReward(intentHash);\n        }\n    }\n\n    /**\n     * @notice Validates the initial funding state\n     * @param state Current vault state\n     * @param intentHash Hash of the intent\n     */\n    function _validateInitialFundingState(\n        VaultState memory state,\n        bytes32 intentHash\n    ) internal pure {\n        if (state.status != uint8(RewardStatus.Initial)) {\n            revert IntentAlreadyFunded(intentHash);\n        }\n    }\n\n    /**\n     * @notice Validates the funding state for partial funding\n     * @param state Current vault state\n     * @param intentHash Hash of the intent\n     */\n    function _validateFundingState(\n        VaultState memory state,\n        bytes32 intentHash\n    ) internal pure {\n        if (\n            state.status != uint8(RewardStatus.Initial) &&\n            state.status != uint8(RewardStatus.PartiallyFunded)\n        ) {\n            revert IntentAlreadyFunded(intentHash);\n        }\n    }\n\n    /**\n     * @notice Handles the funding of an intent\n     * @param intentHash Hash of the intent\n     * @param reward Reward structure to fund\n     * @param vault Address of the intent vault\n     * @param funder Address providing the funds\n     */\n    function _fundIntent(\n        bytes32 intentHash,\n        Reward calldata reward,\n        address vault,\n        address funder\n    ) internal {\n        emit IntentFunded(intentHash, msg.sender);\n\n        if (reward.nativeValue > 0) {\n            if (msg.value < reward.nativeValue) {\n                revert InsufficientNativeReward(intentHash);\n            }\n            payable(vault).transfer(reward.nativeValue);\n        }\n\n        for (uint256 i = 0; i < reward.tokens.length; ++i) {\n            IERC20(reward.tokens[i].token).safeTransferFrom(\n                funder,\n                vault,\n                reward.tokens[i].amount\n            );\n        }\n    }\n\n    function _fundIntentFor(\n        VaultState memory state,\n        Reward calldata reward,\n        bytes32 intentHash,\n        bytes32 routeHash,\n        address vault,\n        address funder,\n        address permitContact,\n        bool allowPartial\n    ) internal {\n        _disableNativeReward(reward, vault, intentHash);\n        _validateFundingState(state, intentHash);\n\n        if (state.status == uint8(RewardStatus.Initial)) {\n            state.status = allowPartial\n                ? uint8(RewardStatus.PartiallyFunded)\n                : uint8(RewardStatus.Funded);\n        }\n\n        state.mode = uint8(VaultMode.Fund);\n        state.allowPartialFunding = allowPartial ? 1 : 0;\n        state.usePermit = permitContact != address(0) ? 1 : 0;\n        state.target = funder;\n\n        if (permitContact != address(0)) {\n            vaults[intentHash].permitContract = permitContact;\n        }\n\n        vaults[intentHash].state = state;\n\n        new Vault{salt: routeHash}(intentHash, reward);\n\n        if (state.status == uint8(RewardStatus.Funded)) {\n            emit IntentFunded(intentHash, funder);\n        } else if (\n            state.status == uint8(RewardStatus.PartiallyFunded) &&\n            _isRewardFunded(reward, vault)\n        ) {\n            state.status = uint8(RewardStatus.Funded);\n            vaults[intentHash].state = state;\n\n            emit IntentFunded(intentHash, funder);\n        } else {\n            emit IntentPartiallyFunded(intentHash, funder);\n        }\n    }\n\n    /**\n     * @notice Validates that the intent is being published on correct chain\n     * @param sourceChain Chain ID specified in the intent\n     * @param intentHash Hash of the intent\n     */\n    function _validateSourceChain(\n        uint256 sourceChain,\n        bytes32 intentHash\n    ) internal view {\n        if (sourceChain != block.chainid) {\n            revert WrongSourceChain(intentHash);\n        }\n    }\n\n    /**\n     * @notice Returns excess ETH to the sender\n     * @param intentHash Hash of the intent\n     * @param amount Amount of ETH to return\n     */\n    function _returnExcessEth(bytes32 intentHash, uint256 amount) internal {\n        if (amount > 0) {\n            (bool success, ) = payable(msg.sender).call{value: amount}(\"\");\n            if (!success) revert NativeRewardTransferFailed(intentHash);\n        }\n    }\n}\n"
+        "ERC7683OrderDepositorExternal.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { ERC7683OrderDepositor } from \"./ERC7683OrderDepositor.sol\";\nimport \"../SpokePool.sol\";\nimport \"../external/interfaces/IPermit2.sol\";\nimport \"@uma/core/contracts/common/implementation/MultiCaller.sol\";\n\n/**\n * @notice ERC7683OrderDepositorExternal processes an external order type and translates it into an AcrossV3Deposit\n * that it sends to the SpokePool contract.\n * @custom:security-contact bugs@across.to\n */\ncontract ERC7683OrderDepositorExternal is ERC7683OrderDepositor, Ownable, MultiCaller {\n    using SafeERC20 for IERC20;\n\n    event SetDestinationSettler(\n        uint256 indexed chainId,\n        address indexed prevDestinationSettler,\n        address indexed destinationSettler\n    );\n\n    SpokePool public immutable SPOKE_POOL;\n\n    // Mapping of chainIds to destination settler addresses.\n    mapping(uint256 => address) public destinationSettlers;\n\n    constructor(\n        SpokePool _spokePool,\n        IPermit2 _permit2,\n        uint256 _quoteBeforeDeadline\n    ) ERC7683OrderDepositor(_permit2, _quoteBeforeDeadline) {\n        SPOKE_POOL = _spokePool;\n    }\n\n    function setDestinationSettler(uint256 chainId, address destinationSettler) external {\n        address prevDestinationSettler = destinationSettlers[chainId];\n        destinationSettlers[chainId] = destinationSettler;\n        emit SetDestinationSettler(chainId, prevDestinationSettler, destinationSettler);\n    }\n\n    function _callDeposit(\n        address depositor,\n        address recipient,\n        address inputToken,\n        address outputToken,\n        uint256 inputAmount,\n        uint256 outputAmount,\n        uint256 destinationChainId,\n        address exclusiveRelayer,\n        uint32 quoteTimestamp,\n        uint32 fillDeadline,\n        uint32 exclusivityDeadline,\n        bytes memory message\n    ) internal override {\n        IERC20(inputToken).safeIncreaseAllowance(address(SPOKE_POOL), inputAmount);\n\n        SPOKE_POOL.depositV3(\n            depositor,\n            recipient,\n            inputToken,\n            outputToken,\n            inputAmount,\n            outputAmount,\n            destinationChainId,\n            exclusiveRelayer,\n            quoteTimestamp,\n            fillDeadline,\n            exclusivityDeadline,\n            message\n        );\n    }\n\n    function _currentDepositId() internal view override returns (uint32) {\n        return SPOKE_POOL.numberOfDeposits();\n    }\n\n    function _destinationSettler(uint256 chainId) internal view override returns (address) {\n        return destinationSettlers[chainId];\n    }\n}\n"
     }
 }

@@ -1,54 +1,26 @@
 {
     "vfp_id": "vfp_00278",
-    "project_name": "Across Audit.md",
+    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
     "findings": [
         {
-            "id": 8,
+            "id": 11,
             "category": {
                 "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-228"
-                ],
-                "3": [
-                    "CWE-241"
+                    "CWE-682"
                 ]
             },
-            "title": "Incorrect Parameters Passed to permitWitnessTransferFrom",
-            "description": "The `PERMIT2_ORDER_TYPE` variable incorrectly defines the witness data type as `CrossChainOrder`, while the actual data being hashed is of type `GaslessCrossChainOrder`. This discrepancy, along with the omission of key struct members like `orderDataType`, `exclusiveRelayer`, and `depositNonce` in the hash calculation, violates EIP-712 standards and undermines the integrity of the permit signature. The root cause is incorrect struct type specification and incomplete hashing logic. An attacker could potentially exploit this by crafting malformed orders that pass validation due to incorrect type hashing, leading to unauthorized transfers or failed executions. The impact includes potential fund loss or order manipulation due to flawed signature verification.\n",
+            "title": "Incorrect Calculation of Accrued Rewards in updateRewardRatePerDay",
+            "description": "In the DIARewardsDistribution contract's updateRewardRatePerDay function, two flaws exist: (1) it uses the updated rewardRatePerDay instead of the oldRewardRate to calculate rewards accrued since the last update, leading to incorrect accruals based on the new rate rather than the historical one; and (2) it divides rewardsAccrued by 10000 before adding to rewardAccumulator, which is later divided again by 10000 when calculating user rewards, resulting in excessive division and lost rewards. The cause is flawed arithmetic logic in accumulator updates. An attacker with rate-setting privileges could exploit this by rapidly changing rates to siphon or erase rewards. The impact is significant financial loss due to miscalculated and unfairly distributed rewards.\n",
             "severity": "High",
             "location": [
-                "ERC7683Across.sol::PERMIT2_ORDER_TYPE#67",
-                "ERC7683Across.sol::witness#80-91",
-                "ERC7683.sol::GaslessCrossChainOrder#6",
-                "ERC7683Across.sol::CROSS_CHAIN_ORDER_TYPE#55"
+                "DIARewardsDistribution::updateRewardRatePerDay"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683Across.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ]
-            },
-            "title": "Types Incompatible With `ERC-7683`",
-            "description": "The `AcrossOrderData` struct in `ERC7683Across.sol` uses outdated types: `destinationChainId` is `uint32` and `recipient` is `address`, while the latest `ERC-7683` standard specifies `uint64` and `bytes32`, respectively. \nThe root cause is a failure to update the struct definition to match the new standard, leading to type mismatches during order processing and event emission. \nAn attacker could exploit this by crafting orders with chain IDs > 2^32 or non-standard recipient encodings, causing silent truncation or incorrect routing. This could lead to funds being sent to unintended destinations. \nThe impact is medium: potential misrouting of funds due to type truncation or encoding errors, violating the expected behavior of the cross-chain standard.\n",
-            "severity": "Medium",
-            "location": [
-                "ERC7683Across.sol#L8-L18",
-                "ERC7683Across.sol::destinationChainId#13",
-                "ERC7683Across.sol::recipient#14"
-            ],
-            "files": [
-                "contracts/contracts/erc7683/ERC7683Across.sol"
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC7683Across.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"../external/interfaces/IPermit2.sol\";\nimport { GaslessCrossChainOrder } from \"./ERC7683.sol\";\n\n// Data unique to every CrossChainOrder settled on Across\nstruct AcrossOrderData {\n    address inputToken;\n    uint256 inputAmount;\n    address outputToken;\n    uint256 outputAmount;\n    uint32 destinationChainId;\n    address recipient;\n    address exclusiveRelayer;\n    uint32 exclusivityPeriod;\n    bytes message;\n}\n\nstruct AcrossOriginFillerData {\n    address exclusiveRelayer;\n}\n\nstruct AcrossDestinationFillerData {\n    uint256 repaymentChainId;\n}\n\nbytes constant ACROSS_ORDER_DATA_TYPE = abi.encodePacked(\n    \"AcrossOrderData(\",\n    \"address inputToken,\",\n    \"uint256 inputAmount,\",\n    \"address outputToken,\",\n    \"uint256 outputAmount,\",\n    \"uint32 destinationChainId,\",\n    \"address recipient,\",\n    \"address exclusiveRelayer,\"\n    \"uint32 exclusivityPeriod,\",\n    \"bytes message)\"\n);\n\nbytes32 constant ACROSS_ORDER_DATA_TYPE_HASH = keccak256(ACROSS_ORDER_DATA_TYPE);\n\n/**\n * @notice ERC7683Permit2Lib knows how to process a particular type of external Permit2Order so that it can be used in Across.\n * @dev This library is responsible for definining the ERC712 type strings/hashes and performing hashes on the types.\n * @custom:security-contact bugs@across.to\n */\nlibrary ERC7683Permit2Lib {\n    bytes internal constant CROSS_CHAIN_ORDER_TYPE =\n        abi.encodePacked(\n            \"GaslessCrossChainOrder(\",\n            \"address originSettler,\",\n            \"address user,\",\n            \"uint256 nonce,\",\n            \"uint32 originChainId,\",\n            \"uint32 openDeadline,\",\n            \"uint32 fillDeadline,\",\n            \"bytes32 orderDataType,\",\n            \"AcrossOrderData orderData)\"\n        );\n\n    bytes internal constant CROSS_CHAIN_ORDER_EIP712_TYPE =\n        abi.encodePacked(CROSS_CHAIN_ORDER_TYPE, ACROSS_ORDER_DATA_TYPE);\n    bytes32 internal constant CROSS_CHAIN_ORDER_TYPE_HASH = keccak256(CROSS_CHAIN_ORDER_EIP712_TYPE);\n\n    string private constant TOKEN_PERMISSIONS_TYPE = \"TokenPermissions(address token,uint256 amount)\";\n    string internal constant PERMIT2_ORDER_TYPE =\n        string(\n            abi.encodePacked(\n                \"CrossChainOrder witness)\",\n                ACROSS_ORDER_DATA_TYPE,\n                CROSS_CHAIN_ORDER_TYPE,\n                TOKEN_PERMISSIONS_TYPE\n            )\n        );\n\n    // Hashes an order to get an order hash. Needed for permit2.\n    function hashOrder(GaslessCrossChainOrder memory order, bytes32 orderDataHash) internal pure returns (bytes32) {\n        return\n            keccak256(\n                abi.encode(\n                    CROSS_CHAIN_ORDER_TYPE_HASH,\n                    order.originSettler,\n                    order.user,\n                    order.nonce,\n                    order.originChainId,\n                    order.openDeadline,\n                    order.fillDeadline,\n                    orderDataHash\n                )\n            );\n    }\n\n    function hashOrderData(AcrossOrderData memory orderData) internal pure returns (bytes32) {\n        return\n            keccak256(\n                abi.encode(\n                    ACROSS_ORDER_DATA_TYPE_HASH,\n                    orderData.inputToken,\n                    orderData.inputAmount,\n                    orderData.outputToken,\n                    orderData.outputAmount,\n                    orderData.destinationChainId,\n                    orderData.recipient,\n                    orderData.exclusivityPeriod,\n                    keccak256(orderData.message)\n                )\n            );\n    }\n}\n"
+        "DIARewardsDistribution.sol": "// SPDX-License-Identifier: GPL\n\npragma solidity 0.8.29;\n\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\n\n/**\n * @title DIARewardsDistribution\n * @notice Abstract contract for managing token rewards distribution\n * @dev Provides base functionality for reward rate and wallet management\n */\nabstract contract DIARewardsDistribution is Ownable {\n    /// @notice The ERC20 token used for rewards\n    IERC20 public immutable REWARDS_TOKEN;\n\n    // Reward rate per day, with 10 decimals\n    uint256 public rewardRatePerDay;\n\n    /// @notice Address of the wallet that holds rewards\n    /// @dev This wallet must approve tokens for the staking contract\n    address public rewardsWallet;\n\n    /// @notice Error thrown when an invalid address is provided\n    error InvalidAddress();\n\n    /// @notice Emitted when reward rate is updated\n    /// @param oldRewardRate The previous reward rate\n    /// @param newRewardRate The new reward rate\n    event RewardRateUpdated(uint256 oldRewardRate, uint256 newRewardRate);\n\n    /// @notice Emitted when rewards wallet is updated\n    /// @param oldWallet The previous rewards wallet address\n    /// @param newWallet The new rewards wallet address\n    event RewardsWalletUpdated(address oldWallet, address newWallet);\n\n    /**\n     * @notice Initializes the contract with reward parameters\n     * @param rewardsTokenAddress Address of the ERC20 token used for rewards\n     * @param newRewardsWallet Address of the wallet that holds rewards\n     * @param newRewardRate Initial reward rate per day\n     */\n    constructor(\n        address rewardsTokenAddress,\n        address newRewardsWallet,\n        uint256 newRewardRate\n    ) {\n        REWARDS_TOKEN = IERC20(rewardsTokenAddress);\n        rewardRatePerDay = newRewardRate;\n        rewardsWallet = newRewardsWallet;\n    }\n\n    /**\n     * @notice Updates the daily reward rate\n     * @dev Only callable by the contract owner\n     * @param newRewardRate The new reward rate per day\n     * @custom:event Emits RewardRateUpdated with old and new values\n     */\n    function updateRewardRatePerDay(uint256 newRewardRate) external onlyOwner {\n        emit RewardRateUpdated(rewardRatePerDay, newRewardRate);\n        rewardRatePerDay = newRewardRate;\n    }\n\n    /**\n     * @notice Updates the rewards wallet address\n     * @dev Only callable by the contract owner\n     * @param newWalletAddress The new rewards wallet address\n     * @custom:revert InvalidAddress if new wallet address is zero\n     * @custom:event Emits RewardsWalletUpdated with old and new values\n     */\n    function updateRewardsWallet(address newWalletAddress) external onlyOwner {\n        if (newWalletAddress == address(0)) {\n            revert InvalidAddress();\n        }\n        emit RewardsWalletUpdated(rewardsWallet, newWalletAddress);\n        rewardsWallet = newWalletAddress;\n    }\n\n    /**\n     * @notice Calculates the reward for a given staking store\n     * @dev Must be implemented by inheriting contracts\n     * @param stakingStoreIndex The index of the staking store\n     * @return The calculated reward amount\n     */\n    function getRewardForStakingStore(\n        uint256 stakingStoreIndex\n    ) public virtual returns (uint256);\n}\n"
     }
 }

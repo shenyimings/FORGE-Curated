@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.24;
+pragma solidity ^0.8.18;
 
 import "./Dependencies/Ownable.sol";
-import {MIN_LIQUIDATION_PENALTY_SP, MAX_LIQUIDATION_PENALTY_REDISTRIBUTION} from "./Dependencies/Constants.sol";
 import "./Interfaces/IAddressesRegistry.sol";
 
 contract AddressesRegistry is Ownable, IAddressesRegistry {
@@ -34,8 +33,7 @@ contract AddressesRegistry is Ownable, IAddressesRegistry {
 
     // Minimum collateral ratio for individual troves
     uint256 public immutable MCR;
-    // Extra buffer of collateral ratio to join a batch or adjust a trove inside a batch (on top of MCR)
-    uint256 public immutable BCR;
+
     // Liquidation penalty for troves offset to the SP
     uint256 public immutable LIQUIDATION_PENALTY_SP;
     // Liquidation penalty for troves redistributed
@@ -43,7 +41,6 @@ contract AddressesRegistry is Ownable, IAddressesRegistry {
 
     error InvalidCCR();
     error InvalidMCR();
-    error InvalidBCR();
     error InvalidSCR();
     error SPPenaltyTooLow();
     error SPPenaltyGtRedist();
@@ -72,23 +69,20 @@ contract AddressesRegistry is Ownable, IAddressesRegistry {
         address _owner,
         uint256 _ccr,
         uint256 _mcr,
-        uint256 _bcr,
         uint256 _scr,
         uint256 _liquidationPenaltySP,
         uint256 _liquidationPenaltyRedistribution
     ) Ownable(_owner) {
         if (_ccr <= 1e18 || _ccr >= 2e18) revert InvalidCCR();
         if (_mcr <= 1e18 || _mcr >= 2e18) revert InvalidMCR();
-        if (_bcr < 5e16 || _bcr >= 50e16) revert InvalidBCR();
         if (_scr <= 1e18 || _scr >= 2e18) revert InvalidSCR();
-        if (_liquidationPenaltySP < MIN_LIQUIDATION_PENALTY_SP) revert SPPenaltyTooLow();
+        if (_liquidationPenaltySP < 5e16) revert SPPenaltyTooLow();
         if (_liquidationPenaltySP > _liquidationPenaltyRedistribution) revert SPPenaltyGtRedist();
-        if (_liquidationPenaltyRedistribution > MAX_LIQUIDATION_PENALTY_REDISTRIBUTION) revert RedistPenaltyTooHigh();
+        if (_liquidationPenaltyRedistribution > 10e16) revert RedistPenaltyTooHigh();
 
         CCR = _ccr;
         SCR = _scr;
         MCR = _mcr;
-        BCR = _bcr;
         LIQUIDATION_PENALTY_SP = _liquidationPenaltySP;
         LIQUIDATION_PENALTY_REDISTRIBUTION = _liquidationPenaltyRedistribution;
     }

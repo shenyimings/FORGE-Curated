@@ -1,170 +1,26 @@
 {
     "vfp_id": "vfp_00391",
-    "project_name": "P2P.org Resolv Integration Security Audit Report.pdf",
+    "project_name": "ChainSecurity_M0_MExtensions_Audit.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 16,
             "category": {
                 "1": [
                     "CWE-435"
                 ]
             },
-            "title": "StakedTokenDistributor Immutability Breaks Claim Functionality",
-            "description": "The P2pResolvProxy contract stores the StakedTokenDistributor address as an immutable variable, which prevents it from being updated after deployment. The StakedTokenDistributor contract uses an immutable Merkle root set at deployment, which must include the claiming address. However, since the P2pResolvProxy is deployed after StakedTokenDistributor, its address cannot be included in the original Merkle root. As a result, any claim attempt via P2pResolvProxy will fail due to invalid Merkle proof verification. Furthermore, even if a new StakedTokenDistributor is deployed with an updated Merkle root, the proxy cannot point to it due to the immutability of the distributor address. This renders the airdrop claim functionality permanently unusable for clients.\nThe root cause is the combination of two immutable dependencies: the proxy's hardcoded distributor address and the distributor's fixed Merkle root. An attacker or malicious actor is not required; any legitimate user attempting to claim will be reverted. The impact is that users permanently lose access to their airdropped tokens, which are effectively locked in the StakedTokenDistributor contract with no recovery path on-chain.\n",
-            "severity": "High",
+            "title": "disableEarning() on Base MExtension Might Revert",
+            "description": "The `MExtension.disableEarning()` function reverts if earning is already disabled on the MToken. This creates a race condition where calling `stopEarning(wrapperAddr)` in the MToken contract first will prevent the wrapper's `disableEarning()` from being called. The cause is redundant validation in the wrapper. For current wrappers, this only suppresses event emission, but future extensions may rely on this event, leading to inconsistent state tracking.\n",
+            "severity": "Informational",
             "location": [
-                "P2pResolvProxy.sol"
+                "MExtension::disableEarning"
             ],
             "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 1,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "RESOLV Withdrawal Double Fee When claimEnabled is false",
-            "description": "When withdrawRESOLV() is called while claimEnabled is false, the ResolvStaking contract returns only the principal, not the rewards. However, the P2pYieldProxy calculates accruedRewards before the withdrawal using _getCurrentAssetAmount(), which includes pending rewards. This leads to a profitPortion being calculated and fees applied to rewards that were not actually withdrawn. Later, when claimEnabled is true and the user withdraws again, the same rewards are withdrawn and fees are applied a second time, resulting in a double fee on the same reward amount.\nThe root cause is the incorrect assumption that all accrued rewards are withdrawn during the call, even when claimEnabled is false. An attacker does not need to exploit this maliciously; it occurs under normal user behavior when market conditions or protocol settings disable claiming. The impact is financial loss for users due to double fee deduction on the same rewards, undermining trust in the fee model and causing accounting inconsistencies.\n",
-            "severity": "Medium",
-            "location": [
-                "P2pResolvProxy.sol::withdrawRESOLV",
-                "P2pYieldProxy.sol::_withdraw",
-                "P2pResolvProxy.sol::_getCurrentAssetAmount"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 2,
-            "category": {
-                "1": [
-                    "CWE-435"
-                ],
-                "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-437"
-                ]
-            },
-            "title": "Extra Reward Tokens from ResolvStaking Stuck in P2pResolvProxy",
-            "description": "During a RESOLV withdrawal, the ResolvStaking contract may transfer multiple reward tokens to the proxy if multiple reward tokens are configured. However, the P2pYieldProxy._withdraw() function only tracks the balance delta of the primary _asset (RESOLV) and ignores any additional ERC-20 tokens sent during the withdrawal. These extra reward tokens remain stranded in the proxy contract with no mechanism to retrieve them.\nThe root cause is the lack of handling for secondary reward tokens in the withdrawal logic. While currently only RESOLV is configured, the ResolvStaking contract allows admins to add new reward tokens via addRewardToken(). Once added, any rewards in those tokens will be sent to the proxy but never forwarded to users. The impact is that future reward tokens will be permanently locked in the proxy, leading to user fund loss and reduced protocol functionality.\n",
-            "severity": "Medium",
-            "location": [
-                "P2pResolvProxy.sol::withdrawRESOLV",
-                "P2pYieldProxy.sol::_withdraw"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 4,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "_getCurrentAssetAmount() Uses effectiveBalance Incorrectly, Causing Wrong Accrued Rewards Calculation",
-            "description": "The _getCurrentAssetAmount() function uses getUserEffectiveBalance(), which includes a time-based boost multiplier, to calculate the current asset amount. However, effectiveBalance is a virtual balance used only for reward distribution and does not represent the actual withdrawable token balance. This leads to an inflated current amount when calculating accrued rewards, as the boost multiplier is effectively counted as part of the rewards.\nThe root cause is the misuse of a boosted virtual balance in a context requiring real token balance. For example, a 2x boost on 1000 tokens results in 2000 effectiveBalance, which when added to 100 pending rewards gives 2100, leading to 1100 calculated as rewards (2100 - 1000 principal), despite only 100 actual rewards. The impact is severe miscalculation of rewards, incorrect fee application, and potential withdrawal failures or over-withdrawals.\n",
-            "severity": "Medium",
-            "location": [
-                "P2pResolvProxy.sol::_getCurrentAssetAmount"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-670"
-                ]
-            },
-            "title": "initiateWithdrawalRESOLVAccruedRewards() Withdraws Both Principal and Rewards Instead of Only Rewards",
-            "description": "The initiateWithdrawalRESOLVAccruedRewards() function calls initiateWithdrawal() on ResolvStaking, which burns stRESOLV tokens (principal) regardless of intent. This means that even when the goal is to withdraw only rewards, principal is still deducted. When withdraw() is later called, it returns both the burned principal and the claimed rewards, effectively withdrawing principal along with rewards.\nThe root cause is the misuse of a principal-withdrawing function for a rewards-only purpose. The ResolvStaking contract provides a claim() function that allows reward-only withdrawal without touching principal, which should be used instead. The impact is that users lose principal when intending to withdraw only rewards, breaking the expected behavior and leading to unintended capital loss.\n",
-            "severity": "Medium",
-            "location": [
-                "P2pResolvProxy.sol::initiateWithdrawalRESOLVAccruedRewards"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "s_totalWithdrawn Can Exceed s_totalDeposited Due to Unaccounted Airdropped Tokens or Direct Transfers",
-            "description": "The vulnerability arises because the P2pResolvProxy._getCurrentAssetAmount() function does not account for staked airdropped RESOLV tokens or stRESOLV tokens received via direct transfers. This leads to an incorrect calculation of the current asset amount, which is based only on getUserPrincipal() and pending rewards, excluding airdropped or externally transferred staked tokens. As a result, the actual contract balance can exceed the accounted balance, allowing s_totalWithdrawn to surpass s_totalDeposited, breaking a critical accounting invariant. An attacker could exploit this by airdropping and staking tokens or directly transferring stRESOLV to the proxy, then withdrawing more than their deposited principal. The impact includes inaccurate accounting, misleading analytics, and potential manipulation of withdrawal logic, although no direct fund loss occurs due to reward miscalculation since accrued rewards are zero in such cases.\n",
-            "severity": "Low",
-            "location": [
-                "P2pResolvProxy.claimStakedTokenDistributor",
-                "P2pResolvProxy._getCurrentAssetAmount",
-                "StakedTokenDistributor"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 7,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1041"
-                ]
-            },
-            "title": "Code Duplication in claimStakedTokenDistributor() Access Control",
-            "description": "The P2pResolvProxy.claimStakedTokenDistributor() function manually reimplements access control logic that is already defined in the onlyClientOrP2pOperator modifier, leading to code duplication. This duplication increases the deployed bytecode size, reduces code maintainability, and introduces a risk of inconsistency if access control rules are updated in one place but not the other. An attacker could potentially exploit future inconsistencies if the duplicated logic diverges, though no immediate security breach is possible if both implementations remain aligned. The root cause is poor code design and failure to reuse existing modifiers. The impact is primarily on code quality and long-term security maintenance rather than direct fund loss.\n",
-            "severity": "Low",
-            "location": [
-                "P2pResolvProxy.claimStakedTokenDistributor",
-                "P2pResolvProxy.onlyClientOrP2pOperator"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
-            ]
-        },
-        {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Missing Zero-Value Validation in withdrawUSR() Leads to No-Op Withdrawals",
-            "description": "The P2pResolvProxy.withdrawUSR() function does not validate that the _amount parameter is non-zero before proceeding with the withdrawal logic. This allows users to initiate zero-value withdrawals, which result in a call to IStUSR.withdraw(0). Since the underlying stUSR contract does not revert on zero amounts, the transaction succeeds silently, triggering full accounting updates and event emissions despite no actual asset transfer. This behavior pollutes monitoring metrics, creates confusion in user experience, and wastes gas. The root cause is the absence of an input validation check at the function's entry point. While no funds are lost, the impact includes degraded system observability and inefficient use of resources.\n",
-            "severity": "Low",
-            "location": [
-                "P2pResolvProxy.withdrawUSR",
-                "P2pYieldProxy._withdraw"
-            ],
-            "files": [
-                "4a986871444ef82f1db2d49421fac046f45e9c3d/p2p-lending-proxy/src/adapters/resolv/p2pResolvProxy/P2pResolvProxy.sol"
+                "evm-m-extensions/src/MExtension.sol"
             ]
         }
     ],
     "affected_files": {
-        "P2pResolvProxy.sol": "// SPDX-FileCopyrightText: 2025 P2P Validator <info@p2p.org>\n// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.30;\nimport \"../../../@resolv/IResolvStaking.sol\";\nimport \"../../../@resolv/IStUSR.sol\";\nimport \"../../../@resolv/IStakedTokenDistributor.sol\";\nimport \"../../../p2pYieldProxy/P2pYieldProxy.sol\";\nimport \"./IP2pResolvProxy.sol\";\n\nerror P2pResolvProxy__ZeroAddress_USR();\nerror P2pResolvProxy__AssetNotSupported(address _asset);\nerror P2pResolvProxy__UnauthorizedAccount(address _account);\nerror P2pResolvProxy__NotP2pOperator(address _caller);\nerror P2pResolvProxy__CallerNeitherClientNorP2pOperator(address _caller);\nerror P2pResolvProxy__ZeroAccruedRewards();\nerror P2pResolvProxy__UnsupportedAsset(address _asset);\n\ncontract P2pResolvProxy is P2pYieldProxy, IP2pResolvProxy {\n    using SafeERC20 for IERC20;\n\n    /// @dev USR address\n    address internal immutable i_USR;\n\n    /// @dev stUSR address\n    address internal immutable i_stUSR;\n\n    /// @dev RESOLV address\n    address internal immutable i_RESOLV;\n\n    /// @dev stRESOLV address\n    address internal immutable i_stRESOLV;\n\n    IStakedTokenDistributor private immutable i_stakedTokenDistributor;\n\n    /// @dev Throws if called by any account other than the P2pOperator.\n    modifier onlyP2pOperator() {\n        address p2pOperator = i_factory.getP2pOperator();\n        require (msg.sender == p2pOperator, P2pResolvProxy__NotP2pOperator(msg.sender));\n        _;\n    }\n\n    /// @dev Throws if called by any account other than client or P2pOperator.\n    modifier onlyClientOrP2pOperator() {\n        if (msg.sender != s_client) {\n            address p2pOperator = i_factory.getP2pOperator();\n            require (msg.sender == p2pOperator, P2pResolvProxy__CallerNeitherClientNorP2pOperator(msg.sender));\n        }\n        _;\n    }\n\n    /// @notice Constructor for P2pResolvProxy\n    /// @param _factory Factory address\n    /// @param _p2pTreasury P2pTreasury address\n    /// @param _allowedCalldataChecker AllowedCalldataChecker\n    /// @param _stUSR stUSR address\n    /// @param _USR USR address\n    /// @param _stRESOLV stRESOLV address\n    /// @param _RESOLV RESOLV address\n    /// @param _stakedTokenDistributor StakedTokenDistributor\n    constructor(\n        address _factory,\n        address _p2pTreasury,\n        address _allowedCalldataChecker,\n        address _stUSR,\n        address _USR,\n        address _stRESOLV,\n        address _RESOLV,\n        address _stakedTokenDistributor\n    ) P2pYieldProxy(_factory, _p2pTreasury, _allowedCalldataChecker) {\n        require(_USR != address(0), P2pResolvProxy__ZeroAddress_USR());\n        i_USR = _USR;\n\n        i_stUSR = _stUSR;\n\n        i_RESOLV = _RESOLV;\n\n        i_stRESOLV = _stRESOLV;\n\n        i_stakedTokenDistributor = IStakedTokenDistributor(_stakedTokenDistributor);\n    }\n\n    /// @inheritdoc IP2pYieldProxy\n    function deposit(address _asset, uint256 _amount) external override {\n        if (_asset == i_USR) {\n            _deposit(\n                i_stUSR,\n                abi.encodeWithSelector(IStUSR.deposit.selector, _amount),\n                i_USR,\n                _amount\n            );\n        } else if (_asset == i_RESOLV) {\n            _deposit(\n                i_stRESOLV,\n                abi.encodeWithSelector(IResolvStaking.deposit.selector, _amount, address(this)),\n                i_RESOLV,\n                _amount\n            );\n        } else {\n            revert P2pResolvProxy__AssetNotSupported(_asset);\n        }\n    }\n\n    /// @inheritdoc IP2pResolvProxy\n    function withdrawUSR(uint256 _amount)\n    external\n    onlyClient {\n        uint256 currentBalance = IERC20(i_stUSR).balanceOf(address(this));\n        if (_amount >= currentBalance || currentBalance - _amount <= 1) {\n            _withdraw(\n                i_stUSR,\n                i_USR,\n                abi.encodeCall(IStUSR.withdrawAll, ())\n            );\n            return;\n        }\n        _withdraw(\n            i_stUSR,\n            i_USR,\n            abi.encodeWithSelector(IStUSR.withdraw.selector, _amount)\n        );\n    }\n\n    function withdrawUSRAccruedRewards()\n    external\n    onlyP2pOperator {\n        int256 amount = calculateAccruedRewardsUSR();\n        require (amount > 0, P2pResolvProxy__ZeroAccruedRewards());\n        _withdraw(\n            i_stUSR,\n            i_USR,\n            abi.encodeWithSelector(IStUSR.withdraw.selector, amount)\n        );\n    }\n\n    /// @inheritdoc IP2pResolvProxy\n    function withdrawAllUSR()\n    external\n    onlyClient {\n        _withdraw(\n            i_stUSR,\n            i_USR,\n            abi.encodeCall(IStUSR.withdrawAll, ())\n        );\n    }\n\n    /// @inheritdoc IP2pResolvProxy\n    function initiateWithdrawalRESOLV(uint256 _amount)\n    external\n    onlyClient {\n        return IResolvStaking(i_stRESOLV).initiateWithdrawal(_amount);\n    }\n\n    function initiateWithdrawalRESOLVAccruedRewards()\n    external\n    onlyP2pOperator {\n        int256 amount = calculateAccruedRewardsRESOLV();\n        require (amount > 0, P2pResolvProxy__ZeroAccruedRewards());\n        return IResolvStaking(i_stRESOLV).initiateWithdrawal(uint256(amount));\n    }\n\n    /// @inheritdoc IP2pResolvProxy\n    function withdrawRESOLV()\n    external\n    onlyClientOrP2pOperator {\n        bool isEnabled = IResolvStaking(i_stRESOLV).claimEnabled();\n\n        _withdraw(\n            i_stRESOLV,\n            i_RESOLV,\n            abi.encodeWithSelector(IResolvStaking.withdraw.selector, isEnabled, address(this))\n        );\n    }\n\n    /// @inheritdoc IP2pResolvProxy\n    function claimStakedTokenDistributor(\n        uint256 _index,\n        uint256 _amount,\n        bytes32[] calldata _merkleProof\n    )\n    external\n    nonReentrant\n    {\n        if (msg.sender != s_client) {\n            address p2pOperator = i_factory.getP2pOperator();\n            require(\n                msg.sender == p2pOperator,\n                P2pResolvProxy__UnauthorizedAccount(msg.sender)\n            );\n        }\n\n        // claim _reward token from StakedTokenDistributor\n        i_stakedTokenDistributor.claim(_index, _amount, _merkleProof);\n\n        emit P2pResolvProxy__Claimed(_amount);\n    }\n\n    function getUserPrincipalUSR() public view returns(uint256) {\n        return getUserPrincipal(i_USR);\n    }\n\n    function getUserPrincipalRESOLV() public view returns(uint256) {\n        return getUserPrincipal(i_RESOLV);\n    }\n\n    function calculateAccruedRewardsUSR() public view returns(int256) {\n        return calculateAccruedRewards(i_stUSR,i_USR);\n    }\n\n    function calculateAccruedRewardsRESOLV() public view returns(int256) {\n        return calculateAccruedRewards(i_stRESOLV,i_RESOLV);\n    }\n\n    function getLastFeeCollectionTimeUSR() public view returns(uint48) {\n        return getLastFeeCollectionTime(i_USR);\n    }\n\n    function getLastFeeCollectionTimeRESOLV() public view returns(uint48) {\n        return getLastFeeCollectionTime(i_RESOLV);\n    }\n\n    function _getCurrentAssetAmount(address _yieldProtocolAddress, address _asset) internal view override returns (uint256) {\n        if (_asset == i_RESOLV) {\n            uint256 pendingClaimable = IResolvStaking(_yieldProtocolAddress).getUserClaimableAmounts(address(this), i_RESOLV);\n            return getUserPrincipal(_asset) + pendingClaimable;\n        }\n\n        if (_asset == i_USR) {\n            return IERC20(_yieldProtocolAddress).balanceOf(address(this));\n        }\n\n        revert P2pResolvProxy__UnsupportedAsset(_asset);\n    }\n\n    /// @inheritdoc ERC165\n    function supportsInterface(bytes4 interfaceId) public view virtual override(P2pYieldProxy) returns (bool) {\n        return interfaceId == type(IP2pResolvProxy).interfaceId ||\n            super.supportsInterface(interfaceId);\n    }\n}\n"
+        "MExtension.sol": "// SPDX-License-Identifier: BUSL-1.1\n\npragma solidity 0.8.26;\n\nimport { ERC20ExtendedUpgradeable } from \"../lib/common/src/ERC20ExtendedUpgradeable.sol\";\n\nimport { IERC20 } from \"../lib/common/src/interfaces/IERC20.sol\";\n\nimport { IMTokenLike } from \"./interfaces/IMTokenLike.sol\";\nimport { IMExtension } from \"./interfaces/IMExtension.sol\";\nimport { ISwapFacility } from \"./swap/interfaces/ISwapFacility.sol\";\n\nabstract contract MExtensionStorageLayout {\n    /// @custom:storage-location erc7201:M0.storage.MExtension\n    struct MExtensionStorageStruct {\n        address mToken;\n        address swapFacility;\n    }\n\n    // keccak256(abi.encode(uint256(keccak256(\"M0.storage.MExtension\")) - 1)) & ~bytes32(uint256(0xff))\n    bytes32 private constant _M_EXTENSION_STORAGE_LOCATION =\n        0x4349758e51eb6c8ee9931b1f5b23d0b7b59124948c3d3d99ca2166d742d63d00;\n\n    function _getMExtensionStorageLocation() internal pure returns (MExtensionStorageStruct storage $) {\n        assembly {\n            $.slot := _M_EXTENSION_STORAGE_LOCATION\n        }\n    }\n}\n\n/**\n * @title MExtension\n * @notice Upgradeable ERC20 Token contract for wrapping M into a non-rebasing token.\n * @author M0 Labs\n */\nabstract contract MExtension is IMExtension, MExtensionStorageLayout, ERC20ExtendedUpgradeable {\n    /* ============ Modifiers ============ */\n\n    /// @dev Modifier to check if caller is SwapFacility.\n    modifier onlySwapFacility() {\n        if (msg.sender != swapFacility()) revert NotSwapFacility();\n        _;\n    }\n\n    /* ============ Initializer ============ */\n\n    /**\n     * @notice Initializes the generic M extension token.\n     * @param name          The name of the token (e.g. \"HALO USD\").\n     * @param symbol        The symbol of the token (e.g. \"HUSD\").\n     * @param mToken_       The address of the M Token.\n     * @param swapFacility_ The address of the Swap Facility.\n     */\n    function __MExtension_init(\n        string memory name,\n        string memory symbol,\n        address mToken_,\n        address swapFacility_\n    ) internal onlyInitializing {\n        MExtensionStorageStruct storage $ = _getMExtensionStorageLocation();\n\n        if (($.mToken = mToken_) == address(0)) revert ZeroMToken();\n        if (($.swapFacility = swapFacility_) == address(0)) revert ZeroSwapFacility();\n\n        __ERC20ExtendedUpgradeable_init(name, symbol, 6);\n    }\n\n    /* ============ Interactive Functions ============ */\n\n    /// @inheritdoc IMExtension\n    function wrap(address recipient, uint256 amount) external onlySwapFacility {\n        // NOTE: `msg.sender` is always SwapFacility contract.\n        //       `swapFacility().msgSender()` is used to ensure that the original caller is passed to `_beforeWrap`.\n        _wrap(ISwapFacility(swapFacility()).msgSender(), recipient, amount);\n    }\n\n    /// @inheritdoc IMExtension\n    function unwrap(address /* recipient */, uint256 amount) external onlySwapFacility {\n        // NOTE: `msg.sender` is always SwapFacility contract.\n        //       `swapFacility().msgSender()` is used to ensure that the original caller is passed to `_beforeWrap`.\n        // NOTE: `recipient` is not used in this function as the $M is always sent to SwapFacility contract.\n        _unwrap(ISwapFacility(swapFacility()).msgSender(), amount);\n    }\n\n    /// @inheritdoc IMExtension\n    function enableEarning() external virtual {\n        if (isEarningEnabled()) revert EarningIsEnabled();\n\n        emit EarningEnabled(currentIndex());\n\n        IMTokenLike(mToken()).startEarning();\n    }\n\n    /// @inheritdoc IMExtension\n    function disableEarning() external virtual {\n        if (!isEarningEnabled()) revert EarningIsDisabled();\n\n        emit EarningDisabled(currentIndex());\n\n        IMTokenLike(mToken()).stopEarning(address(this));\n    }\n\n    /* ============ View/Pure Functions ============ */\n\n    /// @inheritdoc IMExtension\n    function currentIndex() public view virtual returns (uint128) {\n        return IMTokenLike(mToken()).currentIndex();\n    }\n\n    /// @inheritdoc IMExtension\n    function isEarningEnabled() public view virtual returns (bool) {\n        return IMTokenLike(mToken()).isEarning(address(this));\n    }\n\n    /// @inheritdoc IMExtension\n    function mToken() public view returns (address) {\n        return _getMExtensionStorageLocation().mToken;\n    }\n\n    /// @inheritdoc IMExtension\n    function swapFacility() public view returns (address) {\n        return _getMExtensionStorageLocation().swapFacility;\n    }\n\n    /// @inheritdoc IERC20\n    function balanceOf(address account) public view virtual returns (uint256);\n\n    /* ============ Hooks For Internal Interactive Functions ============ */\n\n    /**\n     * @dev   Hook called before approval of M Extension token.\n     * @param account   The sender's address.\n     * @param spender   The spender address.\n     * @param amount    The amount to be approved.\n     */\n    function _beforeApprove(address account, address spender, uint256 amount) internal virtual {}\n\n    /**\n     * @dev    Hook called before wrapping M into M Extension token.\n     * @param  account   The account from which M is deposited.\n     * @param  recipient The account receiving the minted M Extension token.\n     * @param  amount    The amount of M deposited.\n     */\n    function _beforeWrap(address account, address recipient, uint256 amount) internal virtual {}\n\n    /**\n     * @dev   Hook called before unwrapping M Extension token.\n     * @param account   The account from which M Extension token is burned.\n     * @param amount    The amount of M Extension token burned.\n     */\n    function _beforeUnwrap(address account, uint256 amount) internal virtual {}\n\n    /**\n     * @dev   Hook called before transferring M Extension token.\n     * @param sender    The sender's address.\n     * @param recipient The recipient's address.\n     * @param amount    The amount to be transferred.\n     */\n    function _beforeTransfer(address sender, address recipient, uint256 amount) internal virtual {}\n\n    /* ============ Internal Interactive Functions ============ */\n\n    /**\n     * @dev Approve `spender` to spend `amount` of tokens from `account`.\n     * @param account The address approving the allowance.\n     * @param spender The address approved to spend the tokens.\n     * @param amount  The amount of tokens being approved for spending.\n     */\n    function _approve(address account, address spender, uint256 amount) internal override {\n        // NOTE: Add extension-specific checks before approval.\n        _beforeApprove(account, spender, amount);\n\n        super._approve(account, spender, amount);\n    }\n\n    /**\n     * @dev    Wraps `amount` M from `account` into M Extension for `recipient`.\n     * @param  account   The original caller of SwapFacility functions.\n     * @param  recipient The account receiving the minted M Extension token.\n     * @param  amount    The amount of M deposited.\n     */\n    function _wrap(address account, address recipient, uint256 amount) internal {\n        _revertIfInvalidRecipient(recipient);\n        _revertIfInsufficientAmount(amount);\n\n        // NOTE: Add extension-specific checks before wrapping.\n        _beforeWrap(account, recipient, amount);\n\n        // NOTE: Always transfer from SwapFacility as it is the only contract that can call this function.\n        // NOTE: The behavior of `IMTokenLike.transferFrom` is known, so its return can be ignored.\n        IMTokenLike(mToken()).transferFrom(swapFacility(), address(this), amount);\n\n        // NOTE: Mints precise amount of $M Extension token to `recipient`.\n        //       Option 1: $M transfer from an $M earner to another $M earner ($M Extension in earning state): rounds up → rounds up,\n        //                 0, 1, or XX extra wei may be locked in M Extension compared to the minted amount of $M Extension token.\n        //       Option 2: $M transfer from an $M non-earner to an $M earner ($M Extension in earning state): precise $M transfer → rounds down,\n        //                 0, -1, or -XX wei may be locked in $M Extension compared to the minted amount of $M Extension token.\n        //\n        // This method will be overridden by the inheriting M Extension contract.\n        _mint(recipient, amount);\n    }\n\n    /**\n     * @dev    Unwraps `amount` M Extension token from `account` into $M and transfers to SwapFacility.\n     * @param  account   The original caller of SwapFacility functions.\n     * @param  amount    The amount of M Extension token burned.\n     */\n    function _unwrap(address account, uint256 amount) internal {\n        _revertIfInsufficientAmount(amount);\n\n        // NOTE: Add extension-specific checks before unwrapping.\n        _beforeUnwrap(account, amount);\n\n        _revertIfInsufficientBalance(account, balanceOf(account), amount);\n\n        // NOTE: The behavior of `IMTokenLike.transfer` is known, so its return can be ignored.\n        // NOTE: Computes the actual decrease in the $M balance of the $M Extension contract.\n        //       Option 1: $M transfer from an $M earner ($M Extension in earning state) to another $M earner: round up → rounds up.\n        //       Option 2: $M transfer from an $M earner ($M Extension in earning state) to an $M non-earner: round up → precise $M transfer.\n        //       In both cases, 0, 1, or XX extra wei may be deducted from the $M Extension contract's $M balance compared to the burned amount of $M Extension token.\n        //\n        // This method will be overridden by the inheriting M Extension contract.\n        _burn(account, amount);\n\n        // NOTE: The behavior of `IMTokenLike.transfer` is known, so its return can be ignored.\n        IMTokenLike(mToken()).transfer(swapFacility(), amount);\n    }\n\n    /**\n     * @dev Mints `amount` tokens to `recipient`.\n     * @param recipient The address to which the tokens will be minted.\n     * @param amount    The amount of tokens to mint.\n     */\n    function _mint(address recipient, uint256 amount) internal virtual;\n\n    /**\n     * @dev Burns `amount` tokens from `account`.\n     * @param account The address from which the tokens will be burned.\n     * @param amount  The amount of tokens to burn.\n     */\n    function _burn(address account, uint256 amount) internal virtual;\n\n    /**\n     * @dev   Internal ERC20 transfer function that needs to be implemented by the inheriting contract.\n     * @param sender    The sender's address.\n     * @param recipient The recipient's address.\n     * @param amount    The amount to be transferred.\n     */\n    function _update(address sender, address recipient, uint256 amount) internal virtual;\n\n    /**\n     * @dev   Internal ERC20 transfer function that needs to be implemented by the inheriting contract.\n     * @param sender    The sender's address.\n     * @param recipient The recipient's address.\n     * @param amount    The amount to be transferred.\n     */\n    function _transfer(address sender, address recipient, uint256 amount) internal override {\n        _revertIfInvalidRecipient(recipient);\n\n        // NOTE: Add extension-specific checks before transfers.\n        _beforeTransfer(sender, recipient, amount);\n\n        emit Transfer(sender, recipient, amount);\n\n        if (amount == 0) return;\n\n        _revertIfInsufficientBalance(sender, balanceOf(sender), amount);\n\n        // NOTE: This method will be overridden by the inheriting M Extension contract.\n        _update(sender, recipient, amount);\n    }\n\n    /* ============ Internal View/Pure Functions ============ */\n\n    /**\n     * @dev    Returns the M Token balance of `account`.\n     * @param  account The account being queried.\n     * @return balance The M Token balance of the account.\n     */\n    function _mBalanceOf(address account) internal view returns (uint256) {\n        return IMTokenLike(mToken()).balanceOf(account);\n    }\n\n    /**\n     * @dev   Reverts if `recipient` is address(0).\n     * @param recipient Address of a recipient.\n     */\n    function _revertIfInvalidRecipient(address recipient) internal pure {\n        if (recipient == address(0)) revert InvalidRecipient(recipient);\n    }\n\n    /**\n     * @dev   Reverts if `amount` is equal to 0.\n     * @param amount Amount of token.\n     */\n    function _revertIfInsufficientAmount(uint256 amount) internal pure {\n        if (amount == 0) revert InsufficientAmount(amount);\n    }\n\n    /**\n     * @dev   Reverts if `account` balance is below `balance`.\n     * @param account Address of an account.\n     * @param balance Balance of an account.\n     * @param amount Amount to transfer or burn.\n     */\n    function _revertIfInsufficientBalance(address account, uint256 balance, uint256 amount) internal pure {\n        if (balance < amount) revert InsufficientBalance(account, balance, amount);\n    }\n}\n"
     }
 }

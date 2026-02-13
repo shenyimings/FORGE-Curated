@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.24;
+pragma solidity 0.8.18;
 
 struct LatestBatchData {
-    uint256 totalDebtShares;
     uint256 entireDebtWithoutRedistribution;
     uint256 entireCollWithoutRedistribution;
     uint256 accruedInterest;

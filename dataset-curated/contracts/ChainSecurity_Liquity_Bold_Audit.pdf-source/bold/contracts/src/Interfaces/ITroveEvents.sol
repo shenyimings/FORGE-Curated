@@ -31,12 +31,7 @@ interface ITroveEvents {
     );
 
     event Redemption(
-        uint256 _attemptedBoldAmount,
-        uint256 _actualBoldAmount,
-        uint256 _ETHSent,
-        uint256 _ETHFee,
-        uint256 _price,
-        uint256 _redemptionPrice
+        uint256 _attemptedBoldAmount, uint256 _actualBoldAmount, uint256 _ETHSent, uint256 _ETHFee, uint256 _price
     );
 
     // A snapshot of the Trove's latest state on-chain
@@ -84,8 +79,7 @@ interface ITroveEvents {
         uint256 _coll,
         uint256 _annualInterestRate,
         uint256 _annualManagementFee,
-        uint256 _totalDebtShares,
-        uint256 _debtIncreaseFromUpfrontFee
+        uint256 _totalDebtShares
     );
 
     event BatchedTroveUpdated(
