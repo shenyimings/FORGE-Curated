@@ -266,6 +266,10 @@ We utilize **CWE (Common Weakness Enumeration)** because it is a globally recogn
 
 Refer to the [scripts/](scripts/) directory for examples on how to load and process the data.
 
+> [!TIP]
+>
+> Previous evaluation datasets may suffer from data leakage issues, meaning LLMs have already been trained on similar datasets. Therefore, these results could be distorted and cannot accurately reflect LLM's true capabilities. In contrast, our FORGE Curated dataset is sourced from new audit reports from the past year, making data leakage issues insignificant for LLMs released before 2026.
+
 ### Q: How should I evaluate using CWE types?
 
 **A:** Due to the large scale and complexity of the CWE hierarchy, we suggest different evaluation methods based on your goal:
