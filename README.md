@@ -3,7 +3,6 @@
 [![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b)](http://arxiv.org/abs/2506.18795)
 ![Visitors](https://visitor-badge.laobi.icu/badge?page_id=shenyimings.FORGE-Curated)
 
-
 **FORGE Curated** is a high-quality subset of the [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts), specifically designed to support advanced research in smart contract security, including AI-based auditing, vulnerability analysis, etc.
 
 Building upon feedback from users of the original [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts) and fulfilling our commitment to responsible maintenance outlined in our [ICSE'26 paper](https://arxiv.org/abs/2506.18795), we have compiled a new collection of audit reports. This dataset includes reports published between **December 2024 and February 2026** by **[11 top-tier audit teams](dataset-curated/reports/README.md)**.
@@ -19,12 +18,12 @@ The repository is organized as follows:
 ```text
 FORGE-Curated/
 ├── dataset-curated/            # Core curated dataset
-│   ├── contracts/              # Source code associated with reports
-│   ├── contracts-raw/          # Raw contract data
+│   ├── contracts/              # Source code with only *.sol files
+│   ├── contracts-raw/          # Raw project source code with .git information
 │   ├── findings/               # Extracted vulnerability findings (JSON)
 │   ├── findings-without-source/# Findings where source code could not be resolved
 │   └── reports/                # Original PDF audit reports
-├── flatten/                    # Flattened datasets with findings and source code in single files
+├── flatten/                    # Flattened datasets with findings and source code in single .JSON files
 │   ├── vfp/                    # Vulnerability-File Pairs (All)
 │   └── vfp-vuln/               # Vulnerability-File Pairs (Higher severity only)
 ├── LICENSE
@@ -268,7 +267,7 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 
 > [!TIP]
 >
-> Previous evaluation datasets may suffer from data leakage issues, meaning LLMs have already been trained on similar datasets. Therefore, these results could be distorted and cannot accurately reflect LLM's true capabilities. In contrast, our FORGE Curated dataset is sourced from new audit reports from the past year, making data leakage issues insignificant for LLMs released before 2026.
+> Previous evaluation datasets may suffer from **data leakage** issues, meaning LLMs have already been trained on similar datasets. Therefore, these results could be distorted and cannot accurately reflect LLM's true capabilities. In contrast, our FORGE Curated dataset is sourced from new audit reports from the past year, making data leakage issues insignificant for LLMs released before 2026.
 
 ### Q: How should I evaluate using CWE types?
 
@@ -286,10 +285,10 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 
 **A:** You can filter by the **Severity** field or specific **CWE types** (e.g., CWE-710).
 
-* We provide a filtered example in the `flatten/vfp-vuln` directory, which retains only vulnerabilities with **Medium** severity and above(Medium, High, and Critical).
+* We provide a filtered example in the [flatten/vfp-vuln](flatten/vfp-vuln) directory, which retains only vulnerabilities with **Medium** severity and above(Medium, High, and Critical).
 
 > [!NOTE] 
-> While categories like `CWE-710` (Code Quality) often contain non-exploitable issues (e.g., `CWE-1041`, `CWE-1164`), some sub-types like `CWE-657` (Violation of Secure Design Principles) can be high-severity. Always cross-reference with the finding title and description.
+> While pillar categories like `CWE-710` (Improper Adherence to Coding Standards) often contain non-exploitable issues (e.g., `CWE-1041`, `CWE-1164`), some sub-types like `CWE-657` (Violation of Secure Design Principles) can still be high-severity. Always cross-reference with the finding title and description.
 
 ### Q: Are there similar datasets for other ecosystems?
 
