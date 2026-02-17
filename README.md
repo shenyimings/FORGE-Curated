@@ -1,7 +1,9 @@
 # FORGE Curated: A Curated EVM Smart Contracts Vulnerability Dataset
 
 [![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b)](http://arxiv.org/abs/2506.18795)
+[![Dataset](https://img.shields.io/badge/Dataset-blue)](dataset-curated)
 ![Visitors](https://visitor-badge.laobi.icu/badge?page_id=shenyimings.FORGE-Curated)
+
 
 **FORGE Curated** is a high-quality subset of the [FORGE dataset](https://github.com/shenyimings/FORGE-Artifacts), specifically designed to support advanced research in smart contract security, including AI-based auditing, vulnerability analysis, etc.
 
