@@ -9,32 +9,37 @@ import { PriceOracleStorageUtils } from "../storage/PriceOracleStorageUtils.sol"
 /// @title Oracle for fetching prices
 /// @author kexley, @capLabs
 /// @dev Payloads are stored on this contract and calculation logic is hosted on external libraries
-abstract contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {
+contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {
     /// @dev Initialize the price oracle
     /// @param _accessControl Access control address
-    function __PriceOracle_init(address _accessControl) internal onlyInitializing {
+    /// @param _staleness Staleness period in seconds for asset prices
+    function __PriceOracle_init(address _accessControl, uint256 _staleness) internal onlyInitializing {
         __Access_init(_accessControl);
-        __PriceOracle_init_unchained();
+        __PriceOracle_init_unchained(_staleness);
     }
 
     /// @dev Initialize unchained
-    function __PriceOracle_init_unchained() internal onlyInitializing { }
+    /// @param _staleness Staleness period in seconds for asset prices
+    function __PriceOracle_init_unchained(uint256 _staleness) internal onlyInitializing {
+        getPriceOracleStorage().staleness = _staleness;
+    }
 
     /// @notice Fetch the price for an asset
-    /// @dev If initial price fetch fails then a backup source is used
+    /// @dev If initial price fetch fails or is stale then a backup source is used, reverts if both fail
     /// @param _asset Asset address
     /// @return price Price of the asset
+    /// @return lastUpdated Latest timestamp of the price
     function getPrice(address _asset) external view returns (uint256 price, uint256 lastUpdated) {
         PriceOracleStorage storage $ = getPriceOracleStorage();
         IOracle.OracleData memory data = $.oracleData[_asset];
 
         (price, lastUpdated) = _getPrice(data.adapter, data.payload);
 
-        if (price == 0 || _isStale(_asset, lastUpdated)) {
+        if (price == 0 || _isStale(lastUpdated)) {
             data = $.backupOracleData[_asset];
             (price, lastUpdated) = _getPrice(data.adapter, data.payload);
 
-            if (price == 0 || _isStale(_asset, lastUpdated)) revert PriceError(_asset);
+            if (_isStale(lastUpdated)) revert StalePrice(lastUpdated);
         }
     }
 
@@ -53,10 +58,9 @@ abstract contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {
     }
 
     /// @notice View the staleness period for asset prices
-    /// @param _asset Asset address
-    /// @return assetStaleness Staleness period in seconds for asset prices
-    function staleness(address _asset) external view returns (uint256 assetStaleness) {
-        assetStaleness = getPriceOracleStorage().staleness[_asset];
+    /// @return stalenessPeriod Staleness period in seconds for asset prices
+    function staleness() external view returns (uint256 stalenessPeriod) {
+        stalenessPeriod = getPriceOracleStorage().staleness;
     }
 
     /// @notice Set a price source for an asset
@@ -82,18 +86,16 @@ abstract contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {
     }
 
     /// @notice Set the staleness period for asset prices
-    /// @param _asset Asset address
     /// @param _staleness Staleness period in seconds for asset prices
-    function setStaleness(address _asset, uint256 _staleness) external checkAccess(this.setStaleness.selector) {
-        getPriceOracleStorage().staleness[_asset] = _staleness;
-        emit SetStaleness(_asset, _staleness);
+    function setStaleness(uint256 _staleness) external checkAccess(this.setStaleness.selector) {
+        getPriceOracleStorage().staleness = _staleness;
+        emit SetStaleness(_staleness);
     }
 
     /// @dev Calculate price using an adapter and payload but do not revert on errors
     /// @param _adapter Adapter for calculation logic
     /// @param _payload Encoded call to adapter with all required data
     /// @return price Calculated price
-    /// @return lastUpdated Last updated timestamp
     function _getPrice(address _adapter, bytes memory _payload)
         private
         view
@@ -104,10 +106,9 @@ abstract contract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {
     }
 
     /// @dev Check if a price is stale
-    /// @param _asset Asset address
     /// @param _lastUpdated Last updated timestamp
     /// @return isStale True if the price is stale
-    function _isStale(address _asset, uint256 _lastUpdated) internal view returns (bool isStale) {
-        isStale = block.timestamp - _lastUpdated > getPriceOracleStorage().staleness[_asset];
+    function _isStale(uint256 _lastUpdated) internal view returns (bool isStale) {
+        isStale = block.timestamp - _lastUpdated > getPriceOracleStorage().staleness;
     }
 }

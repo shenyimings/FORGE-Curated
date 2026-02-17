@@ -18,29 +18,6 @@ contract RandomActorUtils is StdUtils, StdCheats {
         return actors[bound(actorIndexSeed, 0, actors.length - 1)];
     }
 
-    function randomActor(address[] memory _actors, uint256 actorIndexSeed) public pure returns (address) {
-        return _actors[bound(actorIndexSeed, 0, _actors.length - 1)];
-    }
-
-    function randomActor(uint256 actorIndexSeed, address actor1, address actor2) public pure returns (address) {
-        address[] memory _actors = new address[](2);
-        _actors[0] = actor1;
-        _actors[1] = actor2;
-        return randomActor(_actors, actorIndexSeed);
-    }
-
-    function randomActor(uint256 actorIndexSeed, address actor1, address actor2, address actor3)
-        public
-        pure
-        returns (address)
-    {
-        address[] memory _actors = new address[](3);
-        _actors[0] = actor1;
-        _actors[1] = actor2;
-        _actors[2] = actor3;
-        return randomActor(_actors, actorIndexSeed);
-    }
-
     function randomActorExcept(uint256 actorIndexSeed, address except) public view returns (address) {
         address[] memory filteredActors = new address[](actors.length - 1);
         uint256 index = 0;

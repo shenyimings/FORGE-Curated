@@ -36,7 +36,6 @@ contract DeployTestUsers is Test {
         users.delegation_admin = makeAddr("user_delegation_admin");
         users.middleware_admin = makeAddr("user_middleware_admin");
         users.staker_rewards_admin = makeAddr("user_staker_rewards_admin");
-        users.insurance_fund = makeAddr("insurance_fund");
         vm.deal(users.deployer, 100 ether);
         vm.deal(users.access_control_admin, 100 ether);
         vm.deal(users.address_provider_admin, 100 ether);
@@ -48,6 +47,5 @@ contract DeployTestUsers is Test {
         vm.deal(users.delegation_admin, 100 ether);
         vm.deal(users.middleware_admin, 100 ether);
         vm.deal(users.staker_rewards_admin, 100 ether);
-        vm.deal(users.insurance_fund, 100 ether);
     }
 }

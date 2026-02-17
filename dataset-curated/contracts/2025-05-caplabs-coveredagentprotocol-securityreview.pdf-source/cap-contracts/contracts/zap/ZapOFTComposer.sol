@@ -5,6 +5,8 @@ import { IZapRouter } from "../interfaces/IZapRouter.sol";
 
 import { IZapOFTComposer } from "../interfaces/IZapOFTComposer.sol";
 import { SafeOFTLzComposer } from "./SafeOFTLzComposer.sol";
+import { IOAppCore } from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import { IOFT } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import { OFTComposeMsgCodec } from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -23,10 +25,9 @@ contract ZapOFTComposer is SafeOFTLzComposer {
     address public immutable zapTokenManager;
 
     /// @notice Constructs the contract.
-    /// @param _endpoint The address of the LayerZero endpoint.
+    /// @dev Initializes the contract.
     /// @param _oApp The address of the OApp that is sending the composed message.
     /// @param _zapRouter The address of the ZapRouter to use for Zap capabilities.
-    /// @param _zapTokenManager The address of the ZapTokenManager to use for token permissions.
     constructor(address _endpoint, address _oApp, address _zapRouter, address _zapTokenManager)
         SafeOFTLzComposer(_oApp, _endpoint)
     {
@@ -49,7 +50,7 @@ contract ZapOFTComposer is SafeOFTLzComposer {
         for (uint256 i = 0; i < inputLength; i++) {
             IZapRouter.Input memory input = inputs[i];
             if (input.amount > 0) {
-                IERC20(input.token).forceApprove(zapTokenManager, input.amount);
+                IERC20(input.token).approve(zapTokenManager, input.amount);
             }
         }
 

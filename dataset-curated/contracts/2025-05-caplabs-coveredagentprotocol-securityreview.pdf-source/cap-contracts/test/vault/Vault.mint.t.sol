@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import { TestDeployer } from "../deploy/TestDeployer.sol";
 import { MockChainlinkPriceFeed } from "../mocks/MockChainlinkPriceFeed.sol";
-import { MockERC20 } from "../mocks/MockERC20.sol";
 
 contract VaultMintTest is TestDeployer {
     address user;
@@ -23,7 +22,7 @@ contract VaultMintTest is TestDeployer {
 
         // Mint cUSD with USDT
         uint256 amountIn = 100e6;
-        uint256 minAmountOut = 95e18; // Accounting for potential fees
+        uint256 minAmountOut = 95e6; // Accounting for potential fees
         uint256 deadline = block.timestamp + 1 hours;
 
         cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
@@ -46,7 +45,7 @@ contract VaultMintTest is TestDeployer {
 
         // Mint cUSD with USDT
         uint256 amountIn = 100e6;
-        uint256 minAmountOut = 90e18;
+        uint256 minAmountOut = 90e6;
         uint256 deadline = block.timestamp + 1 hours;
 
         cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
@@ -67,75 +66,9 @@ contract VaultMintTest is TestDeployer {
 
         // Mint cUSD with USDT
         uint256 amountIn = 100e6;
-        uint256 minAmountOut = 95e18; // Accounting for potential fees
+        uint256 minAmountOut = 95e6; // Accounting for potential fees
         uint256 deadline = block.timestamp + 1 hours;
 
         cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
-    }
-
-    function test_mint_with_invalid_asset() public {
-        vm.startPrank(user);
-
-        MockERC20 invalidAsset = new MockERC20("Invalid", "INV", 18);
-        // Approve USDT spending
-        invalidAsset.mint(user, 100e6);
-        invalidAsset.approve(address(cUSD), 100e6);
-
-        // Mint cUSD with USDT
-        uint256 amountIn = 100e6;
-        uint256 minAmountOut = 95e18; // Accounting for potential fees
-        uint256 deadline = block.timestamp + 1 hours;
-
-        vm.expectRevert();
-        cUSD.mint(address(invalidAsset), amountIn, minAmountOut, user, deadline);
-    }
-
-    function test_mint_with_invalid_min_amount() public {
-        vm.startPrank(user);
-
-        // Approve USDT spending
-        usdt.mint(user, 100e6);
-        usdt.approve(address(cUSD), 100e6);
-
-        // Mint cUSD with USDT
-        uint256 amountIn = 100e6;
-        uint256 minAmountOut = 105e18; // Accounting for potential fees
-        uint256 deadline = block.timestamp + 1 hours;
-
-        vm.expectRevert();
-        cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
-    }
-
-    function test_mint_with_invalid_deadline() public {
-        vm.startPrank(user);
-
-        // Approve USDT spending
-        usdt.mint(user, 100e6);
-        usdt.approve(address(cUSD), 100e6);
-
-        // Mint cUSD with USDT
-        uint256 amountIn = 100e6;
-        uint256 minAmountOut = 95e18; // Accounting for potential fees
-        uint256 deadline = block.timestamp - 1 hours;
-
-        vm.expectRevert();
-        cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
-    }
-
-    function test_mint_with_one_wei() public {
-        vm.startPrank(user);
-
-        // Approve USDT spending
-        usdt.mint(user, 100e6);
-        usdt.approve(address(cUSD), 100e6);
-
-        // Mint cUSD with USDT
-        uint256 amountIn = 1;
-        uint256 minAmountOut = 0.995e12; // Accounting for potential fees
-        uint256 deadline = block.timestamp + 1 hours;
-
-        cUSD.mint(address(usdt), amountIn, minAmountOut, user, deadline);
-        // We have .5% less because of fees
-        assertEq(cUSD.balanceOf(user), 0.995e12);
     }
 }

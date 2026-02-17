@@ -15,7 +15,9 @@ struct ImplementationsConfig {
     address capToken;
     address stakedCap;
     address oracle;
-    address debtToken;
+    address principalDebtToken;
+    address interestDebtToken;
+    address restakerDebtToken;
     address feeAuction;
 }
 
@@ -47,7 +49,6 @@ struct UsersConfig {
     address vault_config_admin;
     address middleware_admin;
     address staker_rewards_admin;
-    address insurance_fund;
 }
 
 struct VaultConfig {
@@ -57,7 +58,9 @@ struct VaultConfig {
     address restakerInterestReceiver;
     VaultLzPeriphery lzperiphery;
     address[] assets;
-    address[] debtTokens;
+    address[] principalDebtTokens;
+    address[] restakerDebtTokens;
+    address[] interestDebtTokens;
 }
 
 struct VaultLzPeriphery {
@@ -68,7 +71,6 @@ struct VaultLzPeriphery {
 }
 
 struct FeeConfig {
-    uint256 minMintFee;
     uint256 slope0;
     uint256 slope1;
     uint256 mintKinkRatio;

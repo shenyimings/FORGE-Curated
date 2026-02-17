@@ -16,9 +16,6 @@ interface IStakedCap {
     /// @dev Emitted when the yield is notified
     event Notify(address indexed caller, uint256 amount);
 
-    /// @dev Notify is not allowed when the yield is still vesting
-    error StillVesting();
-
     /// @notice Initialize the staked cap token by matching the name and symbol of the underlying
     /// @param _accessControl Address of the access control
     /// @param _asset Address of the cap token

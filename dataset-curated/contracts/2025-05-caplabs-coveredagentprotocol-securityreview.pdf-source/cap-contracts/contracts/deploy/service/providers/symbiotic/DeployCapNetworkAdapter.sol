@@ -14,11 +14,13 @@ import {
     SymbioticVaultConfig
 } from "../../../interfaces/SymbioticsDeployConfigs.sol";
 import { ProxyUtils } from "../../../utils/ProxyUtils.sol";
-import { SymbioticAddressbook } from "../../../utils/SymbioticUtils.sol";
+import { SymbioticAddressbook, SymbioticUtils } from "../../../utils/SymbioticUtils.sol";
 
 import { IBurnerRouter } from "@symbioticfi/burners/src/interfaces/router/IBurnerRouter.sol";
 
+import { INetworkRegistry } from "@symbioticfi/core/src/interfaces/INetworkRegistry.sol";
 import { IOperatorRegistry } from "@symbioticfi/core/src/interfaces/IOperatorRegistry.sol";
+import { INetworkMiddlewareService } from "@symbioticfi/core/src/interfaces/service/INetworkMiddlewareService.sol";
 import { IDefaultStakerRewards } from
     "@symbioticfi/rewards/src/interfaces/defaultStakerRewards/IDefaultStakerRewards.sol";
 import { IDefaultStakerRewardsFactory } from
@@ -83,7 +85,6 @@ contract DeployCapNetworkAdapter is ProxyUtils {
         AccessControl accessControl = AccessControl(infra.accessControl);
 
         accessControl.grantAccess(middleware.registerVault.selector, address(middleware), users.middleware_admin);
-        accessControl.grantAccess(middleware.registerAgent.selector, address(middleware), users.middleware_admin);
         accessControl.grantAccess(middleware.slash.selector, address(middleware), infra.delegation);
         accessControl.grantAccess(middleware.distributeRewards.selector, address(middleware), infra.delegation);
 
@@ -111,9 +112,10 @@ contract DeployCapNetworkAdapter is ProxyUtils {
     function _registerVaultsInNetworkMiddleware(
         SymbioticNetworkAdapterConfig memory adapter,
         SymbioticVaultConfig memory vault,
-        address agent
+        SymbioticNetworkRewardsConfig memory rewards,
+        address[] memory agents
     ) internal {
-        NetworkMiddleware(adapter.networkMiddleware).registerAgent(vault.vault, agent);
+        NetworkMiddleware(adapter.networkMiddleware).registerVault(vault.vault, rewards.stakerRewarder, agents);
     }
 
     function _agentRegisterAsOperator(SymbioticAddressbook memory addressbook) internal {

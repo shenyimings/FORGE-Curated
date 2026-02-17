@@ -11,10 +11,18 @@ import { FractionalReserveLogic } from "./libraries/FractionalReserveLogic.sol";
 /// @author kexley, @capLabs
 /// @notice Idle capital is put to work in fractional reserve vaults and can be recalled when
 /// withdrawing, redeeming or borrowing.
-abstract contract FractionalReserve is IFractionalReserve, Access, FractionalReserveStorageUtils {
+contract FractionalReserve is IFractionalReserve, Access, FractionalReserveStorageUtils {
+    /// @dev Initialize the fractional reserve
+    /// @param _accessControl Access control address
+    /// @param _feeAuction Fee auction address
+    function __FractionalReserve_init(address _accessControl, address _feeAuction) internal onlyInitializing {
+        __Access_init(_accessControl);
+        __FractionalReserve_init_unchained(_feeAuction);
+    }
+
     /// @dev Initialize unchained
     /// @param _feeAuction Fee auction address
-    function __FractionalReserve_init(address _feeAuction) internal onlyInitializing {
+    function __FractionalReserve_init_unchained(address _feeAuction) internal onlyInitializing {
         getFractionalReserveStorage().feeAuction = _feeAuction;
     }
 
@@ -25,7 +33,6 @@ abstract contract FractionalReserve is IFractionalReserve, Access, FractionalRes
     }
 
     /// @notice Divest all of an asset from a fractional reserve vault and send any profit to fee auction
-    /// @dev If the vault has just been invested and no interest has been earned there could be a 1 wei revert since redemption wont equal loaned
     /// @param _asset Asset address
     function divestAll(address _asset) external checkAccess(this.divestAll.selector) {
         FractionalReserveLogic.divest(getFractionalReserveStorage(), _asset);
@@ -93,12 +100,5 @@ abstract contract FractionalReserve is IFractionalReserve, Access, FractionalRes
     /// @return reserveAmount Reserve amount
     function reserve(address _asset) external view returns (uint256 reserveAmount) {
         reserveAmount = getFractionalReserveStorage().reserve[_asset];
-    }
-
-    /// @notice Loaned amount for an asset
-    /// @param _asset Asset address
-    /// @return loanedAmount Loaned amount
-    function loaned(address _asset) external view returns (uint256 loanedAmount) {
-        loanedAmount = getFractionalReserveStorage().loaned[_asset];
     }
 }

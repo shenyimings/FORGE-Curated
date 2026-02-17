@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
+import { IDebtToken } from "../../interfaces/IDebtToken.sol";
+import { IPrincipalDebtToken } from "../../interfaces/IPrincipalDebtToken.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import { ILender } from "../../interfaces/ILender.sol";
@@ -41,23 +43,18 @@ library ReserveLogic {
             $.reservesList[$.reservesCount] = params.asset;
         }
 
-        ILender.ReserveData storage reserve = $.reservesData[params.asset];
-        reserve.id = id;
-        reserve.vault = params.vault;
-        reserve.debtToken = params.debtToken;
-        reserve.interestReceiver = params.interestReceiver;
-        reserve.decimals = IERC20Metadata(params.asset).decimals();
-        reserve.paused = true;
-        reserve.minBorrow = params.minBorrow;
-    }
-
-    /// @notice Set the minimum borrow amount for an asset
-    /// @param $ Lender storage
-    /// @param _asset Asset address
-    /// @param _minBorrow Minimum borrow amount
-    function setMinBorrow(ILender.LenderStorage storage $, address _asset, uint256 _minBorrow) external {
-        ValidationLogic.validateSetMinBorrow($, _asset);
-        $.reservesData[_asset].minBorrow = _minBorrow;
+        $.reservesData[params.asset] = ILender.ReserveData({
+            id: id,
+            vault: params.vault,
+            principalDebtToken: params.principalDebtToken,
+            restakerDebtToken: params.restakerDebtToken,
+            interestDebtToken: params.interestDebtToken,
+            interestReceiver: params.interestReceiver,
+            restakerInterestReceiver: params.restakerInterestReceiver,
+            decimals: IERC20Metadata(params.asset).decimals(),
+            paused: true,
+            realizedInterest: 0
+        });
     }
 
     /// @notice Remove asset from lending when there is no borrows

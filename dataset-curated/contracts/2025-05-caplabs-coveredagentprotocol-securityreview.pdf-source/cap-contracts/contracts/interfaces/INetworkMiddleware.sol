@@ -12,13 +12,8 @@ interface INetworkMiddleware {
         address oracle;
         uint48 requiredEpochDuration;
         uint256 feeAllowed;
-        mapping(address => Vault) vaults; // vault => stakerRewarder
-        mapping(address => address) agentsToVault; // agent => vault
-    }
-
-    struct Vault {
-        address stakerRewarder;
-        bool exists;
+        mapping(address => address) stakerRewarders; // vault => stakerRewarder
+        mapping(address => address[]) vaults; // agent => vault[]
     }
 
     enum SlasherType {
@@ -35,10 +30,6 @@ interface INetworkMiddleware {
 
     /// @dev Vault registered
     event VaultRegistered(address vault);
-
-    /// @dev Agent registered
-    event AgentRegistered(address agent);
-
     /// @dev Slash event
     event Slash(address indexed agent, address recipient, uint256 amount);
 
@@ -66,33 +57,16 @@ interface INetworkMiddleware {
     /// @dev Vault not initialized
     error VaultNotInitialized();
 
-    /// @dev Vault exists
-    error VaultExists();
-
-    /// @dev Vault does not exist
-    error VaultDoesNotExist();
-
     /// @dev Invalid epoch duration
     error InvalidEpochDuration(uint48 required, uint48 actual);
 
     /// @dev No slashable collateral
     error NoSlashableCollateral();
 
-    /// @dev Existing coverage
-    error ExistingCoverage();
-
-    /// @dev Invalid agent
-    error InvalidAgent();
-
-    /// @notice Register agent to be used as collateral within the CAP system
-    /// @param _vault Vault address
-    /// @param _agent Agent address
-    function registerAgent(address _vault, address _agent) external;
-
     /// @notice Register vault to be used as collateral within the CAP system
     /// @param _vault Vault address
-    /// @param _stakerRewarder Staker rewarder address
-    function registerVault(address _vault, address _stakerRewarder) external;
+    /// @param _agents Agents supported by the vault
+    function registerVault(address _vault, address _stakerRewarder, address[] calldata _agents) external;
 
     /// @notice Set fee allowed
     /// @param _feeAllowed Fee allowed to be charged on rewards by restakers
@@ -147,10 +121,10 @@ interface INetworkMiddleware {
         view
         returns (uint256 _slashableCollateral);
 
-    /// @notice Registered vault for an agent
+    /// @notice Registered vaults for an agent
     /// @param _agent Agent address
-    /// @return vault Vault address
-    function vaults(address _agent) external view returns (address vault);
+    /// @return vaultAddresses Vault addresses
+    function vaults(address _agent) external view returns (address[] memory vaultAddresses);
 
     /// @notice Distribute rewards accumulated by the agent borrowing
     /// @param _agent Agent address

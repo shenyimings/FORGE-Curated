@@ -7,10 +7,15 @@ import { Delegation } from "../../delegation/Delegation.sol";
 
 import { FeeAuction } from "../../feeAuction/FeeAuction.sol";
 import { Lender } from "../../lendingPool/Lender.sol";
-import { DebtToken } from "../../lendingPool/tokens/DebtToken.sol";
+import { InterestDebtToken } from "../../lendingPool/tokens/InterestDebtToken.sol";
+import { PrincipalDebtToken } from "../../lendingPool/tokens/PrincipalDebtToken.sol";
+import { RestakerDebtToken } from "../../lendingPool/tokens/RestakerDebtToken.sol";
 
 import { Oracle } from "../../oracle/Oracle.sol";
+import { PreMainnetVault } from "../../testnetCampaign/PreMainnetVault.sol";
 import { CapToken } from "../../token/CapToken.sol";
+import { L2Token } from "../../token/L2Token.sol";
+import { OFTLockbox } from "../../token/OFTLockbox.sol";
 import { StakedCap } from "../../token/StakedCap.sol";
 import { ImplementationsConfig } from "../interfaces/DeployConfigs.sol";
 
@@ -22,7 +27,9 @@ contract DeployImplems {
         d.capToken = address(new CapToken());
         d.stakedCap = address(new StakedCap());
         d.oracle = address(new Oracle());
-        d.debtToken = address(new DebtToken());
+        d.principalDebtToken = address(new PrincipalDebtToken());
+        d.interestDebtToken = address(new InterestDebtToken());
+        d.restakerDebtToken = address(new RestakerDebtToken());
         d.feeAuction = address(new FeeAuction());
     }
 }

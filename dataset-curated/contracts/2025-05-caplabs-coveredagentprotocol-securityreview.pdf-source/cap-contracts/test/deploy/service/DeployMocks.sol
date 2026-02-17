@@ -9,7 +9,6 @@ import { IDelegation } from "../../../contracts/interfaces/IDelegation.sol";
 import { MockERC20 } from "../../mocks/MockERC20.sol";
 import { MockNetworkMiddleware } from "../../mocks/MockNetworkMiddleware.sol";
 import { OracleMocksConfig, TestUsersConfig } from "../interfaces/TestDeployConfig.sol";
-import { Vm } from "forge-std/Vm.sol";
 
 contract DeployMocks {
     function _deployOracleMocks(address[] memory assets) internal returns (OracleMocksConfig memory d) {
@@ -47,16 +46,10 @@ contract DeployMocks {
         delegationNetwork = address(new MockNetworkMiddleware());
     }
 
-    function _configureMockNetworkMiddleware(TestEnvConfig memory env, address delegationNetwork) internal {
-        Vm vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-
-        vm.startPrank(env.users.delegation_admin);
-        IDelegation(env.infra.delegation).registerNetwork(delegationNetwork);
-
-        for (uint256 i = 0; i < env.testUsers.agents.length; i++) {
-            address agent = env.testUsers.agents[i];
-            IDelegation(env.infra.delegation).addAgent(agent, delegationNetwork, 0.5e27, 0.7e27);
-        }
+    function _configureMockNetworkMiddleware(TestEnvConfig memory env, address delegationNetwork, address agent)
+        internal
+    {
+        IDelegation(env.infra.delegation).registerNetwork(agent, delegationNetwork);
     }
 
     function _setMockNetworkMiddlewareAgentCoverage(TestEnvConfig memory env, address agent, uint256 coverage)

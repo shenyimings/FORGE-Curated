@@ -17,11 +17,6 @@ import { IVault } from "@symbioticfi/core/src/interfaces/vault/IVault.sol";
 /// @author Cap Labs
 /// @notice This contract manages the symbiotic collateral and slashing.
 contract Network is INetwork, UUPSUpgradeable, Access, NetworkStorageUtils {
-    /// @dev Disable initializers on the implementation
-    constructor() {
-        _disableInitializers();
-    }
-
     /// @notice Initialize
     /// @param _accessControl Access control address
     /// @param _networkRegistry Network registry address

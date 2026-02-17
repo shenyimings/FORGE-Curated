@@ -47,13 +47,13 @@ contract ConfigureOracle {
             adapter: libs.capTokenAdapter,
             payload: abi.encodeWithSelector(CapTokenAdapter.price.selector, vault.capToken)
         });
-        IOracle.OracleData memory stcTokenOracleData = IOracle.OracleData({
+        IOracle.OracleData memory scTokenOracleData = IOracle.OracleData({
             adapter: libs.stakedCapAdapter,
             payload: abi.encodeWithSelector(StakedCapAdapter.price.selector, vault.stakedCapToken)
         });
         Oracle(infra.oracle).setPriceOracleData(vault.capToken, cTokenOracleData);
-        Oracle(infra.oracle).setPriceOracleData(vault.stakedCapToken, stcTokenOracleData);
+        Oracle(infra.oracle).setPriceOracleData(vault.stakedCapToken, scTokenOracleData);
         Oracle(infra.oracle).setPriceBackupOracleData(vault.capToken, cTokenOracleData);
-        Oracle(infra.oracle).setPriceBackupOracleData(vault.stakedCapToken, stcTokenOracleData);
+        Oracle(infra.oracle).setPriceBackupOracleData(vault.stakedCapToken, scTokenOracleData);
     }
 }

@@ -21,10 +21,10 @@ contract MiddlewareTest is TestDeployer {
             for (uint256 i = 0; i < env.testUsers.agents.length; i++) {
                 address agent = env.testUsers.agents[i];
                 _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 2e18);
+                _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 1000e6);
             }
 
-            _timeTravel(symbioticWethVault.vaultEpochDuration + 1 days);
-
+            _timeTravel(symbioticUsdtVault.vaultEpochDuration + 1 days);
 
             vm.stopPrank();
         }
@@ -38,13 +38,13 @@ contract MiddlewareTest is TestDeployer {
 
             // remove all delegations to our slashable agent
             _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 0);
-           // _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 0);
+            _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 0);
 
             _timeTravel(10);
 
             // remove all delegations to our slashable agent
             _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 2e18);
-           // _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 1000e6);
+            _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 1000e6);
 
             _timeTravel(10);
 
@@ -56,7 +56,7 @@ contract MiddlewareTest is TestDeployer {
         //      2000   |    0     |    2000  |
         // -30        -20        -10         0
 
-        assertEq(middleware.coverage(agent), 5200e8);
+        assertEq(middleware.coverage(agent), 6200e8);
     }
 
     function test_current_agent_coverage_accounts_for_burner_router_changes() public {
@@ -64,14 +64,14 @@ contract MiddlewareTest is TestDeployer {
 
         address agent = _getRandomAgent();
 
-        assertEq(middleware.coverage(agent), 5200e8);
+        assertEq(middleware.coverage(agent), 6200e8);
 
         // vault admin changes the burner router receiver of the USDT vault
         {
             vm.startPrank(env.symbiotic.users.vault_admin);
 
             address new_receiver = makeAddr("new_receiver");
-            IBurnerRouter(symbioticWethVault.burnerRouter).setNetworkReceiver(address(_network), new_receiver);
+            IBurnerRouter(symbioticUsdtVault.burnerRouter).setNetworkReceiver(address(_network), new_receiver);
 
             _timeTravel(10);
 
@@ -79,6 +79,6 @@ contract MiddlewareTest is TestDeployer {
         }
 
         // current coverage must reflect that change
-        assertEq(middleware.coverage(agent), 0);
+        assertEq(middleware.coverage(agent), 5200e8);
     }
 }

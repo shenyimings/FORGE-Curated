@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-
 /// @title Vault interface for storing the backing for cTokens
 /// @author kexley, @capLabs
 /// @notice Interface for the Vault contract which handles supplies, borrows and utilization tracking
 interface IVault {
     /// @custom:storage-location erc7201:cap.storage.Vault
     struct VaultStorage {
-        EnumerableSet.AddressSet assets;
+        address[] assets;
         mapping(address => uint256) totalSupplies;
         mapping(address => uint256) totalBorrows;
         mapping(address => uint256) utilizationIndex;
         mapping(address => uint256) lastUpdate;
         mapping(address => bool) paused;
-        address insuranceFund;
     }
 
     /// @dev Parameters for minting or burning
@@ -26,7 +23,6 @@ interface IVault {
         uint256 minAmountOut;
         address receiver;
         uint256 deadline;
-        uint256 fee;
     }
 
     /// @dev Parameters for redeeming
@@ -36,7 +32,6 @@ interface IVault {
         uint256[] minAmountsOut;
         address receiver;
         uint256 deadline;
-        uint256[] fees;
     }
 
     /// @dev Parameters for borrowing
@@ -153,8 +148,4 @@ interface IVault {
     /// @param _asset Utilized asset
     /// @return index Utilization ratio index
     function currentUtilizationIndex(address _asset) external view returns (uint256 index);
-
-    /// @notice Get the insurance fund
-    /// @return insuranceFund Insurance fund
-    function insuranceFund() external view returns (address);
 }

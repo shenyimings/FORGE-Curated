@@ -28,18 +28,10 @@ interface IFeeAuction {
 
     /// @notice Buy fees in exchange for the payment token
     /// @dev Starts new auction where start price is double the settled price of this one
-    /// @param _maxPrice Maximum price to pay
     /// @param _assets Assets to buy
-    /// @param _minAmounts Minimum amounts to buy
     /// @param _receiver Receiver address for the assets
-    /// @param _deadline Deadline for the auction
-    function buy(
-        uint256 _maxPrice,
-        address[] calldata _assets,
-        uint256[] calldata _minAmounts,
-        address _receiver,
-        uint256 _deadline
-    ) external;
+    /// @param _callback Optional callback data
+    function buy(address[] calldata _assets, address _receiver, bytes calldata _callback) external;
 
     /// @notice Set the start price of the current auction
     /// @param _startPrice New start price
@@ -67,24 +59,4 @@ interface IFeeAuction {
 
     /// @dev Duration must be set
     error NoDuration();
-
-    /// @dev Minimum start price must be set
-    error NoMinStartPrice();
-    /// @dev Start price must be greater than minimum start price
-    error InvalidStartPrice();
-
-    /// @dev Price must be less than maximum price
-    error InvalidPrice();
-
-    /// @dev Assets must be non-zero length and have matching lengths
-    error InvalidAssets();
-
-    /// @dev Receiver must be non-zero address
-    error InvalidReceiver();
-
-    /// @dev Deadline must be in the future
-    error InvalidDeadline();
-
-    /// @dev Insufficient balance for asset
-    error InsufficientBalance(address asset, uint256 balance, uint256 minAmount);
 }

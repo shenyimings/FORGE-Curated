@@ -11,25 +11,18 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 /// @author kexley, @capLabs
 /// @notice Amount out logic for exchanging underlying assets with cap tokens
 library MinterLogic {
-    /// @dev Ray precision
-    uint256 constant RAY_PRECISION = 1e27;
-
-    /// @dev Share precision
-    uint256 constant SHARE_PRECISION = 1e33;
-
     /// @notice Calculate the amount out from a swap including fees
     /// @param $ Storage pointer
     /// @param params Parameters for a swap
     /// @return amount Amount out from a swap
-    /// @return fee Fee applied
     function amountOut(IMinter.MinterStorage storage $, IMinter.AmountOutParams memory params)
         external
         view
-        returns (uint256 amount, uint256 fee)
+        returns (uint256 amount)
     {
         (uint256 amountOutBeforeFee, uint256 newRatio) = _amountOutBeforeFee($.oracle, params);
 
-        (amount, fee) = _applyFeeSlopes(
+        amount = _applyFeeSlopes(
             $.fees[params.asset],
             IMinter.FeeSlopeParams({ mint: params.mint, amount: amountOutBeforeFee, ratio: newRatio })
         );
@@ -39,24 +32,21 @@ library MinterLogic {
     /// @param $ Storage pointer
     /// @param params Parameters for redeeming
     /// @return amounts Amount of underlying assets withdrawn
-    /// @return fees Amount of fees applied
     function redeemAmountOut(IMinter.MinterStorage storage $, IMinter.RedeemAmountOutParams memory params)
         external
         view
-        returns (uint256[] memory amounts, uint256[] memory fees)
+        returns (uint256[] memory amounts)
     {
         uint256 redeemFee = $.redeemFee;
-        uint256 shares = params.amount * SHARE_PRECISION / IERC20(address(this)).totalSupply();
+        uint256 shares = params.amount * 1e27 / IERC20(address(this)).totalSupply();
         address[] memory assets = IVault(address(this)).assets();
         uint256 assetLength = assets.length;
         amounts = new uint256[](assetLength);
-        fees = new uint256[](assetLength);
         for (uint256 i; i < assetLength; ++i) {
             address asset = assets[i];
-            uint256 withdrawAmount = IVault(address(this)).totalSupplies(asset) * shares / SHARE_PRECISION;
+            uint256 withdrawAmount = IVault(address(this)).totalSupplies(asset) * shares / 1e27;
 
-            fees[i] = withdrawAmount * redeemFee / RAY_PRECISION;
-            amounts[i] = withdrawAmount - fees[i];
+            amounts[i] = withdrawAmount - (withdrawAmount * redeemFee / 1e27);
         }
     }
 
@@ -84,22 +74,22 @@ library MinterLogic {
         if (params.mint) {
             assetValue = params.amount * assetPrice / assetDecimalsPow;
             if (capSupply == 0) {
-                newRatio = RAY_PRECISION;
+                newRatio = 1e27;
                 amount = params.amount * capDecimalsPow / assetDecimalsPow;
             } else {
-                newRatio = (allocationValue + assetValue) * RAY_PRECISION / (capValue + assetValue);
+                newRatio = (allocationValue + assetValue) * 1e27 / (capValue + assetValue);
                 amount = assetValue * capDecimalsPow / capPrice;
             }
         } else {
             assetValue = params.amount * capPrice / capDecimalsPow;
             if (params.amount == capSupply) {
-                newRatio = RAY_PRECISION;
+                newRatio = 1e27;
                 amount = params.amount * assetDecimalsPow / capDecimalsPow;
             } else {
                 if (allocationValue < assetValue || capValue <= assetValue) {
                     newRatio = 0;
                 } else {
-                    newRatio = (allocationValue - assetValue) * RAY_PRECISION / (capValue - assetValue);
+                    newRatio = (allocationValue - assetValue) * 1e27 / (capValue - assetValue);
                 }
                 amount = assetValue * assetDecimalsPow / assetPrice;
             }
@@ -111,36 +101,33 @@ library MinterLogic {
     /// @param fees Fee slopes and ratio kinks
     /// @param params Fee slope parameters
     /// @return amount Remaining amount after fee applied
-    /// @return fee Fee applied
     function _applyFeeSlopes(IMinter.FeeData memory fees, IMinter.FeeSlopeParams memory params)
         internal
         pure
-        returns (uint256 amount, uint256 fee)
+        returns (uint256 amount)
     {
         uint256 rate;
         if (params.mint) {
-            rate = fees.minMintFee;
             if (params.ratio > fees.optimalRatio) {
                 if (params.ratio > fees.mintKinkRatio) {
                     uint256 excessRatio = params.ratio - fees.mintKinkRatio;
-                    rate += fees.slope0 + (fees.slope1 * excessRatio / (RAY_PRECISION - fees.mintKinkRatio));
+                    rate = fees.slope0 + (fees.slope1 * excessRatio / 1e27);
                 } else {
-                    rate += fees.slope0 * params.ratio / fees.mintKinkRatio;
+                    rate = fees.slope0 * params.ratio / fees.mintKinkRatio;
                 }
             }
         } else {
             if (params.ratio < fees.optimalRatio) {
                 if (params.ratio < fees.burnKinkRatio) {
                     uint256 excessRatio = fees.burnKinkRatio - params.ratio;
-                    rate = fees.slope0 + (fees.slope1 * excessRatio / (RAY_PRECISION - fees.burnKinkRatio));
+                    rate = fees.slope0 + (fees.slope1 * excessRatio / 1e27);
                 } else {
                     rate = fees.slope0 * fees.burnKinkRatio / params.ratio;
                 }
             }
         }
 
-        if (rate > RAY_PRECISION) rate = RAY_PRECISION;
-        fee = params.amount * rate / RAY_PRECISION;
-        amount = params.amount - fee;
+        if (rate > 1e27) rate = 1e27;
+        amount = params.amount - (params.amount * rate / 1e27);
     }
 }

@@ -30,7 +30,7 @@ library LiquidationLogic {
     /// @param _agent Agent address
     function initiateLiquidation(ILender.LenderStorage storage $, address _agent) external {
         if (_agent == address(0)) revert ZeroAddressNotValid();
-        (,,,,, uint256 health) = ViewLogic.agent($, _agent);
+        (,,,, uint256 health) = ViewLogic.agent($, _agent);
 
         ValidationLogic.validateInitiateLiquidation(health, $.liquidationStart[_agent], $.expiry);
 
@@ -44,7 +44,7 @@ library LiquidationLogic {
     /// @param _agent Agent address
     function cancelLiquidation(ILender.LenderStorage storage $, address _agent) external {
         if (_agent == address(0)) revert ZeroAddressNotValid();
-        (,,,,, uint256 health) = ViewLogic.agent($, _agent);
+        (,,,, uint256 health) = ViewLogic.agent($, _agent);
 
         ValidationLogic.validateCancelLiquidation(health);
 
@@ -64,8 +64,7 @@ library LiquidationLogic {
         external
         returns (uint256 liquidatedValue)
     {
-        (uint256 totalDelegation, uint256 totalSlashableCollateral, uint256 totalDebt,,, uint256 health) =
-            ViewLogic.agent($, params.agent);
+        (uint256 totalDelegation, uint256 totalDebt,,, uint256 health) = ViewLogic.agent($, params.agent);
 
         ValidationLogic.validateLiquidation(
             health,
@@ -87,9 +86,9 @@ library LiquidationLogic {
         uint256 bonus = getBonus($, totalDelegation, totalDebt, params.agent, liquidated);
 
         liquidatedValue = (liquidated + bonus) * assetPrice / (10 ** $.reservesData[params.asset].decimals);
-        if (totalSlashableCollateral < liquidatedValue) liquidatedValue = totalSlashableCollateral;
+        if (totalDelegation < liquidatedValue) liquidatedValue = totalDelegation;
 
-        if (liquidatedValue > 0) IDelegation($.delegation).slash(params.agent, params.caller, liquidatedValue);
+        IDelegation($.delegation).slash(params.agent, params.caller, liquidatedValue);
 
         emit Liquidate(params.agent, params.caller, params.asset, liquidated, liquidatedValue);
     }

@@ -2,24 +2,23 @@
 pragma solidity ^0.8.28;
 
 import { IRestakerRewardReceiver } from "./IRestakerRewardReceiver.sol";
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 interface IDelegation is IRestakerRewardReceiver {
     /// @custom:storage-location erc7201:cap.storage.Delegation
     struct DelegationStorage {
-        EnumerableSet.AddressSet agents;
+        address[] agents;
         mapping(address => AgentData) agentData;
-        EnumerableSet.AddressSet networks;
+        mapping(address => address[]) networks;
+        mapping(address => mapping(address => bool)) networkExistsForAgent;
         address oracle;
         uint256 epochDuration;
-        uint256 ltvBuffer;
     }
 
     struct AgentData {
-        address network;
         uint256 ltv;
         uint256 liquidationThreshold;
         uint256 lastBorrow;
+        bool exists;
     }
 
     /// @notice Slash a network
@@ -31,7 +30,7 @@ interface IDelegation is IRestakerRewardReceiver {
     /// @param agent Agent address
     /// @param ltv LTV
     /// @param liquidationThreshold Liquidation threshold
-    event AddAgent(address agent, address network, uint256 ltv, uint256 liquidationThreshold);
+    event AddAgent(address agent, uint256 ltv, uint256 liquidationThreshold);
 
     /// @notice Modify an agent
     /// @param agent Agent address
@@ -40,8 +39,9 @@ interface IDelegation is IRestakerRewardReceiver {
     event ModifyAgent(address agent, uint256 ltv, uint256 liquidationThreshold);
 
     /// @notice Register a network
+    /// @param agent Agent address
     /// @param network Network address
-    event RegisterNetwork(address network);
+    event RegisterNetwork(address agent, address network);
 
     /// @notice Distribute a reward
     /// @param agent Agent address
@@ -49,9 +49,11 @@ interface IDelegation is IRestakerRewardReceiver {
     /// @param amount Amount
     event DistributeReward(address agent, address asset, uint256 amount);
 
-    /// @notice Set the ltv buffer
-    /// @param ltvBuffer LTV buffer
-    event SetLtvBuffer(uint256 ltvBuffer);
+    /// @notice Network reward
+    /// @param network Network address
+    /// @param asset Asset address
+    /// @param amount Amount
+    event NetworkReward(address network, address asset, uint256 amount);
 
     /// @notice Agent does not exist
     error AgentDoesNotExist();
@@ -62,32 +64,21 @@ interface IDelegation is IRestakerRewardReceiver {
     /// @notice Duplicate network
     error DuplicateNetwork();
 
-    /// @notice Network already registered
-    error NetworkAlreadyRegistered();
-
-    /// @notice Network does not exist
-    error NetworkDoesntExist();
-
     /// @notice Invalid liquidation threshold
     error InvalidLiquidationThreshold();
 
-    /// @notice Liquidation threshold too close to ltv
-    error LiquidationThresholdTooCloseToLtv();
-
-    /// @notice Invalid ltv buffer
-    error InvalidLtvBuffer();
-
-    /// @notice Invalid network
-    error InvalidNetwork();
-
-    /// @notice No slashable collateral
-    error NoSlashableCollateral();
+    /// @notice Invalid ltv
+    error InvalidLtv();
 
     /// @notice Initialize the contract
     /// @param _accessControl Access control address
     /// @param _oracle Oracle address
     /// @param _epochDuration Epoch duration in seconds
     function initialize(address _accessControl, address _oracle, uint256 _epochDuration) external;
+
+    /// @notice How much global delegation we have in the system
+    /// @return delegation Delegation in USD
+    function globalDelegation() external view returns (uint256 delegation);
 
     /// @notice Get the epoch duration
     /// @return duration Epoch duration in seconds
@@ -96,10 +87,6 @@ interface IDelegation is IRestakerRewardReceiver {
     /// @notice Get the current epoch
     /// @return currentEpoch Current epoch
     function epoch() external view returns (uint256 currentEpoch);
-
-    /// @notice Get the ltv buffer
-    /// @return buffer LTV buffer
-    function ltvBuffer() external view returns (uint256 buffer);
 
     /// @notice Get the timestamp that is most recent between the last borrow and the epoch -1
     /// @param _agent The agent address
@@ -116,10 +103,25 @@ interface IDelegation is IRestakerRewardReceiver {
     /// @return _slashableCollateral Amount in USD (8 decimals) that a agent has provided as slashable collateral from the delegators
     function slashableCollateral(address _agent) external view returns (uint256 _slashableCollateral);
 
-    /// @notice Fetch active network address
+    /// @notice How much delegation and agent has available to back their borrows
+    /// @param _agent The agent addres
+    /// @param _network The network covering the agent
+    /// @return delegation Amount in USD that a agent has as delegation from the networks, encoded with 8 decimals
+    function coverageByNetwork(address _agent, address _network) external view returns (uint256 delegation);
+
+    /// @notice Slashable collateral of an agent by a specific network
     /// @param _agent Agent address
-    /// @return networkAddress network address
-    function networks(address _agent) external view returns (address networkAddress);
+    /// @param _network Network address
+    /// @return _slashableCollateral Slashable collateral amount in USD (8 decimals)
+    function slashableCollateralByNetwork(address _agent, address _network)
+        external
+        view
+        returns (uint256 _slashableCollateral);
+
+    /// @notice Fetch active network addresses
+    /// @param _agent Agent address
+    /// @return networkAddresses network addresses
+    function networks(address _agent) external view returns (address[] memory networkAddresses);
 
     /// @notice Fetch active agent addresses
     /// @return agentAddresses Agent addresses
@@ -153,10 +155,9 @@ interface IDelegation is IRestakerRewardReceiver {
 
     /// @notice Add agent to be delegated to
     /// @param _agent Agent address
-    /// @param _network Network address
     /// @param _ltv Loan to value ratio
     /// @param _liquidationThreshold Liquidation threshold
-    function addAgent(address _agent, address _network, uint256 _ltv, uint256 _liquidationThreshold) external;
+    function addAgent(address _agent, uint256 _ltv, uint256 _liquidationThreshold) external;
 
     /// @notice Modify an agents config only callable by the operator
     /// @param _agent the agent to modify
@@ -165,10 +166,7 @@ interface IDelegation is IRestakerRewardReceiver {
     function modifyAgent(address _agent, uint256 _ltv, uint256 _liquidationThreshold) external;
 
     /// @notice Register a new network
+    /// @param _agent Agent address
     /// @param _network Network address
-    function registerNetwork(address _network) external;
-
-    /// @notice Set the ltv buffer
-    /// @param _ltvBuffer LTV buffer
-    function setLtvBuffer(uint256 _ltvBuffer) external;
+    function registerNetwork(address _agent, address _network) external;
 }

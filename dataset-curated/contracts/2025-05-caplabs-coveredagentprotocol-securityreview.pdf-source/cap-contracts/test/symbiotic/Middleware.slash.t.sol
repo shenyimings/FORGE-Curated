@@ -21,9 +21,10 @@ contract MiddlewareTest is TestDeployer {
             for (uint256 i = 0; i < env.testUsers.agents.length; i++) {
                 address agent = env.testUsers.agents[i];
                 _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 2e18);
+                _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 1000e6);
             }
 
-            _timeTravel(symbioticWethVault.vaultEpochDuration + 1 days);
+            _timeTravel(symbioticUsdtVault.vaultEpochDuration + 1 days);
 
             vm.stopPrank();
         }
@@ -36,16 +37,17 @@ contract MiddlewareTest is TestDeployer {
         address agent = _getRandomAgent();
 
         // collateral in USDT (8 decimals)
-        assertEq(middleware.coverage(agent), 5200e8);
+        assertEq(middleware.coverage(agent), 6200e8);
 
         // slash 10% of agent collateral
         middleware.slash(agent, recipient, 0.1e18, uint48(block.timestamp) - 10);
 
         // all vaults have been slashed 10% and sent to the recipient
+        assertApproxEqAbs(IERC20(usdt).balanceOf(recipient), 100e6, 1);
         assertApproxEqAbs(IERC20(weth).balanceOf(recipient), 2e17, 1);
 
         // vaults have hooks that update the limits on slash
-        assertApproxEqAbs(middleware.coverage(agent), 4680e8, 1);
+        assertGt(middleware.coverage(agent), 5578e8);
 
         vm.stopPrank();
     }
@@ -57,12 +59,13 @@ contract MiddlewareTest is TestDeployer {
             vm.startPrank(env.symbiotic.users.vault_admin);
 
             // remove all delegations to our slashable agent
+            _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 0);
             _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 0);
 
             vm.stopPrank();
         }
 
-        _timeTravel(symbioticWethVault.vaultEpochDuration + 1);
+        _timeTravel(symbioticUsdtVault.vaultEpochDuration + 1);
 
         {
             vm.startPrank(env.infra.delegation);
@@ -71,10 +74,10 @@ contract MiddlewareTest is TestDeployer {
             assertEq(middleware.coverage(agent), 0);
 
             // we request a slash for a timestamp where there is a stake to be slashed
-            vm.expectRevert();
             middleware.slash(agent, recipient, 0.1e18, uint48(block.timestamp));
 
             // slash should not have worked
+            assertEq(IERC20(usdt).balanceOf(recipient), 0);
             assertEq(IERC20(weth).balanceOf(recipient), 0);
             assertEq(middleware.coverage(agent), 0);
             vm.stopPrank();
@@ -88,8 +91,9 @@ contract MiddlewareTest is TestDeployer {
         {
             vm.startPrank(env.symbiotic.users.vault_admin);
 
+            _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 0);
             _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 0);
-            _timeTravel(symbioticWethVault.vaultEpochDuration + 1 days);
+            _timeTravel(symbioticUsdtVault.vaultEpochDuration + 1 days);
 
             vm.stopPrank();
         }
@@ -100,6 +104,7 @@ contract MiddlewareTest is TestDeployer {
         {
             vm.startPrank(env.symbiotic.users.vault_admin);
 
+            _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, agent, 1000e6);
             _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, agent, 2e18);
 
             vm.stopPrank();
@@ -107,7 +112,7 @@ contract MiddlewareTest is TestDeployer {
 
         // collateral is now active
         _timeTravel(3);
-        assertEq(middleware.coverage(agent), 5200e8);
+        assertEq(middleware.coverage(agent), 6200e8);
 
         // we should be able to slash immediately after delegation
         {
@@ -118,6 +123,7 @@ contract MiddlewareTest is TestDeployer {
             middleware.slash(agent, recipient, 0.1e18, uint48(block.timestamp) - 1);
 
             // all vaults have been slashed 10% and sent to the recipient
+            assertApproxEqAbs(IERC20(usdt).balanceOf(recipient), 100e6, 1);
             assertApproxEqAbs(IERC20(weth).balanceOf(recipient), 2e17, 1);
 
             vm.stopPrank();

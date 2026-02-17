@@ -3,7 +3,9 @@ pragma solidity ^0.8.28;
 
 import { Lender } from "../../contracts/lendingPool/Lender.sol";
 
-import { DebtToken } from "../../contracts/lendingPool/tokens/DebtToken.sol";
+import { InterestDebtToken } from "../../contracts/lendingPool/tokens/InterestDebtToken.sol";
+import { PrincipalDebtToken } from "../../contracts/lendingPool/tokens/PrincipalDebtToken.sol";
+import { RestakerDebtToken } from "../../contracts/lendingPool/tokens/RestakerDebtToken.sol";
 import { TestDeployer } from "../deploy/TestDeployer.sol";
 
 import { MockNetworkMiddleware } from "../mocks/MockNetworkMiddleware.sol";
@@ -12,7 +14,7 @@ import { console } from "forge-std/console.sol";
 contract LenderBorrowTest is TestDeployer {
     address user_agent;
 
-    /*function setUp() public {
+    function setUp() public {
         _deployCapTestEnvironment();
         _initTestVaultLiquidity(usdVault);
         _initSymbioticVaultsLiquidity(env);
@@ -42,5 +44,5 @@ contract LenderBorrowTest is TestDeployer {
 
         lender.repay(address(usdc), 10e6, user_agent);
         vm.snapshotGasLastCall("Lender.gas.t", "simple_repay");
-    }*/
+    }
 }

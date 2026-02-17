@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import { IVault } from "../../interfaces/IVault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title Vault for storing the backing for cTokens
 /// @author kexley, @capLabs
@@ -13,16 +12,12 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
 /// charged on the external contracts, only the principle amount is counted on this contract.
 library VaultLogic {
     using SafeERC20 for IERC20;
-    using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @dev Timestamp is past the deadline
     error PastDeadline();
 
     /// @dev Amount out is less than required
     error Slippage(address asset, uint256 amountOut, uint256 minAmountOut);
-
-    /// @dev Amount out is 0
-    error InvalidAmount();
 
     /// @dev Paused assets cannot be supplied or borrowed
     error AssetPaused(address asset);
@@ -32,9 +27,6 @@ library VaultLogic {
 
     /// @dev Asset is already listed
     error AssetAlreadySupported(address asset);
-
-    /// @dev Asset has supplies
-    error AssetHasSupplies(address asset);
 
     /// @dev Only non-supported assets can be rescued
     error AssetNotRescuable(address asset);
@@ -46,27 +38,13 @@ library VaultLogic {
     error InsufficientReserves(address asset, uint256 balanceBefore, uint256 amount);
 
     /// @dev Cap token minted
-    event Mint(
-        address indexed minter,
-        address receiver,
-        address indexed asset,
-        uint256 amountIn,
-        uint256 amountOut,
-        uint256 fee
-    );
+    event Mint(address indexed minter, address receiver, address indexed asset, uint256 amountIn, uint256 amountOut);
 
     /// @dev Cap token burned
-    event Burn(
-        address indexed burner,
-        address receiver,
-        address indexed asset,
-        uint256 amountIn,
-        uint256 amountOut,
-        uint256 fee
-    );
+    event Burn(address indexed burner, address receiver, address indexed asset, uint256 amountIn, uint256 amountOut);
 
     /// @dev Cap token redeemed
-    event Redeem(address indexed redeemer, address receiver, uint256 amountIn, uint256[] amountsOut, uint256[] fees);
+    event Redeem(address indexed redeemer, address receiver, uint256 amountIn, uint256[] amountsOut);
 
     /// @dev Borrow made
     event Borrow(address indexed borrower, address indexed asset, uint256 amount);
@@ -118,13 +96,12 @@ library VaultLogic {
         if (params.amountOut < params.minAmountOut) {
             revert Slippage(address(this), params.amountOut, params.minAmountOut);
         }
-        if (params.amountOut == 0) revert InvalidAmount();
 
         $.totalSupplies[params.asset] += params.amountIn;
 
         IERC20(params.asset).safeTransferFrom(msg.sender, address(this), params.amountIn);
 
-        emit Mint(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut, params.fee);
+        emit Mint(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut);
     }
 
     /// @notice Burn the cap token for an asset
@@ -139,16 +116,12 @@ library VaultLogic {
         if (params.amountOut < params.minAmountOut) {
             revert Slippage(params.asset, params.amountOut, params.minAmountOut);
         }
-        if (params.amountOut == 0) revert InvalidAmount();
 
-        _verifyBalance($, params.asset, params.amountOut);
-
-        $.totalSupplies[params.asset] -= params.amountOut + params.fee;
+        $.totalSupplies[params.asset] -= params.amountOut;
 
         IERC20(params.asset).safeTransfer(params.receiver, params.amountOut);
-        IERC20(params.asset).safeTransfer($.insuranceFund, params.fee);
 
-        emit Burn(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut, params.fee);
+        emit Burn(msg.sender, params.receiver, params.asset, params.amountIn, params.amountOut);
     }
 
     /// @notice Redeem the Cap token for a bundle of assets
@@ -156,24 +129,20 @@ library VaultLogic {
     /// @param $ Vault storage pointer
     /// @param params Redeem parameters
     function redeem(IVault.VaultStorage storage $, IVault.RedeemParams memory params) external {
-        if (params.amountsOut.length != params.minAmountsOut.length) revert InvalidMinAmountsOut();
+        if (params.amountsOut.length != $.assets.length) revert InvalidMinAmountsOut();
         if (params.deadline < block.timestamp) revert PastDeadline();
 
-        uint256 length = $.assets.length();
-        for (uint256 i; i < length; ++i) {
-            address asset = $.assets.at(i);
+        address[] memory cachedAssets = $.assets;
+        for (uint256 i; i < cachedAssets.length; ++i) {
             if (params.amountsOut[i] < params.minAmountsOut[i]) {
-                revert Slippage(asset, params.amountsOut[i], params.minAmountsOut[i]);
+                revert Slippage(cachedAssets[i], params.amountsOut[i], params.minAmountsOut[i]);
             }
-            if (params.amountsOut[i] == 0) revert InvalidAmount();
-            _verifyBalance($, asset, params.amountsOut[i]);
-            _updateIndex($, asset);
-            $.totalSupplies[asset] -= params.amountsOut[i] + params.fees[i];
-            IERC20(asset).safeTransfer(params.receiver, params.amountsOut[i]);
-            IERC20(asset).safeTransfer($.insuranceFund, params.fees[i]);
+            _updateIndex($, cachedAssets[i]);
+            $.totalSupplies[cachedAssets[i]] -= params.amountsOut[i];
+            IERC20(cachedAssets[i]).safeTransfer(params.receiver, params.amountsOut[i]);
         }
 
-        emit Redeem(msg.sender, params.receiver, params.amountIn, params.amountsOut, params.fees);
+        emit Redeem(msg.sender, params.receiver, params.amountIn, params.amountsOut);
     }
 
     /// @notice Borrow an asset
@@ -185,7 +154,8 @@ library VaultLogic {
         whenNotPaused($, params.asset)
         updateIndex($, params.asset)
     {
-        _verifyBalance($, params.asset, params.amount);
+        uint256 balanceBefore = IERC20(params.asset).balanceOf(address(this));
+        if (balanceBefore < params.amount) revert InsufficientReserves(params.asset, balanceBefore, params.amount);
 
         $.totalBorrows[params.asset] += params.amount;
         IERC20(params.asset).safeTransfer(params.receiver, params.amount);
@@ -210,7 +180,9 @@ library VaultLogic {
     /// @param $ Vault storage pointer
     /// @param _asset Asset address
     function addAsset(IVault.VaultStorage storage $, address _asset) external {
-        if (!$.assets.add(_asset)) revert AssetNotSupported(_asset);
+        if (_listed($, _asset)) revert AssetAlreadySupported(_asset);
+
+        $.assets.push(_asset);
         emit AddAsset(_asset);
     }
 
@@ -218,8 +190,20 @@ library VaultLogic {
     /// @param $ Vault storage pointer
     /// @param _asset Asset address
     function removeAsset(IVault.VaultStorage storage $, address _asset) external {
-        if ($.totalSupplies[_asset] > 0) revert AssetHasSupplies(_asset);
-        if (!$.assets.remove(_asset)) revert AssetNotSupported(_asset);
+        address[] memory cachedAssets = $.assets;
+        uint256 length = cachedAssets.length;
+        bool removed;
+        for (uint256 i; i < length; ++i) {
+            if (_asset == cachedAssets[i]) {
+                $.assets[i] = cachedAssets[length - 1];
+                $.assets.pop();
+                removed = true;
+                break;
+            }
+        }
+
+        if (!removed) revert AssetNotSupported(_asset);
+
         emit RemoveAsset(_asset);
     }
 
@@ -249,14 +233,6 @@ library VaultLogic {
         emit RescueERC20(_asset, _receiver);
     }
 
-    /// @notice Calculate the available balance of an asset
-    /// @param $ Vault storage pointer
-    /// @param _asset Asset address
-    /// @return balance Available balance
-    function availableBalance(IVault.VaultStorage storage $, address _asset) public view returns (uint256 balance) {
-        balance = $.totalSupplies[_asset] - $.totalBorrows[_asset];
-    }
-
     /// @notice Calculate the utilization ratio of an asset
     /// @dev Returns the ratio of borrowed assets to total supply, scaled to ray (1e27)
     /// @param $ Vault storage pointer
@@ -284,17 +260,13 @@ library VaultLogic {
     /// @param _asset Asset to check
     /// @return isListed Asset is listed or not
     function _listed(IVault.VaultStorage storage $, address _asset) internal view returns (bool isListed) {
-        isListed = $.assets.contains(_asset);
-    }
-
-    /// @notice Verify that an asset has enough balance
-    /// @param $ Vault storage pointer
-    /// @param _asset Asset address
-    /// @param _amount Amount to verify
-    function _verifyBalance(IVault.VaultStorage storage $, address _asset, uint256 _amount) internal view {
-        uint256 balance = availableBalance($, _asset);
-        if (balance < _amount) {
-            revert InsufficientReserves(_asset, balance, _amount);
+        address[] memory cachedAssets = $.assets;
+        uint256 length = cachedAssets.length;
+        for (uint256 i; i < length; ++i) {
+            if (_asset == cachedAssets[i]) {
+                isListed = true;
+                break;
+            }
         }
     }
 

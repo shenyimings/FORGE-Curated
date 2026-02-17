@@ -18,9 +18,9 @@ contract DeployL2Token is Script, WalletUtils, LzUtils, L2TokenConfigSerializer 
         LzAddressbook memory config = _getLzAddressbook(block.chainid);
 
         string memory cTokenSymbol = "cETH";
-        string memory cTokenName = "Cap ETH";
-        string memory stcTokenSymbol = "stcETH";
-        string memory stcTokenName = "Staked Cap ETH";
+        string memory cTokenName = "Cap cETH";
+        string memory scTokenSymbol = "scETH";
+        string memory scTokenName = "Staked Cap cETH";
 
         address owner = getWalletAddress();
         console.log("owner", owner);
@@ -28,11 +28,11 @@ contract DeployL2Token is Script, WalletUtils, LzUtils, L2TokenConfigSerializer 
         vm.startBroadcast();
 
         L2Token l2cToken = new L2Token(cTokenName, cTokenSymbol, address(config.endpointV2), owner);
-        L2Token l2stcToken = new L2Token(stcTokenName, stcTokenSymbol, address(config.endpointV2), owner);
+        L2Token l2scToken = new L2Token(scTokenName, scTokenSymbol, address(config.endpointV2), owner);
 
         vm.stopBroadcast();
 
         // Save the L2 token addresses
-        _saveL2TokenAddresses(address(l2cToken), address(l2stcToken));
+        _saveL2TokenAddresses(address(l2cToken), address(l2scToken));
     }
 }

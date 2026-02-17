@@ -10,7 +10,7 @@ import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/I
 /// @title Access
 /// @author kexley, @capLabs
 /// @notice Inheritable access
-abstract contract Access is IAccess, Initializable, AccessStorageUtils {
+contract Access is IAccess, Initializable, AccessStorageUtils {
     /// @dev Initialize the access control address
     /// @param _accessControl Access control address
     function __Access_init(address _accessControl) internal onlyInitializing {

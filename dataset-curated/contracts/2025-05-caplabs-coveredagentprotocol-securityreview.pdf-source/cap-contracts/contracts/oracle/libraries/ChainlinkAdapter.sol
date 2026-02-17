@@ -10,7 +10,7 @@ library ChainlinkAdapter {
     /// @notice Fetch price for an asset from Chainlink fixed to 8 decimals
     /// @param _source Chainlink aggregator
     /// @return latestAnswer Price of the asset fixed to 8 decimals
-    /// @return lastUpdated Last updated timestamp
+    /// @return lastUpdated Latest timestamp of the price
     function price(address _source) external view returns (uint256 latestAnswer, uint256 lastUpdated) {
         uint8 decimals = IChainlink(_source).decimals();
         int256 intLatestAnswer;

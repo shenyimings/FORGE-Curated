@@ -10,7 +10,6 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { StdCheats } from "forge-std/StdCheats.sol";
-import { console } from "forge-std/console.sol";
 
 contract MockERC4626 is ERC4626, StdCheats {
     using SafeERC20 for IERC20;
@@ -73,17 +72,9 @@ contract MockERC4626 is ERC4626, StdCheats {
         interestRate = _interestRate;
     }
 
-    function __interestRate() external view returns (uint256) {
-        return interestRate;
-    }
-
-    function __lastUpdate() external view returns (uint256) {
-        return lastUpdate;
-    }
-
     function __estimateMockErc4626Yield() public view returns (uint256) {
         uint256 principal = IERC20(asset()).balanceOf(address(this));
         uint256 timeElapsed = block.timestamp - lastUpdate;
-        return (principal * interestRate * timeElapsed) / (365 days * 1e18);
+        return (principal * interestRate * timeElapsed) / ((365 days) * 1e18);
     }
 }

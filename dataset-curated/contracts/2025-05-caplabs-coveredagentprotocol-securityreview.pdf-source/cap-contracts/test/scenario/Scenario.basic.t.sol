@@ -3,8 +3,11 @@ pragma solidity ^0.8.28;
 
 import { Delegation } from "../../contracts/delegation/Delegation.sol";
 
+import { IInterestDebtToken } from "../../contracts/interfaces/IInterestDebtToken.sol";
+
 import { IMinter } from "../../contracts/interfaces/IMinter.sol";
 import { IOracle } from "../../contracts/interfaces/IOracle.sol";
+import { IRestakerDebtToken } from "../../contracts/interfaces/IRestakerDebtToken.sol";
 import { Lender } from "../../contracts/lendingPool/Lender.sol";
 import { TestDeployer } from "../deploy/TestDeployer.sol";
 import { MockChainlinkPriceFeed } from "../mocks/MockChainlinkPriceFeed.sol";
@@ -21,13 +24,13 @@ contract ScenarioBasicTest is TestDeployer {
         user_agent = _getRandomAgent();
 
         vm.startPrank(env.symbiotic.users.vault_admin);
-        _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, user_agent, 3e18);
+        _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, user_agent, 2e18);
+        _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, user_agent, 1000e6);
         vm.stopPrank();
 
         vm.startPrank(env.users.lender_admin);
 
         IMinter.FeeData memory feeData = IMinter.FeeData({
-            minMintFee: 0.005e27,
             slope0: 0.0001e27,
             slope1: 0.1e27,
             mintKinkRatio: 0.85e27,
@@ -95,16 +98,16 @@ contract ScenarioBasicTest is TestDeployer {
             cUSD.mint(address(usdt), 2000e6, 3000e18, alice, block.timestamp + 1 hours);
             vm.expectRevert();
             /// Time
-            cUSD.mint(address(usdt), 2000e6, 1990e18, alice, block.timestamp - 1);
-            cUSD.mint(address(usdt), 2000e6, 1990e18, alice, block.timestamp + 1 hours);
-            assertGt(cUSD.balanceOf(alice), 1990e18);
+            cUSD.mint(address(usdt), 2000e6, 1998e18, alice, block.timestamp - 1);
+            cUSD.mint(address(usdt), 2000e6, 1998e18, alice, block.timestamp + 1 hours);
+            assertGt(cUSD.balanceOf(alice), 2000e18);
 
             vm.stopPrank();
 
             vm.startPrank(bob);
 
             usdc.approve(address(cUSD), 10000e6);
-            cUSD.mint(address(usdc), 2000e6, 1990e6, bob, block.timestamp + 1 hours);
+            cUSD.mint(address(usdc), 2000e6, 1998e6, bob, block.timestamp + 1 hours);
 
             assertLt(cUSD.balanceOf(bob), 2000e18);
 
@@ -171,12 +174,12 @@ contract ScenarioBasicTest is TestDeployer {
             usdt.approve(address(cUSD), 4000e6);
             cUSD.mint(address(usdt), 1000e6, 0, mev_bot, block.timestamp + 1 hours);
 
-            lender.realizeInterest(address(usdt));
+            lender.realizeInterest(address(usdt), 1);
 
             cUSD.approve(address(cUSDFeeAuction), 1000e18);
             uint256 startPrice = cUSDFeeAuction.currentPrice();
             console.log("Start price of fee auction", startPrice);
-            cUSDFeeAuction.buy(startPrice, assets, new uint256[](assets.length), mev_bot, block.timestamp);
+            cUSDFeeAuction.buy(assets, mev_bot, "");
 
             vm.stopPrank();
         }
@@ -184,10 +187,12 @@ contract ScenarioBasicTest is TestDeployer {
         {
             /// The operator repays the debt
             vm.startPrank(user_agent);
-            uint256 debt = lender.debt(user_agent, address(usdt));
+            (uint256 principalDebt, uint256 interestDebt, uint256 restakerDebt) = lender.debt(user_agent, address(usdt));
             console.log("Debt in USDT 6 Decimals");
-            console.log("Total Debt", debt);
-            console.log("Agent balance of USDT", usdt.balanceOf(user_agent));
+            console.log("Principal Debt", principalDebt);
+            console.log("Interest Debt", interestDebt);
+            console.log("Restaker Debt", restakerDebt);
+            uint256 debt = principalDebt + interestDebt + restakerDebt;
             console.log("");
 
             usdt.approve(address(lender), debt);
@@ -196,8 +201,10 @@ contract ScenarioBasicTest is TestDeployer {
             lender.repay(address(usdt), debt, user_agent);
             console.log("");
 
-            debt = lender.debt(user_agent, address(usdt));
-            assertEq(debt, 0);
+            (principalDebt, interestDebt, restakerDebt) = lender.debt(user_agent, address(usdt));
+            assertEq(principalDebt, 0);
+            assertEq(interestDebt, 0);
+            assertEq(restakerDebt, 0);
             vm.stopPrank();
         }
 
@@ -216,17 +223,15 @@ contract ScenarioBasicTest is TestDeployer {
 
             // Cheat a bit and get the price to match the assets in the auction
             vm.startPrank(env.users.fee_auction_admin);
-            uint256 minStartPrice = cUSDFeeAuction.minStartPrice();
-            cUSDFeeAuction.setStartPrice(minStartPrice * 10);
+            cUSDFeeAuction.setStartPrice(usdt_balance_before * 1e12);
             vm.stopPrank();
 
             vm.startPrank(mev_bot);
 
             uint256 startPrice = cUSDFeeAuction.startPrice();
-            assertEq(startPrice, minStartPrice * 10);
-            uint256 price = cUSDFeeAuction.currentPrice();
+            assertEq(startPrice, usdt_balance_before * 1e12);
             // console.log("Start price of fee auction", startPrice);
-            cUSDFeeAuction.buy(price, assets, new uint256[](assets.length), mev_bot, block.timestamp);
+            cUSDFeeAuction.buy(assets, mev_bot, "");
             uint256 usdt_balance_after = usdt.balanceOf(address(cUSDFeeAuction));
             uint256 cUSD_balance_after = cUSD.balanceOf(address(scUSD));
             console.log("USDT balance of fee auction after buy", usdt_balance_after);
@@ -340,7 +345,7 @@ contract ScenarioBasicTest is TestDeployer {
 
             assertGt(
                 usdt.balanceOf(alice) + usdc.balanceOf(alice) + (usdx.balanceOf(alice)) / 1e12,
-                (10000e6 * 0.998e27 / 1e27)
+                (10000e6 * 0.999e27 / 1e27)
             ); // Less redeem fee
 
             /// USDC goes over peg now
@@ -391,7 +396,7 @@ contract ScenarioBasicTest is TestDeployer {
 
             vm.startPrank(env.users.delegation_admin);
 
-            (uint256 totalDelegation,, uint256 totalDebt, uint256 ltv, uint256 liquidationThreshold, uint256 health) =
+            (uint256 totalDelegation, uint256 totalDebt, uint256 ltv, uint256 liquidationThreshold, uint256 health) =
                 lender.agent(user_agent);
             console.log("Total delegation of the operator", totalDelegation);
             console.log("Total debt of the operator", totalDebt);
@@ -399,7 +404,7 @@ contract ScenarioBasicTest is TestDeployer {
             console.log("Liquidation threshold of the operator", liquidationThreshold);
             console.log("Health of the operator", health);
             /// Bad actor so we set his liquidation threshold to 1%
-            Delegation(env.infra.delegation).modifyAgent(user_agent, 0, 0.01e27);
+            Delegation(env.infra.delegation).modifyAgent(user_agent, 0.5e27, 0.01e27);
             vm.stopPrank();
 
             vm.startPrank(env.testUsers.liquidator);
@@ -418,7 +423,7 @@ contract ScenarioBasicTest is TestDeployer {
             lender.cancelLiquidation(user_agent);
             vm.stopPrank();
 
-            (totalDelegation,, totalDebt, ltv, liquidationThreshold, health) = lender.agent(user_agent);
+            (totalDelegation, totalDebt, ltv, liquidationThreshold, health) = lender.agent(user_agent);
             console.log("");
             console.log("Total delegation of the operator after liquidation", totalDelegation);
             console.log("Total debt of the operator after liquidation", totalDebt);

@@ -13,9 +13,6 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 library FractionalReserveLogic {
     using SafeERC20 for IERC20;
 
-    /// @dev Loss not allowed from fractional reserve
-    error LossFromFractionalReserve(address asset, address vault, uint256 loss);
-
     /// @notice Invest unborrowed capital in a fractional reserve vault
     /// @param $ Storage pointer
     /// @param _asset Asset address
@@ -44,8 +41,6 @@ library FractionalReserveLogic {
                 uint256 redeemedAssets = IERC4626($.vault[_asset]).redeem(vaultBalance, address(this), address(this));
                 if (redeemedAssets > loanedAssets) {
                     IERC20(_asset).safeTransfer($.feeAuction, redeemedAssets - loanedAssets);
-                } else if (redeemedAssets < loanedAssets) {
-                    revert LossFromFractionalReserve(_asset, $.vault[_asset], loanedAssets - redeemedAssets);
                 }
             }
         }
@@ -67,13 +62,7 @@ library FractionalReserveLogic {
                 if (divestAmount > $.loaned[_asset]) divestAmount = $.loaned[_asset];
                 if (divestAmount > 0) {
                     $.loaned[_asset] -= divestAmount;
-
                     IERC4626($.vault[_asset]).withdraw(divestAmount, address(this), address(this));
-
-                    if (IERC20(_asset).balanceOf(address(this)) < divestAmount + assetBalance) {
-                        uint256 loss = divestAmount + assetBalance - IERC20(_asset).balanceOf(address(this));
-                        revert LossFromFractionalReserve(_asset, $.vault[_asset], loss);
-                    }
                 }
             }
         }

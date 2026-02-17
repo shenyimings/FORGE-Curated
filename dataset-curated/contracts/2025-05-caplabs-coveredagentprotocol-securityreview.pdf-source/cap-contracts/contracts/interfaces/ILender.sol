@@ -40,24 +40,21 @@ interface ILender {
     /// @dev Reserve data
     /// @param id Id of the reserve
     /// @param vault Address of the vault
-    /// @param debtToken Address of the debt token
+    /// @param principalDebtToken Address of the principal debt token
+    /// @param restakerDebtToken Address of the restaker debt token
+    /// @param interestDebtToken Address of the interest debt token
     /// @param interestReceiver Address of the interest receiver
-    /// @param decimals Decimals of the asset
-    /// @param paused True if the asset is paused, false otherwise
-    /// @param debt Total debt of the asset
-    /// @param unrealizedInterest Unrealized interest for each agent
-    /// @param lastRealizationTime Last time interest was realized for each agent
     struct ReserveData {
         uint256 id;
         address vault;
-        address debtToken;
+        address principalDebtToken;
+        address restakerDebtToken;
+        address interestDebtToken;
         address interestReceiver;
+        address restakerInterestReceiver;
         uint8 decimals;
         bool paused;
-        uint256 debt;
-        mapping(address => uint256) unrealizedInterest;
-        mapping(address => uint256) lastRealizationTime;
-        uint256 minBorrow;
+        uint256 realizedInterest;
     }
 
     /// @dev Agent configuration map
@@ -90,29 +87,30 @@ interface ILender {
         address caller;
     }
 
-    /// @dev Realize restaker interest parameters
-    /// @param agent Agent to realize interest for
+    /// @dev Realize interest parameters
     /// @param asset Asset to realize interest for
-    struct RealizeRestakerInterestParams {
-        address agent;
+    /// @param amount Amount of interest to realize
+    struct RealizeInterestParams {
         address asset;
+        uint256 amount;
     }
 
     /// @dev Add asset parameters
     /// @param asset Asset to add
     /// @param vault Address of the vault
-    /// @param debtToken Address of the debt token
+    /// @param principalDebtToken Address of the principal debt token
+    /// @param restakerDebtToken Address of the restaker debt token
+    /// @param interestDebtToken Address of the interest debt token
     /// @param interestReceiver Address of the interest receiver
-    /// @param restakerInterestReceiver Address of the restaker interest receiver
-    /// @param bonusCap Bonus cap for liquidations
     struct AddAssetParams {
         address asset;
         address vault;
-        address debtToken;
+        address principalDebtToken;
+        address restakerDebtToken;
+        address interestDebtToken;
         address interestReceiver;
         address restakerInterestReceiver;
         uint256 bonusCap;
-        uint256 minBorrow;
     }
 
     /// @notice Initialize the lender
@@ -150,14 +148,9 @@ interface ILender {
 
     /// @notice Realize interest for an asset
     /// @param _asset Asset to realize interest for
+    /// @param _amount Amount of interest to realize (type(uint).max for all available interest)
     /// @return actualRealized Actual amount realized
-    function realizeInterest(address _asset) external returns (uint256 actualRealized);
-
-    /// @notice Realize interest for restaker debt of an agent for an asset
-    /// @param _agent Agent to realize interest for
-    /// @param _asset Asset to realize interest for
-    /// @return actualRealized Actual amount realized
-    function realizeRestakerInterest(address _agent, address _asset) external returns (uint256 actualRealized);
+    function realizeInterest(address _asset, uint256 _amount) external returns (uint256 actualRealized);
 
     /// @notice Initiate liquidation of an agent when the health is below 1
     /// @param _agent Agent address
@@ -177,7 +170,6 @@ interface ILender {
     /// @notice Calculate the agent data
     /// @param _agent Address of agent
     /// @return totalDelegation Total delegation of an agent in USD, encoded with 8 decimals
-    /// @return totalSlashableCollateral Total slashable collateral of an agent in USD, encoded with 8 decimals
     /// @return totalDebt Total debt of an agent in USD, encoded with 8 decimals
     /// @return ltv Loan to value ratio, encoded in ray (1e27)
     /// @return liquidationThreshold Liquidation ratio of an agent, encoded in ray (1e27)
@@ -185,14 +177,7 @@ interface ILender {
     function agent(address _agent)
         external
         view
-        returns (
-            uint256 totalDelegation,
-            uint256 totalSlashableCollateral,
-            uint256 totalDebt,
-            uint256 ltv,
-            uint256 liquidationThreshold,
-            uint256 health
-        );
+        returns (uint256 totalDelegation, uint256 totalDebt, uint256 ltv, uint256 liquidationThreshold, uint256 health);
 
     /// @notice Calculate the maximum amount that can be borrowed for a given asset
     /// @param _agent Agent address
@@ -203,14 +188,13 @@ interface ILender {
     /// @notice Get the current debt balances for an agent for a specific asset
     /// @param _agent Agent address to check debt for
     /// @param _asset Asset to check debt for
-    /// @return totalDebt Total debt amount in asset decimals
-    function debt(address _agent, address _asset) external view returns (uint256 totalDebt);
-
-    /// @notice Get the accrued restaker interest for an agent for a specific asset
-    /// @param _agent Agent address to check accrued restaker interest for
-    /// @param _asset Asset to check accrued restaker interest for
-    /// @return accruedInterest Accrued restaker interest in asset decimals
-    function accruedRestakerInterest(address _agent, address _asset) external view returns (uint256 accruedInterest);
+    /// @return principalDebt Principal debt amount in asset decimals
+    /// @return interestDebt Interest debt amount in asset decimals
+    /// @return restakerDebt Restaker debt amount in asset decimals
+    function debt(address _agent, address _asset)
+        external
+        view
+        returns (uint256 principalDebt, uint256 interestDebt, uint256 restakerDebt);
 
     /// @notice Add an asset to the Lender
     /// @param _params Parameters to add an asset
@@ -224,11 +208,6 @@ interface ILender {
     /// @param _asset Asset address
     /// @param _pause True if pausing or false if unpausing
     function pauseAsset(address _asset, bool _pause) external;
-
-    /// @notice Set the minimum borrow amount for an asset
-    /// @param _asset Asset address
-    /// @param _minBorrow Minimum borrow amount in asset decimals
-    function setMinBorrow(address _asset, uint256 _minBorrow) external;
 
     /// @notice Get the target health ratio
     function targetHealth() external view returns (uint256 targetHealth);
@@ -254,26 +233,28 @@ interface ILender {
     /// @param _asset Address of the asset
     /// @return id Id of the reserve
     /// @return vault Address of the vault
-    /// @return debtToken Address of the debt token
+    /// @return principalDebtToken Address of the principal debt token
+    /// @return restakerDebtToken Address of the restaker debt token
+    /// @return interestDebtToken Address of the interest debt token
     /// @return interestReceiver Address of the interest receiver
     /// @return decimals Decimals of the asset
     /// @return paused True if the asset is paused, false otherwise
+    /// @return realizedInterest Realized interest of the asset
     function reservesData(address _asset)
         external
         view
         returns (
             uint256 id,
             address vault,
-            address debtToken,
+            address principalDebtToken,
+            address restakerDebtToken,
+            address interestDebtToken,
             address interestReceiver,
             uint8 decimals,
             bool paused,
-            uint256 minBorrow
+            uint256 realizedInterest
         );
 
     /// @notice Zero address not valid
     error ZeroAddressNotValid();
-
-    /// @notice Grace period greater than expiry
-    error GracePeriodGreaterThanExpiry();
 }

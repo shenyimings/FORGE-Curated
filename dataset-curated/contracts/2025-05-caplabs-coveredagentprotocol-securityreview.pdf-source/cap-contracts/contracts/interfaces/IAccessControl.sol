@@ -5,9 +5,6 @@ pragma solidity ^0.8.28;
 /// @author kexley, @capLabs
 /// @notice Interface for AccessControl contract
 interface IAccessControl {
-    /// @notice Error thrown when trying to revoke own revocation role
-    error CannotRevokeSelf();
-
     /// @notice Initialize the default admin
     /// @param _admin Default admin address
     function initialize(address _admin) external;

@@ -29,8 +29,6 @@ import { IDefaultStakerRewards } from
     "@symbioticfi/rewards/src/interfaces/defaultStakerRewards/IDefaultStakerRewards.sol";
 import { IDefaultStakerRewardsFactory } from
     "@symbioticfi/rewards/src/interfaces/defaultStakerRewards/IDefaultStakerRewardsFactory.sol";
-import { console } from "forge-std/console.sol";
-
 
 contract ConfigureSymbioticOptIns {
     /// OPT-INS

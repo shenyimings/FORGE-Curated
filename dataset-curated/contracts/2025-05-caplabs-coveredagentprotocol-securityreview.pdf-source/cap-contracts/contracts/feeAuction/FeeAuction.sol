@@ -3,6 +3,8 @@ pragma solidity ^0.8.28;
 
 import { Access } from "../access/Access.sol";
 
+import { IAuctionCallback } from "../interfaces/IAuctionCallback.sol";
+
 import { IFeeAuction } from "../interfaces/IFeeAuction.sol";
 import { FeeAuctionStorageUtils } from "../storage/FeeAuctionStorageUtils.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -42,39 +44,25 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
         $.startTimestamp = block.timestamp;
         if (_duration == 0) revert NoDuration();
         $.duration = _duration;
-        if (_minStartPrice == 0) revert NoMinStartPrice();
         $.minStartPrice = _minStartPrice;
     }
 
-    /// @notice Current price in the payment token, linearly decays toward 10% of the start price over time
+    /// @notice Current price in the payment token, linearly decays toward 0 over time
     /// @return price Current price
     function currentPrice() public view returns (uint256 price) {
         FeeAuctionStorage storage $ = get();
         uint256 elapsed = block.timestamp - $.startTimestamp;
         if (elapsed > $.duration) elapsed = $.duration;
-        price = $.startPrice * (1e27 - (elapsed * 0.9e27 / $.duration)) / 1e27;
+        price = $.startPrice * (1e27 - (elapsed * 1e27 / $.duration)) / 1e27;
     }
 
     /// @notice Buy fees in exchange for the payment token
     /// @dev Starts new auction where start price is double the settled price of this one
-    /// @param _maxPrice Maximum price to pay
     /// @param _assets Assets to buy
-    /// @param _minAmounts Minimum amounts to buy
     /// @param _receiver Receiver address for the assets
-    /// @param _deadline Deadline for the auction
-    function buy(
-        uint256 _maxPrice,
-        address[] calldata _assets,
-        uint256[] calldata _minAmounts,
-        address _receiver,
-        uint256 _deadline
-    ) external {
+    /// @param _callback Optional callback data
+    function buy(address[] calldata _assets, address _receiver, bytes calldata _callback) external {
         uint256 price = currentPrice();
-        if (price > _maxPrice) revert InvalidPrice();
-        if (_assets.length == 0 || _assets.length != _minAmounts.length) revert InvalidAssets();
-        if (_receiver == address(0)) revert InvalidReceiver();
-        if (_deadline < block.timestamp) revert InvalidDeadline();
-
         FeeAuctionStorage storage $ = get();
         $.startTimestamp = block.timestamp;
 
@@ -82,7 +70,9 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
         if (newStartPrice < $.minStartPrice) newStartPrice = $.minStartPrice;
         $.startPrice = newStartPrice;
 
-        uint256[] memory balances = _transferOutAssets(_assets, _minAmounts, _receiver);
+        uint256[] memory balances = _transferOutAssets(_assets, _receiver);
+
+        if (_callback.length > 0) IAuctionCallback(msg.sender).auctionCallback(_assets, balances, price, _callback);
 
         IERC20($.paymentToken).safeTransferFrom(msg.sender, $.paymentRecipient, price);
 
@@ -94,7 +84,6 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
     /// @param _startPrice New start price
     function setStartPrice(uint256 _startPrice) external checkAccess(this.setStartPrice.selector) {
         FeeAuctionStorage storage $ = get();
-        if (_startPrice < $.minStartPrice) revert InvalidStartPrice();
         $.startPrice = _startPrice;
         emit SetStartPrice(_startPrice);
     }
@@ -112,7 +101,6 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
     /// @notice Set minimum start price
     /// @param _minStartPrice New minimum start price
     function setMinStartPrice(uint256 _minStartPrice) external checkAccess(this.setMinStartPrice.selector) {
-        if (_minStartPrice == 0) revert NoMinStartPrice();
         FeeAuctionStorage storage $ = get();
         $.minStartPrice = _minStartPrice;
         emit SetMinStartPrice(_minStartPrice);
@@ -120,10 +108,9 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
 
     /// @dev Transfer all specified assets to the receiver from this address
     /// @param _assets Asset addresses
-    /// @param _minAmounts Minimum amounts to buy
     /// @param _receiver Receiver address
     /// @return balances Balances transferred to receiver
-    function _transferOutAssets(address[] calldata _assets, uint256[] calldata _minAmounts, address _receiver)
+    function _transferOutAssets(address[] calldata _assets, address _receiver)
         internal
         returns (uint256[] memory balances)
     {
@@ -131,10 +118,8 @@ contract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUt
         balances = new uint256[](assetsLength);
         for (uint256 i; i < assetsLength; ++i) {
             address asset = _assets[i];
-            uint256 balance = IERC20(asset).balanceOf(address(this));
-            balances[i] = balance;
-            if (balance < _minAmounts[i]) revert InsufficientBalance(asset, balance, _minAmounts[i]);
-            if (balance > 0) IERC20(asset).safeTransfer(_receiver, balance);
+            balances[i] = IERC20(asset).balanceOf(address(this));
+            if (balances[i] > 0) IERC20(asset).safeTransfer(_receiver, balances[i]);
         }
     }
 

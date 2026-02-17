@@ -11,11 +11,11 @@ library StakedCapAdapter {
     /// @notice Fetch price for a staked cap token
     /// @param _asset Staked cap token address
     /// @return latestAnswer Price of the staked cap token fixed to 8 decimals
-    /// @return lastUpdated Last updated timestamp
+    /// @return lastUpdated Latest timestamp of the price
     function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {
         address capToken = IERC4626(_asset).asset();
         (latestAnswer, lastUpdated) = IOracle(msg.sender).getPrice(capToken);
-        uint256 capTokenDecimals = 10 ** IERC20Metadata(capToken).decimals();
+        uint256 capTokenDecimals = IERC20Metadata(capToken).decimals();
         uint256 pricePerFullShare = IERC4626(_asset).convertToAssets(capTokenDecimals);
         latestAnswer = latestAnswer * pricePerFullShare / capTokenDecimals;
     }

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
+import { IOracle } from "./IOracle.sol";
+
 interface IVaultAdapter {
     /// @custom:storage-location erc7201:cap.storage.VaultAdapter
     struct VaultAdapterStorage {
-        mapping(address => SlopeData) slopeData; // asset => slope data
-        mapping(address => mapping(address => UtilizationData)) utilizationData; // vault => asset => utilization data
+        mapping(address => SlopeData) slopeData;
+        mapping(address => UtilizationData) utilizationData;
         uint256 maxMultiplier;
         uint256 minMultiplier;
         uint256 rate;
@@ -20,7 +22,7 @@ interface IVaultAdapter {
 
     /// @dev Slope data for an asset
     struct UtilizationData {
-        uint256 multiplier;
+        uint256 utilizationMultiplier;
         uint256 index;
         uint256 lastUpdate;
     }
@@ -41,15 +43,4 @@ interface IVaultAdapter {
     /// @param _minMultiplier Minimum slope multiplier
     /// @param _rate Rate at which the multiplier shifts
     function setLimits(uint256 _maxMultiplier, uint256 _minMultiplier, uint256 _rate) external;
-
-    /// @notice Emitted when slopes are set
-    /// @param _asset Asset address
-    /// @param _slopes Slope data
-    event SetSlopes(address indexed _asset, SlopeData _slopes);
-
-    /// @notice Emitted when limits are set
-    /// @param _maxMultiplier Maximum slope multiplier
-    /// @param _minMultiplier Minimum slope multiplier
-    /// @param _rate Rate at which the multiplier shifts
-    event SetLimits(uint256 _maxMultiplier, uint256 _minMultiplier, uint256 _rate);
 }

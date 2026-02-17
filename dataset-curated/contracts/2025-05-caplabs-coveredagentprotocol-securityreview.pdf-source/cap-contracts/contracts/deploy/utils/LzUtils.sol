@@ -5,6 +5,7 @@ import { ILayerZeroEndpointV2 } from "@layerzerolabs/interfaces/ILayerZeroEndpoi
 
 import { stdJson } from "forge-std/StdJson.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { console } from "forge-std/console.sol";
 
 struct LzAddressbook {
     uint32 eid;

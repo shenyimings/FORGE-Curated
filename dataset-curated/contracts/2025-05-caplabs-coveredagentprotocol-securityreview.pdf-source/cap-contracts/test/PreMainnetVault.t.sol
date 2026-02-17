@@ -74,7 +74,7 @@ contract PreMainnetVaultTest is Test, TestHelperOz5, ProxyUtils, PermitUtils, Ti
 
             asset.approve(address(vault), initialBalance);
             MessagingFee memory fee = vault.quote(initialBalance, holder);
-            vault.deposit{ value: fee.nativeFee }(initialBalance, holder, holder);
+            vault.deposit{ value: fee.nativeFee }(initialBalance, holder);
 
             vm.stopPrank();
         }
@@ -100,7 +100,7 @@ contract PreMainnetVaultTest is Test, TestHelperOz5, ProxyUtils, PermitUtils, Ti
         emit PreMainnetVault.Deposit(user, amount);
 
         // Deposit with some ETH for LZ fees
-        vault.deposit{ value: fee.nativeFee }(amount, l2user, user);
+        vault.deposit{ value: fee.nativeFee }(amount, l2user);
 
         assertEq(vault.balanceOf(user), amount);
         assertEq(asset.balanceOf(address(vault)), initialBalance + amount);
@@ -174,7 +174,7 @@ contract PreMainnetVaultTest is Test, TestHelperOz5, ProxyUtils, PermitUtils, Ti
         MessagingFee memory fee = vault.quote(1, user);
 
         vm.expectRevert(PreMainnetVault.ZeroAmount.selector);
-        vault.deposit{ value: fee.nativeFee }(0, user, user);
+        vault.deposit{ value: fee.nativeFee }(0, user);
 
         vm.stopPrank();
     }
@@ -189,7 +189,7 @@ contract PreMainnetVaultTest is Test, TestHelperOz5, ProxyUtils, PermitUtils, Ti
         MessagingFee memory fee = vault.quote(amount, user);
 
         vm.expectRevert();
-        vault.deposit{ value: fee.nativeFee - 1 }(amount, user, user);
+        vault.deposit{ value: fee.nativeFee - 1 }(amount, user);
 
         vm.stopPrank();
     }
@@ -332,45 +332,6 @@ contract PreMainnetVaultTest is Test, TestHelperOz5, ProxyUtils, PermitUtils, Ti
 
             vm.stopPrank();
         }
-    }
-
-    function test_setLzReceiveGas() public {
-        assertEq(vault.lzReceiveGas(), 100_000);
-
-        vm.startPrank(owner);
-        vault.setLzReceiveGas(200_000);
-        vm.stopPrank();
-
-        assertEq(vault.lzReceiveGas(), 200_000);
-
-        vm.startPrank(user);
-        vm.expectRevert();
-        vault.setLzReceiveGas(300_000);
-        vm.stopPrank();
-
-        assertEq(vault.lzReceiveGas(), 200_000);
-    }
-    
-    function test_revert_deposit_or_withdraw_zero_address_or_amount() public {
-        vm.startPrank(user);
-
-        asset.approve(address(vault), 1);
-
-        MessagingFee memory fee = vault.quote(1, address(0));
-
-        vm.expectRevert(PreMainnetVault.ZeroAddress.selector);
-        vault.deposit{ value: fee.nativeFee }(1, address(0), address(0));
-
-        vm.expectRevert(PreMainnetVault.ZeroAmount.selector);
-        vault.deposit{ value: fee.nativeFee }(0, address(0), address(0));
-
-        vm.expectRevert(PreMainnetVault.ZeroAddress.selector);
-        vault.withdraw(1, address(0));
-
-        vm.expectRevert(PreMainnetVault.ZeroAmount.selector);
-        vault.withdraw(0, address(0));
-
-        vm.stopPrank();
     }
 
     // allow vm.expectRevert() on verifyPackets

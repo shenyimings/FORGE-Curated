@@ -9,7 +9,7 @@ import { RateOracleStorageUtils } from "../storage/RateOracleStorageUtils.sol";
 /// @title Oracle for fetching interest rates
 /// @author kexley, @capLabs
 /// @notice Admin can set the minimum interest rates and the restaker interest rates.
-abstract contract RateOracle is IRateOracle, Access, RateOracleStorageUtils {
+contract RateOracle is IRateOracle, Access, RateOracleStorageUtils {
     /// @dev Initialize the rate oracle
     /// @param _accessControl Access control address
     function __RateOracle_init(address _accessControl) internal onlyInitializing {

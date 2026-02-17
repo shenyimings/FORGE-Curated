@@ -11,25 +11,23 @@ library CapTokenAdapter {
     /// @notice Fetch price for a cap token based on its underlying assets
     /// @param _asset Cap token address
     /// @return latestAnswer Price of the cap token fixed to 8 decimals
-    /// @return lastUpdated Last updated timestamp
+    /// @return lastUpdated Earliest timestamp of the price
     function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {
         uint256 capTokenSupply = IERC20Metadata(_asset).totalSupply();
-        if (capTokenSupply == 0) return (1e8, block.timestamp);
+        if (capTokenSupply == 0) return (0, block.timestamp);
 
         address[] memory assets = IVault(_asset).assets();
         lastUpdated = block.timestamp;
 
         uint256 totalUsdValue;
-        lastUpdated = block.timestamp;
-
         for (uint256 i; i < assets.length; ++i) {
             address asset = assets[i];
             uint256 supply = IVault(_asset).totalSupplies(asset);
             uint256 supplyDecimalsPow = 10 ** IERC20Metadata(asset).decimals();
-            (uint256 assetPrice, uint256 assetLastUpdated) = IOracle(msg.sender).getPrice(asset);
+            (uint256 assetPrice, uint256 timestamp) = IOracle(msg.sender).getPrice(asset);
 
             totalUsdValue += supply * assetPrice / supplyDecimalsPow;
-            if (assetLastUpdated < lastUpdated) lastUpdated = assetLastUpdated;
+            if (timestamp < lastUpdated) lastUpdated = timestamp;
         }
 
         uint256 decimalsPow = 10 ** IERC20Metadata(_asset).decimals();

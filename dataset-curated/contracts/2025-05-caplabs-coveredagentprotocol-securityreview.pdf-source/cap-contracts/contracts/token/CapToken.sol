@@ -20,17 +20,15 @@ contract CapToken is UUPSUpgradeable, Vault {
     /// @param _feeAuction Fee auction address
     /// @param _oracle Oracle address
     /// @param _assets Asset addresses to mint Cap token with
-    /// @param _insuranceFund Insurance fund
     function initialize(
         string memory _name,
         string memory _symbol,
         address _accessControl,
         address _feeAuction,
         address _oracle,
-        address[] calldata _assets,
-        address _insuranceFund
+        address[] calldata _assets
     ) external initializer {
-        __Vault_init(_name, _symbol, _accessControl, _feeAuction, _oracle, _assets, _insuranceFund);
+        __Vault_init(_name, _symbol, _accessControl, _feeAuction, _oracle, _assets);
         __UUPSUpgradeable_init();
     }
 

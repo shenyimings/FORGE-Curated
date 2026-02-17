@@ -38,9 +38,9 @@ contract MockVault is MockERC20, MinterStorageUtils {
         return _totalSupplies[_asset];
     }
 
-    function minter_getAmountOut(IMinter.AmountOutParams memory params) external view returns (uint256 amountOut) {
+    function minter_getAmountOut(IMinter.AmountOutParams memory params) external view returns (uint256) {
         IMinter.MinterStorage storage $ = getMinterStorage();
-        (amountOut,) = MinterLogic.amountOut($, params);
+        return MinterLogic.amountOut($, params);
     }
 }
 
@@ -77,7 +77,7 @@ contract MinterLogicTest is Test {
         vault.mockRedeemFee(0);
         vault.mockFees(
             address(asset),
-            IMinter.FeeData({ minMintFee: 0, slope0: 0, slope1: 0, mintKinkRatio: 0, burnKinkRatio: 0, optimalRatio: 0 })
+            IMinter.FeeData({ slope0: 0, slope1: 0, mintKinkRatio: 0, burnKinkRatio: 0, optimalRatio: 0 })
         );
         vault.mockDecimals(18);
     }
@@ -182,7 +182,7 @@ contract MinterLogicTest is Test {
         vault.mockTotalSupplies(address(vault), 1000e18);
         vault.mockFees(
             address(asset6Dec),
-            IMinter.FeeData({ minMintFee: 0, slope0: 0, slope1: 0, mintKinkRatio: 0, burnKinkRatio: 0, optimalRatio: 0 })
+            IMinter.FeeData({ slope0: 0, slope1: 0, mintKinkRatio: 0, burnKinkRatio: 0, optimalRatio: 0 })
         );
 
         IMinter.AmountOutParams memory params =

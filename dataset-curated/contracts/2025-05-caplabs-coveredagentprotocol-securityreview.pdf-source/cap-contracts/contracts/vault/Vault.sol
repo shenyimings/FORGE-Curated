@@ -10,16 +10,13 @@ import { Minter } from "./Minter.sol";
 import { VaultLogic } from "./libraries/VaultLogic.sol";
 import { ERC20PermitUpgradeable } from
     "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
-import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title Vault for storing the backing for cTokens
 /// @author kexley, @capLabs
 /// @notice Tokens are supplied by cToken minters and borrowed by covered agents
 /// @dev Supplies, borrows and utilization rates are tracked. Interest rates should be computed and
 /// charged on the external contracts, only the principle amount is counted on this contract.
-abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, FractionalReserve, VaultStorageUtils {
-    using EnumerableSet for EnumerableSet.AddressSet;
-
+contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, FractionalReserve, VaultStorageUtils {
     /// @dev Initialize the assets
     /// @param _name Name of the cap token
     /// @param _symbol Symbol of the cap token
@@ -27,34 +24,26 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
     /// @param _feeAuction Fee auction address
     /// @param _oracle Oracle address
     /// @param _assets Asset addresses
-    /// @param _insuranceFund Insurance fund
     function __Vault_init(
         string memory _name,
         string memory _symbol,
         address _accessControl,
         address _feeAuction,
         address _oracle,
-        address[] calldata _assets,
-        address _insuranceFund
+        address[] calldata _assets
     ) internal onlyInitializing {
         __ERC20_init(_name, _symbol);
         __ERC20Permit_init(_name);
         __Access_init(_accessControl);
-        __FractionalReserve_init(_feeAuction);
-        __Minter_init(_oracle);
-        __Vault_init_unchained(_assets, _insuranceFund);
+        __FractionalReserve_init_unchained(_feeAuction);
+        __Minter_init_unchained(_oracle);
+        __Vault_init_unchained(_assets);
     }
 
     /// @dev Initialize unchained
     /// @param _assets Asset addresses
-    /// @param _insuranceFund Insurance fund
-    function __Vault_init_unchained(address[] calldata _assets, address _insuranceFund) internal onlyInitializing {
-        VaultStorage storage $ = getVaultStorage();
-        uint256 length = _assets.length;
-        for (uint256 i; i < length; ++i) {
-            $.assets.add(_assets[i]);
-        }
-        $.insuranceFund = _insuranceFund;
+    function __Vault_init_unchained(address[] calldata _assets) internal onlyInitializing {
+        getVaultStorage().assets = _assets;
     }
 
     /// @notice Mint the cap token using an asset
@@ -68,8 +57,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
         external
         returns (uint256 amountOut)
     {
-        uint256 fee;
-        (amountOut, fee) = getMintAmount(_asset, _amountIn);
+        amountOut = getMintAmount(_asset, _amountIn);
         VaultLogic.mint(
             getVaultStorage(),
             MintBurnParams({
@@ -78,12 +66,10 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
                 amountOut: amountOut,
                 minAmountOut: _minAmountOut,
                 receiver: _receiver,
-                deadline: _deadline,
-                fee: fee
+                deadline: _deadline
             })
         );
         _mint(_receiver, amountOut);
-        _mint(getVaultStorage().insuranceFund, fee);
     }
 
     /// @notice Burn the cap token for an asset
@@ -97,8 +83,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
         external
         returns (uint256 amountOut)
     {
-        uint256 fee;
-        (amountOut, fee) = getBurnAmount(_asset, _amountIn);
+        amountOut = getBurnAmount(_asset, _amountIn);
         divest(_asset, amountOut);
         VaultLogic.burn(
             getVaultStorage(),
@@ -108,8 +93,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
                 amountOut: amountOut,
                 minAmountOut: _minAmountOut,
                 receiver: _receiver,
-                deadline: _deadline,
-                fee: fee
+                deadline: _deadline
             })
         );
         _burn(msg.sender, _amountIn);
@@ -126,8 +110,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
         external
         returns (uint256[] memory amountsOut)
     {
-        uint256[] memory fees;
-        (amountsOut, fees) = getRedeemAmount(_amountIn);
+        amountsOut = getRedeemAmount(_amountIn);
         divestMany(assets(), amountsOut);
         VaultLogic.redeem(
             getVaultStorage(),
@@ -136,8 +119,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
                 amountsOut: amountsOut,
                 minAmountsOut: _minAmountsOut,
                 receiver: _receiver,
-                deadline: _deadline,
-                fees: fees
+                deadline: _deadline
             })
         );
         _burn(msg.sender, _amountIn);
@@ -194,7 +176,7 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
     /// @notice Get the list of assets supported by the vault
     /// @return assetList List of assets
     function assets() public view returns (address[] memory assetList) {
-        assetList = getVaultStorage().assets.values();
+        assetList = getVaultStorage().assets;
     }
 
     /// @notice Get the total supplies of an asset
@@ -222,7 +204,8 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
     /// @param _asset Asset to borrow
     /// @return amount Amount available
     function availableBalance(address _asset) external view returns (uint256 amount) {
-        amount = VaultLogic.availableBalance(getVaultStorage(), _asset);
+        VaultStorage storage $ = getVaultStorage();
+        amount = $.totalSupplies[_asset] - $.totalBorrows[_asset];
     }
 
     /// @notice Utilization rate of an asset
@@ -239,11 +222,5 @@ abstract contract Vault is IVault, ERC20PermitUpgradeable, Access, Minter, Fract
     /// @return index Utilization ratio index
     function currentUtilizationIndex(address _asset) external view returns (uint256 index) {
         index = VaultLogic.currentUtilizationIndex(getVaultStorage(), _asset);
-    }
-
-    /// @notice Get the insurance fund
-    /// @return insuranceFund Insurance fund
-    function insuranceFund() external view returns (address) {
-        return getVaultStorage().insuranceFund;
     }
 }

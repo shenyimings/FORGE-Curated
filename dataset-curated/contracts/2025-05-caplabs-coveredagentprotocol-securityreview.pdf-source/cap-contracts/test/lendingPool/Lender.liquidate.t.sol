@@ -2,9 +2,8 @@
 pragma solidity ^0.8.28;
 
 import { Delegation } from "../../contracts/delegation/Delegation.sol";
-
-import { ILender } from "../../contracts/interfaces/ILender.sol";
 import { Lender } from "../../contracts/lendingPool/Lender.sol";
+import { ILender } from "../../contracts/interfaces/ILender.sol";
 import { TestDeployer } from "../deploy/TestDeployer.sol";
 import { MockChainlinkPriceFeed } from "../mocks/MockChainlinkPriceFeed.sol";
 import { console } from "forge-std/console.sol";
@@ -20,23 +19,25 @@ contract LenderLiquidateTest is TestDeployer {
         user_agent = _getRandomAgent();
 
         vm.startPrank(env.symbiotic.users.vault_admin);
-        _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, user_agent, 2.385e18);
+        _symbioticVaultDelegateToAgent(symbioticWethVault, env.symbiotic.networkAdapter, user_agent, 2e18);
+        _symbioticVaultDelegateToAgent(symbioticUsdtVault, env.symbiotic.networkAdapter, user_agent, 1000e6);
         vm.stopPrank();
 
         vm.startPrank(env.users.lender_admin);
-        // Try removing and re-adding the asset
+          // Try removing and re-adding the asset 
         lender.removeAsset(address(usdt));
         lender.addAsset(
-            ILender.AddAssetParams({
-                asset: address(usdt),
-                vault: address(cUSD),
-                debtToken: env.usdVault.debtTokens[0],
-                interestReceiver: env.usdVault.feeAuction,
-                restakerInterestReceiver: env.infra.delegation,
-                bonusCap: 0.1e27,
-                minBorrow: 100e6
-            })
-        );
+                ILender.AddAssetParams({
+                    asset: address(usdt),
+                    vault: address(cUSD),
+                    principalDebtToken: env.usdVault.principalDebtTokens[0],
+                    restakerDebtToken: env.usdVault.restakerDebtTokens[0],
+                    interestDebtToken: env.usdVault.interestDebtTokens[0],
+                    interestReceiver: env.usdVault.feeAuction,
+                    restakerInterestReceiver: env.infra.delegation,
+                    bonusCap: 0.1e27
+                })
+            );
         lender.pauseAsset(address(usdt), false);
         vm.stopPrank();
     }
@@ -54,7 +55,7 @@ contract LenderLiquidateTest is TestDeployer {
         // Modify the agent to have 0.01 liquidation threshold
         {
             vm.startPrank(env.users.delegation_admin);
-            Delegation(env.infra.delegation).modifyAgent(user_agent, 0, 0.01e27);
+            Delegation(env.infra.delegation).modifyAgent(user_agent, 0.5e27, 0.01e27);
             vm.stopPrank();
         }
 
@@ -78,7 +79,7 @@ contract LenderLiquidateTest is TestDeployer {
             usdc.approve(address(lender), 3000e6);
             lender.liquidate(user_agent, address(usdc), 1000e6);
 
-            (,, uint256 totalDebt,,,) = lender.agent(user_agent);
+            (, uint256 totalDebt,,,) = lender.agent(user_agent);
             console.log("Debt prior to liquidation", totalDebt);
 
             console.log("Liquidator usdt balance after first liquidation", usdt.balanceOf(env.testUsers.liquidator));
@@ -101,22 +102,22 @@ contract LenderLiquidateTest is TestDeployer {
             console.log("");
 
             assertEq(usdc.balanceOf(env.testUsers.liquidator), 0);
-            assertEq(weth.balanceOf(env.testUsers.liquidator), 2.385e18);
+            assertEq(usdt.balanceOf(env.testUsers.liquidator), 1000e6);
+            assertEq(weth.balanceOf(env.testUsers.liquidator), 2e18);
 
             uint256 coverage = Delegation(env.infra.delegation).coverage(user_agent);
             console.log("Coverage after liquidations", coverage);
             console.log("");
             assertEq(coverage, 0);
 
-            (uint256 totalDelegation,, uint256 afterTotalDebt,,,) = lender.agent(user_agent);
+            (uint256 totalDelegation, uint256 afterTotalDebt,,,) = lender.agent(user_agent);
 
             console.log("Total delegation", totalDelegation);
-            console.log("Total debt before liquidation", totalDebt);
             console.log("Total debt", afterTotalDebt);
             assertEq(totalDelegation, 0);
 
             /// We should only have interest let to pay back
-            assertEq(afterTotalDebt, totalDebt - 2000.000001e8);
+            assertEq(afterTotalDebt, totalDebt - 2000e8);
 
             vm.stopPrank();
         }
@@ -135,7 +136,7 @@ contract LenderLiquidateTest is TestDeployer {
         // Modify the agent to have 0.01 liquidation threshold
         {
             vm.startPrank(env.users.delegation_admin);
-            Delegation(env.infra.delegation).modifyAgent(user_agent, 0, 0.01e27);
+            Delegation(env.infra.delegation).modifyAgent(user_agent, 0.5e27, 0.01e27);
             vm.stopPrank();
         }
 
@@ -187,7 +188,7 @@ contract LenderLiquidateTest is TestDeployer {
             console.log("");
             //     assertEq(coverage, 0);
 
-            (uint256 totalDelegation,, uint256 totalDebt,,, uint256 health) = lender.agent(user_agent);
+            (uint256 totalDelegation, uint256 totalDebt,,, uint256 health) = lender.agent(user_agent);
 
             console.log("Total debt after liquidations", totalDebt);
             console.log("Total delegation after liquidations", totalDelegation);
@@ -216,7 +217,7 @@ contract LenderLiquidateTest is TestDeployer {
         // Modify the agent to have 0.01 liquidation threshold
         {
             vm.startPrank(env.users.delegation_admin);
-            Delegation(env.infra.delegation).modifyAgent(user_agent, 0, 0.01e27);
+            Delegation(env.infra.delegation).modifyAgent(user_agent, 0.5e27, 0.01e27);
             vm.stopPrank();
         }
 
@@ -238,7 +239,7 @@ contract LenderLiquidateTest is TestDeployer {
             console.log("");
             _timeTravel(gracePeriod + 1);
 
-            (uint256 totalDelegation,, uint256 totalDebt, uint256 ltv, uint256 liquidationThreshold, uint256 health) =
+            (uint256 totalDelegation, uint256 totalDebt, uint256 ltv, uint256 liquidationThreshold, uint256 health) =
                 lender.agent(user_agent);
 
             console.log("Total debt after 60 days", totalDebt);
@@ -279,7 +280,7 @@ contract LenderLiquidateTest is TestDeployer {
             console.log("");
             //     assertEq(coverage, 0);
 
-            (totalDelegation,, totalDebt, ltv, liquidationThreshold, health) = lender.agent(user_agent);
+            (totalDelegation, totalDebt, ltv, liquidationThreshold, health) = lender.agent(user_agent);
 
             console.log("Health after liquidations", health);
 

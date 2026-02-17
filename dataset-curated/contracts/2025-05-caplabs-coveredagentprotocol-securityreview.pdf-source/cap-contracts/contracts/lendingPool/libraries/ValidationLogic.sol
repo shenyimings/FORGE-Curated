@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import { IDelegation } from "../../interfaces/IDelegation.sol";
+import { IOracle } from "../../interfaces/IOracle.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { ILender } from "../../interfaces/ILender.sol";
@@ -50,16 +51,12 @@ library ValidationLogic {
     /// @dev Restaker interest receiver not set
     error RestakerInterestReceiverNotSet();
 
-    /// @dev Minimum borrow amount
-    error MinBorrowAmount();
-
     /// @notice Validate the borrow of an agent
     /// @dev Check the pause state of the reserve and the health of the agent before and after the
     /// borrow.
     /// @param $ Lender storage
     /// @param params Validation parameters
     function validateBorrow(ILender.LenderStorage storage $, ILender.BorrowParams memory params) external {
-        if (params.amount < $.reservesData[params.asset].minBorrow) revert MinBorrowAmount();
         if (params.receiver == address(0) || params.asset == address(0)) revert ZeroAddressNotValid();
         if ($.reservesData[params.asset].paused) revert ReservePaused();
 
@@ -105,6 +102,7 @@ library ValidationLogic {
         }
     }
 
+    /// TODO Check that the asset is borrowable from the vault
     /// @notice Validate adding an asset as a reserve
     /// @param $ Lender storage
     /// @param params Parameters for adding an asset
@@ -120,20 +118,13 @@ library ValidationLogic {
     /// @param $ Lender storage
     /// @param _asset Asset to remove
     function validateRemoveAsset(ILender.LenderStorage storage $, address _asset) external view {
-        if (IERC20($.reservesData[_asset].debtToken).totalSupply() != 0) revert VariableDebtSupplyNotZero();
+        if (IERC20($.reservesData[_asset].principalDebtToken).totalSupply() != 0) revert VariableDebtSupplyNotZero();
     }
 
     /// @notice Validate pausing a reserve
     /// @param $ Lender storage
     /// @param _asset Asset to pause
     function validatePauseAsset(ILender.LenderStorage storage $, address _asset) external view {
-        if ($.reservesData[_asset].vault == address(0)) revert AssetNotListed();
-    }
-
-    /// @notice Validate setting the minimum borrow amount
-    /// @param $ Lender storage
-    /// @param _asset Asset to set minimum borrow amount
-    function validateSetMinBorrow(ILender.LenderStorage storage $, address _asset) external view {
         if ($.reservesData[_asset].vault == address(0)) revert AssetNotListed();
     }
 }

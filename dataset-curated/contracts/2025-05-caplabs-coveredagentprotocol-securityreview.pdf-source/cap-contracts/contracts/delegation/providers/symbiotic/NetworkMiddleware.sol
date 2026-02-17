@@ -11,6 +11,8 @@ import { IERC20, SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/Saf
 
 import { IBurnerRouter } from "@symbioticfi/burners/src/interfaces/router/IBurnerRouter.sol";
 
+import { IMiddleware } from "../../../interfaces/IMiddleware.sol";
+
 import { INetworkMiddleware } from "../../../interfaces/INetworkMiddleware.sol";
 import { NetworkMiddlewareStorageUtils } from "../../../storage/NetworkMiddlewareStorageUtils.sol";
 import { Subnetwork } from "@symbioticfi/core/src/contracts/libraries/Subnetwork.sol";
@@ -25,11 +27,6 @@ import { IVault } from "@symbioticfi/core/src/interfaces/vault/IVault.sol";
 /// @notice This contract manages the symbiotic collateral and slashing.
 contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, NetworkMiddlewareStorageUtils {
     using SafeERC20 for IERC20;
-
-    /// @dev Disable initializers on the implementation
-    constructor() {
-        _disableInitializers();
-    }
 
     /// @notice Initialize
     /// @param _accessControl Access control address
@@ -55,29 +52,19 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
         $.feeAllowed = _feeAllowed;
     }
 
-    /// @notice Register agent to be used as collateral within the CAP system
-    /// @param _vault Vault address
-    /// @param _agent Agent address
-    function registerAgent(address _vault, address _agent) external checkAccess(this.registerAgent.selector) {
-        _verifyVault(_vault);
-        NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
-        if (_agent == address(0)) revert InvalidAgent();
-        if ($.agentsToVault[_agent] != address(0)) revert ExistingCoverage();
-        if (!$.vaults[_vault].exists) revert VaultDoesNotExist();
-        $.agentsToVault[_agent] = _vault;
-        emit AgentRegistered(_agent);
-    }
-
     /// @notice Register vault to be used as collateral within the CAP system
     /// @param _vault Vault address
-    /// @param _stakerRewarder Staker rewarder address
-    function registerVault(address _vault, address _stakerRewarder) external checkAccess(this.registerVault.selector) {
+    /// @param _agents Agents supported by the vault
+    function registerVault(address _vault, address _stakerRewarder, address[] calldata _agents)
+        external
+        checkAccess(this.registerVault.selector)
+    {
         _verifyVault(_vault);
         NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
-        Vault storage vault = $.vaults[_vault];
-        if (vault.exists) revert VaultExists();
-        vault.stakerRewarder = _stakerRewarder;
-        vault.exists = true;
+        $.stakerRewarders[_vault] = _stakerRewarder;
+        for (uint256 i; i < _agents.length; ++i) {
+            $.vaults[_agents[i]].push(_vault);
+        }
         emit VaultRegistered(_vault);
     }
 
@@ -98,25 +85,31 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
     {
         NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
 
-        IVault vault = IVault($.agentsToVault[_agent]);
+        for (uint256 i; i < $.vaults[_agent].length; ++i) {
+            IVault vault = IVault($.vaults[_agent][i]);
 
-        (, uint256 totalSlashableCollateral) =
-            slashableCollateralByVault($.network, _agent, address(vault), $.oracle, _timestamp);
+            (, uint256 totalSlashableCollateral) =
+                slashableCollateralByVault($.network, _agent, address(vault), $.oracle, _timestamp);
+            if (totalSlashableCollateral == 0) continue;
 
-        // Round up in favor of the liquidator
-        uint256 slashShareOfCollateral = (totalSlashableCollateral * _slashShare / 1e18) + 1;
+            // Round up in favor of the liquidator
+            uint256 slashShareOfCollateral = (totalSlashableCollateral * _slashShare / 1e18) + 1;
 
-        // If the slash share is greater than the total slashable collateral, set it to the total slashable collateral
-        if (slashShareOfCollateral > totalSlashableCollateral) {
-            slashShareOfCollateral = totalSlashableCollateral;
+            // If the slash share is greater than the total slashable collateral, set it to the total slashable collateral
+            if (slashShareOfCollateral > totalSlashableCollateral) {
+                slashShareOfCollateral = totalSlashableCollateral;
+            }
+
+            ISlasher(vault.slasher()).slash(
+                subnetwork(_agent), _agent, slashShareOfCollateral, _timestamp, new bytes(0)
+            );
+
+            // TODO: the burner could be a non routing burner, could add hooks?
+            IBurnerRouter(vault.burner()).triggerTransfer(address(this));
+            IERC20(vault.collateral()).safeTransfer(_recipient, slashShareOfCollateral);
+
+            emit Slash(_agent, _recipient, slashShareOfCollateral);
         }
-
-        ISlasher(vault.slasher()).slash(subnetwork(_agent), _agent, slashShareOfCollateral, _timestamp, new bytes(0));
-
-        IBurnerRouter(vault.burner()).triggerTransfer(address(this));
-        IERC20(vault.collateral()).safeTransfer(_recipient, slashShareOfCollateral);
-
-        emit Slash(_agent, _recipient, slashShareOfCollateral);
     }
 
     /// @dev Get vault info
@@ -201,13 +194,15 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
     /// @return delegation Delegation amount in USD (8 decimals)
     function coverage(address _agent) public view returns (uint256 delegation) {
         NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
-        address _vault = $.agentsToVault[_agent];
-        if (_vault == address(0)) revert InvalidAgent();
+        address[] memory _vaults = $.vaults[_agent];
         address _network = $.network;
         address _oracle = $.oracle;
         uint48 _timestamp = uint48(block.timestamp);
 
-        (delegation,) = coverageByVault(_network, _agent, _vault, _oracle, _timestamp);
+        for (uint256 i = 0; i < _vaults.length; i++) {
+            (uint256 value,) = coverageByVault(_network, _agent, _vaults[i], _oracle, _timestamp);
+            delegation += value;
+        }
     }
 
     /// @notice Slashable collateral of an agent by Symbiotic vaults
@@ -215,16 +210,19 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
     /// @param _timestamp Timestamp to check slashable collateral at
     /// @return _slashableCollateral Slashable collateral amount in USD (8 decimals)
     function slashableCollateral(address _agent, uint48 _timestamp)
-        public
+        external
         view
         returns (uint256 _slashableCollateral)
     {
         NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
-        address _vault = $.agentsToVault[_agent];
+        address[] memory _vaults = $.vaults[_agent];
         address _network = $.network;
         address _oracle = $.oracle;
 
-        (_slashableCollateral,) = slashableCollateralByVault(_network, _agent, _vault, _oracle, _timestamp);
+        for (uint256 i = 0; i < _vaults.length; i++) {
+            (uint256 value,) = slashableCollateralByVault(_network, _agent, _vaults[i], _oracle, _timestamp);
+            _slashableCollateral += value;
+        }
     }
 
     /// @notice Subnetwork id
@@ -243,11 +241,11 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
         id = Subnetwork.subnetwork(getNetworkMiddlewareStorage().network, subnetworkIdentifier(_agent));
     }
 
-    /// @notice Registered vault for an agent
+    /// @notice Registered vaults for an agent
     /// @param _agent Agent address
-    /// @return vaultAddress Vault address
-    function vaults(address _agent) external view returns (address vaultAddress) {
-        vaultAddress = getNetworkMiddlewareStorage().agentsToVault[_agent];
+    /// @return vaultAddresses Vault addresses
+    function vaults(address _agent) external view returns (address[] memory vaultAddresses) {
+        vaultAddresses = getNetworkMiddlewareStorage().vaults[_agent];
     }
 
     /// @dev Verify a vault has the required specifications
@@ -284,16 +282,23 @@ contract NetworkMiddleware is INetworkMiddleware, UUPSUpgradeable, Access, Netwo
     /// @param _token Token address
     function distributeRewards(address _agent, address _token) external checkAccess(this.distributeRewards.selector) {
         NetworkMiddlewareStorage storage $ = getNetworkMiddlewareStorage();
+        uint256 totalCollateralValue = coverage(_agent);
         uint256 _amount = IERC20(_token).balanceOf(address(this));
 
-        address _vault = $.agentsToVault[_agent];
-        address stakerRewarder = $.vaults[_vault].stakerRewarder;
-        if (stakerRewarder == address(0)) revert NoStakerRewarder();
+        // here, distribute proportionally to the collateral value of the vaults
+        address[] memory _vaults = $.vaults[_agent];
+        for (uint256 i = 0; i < _vaults.length; i++) {
+            address vault = _vaults[i];
+            (uint256 collateralValue,) = coverageByVault($.network, _agent, vault, $.oracle, uint48(block.timestamp));
+            uint256 reward = _amount * collateralValue / totalCollateralValue;
+            address stakerRewarder = $.stakerRewarders[vault];
+            if (stakerRewarder == address(0)) revert NoStakerRewarder();
 
-        IERC20(_token).forceApprove(address(IStakerRewards(stakerRewarder)), _amount);
-        IStakerRewards(stakerRewarder).distributeRewards(
-            $.network, _token, _amount, abi.encode(uint48(block.timestamp - 1), $.feeAllowed, "", "")
-        );
+            IERC20(_token).forceApprove(address(IStakerRewards(stakerRewarder)), reward);
+            IStakerRewards(stakerRewarder).distributeRewards(
+                $.network, _token, reward, abi.encode(uint48(block.timestamp - 1), $.feeAllowed, "", "")
+            );
+        }
     }
 
     /// @dev Only admin can upgrade
