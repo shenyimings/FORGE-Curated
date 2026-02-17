@@ -1,32 +1,33 @@
 {
     "vfp_id": "vfp_00599",
-    "project_name": "cantina_generic_money_nov2025.pdf",
+    "project_name": "f(x) v2 Audit.md",
     "findings": [
         {
-            "id": 1,
+            "id": 35,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
+                    "CWE-1164"
                 ]
             },
-            "title": "Vault price manipulation allows yield manager to mint tokens",
-            "description": "The yield manager can mint additional tokens when the perceived value of backing assets exceeds the total shares. This vulnerability arises because the _additionalOwnedAssets() function, used to determine asset value, is susceptible to manipulation—such as through an attacker distorting pool prices in Curve 3pool. By inflating the perceived asset value, an attacker can trigger erroneous yield distribution and minting. The yield manager, especially if malicious, could front-run these calls and redirect funds. The impact includes unauthorized token minting and potential theft of protocol funds, especially when combined with governance-controlled yield distribution.\n",
-            "severity": "High",
+            "title": "Unused Errors",
+            "description": "Custom errors are defined but never emitted in the code, which can mislead auditors and developers about possible failure paths. The cause is leftover error definitions from prior development stages. This reduces code clarity and may lead to incorrect assumptions about error handling. The impact is reduced maintainability and potential confusion during audits.\n",
+            "severity": null,
             "location": [
-                "YieldManager.sol::#L51-L61"
+                "PoolErrors.sol::ErrorRebalanceOnLiquidatablePosition#57",
+                "PoolErrors.sol::ErrorInsufficientCollateralToLiquidate#59",
+                "ReservePool.sol::ErrorRatioTooLarge#23",
+                "ReservePool.sol::ErrorRebalancePoolAlreadyAdded#26",
+                "ReservePool.sol::ErrorRebalancePoolNotAdded#29"
             ],
             "files": [
-                "67cb0291/generic-protocol/src/controller/YieldManager.sol"
+                "fx-protocol-contracts/contracts/core/pool/PoolErrors.sol"
             ]
         }
     ],
     "affected_files": {
-        "YieldManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.29;\n\nimport { Math } from \"@openzeppelin/contracts/utils/math/Math.sol\";\n\nimport { BaseController } from \"./BaseController.sol\";\nimport { AccountingLogic } from \"./AccountingLogic.sol\";\n\n/**\n * @title YieldManager\n * @dev Abstract contract that manages yield distribution for the protocol.\n * Handles the calculation and distribution of yield generated from backing assets,\n * including protocol fee collection and safety buffer management.\n */\nabstract contract YieldManager is BaseController, AccountingLogic {\n    using Math for uint256;\n\n    /**\n     * @dev Role identifier for addresses authorized to distribute yield\n     */\n    bytes32 public constant YIELD_MANAGER_ROLE = keccak256(\"YIELD_MANAGER_ROLE\");\n\n    /**\n     * @dev Emitted when yield is distributed to the yield distributor\n     */\n    event YieldDistributed(address indexed yieldDistributor, uint256 yield);\n\n    /**\n     * @dev Thrown when yield distribution is paused (share redemption price != mint price)\n     */\n    error Yield_DistributionPaused();\n    /**\n     * @dev Thrown when the safety buffer exceeds the available yield\n     */\n    error Yield_ExcessiveSafetyBuffer();\n\n    /**\n     * @dev Initializer function for the YieldManager contract\n     * @notice This function should be called during contract initialization\n     */\n    // forge-lint: disable-next-line(mixed-case-function)\n    function __YieldManager_init() internal onlyInitializing { }\n\n    /**\n     * @notice Distributes yield generated from backing assets to the yield distributor\n     * @dev Calculates yield as the difference between backing assets value and share total supply.\n     * Deducts safety buffer and protocol fees before distribution.\n     * Only callable when share redemption price equals mint price (distribution not paused).\n     * @return yield The net amount of yield distributed after fees and safety buffer\n     */\n    function distributeYield() external nonReentrant onlyRole(YIELD_MANAGER_ROLE) returns (uint256 yield) {\n        uint256 value = backingAssetsValue();\n        require(_shareRedemptionPrice(value) == SHARE_MINT_PRICE, Yield_DistributionPaused());\n\n        yield = value - _share.totalSupply(); // share redemption price is 1 with same decimals\n        require(yield > safetyBufferYieldDeduction, Yield_ExcessiveSafetyBuffer());\n        yield -= safetyBufferYieldDeduction;\n\n        _share.mint(address(_yieldDistributor), yield);\n        emit YieldDistributed(address(_yieldDistributor), yield);\n    }\n}\n"
+        "PoolErrors.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.26;\n\nabstract contract PoolErrors {\n  /**********\n   * Errors *\n   **********/\n  \n  /// @dev Thrown when the given address is zero.\n  error ErrorZeroAddress();\n\n  /// @dev Thrown when the given value exceeds maximum value.\n  error ErrorValueTooLarge();\n  \n  /// @dev Thrown when the caller is not pool manager.\n  error ErrorCallerNotPoolManager();\n  \n  /// @dev Thrown when the debt amount is too small.\n  error ErrorDebtTooSmall();\n\n  /// @dev Thrown when the collateral amount is too small.\n  error ErrorCollateralTooSmall();\n  \n  /// @dev Thrown when both collateral amount and debt amount are zero.\n  error ErrorNoSupplyAndNoBorrow();\n  \n  /// @dev Thrown when borrow is paused.\n  error ErrorBorrowPaused();\n\n  /// @dev Thrown when redeem is paused.\n  error ErrorRedeemPaused();\n  \n  /// @dev Thrown when the caller is not position owner during withdraw or borrow.\n  error ErrorNotPositionOwner();\n  \n  /// @dev Thrown when withdraw more than supplied.\n  error ErrorWithdrawExceedSupply();\n  \n  /// @dev Thrown when the debt ratio is too small.\n  error ErrorDebtRatioTooSmall();\n\n  /// @dev Thrown when the debt ratio is too large.\n  error ErrorDebtRatioTooLarge();\n  \n  /// @dev Thrown when pool is under collateral.\n  error ErrorPoolUnderCollateral();\n  \n  /// @dev Thrown when the current debt ratio <= rebalance debt ratio.\n  error ErrorRebalanceDebtRatioNotReached();\n\n  /// @dev Thrown when the current debt ratio > liquidate debt ratio.\n  error ErrorPositionInLiquidationMode();\n\n  error ErrorRebalanceOnLiquidatableTick();\n\n  error ErrorRebalanceOnLiquidatablePosition();\n\n  error ErrorInsufficientCollateralToLiquidate();\n\n  error ErrorOverflow();\n\n  /**********************\n   * Internal Functions *\n   **********************/\n\n  /// @dev Internal function to check value not too large.\n  /// @param value The value to check.\n  /// @param upperBound The upper bound for the given value.\n  function _checkValueTooLarge(uint256 value, uint256 upperBound) internal pure {\n    if (value > upperBound) revert ErrorValueTooLarge();\n  }\n\n  function _checkAddressNotZero(address value) internal pure {\n    if (value == address(0)) revert ErrorZeroAddress();\n  }\n}\n"
     }
 }

@@ -1,30 +1,49 @@
 {
     "vfp_id": "vfp_00616",
-    "project_name": "f(x) v2 Audit.md",
+    "project_name": "cantina_tadle_oct2025.pdf",
     "findings": [
         {
-            "id": 47,
+            "id": 18,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-755"
-                ],
-                "3": [
-                    "CWE-248"
+                    "CWE-1076"
                 ]
             },
-            "title": "High Severity: Flashloan Functionality Blocked",
-            "description": "1.  **Description:** A flaw completely blocks the flashloan functionality of the protocol.\n2.  **Cause:** The root cause is not detailed in this chunk, but it likely involves a logic error or access control issue in the flashloan execution path.\n3.  **Exploitation:** This may not be directly exploitable by attackers but prevents intended functionality from working.\n4.  **Impact:** Users and integrations relying on flashloans (e.g., Morpho, Balancer) would be unable to use the feature, impairing protocol functionality and composability.\n",
-            "severity": "High",
-            "location": [],
+            "title": "TadleSandBoxFactory mimics an upgradeable pattern in a non-proxied deployment",
+            "description": "TadleSandBoxFactory has an external initialize function despite being a non-proxied contract with a constructor. This creates confusion and ambiguity, as the pattern suggests upgradeability where none exists. The root cause is inconsistent design pattern usage. The initialize function can be called multiple times by the owner, lacking a reentrancy guard. The impact is reduced code clarity and potential misconfiguration risks.\n",
+            "severity": "Informational",
+            "location": [
+                "Factory.sol::initialize#81"
+            ],
             "files": [
-                "fx-protocol-contracts/contracts/periphery/facets/MorphoFlashLoanCallbackFacet.sol"
+                "v3-sandbox-audit_1/src/core/Factory.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
+                ]
+            },
+            "title": "assembly blocks not marked memory-safe",
+            "description": "Inline assembly blocks, such as in TadleSandBoxFactory.createClone, are not annotated with \"memory-safe\", which prevents compiler optimizations and risks memory pointer corruption. The root cause is missing annotation in assembly blocks. Adding assembly (\"memory-safe\") { ... } informs the compiler that the free memory pointer is preserved, enabling optimizations. The impact is missed gas savings and potential subtle bugs in memory management.\n",
+            "severity": "Informational",
+            "location": [
+                "Factory.sol::createClone#39"
+            ],
+            "files": [
+                "v3-sandbox-audit_1/src/core/Factory.sol"
             ]
         }
     ],
     "affected_files": {
-        "MorphoFlashLoanCallbackFacet.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.20;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport { IMorphoFlashLoanCallback } from \"../../interfaces/Morpho/IMorphoFlashLoanCallback.sol\";\n\nimport { LibRouter } from \"../libraries/LibRouter.sol\";\n\ncontract MorphoFlashLoanCallbackFacet is IMorphoFlashLoanCallback {\n  using SafeERC20 for IERC20;\n\n  /**********\n   * Errors *\n   **********/\n\n  /// @dev Thrown when the caller is not morpho.\n  error ErrorNotFromMorpho();\n\n  error ErrorNotFromRouterFlashLoan();\n\n  /***********************\n   * Immutable Variables *\n   ***********************/\n\n  /// @dev The address of Morpho Blue contract.\n  /// In ethereum, it is 0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb.\n  address private immutable morpho;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  constructor(address _morpho) {\n    morpho = _morpho;\n  }\n\n  /****************************\n   * Public Mutated Functions *\n   ****************************/\n\n  /// @inheritdoc IMorphoFlashLoanCallback\n  function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {\n    if (msg.sender != morpho) revert ErrorNotFromMorpho();\n\n    // make sure call invoked by router\n    LibRouter.RouterStorage storage $ = LibRouter.routerStorage();\n    if ($.flashLoanContext != LibRouter.HAS_FLASH_LOAN) revert ErrorNotFromRouterFlashLoan();\n\n    (address token, bytes memory realData) = abi.decode(data, (address, bytes));\n    (bool success, ) = address(this).call(realData);\n    // below lines will propagate inner error up\n    if (!success) {\n      // solhint-disable-next-line no-inline-assembly\n      assembly {\n        let ptr := mload(0x40)\n        let size := returndatasize()\n        returndatacopy(ptr, 0, size)\n        revert(ptr, size)\n      }\n    }\n\n    // flashloan fee is zero in Morpho\n    LibRouter.approve(token, msg.sender, assets);\n  }\n}\n"
+        "Factory.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {UpgradeableProxy} from \"../proxy/UpgradeableProxy.sol\";\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\n\n/**\n * @title IAuth\n * @dev Interface for the Auth contract\n */\ninterface IAuth {\n    function createSandboxAdmin(address sandboxAccount, address admin) external;\n}\n\n/**\n * @title IUpgradeableProxy\n * @dev Interface for the UpgradeableProxy contract's initialization function\n */\ninterface IUpgradeableProxy {\n    function initializeImplementation(address newImplementation, bytes memory data) external payable;\n}\n\n/**\n * @title CloneFactory\n * @dev Base contract implementing EIP-1167 minimal proxy pattern\n */\ncontract CloneFactory {\n    /**\n     * @dev Creates a clone of a deployed contract using minimal proxy pattern\n     * @param _accountProxy Address of the contract to clone\n     * @return result Address of the newly created clone\n     */\n    function createClone(address _accountProxy) internal returns (address result) {\n        require(_accountProxy != address(0), \"CloneFactory: invalid account proxy address\");\n\n        bytes20 targetBytes = bytes20(_accountProxy);\n        // Minimal proxy creation bytecode\n        // Reference: https://eips.ethereum.org/EIPS/eip-1167\n        assembly {\n            let clone := mload(0x40)\n            mstore(clone, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)\n            mstore(add(clone, 0x14), targetBytes)\n            mstore(add(clone, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)\n            result := create(0, clone, 0x37)\n        }\n\n        require(result != address(0), \"CloneFactory: failed to create clone\");\n    }\n}\n\n/**\n * @title TadleSandBoxFactory\n * @dev Factory contract for creating new sandbox accounts using minimal proxy pattern\n */\ncontract TadleSandBoxFactory is Ownable2Step, CloneFactory {\n    // Auth contract address for access control\n    address public auth;\n    // Implementation contract to be cloned\n    address public accountProxy;\n\n    // Mapping to track if an address is a sandbox account\n    mapping(address => bool) public isSandboxAccount;\n\n    // Mapping to track the relationship between name and account address\n    mapping(string => address) public contractAddrs;\n\n    // Event emitted when a new account is created\n    event LogAccountCreated(address sender, address indexed owner, address indexed account);\n\n    /**\n     * @dev Initialize factory with auth and implementation addresses\n     * @param _admin Address of the factory admin\n     */\n    constructor(address _admin) Ownable(_admin) {}\n\n    /**\n     * @dev Initialize factory with auth and implementation addresses\n     * @param _auth Address of the auth contract for access control\n     * @param _accountProxy Address of the implementation to be cloned\n     */\n    function initialize(address _auth, address _accountProxy) external onlyOwner {\n        require(_auth != address(0), \"TadleSandBoxFactory: invalid auth address\");\n        require(_accountProxy != address(0), \"TadleSandBoxFactory: invalid proxy address\");\n\n        auth = _auth;\n        accountProxy = _accountProxy;\n    }\n\n    /**\n     * @dev Creates a new sandbox account\n     * @param _owner Address of the account owner\n     * @return _account Address of the newly created account\n     */\n    /**\n     * @dev Creates a new sandbox account\n     * @param _owner Address of the account owner\n     * @return _account Address of the newly created account\n     */\n    function build(address _owner) public returns (address _account) {\n        require(auth != address(0), \"TadleSandBoxFactory: not initialized\");\n        require(accountProxy != address(0), \"TadleSandBoxFactory: not initialized\");\n        require(_owner != address(0), \"TadleSandBoxFactory: invalid owner address\");\n\n        _account = createClone(accountProxy);\n        IAuth(auth).createSandboxAdmin(_account, _owner);\n        isSandboxAccount[_account] = true;\n\n        emit LogAccountCreated(msg.sender, _owner, _account);\n    }\n\n    /**\n     * @dev Creates a new upgradeable proxy contract with deterministic address\n     * @param _name Name identifier for the proxy contract\n     * @param _logic Address of the logic implementation (can be zero address)\n     * @param _admin Address of the proxy admin\n     * @param _salt Salt value for deterministic address generation\n     * @param _data Initialization data for the implementation contract\n     * @return _account Address of the newly created proxy contract\n     */\n    /**\n     * @dev Creates a new upgradeable proxy contract with deterministic address\n     * @param _name Name identifier for the proxy contract\n     * @param _logic Address of the logic implementation (can be zero address)\n     * @param _admin Address of the proxy admin\n     * @param _salt Salt value for deterministic address generation\n     * @param _data Initialization data for the implementation contract\n     * @return _account Address of the newly created proxy contract\n     */\n    function createUpgradeableProxy(\n        string memory _name,\n        address _logic,\n        address _admin,\n        bytes32 _salt,\n        bytes memory _data\n    ) public onlyOwner returns (address _account) {\n        require(bytes(_name).length > 0, \"TadleSandBoxFactory: name cannot be empty\");\n        require(_admin != address(0), \"TadleSandBoxFactory: invalid admin address\");\n        require(contractAddrs[_name] == address(0), \"TadleSandBoxFactory: name already used\");\n\n        // Create new proxy with admin rights using CREATE2 for deterministic address\n        _account = address(new UpgradeableProxy{salt: _salt}(_admin));\n\n        // Initialize implementation if logic address is provided\n        if (_logic != address(0)) {\n            IUpgradeableProxy(_account).initializeImplementation(_logic, _data);\n        }\n\n        // Record the mapping between name and account address\n        contractAddrs[_name] = _account;\n\n        // Emit account creation event\n        emit LogAccountCreated(msg.sender, _admin, _account);\n\n        return _account;\n    }\n}\n"
     }
 }

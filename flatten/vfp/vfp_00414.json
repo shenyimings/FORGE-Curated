@@ -1,53 +1,130 @@
 {
     "vfp_id": "vfp_00414",
-    "project_name": "Uniswap Hooks Library Milestone 1 Audit.md",
+    "project_name": "Forte - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 13,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-435"
-                ]
-            },
-            "title": "Insufficient Arguments",
-            "description": "Several `virtual` functions in base hooks lack parameters that would make them more flexible and secure. For example, the `_getFee` function in `BaseDynamicFee` could benefit from `currentTick` and `sqrtPricex96` parameters to enable price-aware fee logic. The `_modifyLiquidity` function does not return the `feesAccrued` delta, preventing `_mint` and `_burn` from accessing this data. Additionally, the `AddLiquidityParams` and `RemoveLiquidityParams` structs lack a `salt` field, which is needed to support multiple positions on the same tick range. The root cause is overly restrictive function interfaces. This limits the functionality available to inheriting contracts and may force developers to re-fetch data or implement workarounds, increasing gas costs and potential for error.\n",
-            "severity": "Informational",
-            "location": [
-                "BaseDynamicFee.sol::_getFee#37",
-                "BaseCustomAccounting.sol::_modifyLiquidity",
-                "BaseCustomAccounting.sol::AddLiquidityParams#59",
-                "BaseCustomAccounting.sol::RemoveLiquidityParams#70"
-            ],
-            "files": [
-                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-284"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-285"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-862"
+                    "CWE-1284"
                 ]
             },
-            "title": "BaseDynamicFee Hook Can Be Poked Arbitrarily",
-            "description": "The BaseDynamicFee hook exposes a public `poke` function that allows anyone to trigger a fee update based on the `_getFee` function. If `_getFee` depends on external state (e.g., pool balances), this enables manipulation of the fee in a single transaction.\n\nThe root cause is the lack of access control on the `poke` function. An attacker can manipulate external conditions (e.g., via a flash loan), call `poke` to set a favorable fee, and execute low-fee swaps before the state is corrected.\n\nThis can be exploited to temporarily reduce swap fees, allowing cheap trades at the expense of the pool or protocol. The impact includes revenue loss for liquidity providers and potential market manipulation, especially if fee updates are not promptly corrected.\n",
-            "severity": "Medium",
+            "title": "A slippage check should be implemented during liquidity deposits and withdrawals",
+            "description": "Slippage checks are essential in DeFi operations to protect users from unexpected price movements during transactions. The swap function includes a slippage check via _checkSlippage(amountOut, _minOut), but similar protections are missing in the depositLiquidity and _withdrawLiquidity functions. This omission allows an attacker to manipulate pool balances right before a deposit or withdrawal, leading to unfavorable or unexpected amounts being deposited or withdrawn by users. The lack of slippage protection increases the risk of economic loss for liquidity providers due to front-running or manipulation of token prices during high volatility periods. As a result, users may receive less value than anticipated when adding or removing liquidity.\n",
+            "severity": "High",
             "location": [
-                "BaseDynamicFee.sol::poke#59",
-                "BaseDynamicFee.sol::_getFee#37"
+                "ALTBCPool.sol#L147",
+                "ALTBCPool.sol#L247",
+                "PoolBase.sol#L138"
             ],
             "files": [
-                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
             ]
         },
         {
-            "id": 7,
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Z should be updated when depositing liquidity",
+            "description": "The Z parameter, which tracks accumulated revenue adjustments, must be updated during liquidity deposits to maintain the core revenue invariant of the system. The current implementation skips this update in the depositLiquidity flow, violating the mathematical model that ensures revenue accrual increases monotonically. This omission breaks the consistency of the internal accounting mechanism, potentially allowing discrepancies in revenue tracking across LP positions. If Z is not updated correctly, the relationship between liquidity and revenue becomes inaccurate, leading to incorrect revenue claims by LPs. This could result in either underpayment or overpayment of accrued fees, undermining the economic integrity of the pool.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L91"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The Y token's decimal handling is incorrect during liquidity withdrawals",
+            "description": "During liquidity withdrawals, the Ay and revenueAccrued values are correctly scaled to the Y token's decimals (e.g., 1e6 for a 6-decimal token) in the simulateWithdrawLiquidity function. However, in the _withdrawLiquidity function, these already-scaled values are passed through _normalizeTokenDecimals, which applies an additional division by 10^yDecimalDiff (e.g., 1e12), resulting in values that are too small. This double normalization leads to users receiving significantly less Y tokens than they are entitled to. The root cause is the incorrect reapplication of decimal normalization on values that are already in the correct denomination. This bug results in a direct loss of funds for withdrawing LPs, especially when dealing with tokens that have fewer than 18 decimals.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L210",
+                "ALTBCPool.sol#L293",
+                "PoolBase.sol#L334"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Unsafe cast to Int256 allows an attacker to drain the pool",
+            "description": "The withdrawPartialLiquidity function unsafely casts the uint256 uj parameter to int256 before converting it to packedFloat. This allows an attacker to pass type(uint256).max, which overflows to -1 when cast to int256. This negative value bypasses the wj.lt(_uj) check because fixed-point arithmetic with negative numbers behaves unexpectedly, and subsequently leads to a large positive value when converted back to uint256 in revenueAccrued calculations. The attacker can exploit this to withdraw nearly all Y tokens from the pool, effectively draining it. The root cause is the lack of bounds checking during the uint256-to-int256 cast. The impact is catastrophic, as it enables complete loss of funds from the pool, qualifying it as a critical logic flaw despite the low likelihood of occurrence.\n",
+            "severity": "High",
+            "location": [
+                "ALTBCPool.sol#L227"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The depositLiquidity function lacks the computation for the Q value",
+            "description": "The depositLiquidity function declares a return value Q but does not assign it from the simulateLiquidityDeposit call, causing it to always return 0. The Q value, representing a key metric such as liquidity share or fee proportion, should be calculated and returned. The omission stems from an incomplete unpacking of the function's return values. While this does not break functionality, it provides incorrect or incomplete data to callers, potentially affecting downstream logic or analytics. The impact is limited to data accuracy and usability.\n",
+            "severity": "Informational",
+            "location": [
+                "ALTBCPool.sol#L147"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "The totalRevenue function is incorrect",
+            "description": "The totalRevenue function calculates revenue as retrieveH().mul(_w), but _w includes inactive liquidity, while revenue should only accrue to active liquidity (_w - _wInactive()). This leads to an overstatement of total revenue by including inactive positions. The root cause is the failure to subtract inactive liquidity from the total before multiplication. The impact is inaccurate financial reporting, which could mislead users, auditors, or analytics platforms about the true performance of the pool.\n",
+            "severity": "Informational",
+            "location": [
+                "ALTBCPool.sol#L477"
+            ],
+            "files": [
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
+            ]
+        },
+        {
+            "id": 12,
             "category": {
                 "1": [
                     "CWE-710"
@@ -56,30 +133,18 @@
                     "CWE-1068"
                 ]
             },
-            "title": "Misleading Comments in Codebase",
-            "description": "Multiple comments throughout the codebase are inaccurate or misleading, which can lead to incorrect assumptions by developers using or extending the hooks. Examples include incorrect unit descriptions (e.g., fee units described as hundredths of a percent instead of hundredths of a bip), incorrect modifier behavior (e.g., `onlyValidPools` does not validate `msg.sender`), and incorrect function return descriptions (e.g., `_getAddLiquidity` in BaseCustomCurve does not return encoded `ModifyLiquidityParams` as documented).\n\nThe root cause is outdated or imprecise documentation that does not reflect the actual implementation or Uniswap V4's internal logic. This creates a risk that inheriting contracts will be implemented based on false assumptions, leading to logic errors or security vulnerabilities.\n\nWhile not directly exploitable, an attacker could exploit misunderstandings caused by these comments. For example, a developer might incorrectly implement fee logic based on the wrong unit assumption, leading to unexpectedly high or low fees. The impact is reduced code reliability, increased risk of integration bugs, and potential security flaws in derived contracts.\n",
-            "severity": "Medium",
+            "title": "ALTBCPool :: initializePool() function is missing a _pause() operation",
+            "description": "According to documentation, pools should be paused upon initialization to prevent immediate interaction before proper setup. However, the initializePool function in ALTBCPool.sol does not call _pause(), leaving the pool active from deployment. This creates a window where users can interact with an uninitialized or improperly configured contract. The root cause is a discrepancy between documentation and implementation. The team resolved this by updating the documentation rather than the code, indicating the behavior is intentional but inconsistent with prior expectations.\n",
+            "severity": "Informational",
             "location": [
-                "BaseDynamicFee.sol#35",
-                "BaseOverrideFee.sol#49",
-                "BaseHook.sol#81",
-                "BaseHook.sol#42",
-                "BaseCustomAccounting.sol#128",
-                "BaseOverrideFee.sol#72",
-                "BaseCustomAccounting.sol#296",
-                "BaseCustomCurve.sol#57",
-                "BaseCustomCurve.sol#71",
-                "BaseCustomCurve.sol#153",
-                "BaseCustomCurve.sol#132",
-                "BaseCustomCurve.sol#114",
-                "BaseCustomCurve.sol#120"
+                "ALTBCPool.sol#L59-L80"
             ],
             "files": [
-                "uniswap-hooks/src/fee/BaseDynamicFee.sol"
+                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/amm/ALTBCPool.sol"
             ]
         }
     ],
     "affected_files": {
-        "BaseDynamicFee.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/fee/BaseDynamicFee.sol)\n\npragma solidity ^0.8.24;\n\nimport {BaseHook} from \"src/base/BaseHook.sol\";\nimport {Hooks} from \"v4-core/src/libraries/Hooks.sol\";\nimport {PoolKey} from \"v4-core/src/types/PoolKey.sol\";\nimport {IPoolManager} from \"v4-core/src/interfaces/IPoolManager.sol\";\nimport {LPFeeLibrary} from \"v4-core/src/libraries/LPFeeLibrary.sol\";\n\n/**\n * @dev Base implementation to apply a dynamic fee via the `PoolManager`'s `updateDynamicLPFee` function.\n *\n * WARNING: This is experimental software and is provided on an \"as is\" and \"as available\" basis. We do\n * not give any warranties and will not be liable for any losses incurred through any use of this code\n * base.\n *\n * _Available since v0.1.0_\n */\nabstract contract BaseDynamicFee is BaseHook {\n    using LPFeeLibrary for uint24;\n\n    /**\n     * @dev The hook was attempted to be initialized with a non-dynamic fee.\n     */\n    error NotDynamicFee();\n\n    /**\n     * @dev Set the `PoolManager` address.\n     */\n    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}\n\n    /**\n     * @dev Returns a fee, denominated in hundredths of a bip, to be applied to the pool after it is initialized.\n     */\n    function _getFee(PoolKey calldata key) internal virtual returns (uint24);\n\n    /**\n     * @dev Set the fee after the pool is initialized.\n     */\n    function _afterInitialize(address, PoolKey calldata key, uint160, int24)\n        internal\n        virtual\n        override\n        returns (bytes4)\n    {\n        if (!key.fee.isDynamicFee()) revert NotDynamicFee();\n        poolManager.updateDynamicLPFee(key, _getFee(key));\n        return this.afterInitialize.selector;\n    }\n\n    /**\n     * @dev Updates the dynamic LP fee for the given pool, which must have a key\n     * that contains this hook's address.\n     *\n     * WARNING: This function can be called by anyone at any time. If `_getFee` implementation\n     * depends on external conditions (e.g., oracle prices, other pool states, token balances),\n     * it may be vulnerable to manipulation. An attacker could potentially:\n     * 1. Manipulate the external conditions that `_getFee` depends on\n     * 2. Call `poke()` to update the fee to a more favorable rate\n     * 3. Execute trades at the manipulated fee rate\n     *\n     * Inheriting contracts should consider implementing access controls on this function,\n     * make the logic in `_getFee` resistant to short-term manipulation, or accept the risk\n     * of fee manipulation.\n     *\n     * @param key The pool key to update the dynamic LP fee for.\n     */\n    function poke(PoolKey calldata key) external virtual onlyValidPools(key.hooks) {\n        poolManager.updateDynamicLPFee(key, _getFee(key));\n    }\n\n    /**\n     * @dev Set the hook permissions, specifically `afterInitialize`.\n     *\n     * @return permissions The hook permissions.\n     */\n    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {\n        return Hooks.Permissions({\n            beforeInitialize: false,\n            afterInitialize: true,\n            beforeAddLiquidity: false,\n            afterAddLiquidity: false,\n            beforeRemoveLiquidity: false,\n            afterRemoveLiquidity: false,\n            beforeSwap: false,\n            afterSwap: false,\n            beforeDonate: false,\n            afterDonate: false,\n            beforeSwapReturnDelta: false,\n            afterSwapReturnDelta: false,\n            afterAddLiquidityReturnDelta: false,\n            afterRemoveLiquidityReturnDelta: false\n        });\n    }\n}\n"
+        "ALTBCPool.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.24;\n\nimport {PoolBase, FeeInfo, IERC20, SafeERC20, CalculatorBase, MathLibs, packedFloat, Float} from \"lib/liquidity-base/src/amm/base/PoolBase.sol\";\nimport \"lib/liquidity-base/src/common/IErrors.sol\";\nimport {ALTBCEquations} from \"src/amm/ALTBCEquations.sol\";\nimport {ALTBCInput, ALTBCDef} from \"src/amm/ALTBC.sol\";\nimport {ALTBCPoolDeployed, LiquidityDeposited, LiquidityWithdrawn} from \"src/common/IALTBCEvents.sol\";\n\n/**\n * @title Adjustable Linear TBC Pool\n * @dev This contract serves the purpose of facilitating swaps between a pair\n * of tokens, where one is an xToken and the other one is a yToken.\n * @author  @oscarsernarosero @mpetersoCode55 @cirsteve\n */\n\ncontract ALTBCPool is PoolBase {\n    using SafeERC20 for IERC20;\n    using ALTBCEquations for ALTBCDef;\n    using ALTBCEquations for uint256;\n    using MathLibs for int256;\n    using ALTBCEquations for packedFloat;\n    using MathLibs for packedFloat;\n\n    ALTBCDef public tbc;\n\n    /**\n     * @dev constructor\n     * @param _xToken address of the X token (x axis)\n     * @param _yToken address of the Y token (y axis)\n     * @param fees fee infomation\n     * @param _tbcInput input parameters for the TBC\n     */\n    constructor(\n        address _xToken,\n        address _yToken,\n        FeeInfo memory fees,\n        ALTBCInput memory _tbcInput,\n        string memory _name,\n        string memory _symbol\n    ) PoolBase(_xToken, _yToken, fees, _name, _symbol) {\n        _validateTBC(_tbcInput);\n\n        tbc.V = int(_tbcInput._V).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        tbc.xMin = int(_tbcInput._xMin).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        tbc.C = int(_tbcInput._C).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        tbc.calculateBn(x);\n        tbc.c = int(_tbcInput._lowerPrice).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        _wInactive = int(_tbcInput._wInactive).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n\n        emit ALTBCPoolDeployed(_xToken, _yToken, VERSION, fees._lpFee, fees._protocolFee, fees._protocolFeeCollector, _tbcInput);\n    }\n\n    function initializePool(address deployer) external onlyOwner {\n        uint256 initialLiq = IERC20(xToken).balanceOf(address(this));\n        if (initialLiq == 0) revert NoInitialLiquidity();\n\n        _w = int(initialLiq).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        tbc.xMax = tbc.xMin.add(_w);\n\n        x = tbc.xMin;\n        _updateParameters(packedFloat.wrap(0));\n\n        packedFloat D0 = tbc.calculateDn(x);\n        packedFloat initialRJ = D0.div((_w.sub(_wInactive)));\n        if (_wInactive.gt(ALTBCEquations.FLOAT_0))\n            _mintTokenAndUpdate(\n                deployer,\n                _wInactive,\n                type(int256).max.toPackedFloat(0),\n                true,\n                IERC20(xToken).balanceOf(address(this)),\n                IERC20(yToken).balanceOf(address(this))\n            );\n\n        _mintTokenAndUpdate(\n            deployer,\n            int(initialLiq).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE),\n            initialRJ,\n            false,\n            IERC20(xToken).balanceOf(address(this)),\n            IERC20(yToken).balanceOf(address(this))\n        );\n\n        _transferOwnership(deployer);\n    }\n\n    /**\n     * @dev This is the function to activate/deactivate trading.\n     * @param _enable pass True to enable or False to disable\n     * @notice Only the owner of the pool can call this function.\n     */\n    function enableSwaps(bool _enable) external override onlyOwner {\n        _enable ? _unpause() : _pause();\n    }\n\n    /**\n     * @dev This is the function to simulate a liquidity deposit into the pool.\n     * @param _A The amount of xToken being deposited as liquidity in the simulation.\n     * @param _B The amount of yToken being deposited as liquidity in the simulation.\n     * @return A calculated A value \n     * @return B calculated B value\n     * @return Q calculated Q value\n     * @return wj calculated wj value\n     */\n    function simulateLiquidityDeposit(uint256 _A, uint256 _B) public returns (uint256 A, uint256 B, uint256 Q, packedFloat wj) {\n        (packedFloat AFloat, packedFloat BFloat, packedFloat qFloat) = tbc.calculateQ(\n            x,\n            int(_A).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE),\n            int(_B).toPackedFloat(int(yDecimalDiff) - int(POOL_NATIVE_DECIMALS)),\n            tbc.calculateL(x),\n            tbc.calculateDn(x)\n        );\n\n        wj = qFloat.mul(_w);\n\n        packedFloat multiplier = ALTBCEquations.FLOAT_1.add(qFloat);\n\n        x = tbc._liquidityUpdateHelper(x, multiplier);\n        _w = _w.add(wj); // add the additional liquidity to the total liquidity\n\n        packedFloat L = tbc.calculateL(x);\n        tbc.calculateZ(L, _w, _wInactive, qFloat, false);\n        h = tbc.calculateH(L, _w, _wInactive, _collectedLPFees);\n        A = uint(AFloat.convertpackedFloatToWAD());\n        B = uint(BFloat.convertpackedFloatToSpecificDecimals(int(POOL_NATIVE_DECIMALS) - int(yDecimalDiff)));\n        Q = uint(qFloat.convertpackedFloatToWAD());\n    }\n\n    /**\n     * @dev This is the function to deposit liquidity into the pool.\n     * @notice If the tokenId provided is owned by the lp, this tokenId will be updated based on liquidity deposit\n     * @param tokenId The tokenId owned by the liquidity provider.\n     * @param _A The amount of xToken being deposited as liquidity.\n     * @param _B The amount of yToken being deposited as liquidity.\n     * @return A calculated A value \n     * @return B calculated B value\n     * @return Q calculated Q value\n     */\n    function depositLiquidity(uint256 tokenId, uint256 _A, uint256 _B) external returns (uint256 A, uint256 B, uint256 Q) {\n        // Inactive NFT check\n        if (tokenId == INACTIVE_ID) {\n            revert CannotDepositInactiveLiquidity();\n        }\n\n        packedFloat wj;\n        (A, B, Q, wj) = simulateLiquidityDeposit(_A > 0 ? _A - 1 : _A, _B > 0 ? _B - 1 : _B);\n\n        // Add one too each for rounding purposes\n        if(A > 0) {\n            IERC20(xToken).safeTransferFrom(_msgSender(), address(this), A + 1);\n        }\n        if(B > 0) {\n            IERC20(yToken).safeTransferFrom(_msgSender(), address(this), B + 1);\n        }\n\n        uint256 _tokenId = _depositLiquidityNFTUpdates(tokenId, wj, _A, _B);\n        emit LiquidityDeposited(_msgSender(), _tokenId, _A, _B);\n    }\n\n    function _depositLiquidityNFTUpdates(uint256 tokenId, packedFloat wj, uint256 _A, uint256 _B) private returns (uint256 _tokenId) {\n        // Update lp's position or mint a new LP Token\n        if (tokenId == 0) {\n            _mintTokenAndUpdate(\n                _msgSender(),\n                wj,\n                h,\n                false,\n                _A,\n                _B\n            );\n            _tokenId = currentTokenId; // tokenId in the ERC721 that was just minted\n        } else if (ownerOf(tokenId) == _msgSender()) {\n            _tokenId = tokenId;\n            (packedFloat w_hat, packedFloat r_hat) = getLPToken(_msgSender(), tokenId);\n            _updateLPTokenVarsDeposit(_msgSender(), tokenId, wj, h.calculateLastRevenueClaim(wj, r_hat, w_hat));\n        } else {\n            revert(\"ALTBCPool: lp does not own tokenId\");\n        }\n    }\n\n    function withdrawLiquidity(uint256 tokenId, uint256 uj) external {\n        if (uj == 0) revert ZeroValueNotAllowed();\n        if (ownerOf(tokenId) != _msgSender()) revert InvalidToken();\n\n        // Get packedFloat variables\n        packedFloat _uj = int(uj).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n        {\n            packedFloat L = tbc.calculateL(x);\n            h = tbc.calculateH(L, _w, _wInactive, _collectedLPFees);\n        }\n\n        // STEP 1 - Get q and multiplier\n        packedFloat q = _uj.div(_w);\n        packedFloat multiplier = ALTBCEquations.FLOAT_1.sub(q);\n\n        // STEP 2 - Calc amount out\n        uint256 Ax = uint(q.mul(tbc.xMax.sub(x)).convertpackedFloatToWAD());\n\n        uint256 Ay = uint(q.mul(tbc.calculateDn(x).sub(tbc.calculateL(x))).convertpackedFloatToSpecificDecimals(int(POOL_NATIVE_DECIMALS) - int(yDecimalDiff)));\n\n        x = tbc._liquidityUpdateHelper(x, multiplier);\n\n        // STEP 7 - Update LPToken and W\n        _w = _w.sub(_uj);\n        if (tokenId == INACTIVE_ID) {\n            _wInactive = _wInactive.sub(_uj);\n        }\n\n        if (_w.sub(_wInactive).le(ALTBCEquations.FLOAT_0) && _wInactive.gt(ALTBCEquations.FLOAT_0)) {\n            revert AllLiquidityCannotBeInactive();\n        }\n\n        packedFloat rj = _updateLPTokenVarsWithdrawal(_msgSender(), tokenId, _uj);\n\n        // Update Ay to include any revenue accrued\n        uint256 revenueAccrued = uint(_uj.mul(h.sub(rj)).convertpackedFloatToSpecificDecimals(int(POOL_NATIVE_DECIMALS) - int(yDecimalDiff)));\n        Ay += revenueAccrued;\n\n        if (tokenId == INACTIVE_ID) {\n            tbc.Zn = tbc.Zn.add((q.mul(tbc.calculateL(x))));\n        } else {\n            tbc.calculateZ(tbc.calculateL(x), _w, _wInactive, q, true);\n        }\n\n        // Transfer the liquidity amounts to the lp\n        IERC20(xToken).safeTransfer(_msgSender(), Ax);\n        IERC20(yToken).safeTransfer(_msgSender(), _normalizeTokenDecimals(false, Ay));\n\n        emit LiquidityWithdrawn(_msgSender(), tokenId, Ax, Ay, revenueAccrued);\n    }\n\n    function withdrawRevenue(uint256 tokenId, uint256 Q) external returns (uint256 revenue) {\n        if (ownerOf(tokenId) != _msgSender()) revert InvalidToken();\n        packedFloat _Q = int(Q).toPackedFloat(POOL_NATIVE_DECIMALS_NEGATIVE);\n\n        ( , , packedFloat _wj, packedFloat _rj, packedFloat revenueAvailable, ) = _getRevenueAvailable(\n            _msgSender(),\n            tokenId\n        );\n\n        if (_Q.gt(revenueAvailable)) revert(\"ALTBCPool: Q too high\");\n        packedFloat updatedRj = _rj.add(_Q.div(_wj));\n        lpToken[_msgSender()][tokenId].rj = updatedRj;\n        r += Q;\n        revenue = _normalizeTokenDecimals(false, Q);\n        IERC20(yToken).safeTransfer(_msgSender(), revenue);\n    }\n\n    function revenueAvailable(address lp, uint256 tokenId) public view returns (uint256 _revenueAvailable) {\n        (, , , , , _revenueAvailable) = _getRevenueAvailable(lp, tokenId);\n    }\n\n    function _getRevenueAvailable(\n        address lp,\n        uint256 tokenId\n    )\n        internal\n        view\n        returns (\n            packedFloat L,\n            packedFloat hn,\n            packedFloat _wj,\n            packedFloat _rj,\n            packedFloat _revenueAvailable,\n            uint256 revenueAvailableUint\n        )\n    {\n        L = tbc.calculateL(x);\n        hn = tbc.calculateH(L, _w, _wInactive, _collectedLPFees);\n        (_wj, _rj) = getLPToken(_msgSender(), tokenId);\n        _revenueAvailable = _wj.calculateRevenueAvailable(hn, _rj);\n        revenueAvailableUint = uint(_revenueAvailable.convertpackedFloatToSpecificDecimals(int(POOL_NATIVE_DECIMALS) - int(yDecimalDiff)));\n\n    }\n\n    /**\n     * @dev This is the function to retrieve the current spot price of the x token.\n     * @return sPrice the price in YToken Decimals\n     * @notice x + 1 is used for returning the price of the next token sold, not the price of the last token sold\n     */\n    function _spotPrice() internal view override returns (packedFloat sPrice) {\n        // Price P(N+1) = f(x(n+1));\n        sPrice = tbc.calculatefx(x.add(int(1).toPackedFloat(0)));\n    }\n\n    /**\n     * @dev This function updates the state of the math values of the pool.\n     * @param x_old This parameter is not used in this function and is only present for backwards compatibility with the interface.\n     */\n    function _updateParameters(packedFloat x_old) public override {\n        x_old;\n        // Calculate Dn using Bn and cn before they get updated\n        packedFloat oldBn = tbc.b;\n        oldBn;\n        // Calculate Bn (Sn)\n        tbc.calculateBn(x);\n        // we update c only if x is not zero\n        if (packedFloat.unwrap(x) > 0) tbc.calculateCNew(x, oldBn);\n    }\n\n    /**\n     * @dev This function calculates the amount of token X required for the user to purchase a specific amount of Token Y (buy y with x : out perspective).\n     * @param _amountOfY desired amount of token Y\n     * @return amountOfX required amount of token X\n     */\n    function _calculateAmountOfXRequiredBuyingY(packedFloat _amountOfY) internal view override returns (packedFloat amountOfX) {\n        // xn - F^-1(y - y_in)\n        packedFloat Fx = tbc.calculateDn(x);\n\n        if (Fx.sub(_amountOfY).lt((tbc.b.div(ALTBCEquations.FLOAT_2).mul((tbc.xMin.mul(tbc.xMin)))).add(tbc.c.mul(tbc.xMin)))) {\n            revert NotEnoughCollateral();\n        }\n\n        packedFloat _updatedX = tbc.calculateXofNPlus1(Fx.sub(_amountOfY)); // XOutOfBounds is impossible to be triggered in this scenario. arithmetic overflow instead\n        amountOfX = x.sub(_updatedX);\n    }\n\n    /**\n     * @dev This function calculates the amount of token Y required for the user to purchase a specific amount of Token X (buy x with y : out perspective).\n     * @param _amountOfX desired amount of token X\n     * @return amountOfY required amount of token Y\n     */\n    function _calculateAmountOfYRequiredBuyingX(packedFloat _amountOfX) internal view override returns (packedFloat amountOfY) {\n        // D(x + q) - D(x)\n        packedFloat _updatedX = x.add(_amountOfX);\n        if (_updatedX.gt(tbc.xMax)) revert XOutOfBounds(uint(_updatedX.sub(tbc.xMax).sub(tbc.xMin).convertpackedFloatToWAD()));\n        packedFloat Fx = tbc.calculateDn(x);\n        packedFloat updatedFx = tbc.calculateDn(_updatedX);\n        amountOfY = updatedFx.sub(Fx);\n    }\n\n    /**\n     * @dev This function calculates the amount of token Y the user will receive when selling token X (sell x for y : in perspective).\n     * @param _amountOfX amount of token X to be sold\n     * @return amountOfY amount of token Y to be received\n     */\n    function _calculateAmountOfYReceivedSellingX(packedFloat _amountOfX) internal view override returns (packedFloat amountOfY) {\n        // F(xn)-F(xn-q)\n        if (x.lt(_amountOfX)) revert BeyondLiquidity();\n        if (tbc.xMin.gt(x.sub(_amountOfX))) revert XOutOfBounds(uint(tbc.xMin.add(_amountOfX.sub(x)).convertpackedFloatToWAD()));\n        packedFloat _updatedX = x.sub(_amountOfX);\n        packedFloat Fx = tbc.calculateDn(x);\n        packedFloat updatedFx = tbc.calculateDn(_updatedX);\n        amountOfY = Fx.sub(updatedFx);\n    }\n\n    /**\n     * This function calculates the amount of token X the user will receive when selling token Y (sell y for x : in perspective).\n     * @param _amountOfY amount of token Y to be sold\n     * @return amountOfX amount of token X to be received\n     */\n    function _calculateAmountOfXReceivedSellingY(packedFloat _amountOfY) internal view override returns (packedFloat amountOfX) {\n        // F^-1(F(x) + q) - x\n        packedFloat Fx = tbc.calculateDn(x);\n\n        if (Fx.add(_amountOfY).gt((tbc.b.div(ALTBCEquations.FLOAT_2).mul((tbc.xMax.mul(tbc.xMax)))).add(tbc.c.mul(tbc.xMax)))) {\n            revert DnTooLarge();\n        }\n\n        packedFloat _updatedX = tbc.calculateXofNPlus1(Fx.add(_amountOfY));\n\n        amountOfX = _updatedX.sub(x);\n    }\n    /**\n     * @dev This function cleans the state of the calculator in the case of the pool closing.\n     */\n    function _clearState() internal override {\n        delete tbc;\n    }\n\n    /**\n     * @dev A helper function to validate most of constructor's inputs.\n     * @param _tbcInput input parameters for the TBC\n     */\n    function _validateTBC(ALTBCInput memory _tbcInput) internal pure {\n        if (_tbcInput._C == 0) revert CCannotBeZero();\n        if (_tbcInput._V == 0) revert VCannotBeZero();\n        if (_tbcInput._xMin == 0) revert xMinCannotBeZero();\n    }\n\n    /**\n     * @dev This function validates the liquidity addition to ensure it does not exceed the max supply of xToken.\n     * @param afterBalance the balance of xToken after the addition\n     */\n    function _validateLiquidityAdd(packedFloat afterBalance) internal view virtual override {\n        if (afterBalance.add(x).gt(tbc.xMax.add(tbc.xMin)))\n            revert XOutOfBounds((uint(afterBalance.add(x).sub(tbc.xMax.sub(tbc.xMin)).convertpackedFloatToWAD())));\n    }\n\n    /**\n     * @dev This function gets revenue data for an lp and tokenId\n     * @param lp the address of the liquidity provider\n     * @param tokenId the id of the LP token to withdraw revenue for\n     * @return rj the claimed revenue per liquidity unit for the specified token\n     * @return wj the liquidity units of the specified token\n     * @return hn the total revenue per liquidity unit for the pool\n     */\n    function _getRevenueInfoForToken(address lp, uint256 tokenId) internal view returns (uint256 rj, uint256 wj, uint256 hn) {\n        packedFloat _wj;\n        packedFloat _rj;\n        (_wj, _rj) = getLPToken(lp, tokenId);\n        wj = uint(_wj.convertpackedFloatToWAD());\n        rj = uint(_rj.convertpackedFloatToWAD());\n        packedFloat L;\n        hn = uint(tbc.calculateH(L, _w, _wInactive, _collectedLPFees).convertpackedFloatToWAD());\n    }\n}\n"
     }
 }

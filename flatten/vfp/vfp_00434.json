@@ -1,95 +1,46 @@
 {
     "vfp_id": "vfp_00434",
-    "project_name": "cantina_eco_pr247_nov2025.pdf",
+    "project_name": "ackee-blockchain-safe-smart-account-report.pdf",
     "findings": [
-        {
-            "id": 0,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ]
-            },
-            "title": "No 0-checks on incoming message",
-            "description": "1. **Description:** The CCIPProver contract does not perform zero-value checks on critical incoming message fields such as senderAddress, sourceChainSelector, and messageId in the ccipReceive function, unlike other provers (HyperProver, MetaProver, LayerZeroProver) which include such validations.\n2. **Cause:** The absence of input validation for zero values in the ccipReceive function increases the risk of processing malformed or invalid messages, which could lead to unexpected behavior or errors downstream.\n3. **Exploitation:** An attacker could potentially craft a malicious message with zero-valued fields, which might bypass certain assumptions in the system and lead to incorrect state transitions or reverts that could be exploited in edge cases.\n4. **Impact:** While the impact is limited due to downstream safeguards, the lack of consistency in validation reduces code robustness and increases the risk surface. The issue was acknowledged and fixed.\n",
-            "severity": "Informational",
-            "location": [
-                "CCIPProver.sol::ccipReceive#L78"
-            ],
-            "files": [
-                "eco-routes/contracts/prover/CCIPProver.sol"
-            ]
-        },
-        {
-            "id": 1,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Prover accepts too-large proof batch sizes",
-            "description": "1. **Description:** The CCIPProver contract does not pre-validate the size of the encodedProofs bytes array, allowing it to be arbitrarily large, despite CCIP's documented maximum data size limit of 30 KB.\n2. **Cause:** The contract relies on external reverts (e.g., from the router during fee calculation) to handle oversized data rather than proactively checking the size.\n3. **Exploitation:** A caller could submit a proof batch exceeding the CCIP data limit, causing the transaction to revert at the router level, leading to wasted gas and potential denial-of-service vectors if exploited repeatedly.\n4. **Impact:** This results in inefficient gas usage and a poor user experience. While not directly exploitable for fund loss, it represents a deviation from best practices in input validation. The issue was acknowledged by the team.\n",
-            "severity": "Informational",
-            "location": [
-                "CCIPProver.sol::encodedProofs#L183"
-            ],
-            "files": [
-                "eco-routes/contracts/prover/CCIPProver.sol"
-            ]
-        },
         {
             "id": 2,
             "category": {
                 "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
+                    "CWE-697"
                 ]
             },
-            "title": "The sender of proofs must ensure that the allowOutOfOrderExecution flag respects chain restrictions",
-            "description": "1. **Description:** The responsibility of setting the allowOutOfOrderExecution flag correctly lies entirely with the caller of the prove() function. If set incorrectly, the EVM2EVMOnRamp contract may revert with ExtraArgOutOfOrderExecutionMustBeTrue().\n2. **Cause:** The contract does not enforce or validate the flag's value, leaving it to external actors to comply with chain-specific requirements.\n3. **Exploitation:** A caller who fails to set allowOutOfOrderExecution=true on chains that require it could cause transaction reverts, disrupting message delivery and potentially blocking critical operations.\n4. **Impact:** This could lead to failed message executions and inconsistent behavior across chains, especially when interacting with contracts that depend on ordered execution. The issue was fixed in PR 351.\n",
-            "severity": "Informational",
+            "title": "Strict calldata check on masterCopy call",
+            "description": "The fallback function in SafeProxy.sol performs an overly strict comparison of the full 32-byte calldata when checking for the masterCopy() function selector. Instead of masking the first 4 bytes (the function selector), it compares the entire 32-byte word, which includes potential appended data. The root cause is incorrect handling of function selector matching, deviating from Solidity's standard delegation behavior where extra calldata is ignored. An attacker or user can craft a call to masterCopy() with additional trailing bytes (e.g., 0xa619486e0a), which the proxy will not recognize and will delegate to the singleton, potentially leading to incorrect return values or unexpected behavior if a fallback handler processes the call. The impact is low, as it does not enable arbitrary code execution but may result in incorrect state reads or confusion in client applications.\n",
+            "severity": "Low",
             "location": [
-                "CCIPProver.sol::allowOutOfOrderExecution#L189"
+                "SafeProxy.sol::fallback#41"
             ],
             "files": [
-                "eco-routes/contracts/prover/CCIPProver.sol"
+                "safe-smart-account/contracts/proxies/SafeProxy.sol"
             ]
         },
         {
-            "id": 3,
+            "id": 5,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-435"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
+                    "CWE-188"
                 ]
             },
-            "title": "The provided gasLimit is not checked against MIN_GAS_LIMIT",
-            "description": "1. **Description:** The gasLimit parameter in the prove() function of CCIPProver is not validated against a minimum threshold (MIN_GAS_LIMIT), unlike in LayerZeroProver.\n2. **Cause:** The absence of a validation check allows callers to set an unreasonably low gas limit, which may result in insufficient gas for successful execution on the destination chain.\n3. **Exploitation:** A malicious or misconfigured caller could set a gas limit below the required minimum, causing the execution to fail mid-operation, leading to wasted resources and potential denial of service.\n4. **Impact:** This could result in failed message processing and loss of user funds due to gas consumption without successful completion. The issue was fixed in PR 352.\n",
+            "title": "Scratch space assumed zeroed out",
+            "description": "The SafeProxy contract's fallback function uses inline assembly to store the singleton address shifted by 96 bits into memory at offset 0x0c, assuming the first 12 bytes of memory (scratch space) are zeroed out. However, the Solidity compiler does not guarantee that scratch space is initialized to zero, even in the absence of preceding code, which could lead to incorrect ABI encoding of the address if prior operations have left garbage data in memory. This behavior relies on an unsafe assumption about the EVM memory state. Although the impact is limited to a specific internal operation and does not directly enable fund loss or access control breaches, it introduces a potential inconsistency in return data encoding under certain compiler behaviors or future changes. The impact is a warning-level issue due to the reliance on an undocumented and potentially unsafe memory assumption.\n",
             "severity": "Informational",
             "location": [
-                "CCIPProver.sol::gasLimit#L188"
+                "SafeProxy.sol::fallback#43-50"
             ],
             "files": [
-                "eco-routes/contracts/prover/CCIPProver.sol"
+                "safe-smart-account/contracts/proxies/SafeProxy.sol"
             ]
         }
     ],
     "affected_files": {
-        "CCIPProver.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport {MessageBridgeProver} from \"./MessageBridgeProver.sol\";\nimport {Semver} from \"../libs/Semver.sol\";\nimport {AddressConverter} from \"../libs/AddressConverter.sol\";\nimport {\n    IRouterClient\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol\";\nimport {\n    IAny2EVMMessageReceiver\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol\";\nimport {\n    Client\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol\";\n\n/**\n * @title CCIPProver\n * @notice Prover implementation using Chainlink CCIP (Cross-Chain Interoperability Protocol)\n * @dev Extends MessageBridgeProver to send and receive intent proofs across chains via CCIP\n */\ncontract CCIPProver is MessageBridgeProver, IAny2EVMMessageReceiver, Semver {\n    using AddressConverter for bytes32;\n    using AddressConverter for address;\n\n    /// @notice The CCIP proof type identifier\n    string public constant PROOF_TYPE = \"CCIP\";\n\n    /// @notice The CCIP Router contract address\n    address public immutable ROUTER;\n\n    /// @notice Struct to reduce stack depth when unpacking calldata\n    /// @param sourceChainProver The address of the prover on the source chain (as bytes32)\n    /// @param gasLimit The gas limit for execution on the destination chain\n    struct UnpackedData {\n        address sourceChainProver;\n        uint256 gasLimit;\n    }\n\n    /**\n     * @notice Constructs a new CCIPProver\n     * @param router The CCIP Router contract address\n     * @param portal The portal contract address\n     * @param provers Array of whitelisted prover addresses (as bytes32)\n     * @param minGasLimit Minimum gas limit for cross-chain messages (0 for default 200k)\n     */\n    constructor(\n        address router,\n        address portal,\n        bytes32[] memory provers,\n        uint256 minGasLimit\n    ) MessageBridgeProver(portal, provers, minGasLimit) {\n        if (router == address(0)) revert MessengerContractCannotBeZeroAddress();\n        ROUTER = router;\n    }\n\n    /**\n     * @notice Checks if this contract supports a given interface\n     * @dev Overrides to include IAny2EVMMessageReceiver for CCIP compatibility\n     * @param interfaceId Interface identifier to check\n     * @return True if the interface is supported\n     */\n    function supportsInterface(\n        bytes4 interfaceId\n    ) public view override returns (bool) {\n        return\n            interfaceId == type(IAny2EVMMessageReceiver).interfaceId ||\n            super.supportsInterface(interfaceId);\n    }\n\n    /**\n     * @notice Receives cross-chain messages from CCIP\n     * @dev Only callable by the CCIP Router. Implements IAny2EVMMessageReceiver\n     * @param message The CCIP message containing sender, data, and metadata\n     */\n    function ccipReceive(\n        Client.Any2EVMMessage calldata message\n    ) external only(ROUTER) {\n        // Verify source chain selector is not zero\n        if (message.sourceChainSelector == 0) {\n            revert MessageOriginChainDomainIDCannotBeZero();\n        }\n\n        // Decode sender from bytes to address, then convert to bytes32\n        address sender = abi.decode(message.sender, (address));\n\n        // Verify sender address is not zero\n        if (sender == address(0)) revert MessageSenderCannotBeZeroAddress();\n\n        // Handle the cross-chain message using base contract functionality\n        _handleCrossChainMessage(sender.toBytes32(), message.data);\n    }\n\n    /**\n     * @notice Dispatches a cross-chain message via CCIP\n     * @dev Internal function called by the base contract's prove() function\n     * @dev CCIP has a maximum data payload size and a message execution gas limit.\n     *      At time of writing, these are 30KB and 3,000,000 gas respectively.\n     *      Please check CCIP's documentation for the most up-to-date values.\n     * @param domainID The destination chain selector (CCIP uses this as destinationChainSelector)\n     * @param encodedProofs The encoded proof data to send\n     * @param data Additional data containing source chain prover and gas configuration\n     * @param fee The fee amount (in native token) to pay for the cross-chain message\n     */\n    function _dispatchMessage(\n        uint64 domainID,\n        bytes calldata encodedProofs,\n        bytes calldata data,\n        uint256 fee\n    ) internal override {\n        // Unpack the additional data\n        UnpackedData memory unpacked = _unpackData(data);\n\n        // Format the CCIP message\n        Client.EVM2AnyMessage memory ccipMessage = _formatCCIPMessage(\n            unpacked.sourceChainProver,\n            encodedProofs,\n            unpacked.gasLimit\n        );\n\n        // Send the message via CCIP Router\n        IRouterClient(ROUTER).ccipSend{value: fee}(domainID, ccipMessage);\n    }\n\n    /**\n     * @notice Calculates the fee required to send a cross-chain message\n     * @dev Public function to query fees before sending\n     * @param domainID The destination chain selector\n     * @param encodedProofs The encoded proof data to send\n     * @param data Additional data containing source chain prover and gas configuration\n     * @return The fee amount (in native token) required\n     */\n    function fetchFee(\n        uint64 domainID,\n        bytes calldata encodedProofs,\n        bytes calldata data\n    ) public view override returns (uint256) {\n        // Unpack the additional data\n        UnpackedData memory unpacked = _unpackData(data);\n\n        // Format the CCIP message\n        Client.EVM2AnyMessage memory ccipMessage = _formatCCIPMessage(\n            unpacked.sourceChainProver,\n            encodedProofs,\n            unpacked.gasLimit\n        );\n\n        // Query the fee from CCIP Router\n        return IRouterClient(ROUTER).getFee(domainID, ccipMessage);\n    }\n\n    /**\n     * @notice Unpacks the encoded data into structured format\n     * @dev Internal helper to avoid stack too deep errors\n     * @dev Enforces minimum gas limit to prevent underfunded transactions\n     * @param data The encoded data containing source chain prover and gas configuration\n     * @return unpacked The unpacked data struct with validated gas limit\n     */\n    function _unpackData(\n        bytes calldata data\n    ) internal view returns (UnpackedData memory unpacked) {\n        // Decode: (sourceChainProver, gasLimit)\n        (\n            unpacked.sourceChainProver,\n            unpacked.gasLimit\n        ) = abi.decode(data, (address, uint256));\n\n        // Enforce minimum gas limit to prevent underfunded transactions\n        if (unpacked.gasLimit < MIN_GAS_LIMIT) {\n            unpacked.gasLimit = MIN_GAS_LIMIT;\n        }\n    }\n\n    /**\n     * @notice Formats a CCIP message for sending\n     * @dev Internal helper to construct the EVM2AnyMessage struct\n     * @dev Out-of-order execution is always enabled for optimal performance\n     * @param sourceChainProver The prover address on the source chain\n     * @param encodedProofs The proof data payload\n     * @param gasLimit The gas limit for execution\n     * @return ccipMessage The formatted CCIP message\n     */\n    function _formatCCIPMessage(\n        address sourceChainProver,\n        bytes calldata encodedProofs,\n        uint256 gasLimit\n    ) internal pure returns (Client.EVM2AnyMessage memory ccipMessage) {\n        // Construct the CCIP message\n        ccipMessage = Client.EVM2AnyMessage({\n            receiver: abi.encode(sourceChainProver),\n            data: encodedProofs,\n            tokenAmounts: new Client.EVMTokenAmount[](0), // No token transfers\n            feeToken: address(0), // Pay fees in native token\n            extraArgs: Client._argsToBytes(\n                Client.EVMExtraArgsV2({\n                    gasLimit: gasLimit,\n                    allowOutOfOrderExecution: true // Always allow out-of-order execution\n                })\n            )\n        });\n    }\n\n    /**\n     * @notice Returns the proof type identifier\n     * @return The proof type string\n     */\n    function getProofType() external pure override returns (string memory) {\n        return PROOF_TYPE;\n    }\n}\n"
+        "SafeProxy.sol": "// SPDX-License-Identifier: LGPL-3.0-only\n/* solhint-disable one-contract-per-file */\npragma solidity >=0.7.0 <0.9.0;\n\n/**\n * @title IProxy - Helper interface to access the singleton address of the Proxy on-chain.\n * @author Richard Meissner - @rmeissner\n */\ninterface IProxy {\n    function masterCopy() external view returns (address);\n}\n\n/**\n * @title SafeProxy - Generic proxy contract allows to execute all transactions applying the code of a master contract.\n * @author Stefan George - <stefan@gnosis.io>\n * @author Richard Meissner - <richard@gnosis.io>\n */\ncontract SafeProxy {\n    // Singleton always needs to be first declared variable, to ensure that it is at the same location in the contracts to which calls are delegated.\n    // To reduce deployment costs this variable is internal and needs to be retrieved via `getStorageAt`\n    address internal singleton;\n\n    /**\n     * @notice Constructor function sets address of singleton contract.\n     * @param _singleton Singleton address.\n     */\n    constructor(address _singleton) {\n        require(_singleton != address(0), \"Invalid singleton address provided\");\n        singleton = _singleton;\n    }\n\n    /// @dev Fallback function forwards all transactions and returns all received return data.\n    fallback() external payable {\n        // Note that this assembly block is **intentionally** not marked as memory-safe. First of all, it isn't memory\n        // safe to begin with, and turning this into memory-safe assembly would just make it less gas efficient.\n        // Additionally, we noticed that converting this to memory-safe assembly had no affect on optimizations of other\n        // contracts (as it always gets compiled alone in its own compilation unit anyway).\n        /* solhint-disable no-inline-assembly */\n        assembly {\n            let _singleton := sload(0)\n            // 0xa619486e == bytes4(keccak256(\"masterCopy()\")). The value is right padded to 32-bytes with 0s\n            if eq(calldataload(0), 0xa619486e00000000000000000000000000000000000000000000000000000000) {\n                // We mask the singleton address when handling the `masterCopy()` call to ensure that it is correctly\n                // ABI-encoded. We do this by shifting the address left by 96 bits (or 12 bytes) and then storing it in\n                // memory with a 12 byte offset from where the return data starts. Note that we **intentionally** only\n                // do this for the `masterCopy()` call, since the EVM `DELEGATECALL` opcode ignores the most-significant\n                // 12 bytes from the address, so we do not need to make sure the top bytes are cleared when proxying\n                // calls to the `singleton`. This saves us a tiny amount of gas per proxied call.\n                mstore(0x0c, shl(96, _singleton))\n                return(0, 0x20)\n            }\n            calldatacopy(0, 0, calldatasize())\n            let success := delegatecall(gas(), _singleton, 0, calldatasize(), 0, 0)\n            returndatacopy(0, 0, returndatasize())\n            if iszero(success) {\n                revert(0, returndatasize())\n            }\n            return(0, returndatasize())\n        }\n        /* solhint-enable no-inline-assembly */\n    }\n}\n"
     }
 }

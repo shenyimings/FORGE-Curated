@@ -1,53 +1,29 @@
 {
     "vfp_id": "vfp_00517",
-    "project_name": "cantina_centrifuge_aug2025.pdf",
+    "project_name": "Uniswap Calibur Audit.md",
     "findings": [
-        {
-            "id": 2,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ]
-            },
-            "title": "refund address not always checked to be non zero",
-            "description": "Several functions perform a check to ensure that subsidy[poolId].refund is not the zero address, but the _send() function omits this validation. The cause is an inconsistent application of input validation across related functions. If _send() is called with a zero refund address, it could lead to failed transfers or silent failures depending on the downstream logic. An attacker with control over the subsidy state could potentially set a zero address through a different code path or exploit a race condition, leading to loss of subsidy funds or denial of service for refund operations.\n",
-            "severity": null,
-            "location": [
-                "_send"
-            ],
-            "files": [
-                "protocol-v3/src/common/interfaces/IGateway.sol"
-            ]
-        },
         {
             "id": 3,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
+                    "CWE-358"
                 ]
             },
-            "title": "refund address and rely()",
-            "description": "The _requestPoolFunding() function can retrieve funds from any contract that relies on the Gateway contract, which introduces a risk if the refund address is set to such a contract. This occurs because the function does not validate whether the refund address is a system contract that should not be drained. The risk is partially mitigated by the fact that setRefundAddress() is authorized and that key contracts like MultiAdapter and MessageProcessor do not inherit Recoverable. However, if refund == address(this), subsidy[GLOBAL_POT].value could be set to zero, though this is currently prevented because Gateway does not rely on itself. This finding appears to be cut off mid-explanation.\n",
-            "severity": null,
+            "title": "`requireUV` Flag Should Not Be Hardcoded to `false`",
+            "description": "The `requireUV` flag in `KeyLib.sol` is hardcoded to `false`, meaning the contract does not enforce user verification (e.g., biometrics or PIN) during WebAuthn authentication. This creates a security gap where a registered passkey could be used without confirming the user's presence, increasing the risk of unauthorized access if the device is compromised. The root cause is a design decision to delegate user verification enforcement to the client, but this shifts responsibility away from the on-chain security model. An attacker with physical or remote access to an unlocked device could exploit this by triggering a transaction without user interaction. The impact is a weakened authentication mechanism, potentially allowing unauthorized transaction signing if the device is left unattended or compromised.\n",
+            "severity": "Medium",
             "location": [
-                "Gateway::_requestPoolFunding",
-                "Gateway::setRefundAddress"
+                "KeyLib.sol::requireUV#68"
             ],
             "files": [
-                "protocol-v3/src/common/interfaces/IGateway.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/libraries/KeyLib.sol"
             ]
         }
     ],
     "affected_files": {
-        "IGateway.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity >=0.5.0;\n\nimport {IMessageSender} from \"./IMessageSender.sol\";\nimport {IMessageHandler} from \"./IMessageHandler.sol\";\n\nimport {IRecoverable} from \"../../misc/interfaces/IRecoverable.sol\";\n\nimport {PoolId} from \"../types/PoolId.sol\";\n\n/// @notice Interface for dispatch-only gateway\ninterface IGateway is IMessageHandler, IMessageSender, IRecoverable {\n    struct Funds {\n        /// @notice Funds associated to pay for sending messages\n        /// @dev    Overflows with type(uint64).max / 10**18 = 7.923 × 10^10 ETH\n        uint96 value;\n        /// @notice Address where to refund the remaining gas\n        IRecoverable refund;\n    }\n\n    struct Underpaid {\n        uint128 counter;\n        uint128 gasLimit;\n    }\n\n    event File(bytes32 indexed what, address addr);\n\n    event PrepareMessage(uint16 indexed centrifugeId, PoolId poolId, bytes message);\n    event UnderpaidBatch(uint16 indexed centrifugeId, bytes batch);\n    event RepayBatch(uint16 indexed centrifugeId, bytes batch);\n    event ExecuteMessage(uint16 indexed centrifugeId, bytes message);\n    event FailMessage(uint16 indexed centrifugeId, bytes message, bytes error);\n\n    event SetRefundAddress(PoolId poolId, IRecoverable refund);\n    event SubsidizePool(PoolId indexed poolId, address indexed sender, uint256 amount);\n\n    /// @notice Dispatched when the `what` parameter of `file()` is not supported by the implementation.\n    error FileUnrecognizedParam();\n\n    /// @notice Dispatched when the batch is ended without starting it.\n    error NoBatched();\n\n    /// @notice Dispatched when the gateway is paused.\n    error Paused();\n\n    /// @notice Dispatched when a the gateway tries to send an empty message.\n    error EmptyMessage();\n\n    /// @notice Dispatched when a the gateway has not enough fuel to send a message.\n    /// Only dispatched in PayTransaction method\n    error NotEnoughTransactionGas();\n\n    /// @notice Dispatched when a message that has not failed is retried.\n    error NotFailedMessage();\n\n    /// @notice Dispatched when a batch that has not been underpaid is repaid.\n    error NotUnderpaidBatch();\n\n    /// @notice Dispatched when a batch is repaid with insufficient funds.\n    error InsufficientFundsForRepayment();\n\n    /// @notice Dispatched when a message is added to a batch that causes it to exceed the max batch size.\n    error ExceedsMaxGasLimit();\n\n    /// @notice Dispatched when a refund address is not set.\n    error RefundAddressNotSet();\n\n    /// @notice Used to update an address ( state variable ) on very rare occasions.\n    /// @dev    Currently used to update addresses of contract instances.\n    /// @param  what The name of the variable to be updated.\n    /// @param  data New address.\n    function file(bytes32 what, address data) external;\n\n    /// @notice Repay an underpaid batch. Send unused funds to subsidy pot of the pool.\n    function repay(uint16 centrifugeId, bytes memory batch) external payable;\n\n    /// @notice Retry a failed message.\n    function retry(uint16 centrifugeId, bytes memory message) external;\n\n    /// @notice Set an extra gas to the gas limit of the message\n    function setExtraGasLimit(uint128 gas) external;\n\n    /// @notice Set the refund address for message associated to a poolId\n    function setRefundAddress(PoolId poolId, IRecoverable refund) external;\n\n    /// @notice Pay upfront to later be able to subsidize messages associated to a pool\n    function subsidizePool(PoolId poolId) external payable;\n\n    /// @notice Prepays for the TX cost for sending the messages through the adapters\n    ///         Currently being called from Vault Router and Hub.\n    ///         In order to prepay, the method MUST be called with `msg.value`.\n    ///         Called is assumed to have called IGateway.estimate before calling this.\n    function startTransactionPayment(address payer) external payable;\n\n    /// @notice Finalize the transaction payment mode, next payments will be subsidized (as default).\n    function endTransactionPayment() external;\n\n    /// @notice Add a message to the underpaid storage to be repay and send later.\n    /// @dev It only supports one message, not a batch\n    function addUnpaidMessage(uint16 centrifugeId, bytes memory message) external;\n\n    /// @notice Initialize batching message\n    function startBatching() external;\n\n    /// @notice Finalize batching messages and send the resulting batch message\n    function endBatching() external;\n\n    /// @notice Returns the current gateway batching level.\n    function isBatching() external view returns (bool);\n}\n"
+        "KeyLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.23;\n\nimport {ECDSA} from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport {P256} from \"@openzeppelin/contracts/utils/cryptography/P256.sol\";\nimport {WebAuthn} from \"webauthn-sol/src/WebAuthn.sol\";\nimport {Settings, SettingsLib} from \"./SettingsLib.sol\";\n\n/// @dev The type of key.\nenum KeyType {\n    P256,\n    WebAuthnP256,\n    Secp256k1\n}\n\nstruct Key {\n    /// @dev Type of key. See the {KeyType} enum.\n    KeyType keyType;\n    /// @dev Public key in encoded form.\n    bytes publicKey;\n}\n\nlibrary KeyLib {\n    /// @notice The sentinel hash value used to represent the root key\n    bytes32 public constant ROOT_KEY_HASH = bytes32(0);\n\n    /// @notice Hashes a key\n    /// @dev uses the key type and the public key to produce a hash\n    function hash(Key memory key) internal pure returns (bytes32) {\n        return keccak256(abi.encode(key.keyType, keccak256(key.publicKey)));\n    }\n\n    /// @notice Returns whether the keyHash is the root key hash\n    function isRootKey(bytes32 keyHash) internal pure returns (bool) {\n        return keyHash == ROOT_KEY_HASH;\n    }\n\n    /// @notice Returns whether the key is the root key\n    function isRootKey(Key memory key) internal view returns (bool) {\n        return key.keyType == KeyType.Secp256k1 && abi.decode(key.publicKey, (address)) == address(this);\n    }\n\n    /// @notice A helper function to get the root key object.\n    function toRootKey() internal view returns (Key memory) {\n        return Key({keyType: KeyType.Secp256k1, publicKey: abi.encode(address(this))});\n    }\n\n    /// @notice Turns a calling address into a key hash.\n    /// @dev This key must be a SECP256K1 key since it is calling the contract.\n    function toKeyHash(address caller) internal view returns (bytes32) {\n        if (caller == address(this)) return ROOT_KEY_HASH;\n        return hash(Key({keyType: KeyType.Secp256k1, publicKey: abi.encode(caller)}));\n    }\n\n    /// @notice Verifies a signature from `key` over a `_hash`\n    function verify(Key memory key, bytes32 _hash, bytes memory signature) internal view returns (bool isValid) {\n        if (key.keyType == KeyType.Secp256k1) {\n            isValid = ECDSA.recover(_hash, signature) == abi.decode(key.publicKey, (address));\n        } else if (key.keyType == KeyType.P256) {\n            // Extract x,y from the public key\n            (bytes32 x, bytes32 y) = abi.decode(key.publicKey, (bytes32, bytes32));\n            // Split signature into r and s values.\n            (bytes32 r, bytes32 s) = abi.decode(signature, (bytes32, bytes32));\n            isValid = P256.verify(_hash, r, s, x, y);\n        } else if (key.keyType == KeyType.WebAuthnP256) {\n            (uint256 x, uint256 y) = abi.decode(key.publicKey, (uint256, uint256));\n            WebAuthn.WebAuthnAuth memory auth = abi.decode(signature, (WebAuthn.WebAuthnAuth));\n            isValid = WebAuthn.verify({challenge: abi.encode(_hash), requireUV: false, webAuthnAuth: auth, x: x, y: y});\n        } else {\n            isValid = false;\n        }\n    }\n}\n"
     }
 }

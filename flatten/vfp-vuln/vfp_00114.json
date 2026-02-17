@@ -3,51 +3,25 @@
     "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 56,
+            "id": 16,
             "category": {
                 "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
+                    "CWE-682"
                 ]
             },
-            "title": "Unvalidated _vault address in VaultAdapter allows interest rate manipulation",
-            "description": "The VaultAdapter does not validate the _vault address input, allowing malicious or incorrect addresses to be registered. This can lead to incorrect utilization data mapping and subsequent interest rate manipulation. The root cause is the lack of address validation. An attacker could register a fake vault to skew utilization metrics, leading to incorrect interest rate calculations. This distorts the lending market and can cause financial losses for lenders and borrowers.\n",
+            "title": "Wrong capTokenDecimals value used in StakedCapAdapter.price causes inaccurate prices",
+            "description": "The StakedCapAdapter library incorrectly uses the decimal count (e.g., 18) instead of the corresponding scaling factor (10^18) in price calculations, leading to wildly inaccurate prices. The root cause is a fundamental misunderstanding of how decimal scaling works in the price function: it passes the decimal count to convertToAssets, which expects a share amount, and divides by the decimal count rather than the scaling factor. This results in price miscalculations by several orders of magnitude. An attacker can exploit this by observing the incorrect prices and executing trades that take advantage of the disparity between the reported and actual values. The impact includes potential manipulation of minting and burning operations, incorrect valuation of collateral, and possible insolvency due to erroneous price feeds being used in critical financial operations.\n",
             "severity": "High",
             "location": [
-                "VaultAdapter.sol"
+                "contracts/oracle/libraries/StakedCapAdapter.sol#L15-L21",
+                "StakedCapAdapter.sol::price"
             ],
             "files": [
-                "cap-contracts/contracts/oracle/libraries/VaultAdapter.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-807"
-                ]
-            },
-            "title": "Unvalidated _vault address in VaultAdapter allows interest rate manipulation",
-            "description": "The rate function in VaultAdapter accepts any _vault address without validation and makes external calls to it. An attacker can pass a malicious contract that returns manipulated utilization values, which are then stored and used in interest rate calculations. The root cause is the lack of access control or allowlist validation on the _vault parameter. This allows an attacker to inflate or deflate interest rates across the protocol. The impact is financial loss for borrowers or lenders due to incorrect interest accrual, and potential manipulation of the entire lending market.\n",
-            "severity": "High",
-            "location": [
-                "contracts/oracle/libraries/VaultAdapter.sol::rate#26-49",
-                "VaultAdapter.sol"
-            ],
-            "files": [
-                "cap-contracts/contracts/oracle/libraries/VaultAdapter.sol"
+                "cap-contracts/contracts/oracle/libraries/StakedCapAdapter.sol"
             ]
         }
     ],
     "affected_files": {
-        "VaultAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../../access/Access.sol\";\nimport { IVault } from \"../../interfaces/IVault.sol\";\n\nimport { IVaultAdapter } from \"../../interfaces/IVaultAdapter.sol\";\nimport { VaultAdapterStorageUtils } from \"../../storage/VaultAdapterStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\n\n/// @title Vault Adapter\n/// @author kexley, @capLabs\n/// @notice Market rates are sourced from the Vault\ncontract VaultAdapter is IVaultAdapter, UUPSUpgradeable, Access, VaultAdapterStorageUtils {\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the vault adapter with the access control\n    /// @param _accessControl Access control\n    function initialize(address _accessControl) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n    }\n\n    /// @notice Fetch borrow rate for an asset from the Vault\n    /// @param _vault Vault address\n    /// @param _asset Asset to fetch rate for\n    /// @return latestAnswer Borrow rate\n    function rate(address _vault, address _asset) external returns (uint256 latestAnswer) {\n        UtilizationData storage utilizationData = getVaultAdapterStorage().utilizationData[_vault][_asset];\n\n        uint256 elapsed;\n        uint256 utilization;\n        if (block.timestamp > utilizationData.lastUpdate) {\n            uint256 index = IVault(_vault).currentUtilizationIndex(_asset);\n            elapsed = block.timestamp - utilizationData.lastUpdate;\n\n            /// Use average utilization except on the first rate update\n            if (elapsed != block.timestamp) {\n                utilization = (index - utilizationData.index) / elapsed;\n            } else {\n                utilization = IVault(_vault).utilization(_asset);\n            }\n\n            utilizationData.index = index;\n            utilizationData.lastUpdate = block.timestamp;\n        } else {\n            utilization = IVault(_vault).utilization(_asset);\n        }\n\n        latestAnswer = _applySlopes(_vault, _asset, utilization, elapsed);\n    }\n\n    /// @notice Set utilization slopes for an asset\n    /// @param _asset Asset address\n    /// @param _slopes Slope data\n    function setSlopes(address _asset, SlopeData memory _slopes) external checkAccess(this.setSlopes.selector) {\n        getVaultAdapterStorage().slopeData[_asset] = _slopes;\n        emit SetSlopes(_asset, _slopes);\n    }\n\n    /// @notice Set limits for the utilization multiplier\n    /// @param _maxMultiplier Maximum slope multiplier\n    /// @param _minMultiplier Minimum slope multiplier\n    /// @param _rate Rate at which the multiplier shifts\n    function setLimits(uint256 _maxMultiplier, uint256 _minMultiplier, uint256 _rate)\n        external\n        checkAccess(this.setLimits.selector)\n    {\n        VaultAdapterStorage storage $ = getVaultAdapterStorage();\n        $.maxMultiplier = _maxMultiplier;\n        $.minMultiplier = _minMultiplier;\n        $.rate = _rate;\n        emit SetLimits(_maxMultiplier, _minMultiplier, _rate);\n    }\n\n    /// @dev Interest is applied according to where on the slope the current utilization is and the\n    /// multiplier depends on the duration and distance the utilization is from the kink point.\n    /// All utilization values, kinks, and multipliers are in ray (1e27)\n    /// @param _vault Vault address\n    /// @param _asset Asset address\n    /// @param _utilization Utilization ratio in ray (1e27)\n    /// @param _elapsed Length of time at the utilization\n    /// @return interestRate Interest rate in ray (1e27)\n    function _applySlopes(address _vault, address _asset, uint256 _utilization, uint256 _elapsed)\n        internal\n        returns (uint256 interestRate)\n    {\n        VaultAdapterStorage storage $ = getVaultAdapterStorage();\n        UtilizationData storage utilizationData = $.utilizationData[_vault][_asset];\n        SlopeData memory slopes = $.slopeData[_asset];\n        if (_utilization > slopes.kink) {\n            uint256 excess = _utilization - slopes.kink;\n            utilizationData.multiplier *= (1e27 + (1e27 * excess / (1e27 - slopes.kink)) * (_elapsed * $.rate / 1e27));\n\n            if (utilizationData.multiplier > $.maxMultiplier) {\n                utilizationData.multiplier = $.maxMultiplier;\n            }\n\n            interestRate = (slopes.slope0 + (slopes.slope1 * excess / 1e27)) * utilizationData.multiplier / 1e27;\n        } else {\n            utilizationData.multiplier /=\n                (1e27 + (1e27 * (slopes.kink - _utilization) / slopes.kink) * (_elapsed * $.rate / 1e27));\n\n            if (utilizationData.multiplier < $.minMultiplier) {\n                utilizationData.multiplier = $.minMultiplier;\n            }\n\n            interestRate = (slopes.slope0 * _utilization / slopes.kink) * utilizationData.multiplier / 1e27;\n        }\n    }\n\n    /// @dev Only admin is allowed to upgrade implementation\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
+        "StakedCapAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IERC4626 } from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Staked Cap Token Adapter\n/// @notice Prices are calculated based on the underlying cap token price and accrued yield\nlibrary StakedCapAdapter {\n    /// @notice Fetch price for a staked cap token\n    /// @param _asset Staked cap token address\n    /// @return latestAnswer Price of the staked cap token fixed to 8 decimals\n    /// @return lastUpdated Latest timestamp of the price\n    function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {\n        address capToken = IERC4626(_asset).asset();\n        (latestAnswer, lastUpdated) = IOracle(msg.sender).getPrice(capToken);\n        uint256 capTokenDecimals = IERC20Metadata(capToken).decimals();\n        uint256 pricePerFullShare = IERC4626(_asset).convertToAssets(capTokenDecimals);\n        latestAnswer = latestAnswer * pricePerFullShare / capTokenDecimals;\n    }\n}\n"
     }
 }

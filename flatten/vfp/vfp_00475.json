@@ -1,56 +1,32 @@
 {
     "vfp_id": "vfp_00475",
-    "project_name": "ackee-blockchain-let's-get-hai-new-core-features-report.pdf",
+    "project_name": "SSO Account OIDC Recovery Solidity Audit.md",
     "findings": [
         {
-            "id": 20,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1041"
-                ]
-            },
-            "title": "Optimization of function _getPriceValue",
-            "description": "The _getPriceValue function is duplicated in both BeefyVeloVaultRelayer and YearnVeloVaultRelayer contracts, despite them sharing a common parent contract AbstractVeloVaultRelayer. This leads to code duplication and maintenance overhead. Furthermore, the function performs unnecessary multiplication and division (via wmul) when the price per share could be used directly. The root cause is failure to abstract shared logic into the parent contract and over-engineering of arithmetic operations. Although the team initially argued for readability, the function was later moved to the parent contract and optimized, confirming it as a valid code quality improvement.\n",
-            "severity": "Informational",
-            "location": [
-                "BeefyVeloVaultRelayer.sol::_getPriceValue",
-                "YearnVeloVaultRelayer.sol::_getPriceValue"
-            ],
-            "files": [
-                "core/src/contracts/oracles/BeefyVeloVaultRelayer.sol",
-                "core/src/contracts/oracles/YearnVeloVaultRelayer.sol",
-                "core/src/contracts/oracles/AbstractVeloVaultRelayer.sol"
-            ]
-        },
-        {
-            "id": 13,
-            "category": {
-                "1": [
-                    "CWE-707"
+                    "CWE-345"
                 ],
-                "2": [
-                    "CWE-20"
+                "3": [
+                    "CWE-347"
                 ]
             },
-            "title": "Oracle vault relayers lack non-zero price validation",
-            "description": "The _getPriceValue function in both YearnVeloVaultRelayer and BeefyVeloVaultRelayer contracts computes a price using _veloLpBalance and _veloLpPrice, which are fetched from external sources. However, the function does not validate that these values are non-zero before using them in multiplication and division. If either value is zero due to a change in the external contract implementation or an oracle failure, the resulting price will be zero, which could lead to incorrect valuations and potentially catastrophic consequences for the protocol, such as incorrect collateral valuation or reward distribution. The root cause is the absence of a require() check ensuring that the final computed price is greater than zero. This is a data validation issue that increases reliance on external contracts' behavior without proper defensive programming.\n",
-            "severity": "Informational",
+            "title": "Potential Signature Replay Attack in ERC1271Handler",
+            "description": "The `isValidSignature` function in the `ERC1271Handler` contract lacks sufficient validation to prevent signature replay attacks. For EOA signatures, the function only verifies the signature's validity and its association with a `k1owner`, without imposing restrictions on how the hash is constructed. This allows an attacker to reuse a historical transaction hash and signature to execute unauthorized actions on behalf of the account. Additionally, the removal of EIP712 logic in the updated version eliminates safeguards such as inclusion of chain ID and contract address in the hash, enabling cross-chain and cross-account signature reuse. The impact includes unauthorized execution of transactions and potential loss of account control. The vulnerability stems from insufficient input validation and the absence of replay protection mechanisms.\n",
+            "severity": "High",
             "location": [
-                "YearnVeloVaultRelayer.sol::_getPriceValue#53-59",
-                "BeefyVeloVaultRelayer.sol::_getPriceValue#53-59"
+                "ERC1271Handler.sol::isValidSignature#25"
             ],
             "files": [
-                "core/src/contracts/oracles/YearnVeloVaultRelayer.sol",
-                "core/src/contracts/oracles/BeefyVeloVaultRelayer.sol"
+                "zksync-sso-clave-contracts/src/handlers/ERC1271Handler.sol"
             ]
         }
     ],
     "affected_files": {
-        "AbstractVeloVaultRelayer.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.20;\n\nimport {IBaseOracle} from '@interfaces/oracles/IBaseOracle.sol';\nimport {IAbstractVeloVaultRelayer} from '@interfaces/oracles/IAbstractVeloVaultRelayer.sol';\nimport {IVeloPool} from '@interfaces/external/IVeloPool.sol';\nimport {IPessimisticVeloLpOracle} from '@interfaces/external/IPessimisticVeloLpOracle.sol';\nimport {Math, WAD} from '@libraries/Math.sol';\n\n/**\n * @title  AbstractVeloVaultRelayer\n * @notice Abstract contract for Velo vault relayers (Beefy, Yearn, etc.)\n */\nabstract contract AbstractVeloVaultRelayer is IAbstractVeloVaultRelayer {\n  using Math for uint256;\n\n  // --- Registry ---\n\n  /// @inheritdoc IAbstractVeloVaultRelayer\n  IVeloPool public veloPool;\n\n  /// @inheritdoc IAbstractVeloVaultRelayer\n  IPessimisticVeloLpOracle public veloLpOracle;\n\n  // --- Data ---\n\n  /// @inheritdoc IBaseOracle\n  string public symbol;\n\n  // --- Init ---\n\n  /**\n   *\n   * @param _veloPool The address of the velo pool underlying the yearn vault\n   * @param _veloLpOracle The address of the pessimistic velo lp oracle\n   * @param _symbol The symbol of the oracle\n   */\n  constructor(IVeloPool _veloPool, IPessimisticVeloLpOracle _veloLpOracle, string memory _symbol) {\n    if (address(_veloPool) == address(0)) {\n      revert AbstractVeloVaultRelayer_NullVeloPool();\n    }\n    if (address(_veloLpOracle) == address(0)) {\n      revert AbstractVeloVaultRelayer_NullVeloLpOracle();\n    }\n\n    veloPool = _veloPool;\n    veloLpOracle = _veloLpOracle;\n\n    symbol = _symbol;\n  }\n\n  /// @inheritdoc IBaseOracle\n  /// @notice This function always returns `_validity` as `true` since there are no conditions where the result would be invalid.\n  function getResultWithValidity() external view returns (uint256 _result, bool _validity) {\n    uint256 _totalValue = _getPriceValue();\n\n    return (_totalValue, true);\n  }\n  /// @inheritdoc IBaseOracle\n\n  function read() external view returns (uint256 _result) {\n    return _getPriceValue();\n  }\n\n  /// @notice Virtual function to be implemented by child contracts\n  function _getPriceValue() internal view virtual returns (uint256 _combinedPriceValue);\n}\n",
-        "BeefyVeloVaultRelayer.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.20;\n\nimport {IBaseOracle} from '@interfaces/oracles/IBaseOracle.sol';\n\nimport {IBeefyVeloVaultRelayer} from '@interfaces/oracles/IBeefyVeloVaultRelayer.sol';\n\nimport {IBeefyVaultV7} from '@interfaces/external/IBeefyVaultV7.sol';\nimport {IVeloPool} from '@interfaces/external/IVeloPool.sol';\nimport {IPessimisticVeloLpOracle} from '@interfaces/external/IPessimisticVeloLpOracle.sol';\n\nimport {Math, WAD} from '@libraries/Math.sol';\n\nimport {AbstractVeloVaultRelayer} from './AbstractVeloVaultRelayer.sol';\n\n/**\n * @title  BeefyVeloVaultRelayer\n * @notice Deconstructs a Beefy Vault to it's Velodrome liquidity pool and that pool's constituent tokens to return a price feed\n * @dev  Requires an underlying Velodrome pool and price feeds for the pool's tokens\n */\ncontract BeefyVeloVaultRelayer is AbstractVeloVaultRelayer, IBeefyVeloVaultRelayer {\n  using Math for uint256;\n\n  // --- Registry ---\n  /// @inheritdoc IBeefyVeloVaultRelayer\n  IBeefyVaultV7 public beefyVault;\n\n  // --- Init ---\n\n  /**\n   *\n   * @param  _beefyVault The address of the beefy vault contract\n   * @param  _veloPool The address of the velo pool underlying the beefy vault\n   * @param _veloLpOracle The address of the pessimistic velo lp oracle\n   */\n  constructor(\n    IBeefyVaultV7 _beefyVault,\n    IVeloPool _veloPool,\n    IPessimisticVeloLpOracle _veloLpOracle\n  ) AbstractVeloVaultRelayer(_veloPool, _veloLpOracle, string(abi.encodePacked(_beefyVault.symbol(), ' / USD'))) {\n    if (address(_beefyVault) == address(0)) {\n      revert BeefyVeloVaultRelayer_NullBeefyVault();\n    }\n\n    beefyVault = _beefyVault;\n  }\n\n  /// @notice Returns the price of the moo token\n  function _getPriceValue() internal view override returns (uint256 _combinedPriceValue) {\n    // 1 mooToken\n    uint256 _mooTokenBalance = 1_000_000_000_000_000_000;\n\n    // # of velo LP tokens in 1 mooToken\n    uint256 _veloLpBalance = _mooTokenBalance.wmul(beefyVault.getPricePerFullShare());\n\n    // price of 1 velo LP token in chainlink price decimals (8)\n    uint256 _veloLpPrice = veloLpOracle.getCurrentPoolPrice(address(veloPool));\n\n    return (_veloLpBalance * _veloLpPrice) / 1e8;\n  }\n}\n",
-        "YearnVeloVaultRelayer.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.20;\n\nimport {IBaseOracle} from '@interfaces/oracles/IBaseOracle.sol';\n\nimport {IYearnVeloVaultRelayer} from '@interfaces/oracles/IYearnVeloVaultRelayer.sol';\n\nimport {IYearnVault} from '@interfaces/external/IYearnVault.sol';\nimport {IVeloPool} from '@interfaces/external/IVeloPool.sol';\nimport {IPessimisticVeloLpOracle} from '@interfaces/external/IPessimisticVeloLpOracle.sol';\n\nimport {Math, WAD} from '@libraries/Math.sol';\n\nimport {AbstractVeloVaultRelayer} from './AbstractVeloVaultRelayer.sol';\n\n/**\n * @title  YearnVeloVaultRelayer\n * @notice Deconstructs a Yearn Vault to it's Velodrome liquidity pool and that pool's constituent tokens to return a price feed\n * @dev  Requires an underlying Velodrome pool and price feeds for the pool's tokens\n */\ncontract YearnVeloVaultRelayer is AbstractVeloVaultRelayer, IYearnVeloVaultRelayer {\n  using Math for uint256;\n\n  // --- Registry ---\n  /// @inheritdoc IYearnVeloVaultRelayer\n  IYearnVault public yearnVault;\n\n  // --- Init ---\n\n  /**\n   *\n   * @param  _yearnVault The address of the yearn vault contract\n   * @param  _veloPool The address of the velo pool underlying the yearn vault\n   * @param _veloLpOracle The address of the pessimistic velo lp oracle\n   */\n  constructor(\n    IYearnVault _yearnVault,\n    IVeloPool _veloPool,\n    IPessimisticVeloLpOracle _veloLpOracle\n  ) AbstractVeloVaultRelayer(_veloPool, _veloLpOracle, string(abi.encodePacked(_yearnVault.symbol(), ' / USD'))) {\n    if (address(_yearnVault) == address(0)) {\n      revert YearnVeloVaultRelayer_NullYearnVault();\n    }\n\n    yearnVault = _yearnVault;\n  }\n\n  /// @notice Returns the price of the moo token\n  function _getPriceValue() internal view override returns (uint256 _combinedPriceValue) {\n    // 1 yvToken\n    uint256 _yvTokenBalance = 1_000_000_000_000_000_000;\n\n    // # of velo LP tokens in 1 yvToken\n    uint256 _veloLpBalance = _yvTokenBalance.wmul(yearnVault.pricePerShare());\n\n    // price of 1 velo LP token in chainlink price decimals (8)\n    uint256 _veloLpPrice = veloLpOracle.getCurrentPoolPrice(address(veloPool));\n\n    return (_veloLpBalance * _veloLpPrice) / 1e8;\n  }\n}\n"
+        "ERC1271Handler.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { IERC1271Upgradeable } from \"@openzeppelin/contracts-upgradeable/interfaces/IERC1271Upgradeable.sol\";\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\nimport { SignatureDecoder } from \"../libraries/SignatureDecoder.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { OwnerManager } from \"../managers/OwnerManager.sol\";\nimport { ValidatorManager } from \"../managers/ValidatorManager.sol\";\n\n/// @title ERC1271Handler\n/// @author Matter Labs\n/// @notice Contract which provides ERC1271 signature validation\n/// @notice The implementation is inspired by Clave wallet.\nabstract contract ERC1271Handler is IERC1271Upgradeable, OwnerManager, ValidatorManager {\n  bytes4 private constant _ERC1271_MAGIC = 0x1626ba7e;\n\n  /**\n   * @dev Should return whether the signature provided is valid for the provided data. Does not run validation hooks.\n   * @param hash bytes32 - Hash of the data that is signed\n   * @param signature bytes calldata - K1 owner signature OR validator address concatenated to signature\n   * @return magicValue bytes4 - Magic value if the signature is valid, 0 otherwise\n   */\n  function isValidSignature(bytes32 hash, bytes memory signature) external view override returns (bytes4 magicValue) {\n    if (signature.length == 65) {\n      (address signer, ECDSA.RecoverError err) = ECDSA.tryRecover(hash, signature);\n      return\n        signer == address(0) || err != ECDSA.RecoverError.NoError || !_isK1Owner(signer) ? bytes4(0) : _ERC1271_MAGIC;\n    }\n\n    (bytes memory decodedSignature, address validator) = SignatureDecoder.decodeSignatureNoHookData(signature);\n\n    bool isValid = _isModuleValidator(validator) &&\n      IModuleValidator(validator).validateSignature(hash, decodedSignature);\n\n    magicValue = isValid ? _ERC1271_MAGIC : bytes4(0);\n  }\n}\n"
     }
 }

@@ -1,30 +1,120 @@
 {
     "vfp_id": "vfp_00259",
-    "project_name": "Frax0 Mesh - Zellic Audit Report.pdf",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 4,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-691"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-430"
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
                 ]
             },
-            "title": "Incorrect proxy contract addresses",
-            "description": "The UpgradeAdapterEthereum.s.sol script uses Fraxtal-specific proxy addresses (e.g., fraxtalFrxUsdLockbox) when upgrading contracts on Ethereum, where those addresses do not have deployed contracts. This error occurs in the upgradeExistingLockboxes function, which passes incorrect addresses to the upgrade function. When executed, the script will fail because the proxy admin cannot interact with a non-existent contract, halting the upgrade process. This prevents successful deployment of new implementations and could delay critical updates or security fixes.\n",
-            "severity": "Informational",
+            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
+            "description": "The FeeAuction.buy function does not validate the _assets parameter, allowing users to call the function with an empty array or token addresses that have zero balance in the contract. This causes the transaction to proceed without transferring any assets to the buyer. The root cause is the lack of input validation before processing the asset transfer and payment. An attacker or user could exploit this by calling buy with an empty _assets array or including tokens not held by the contract, resulting in a successful payment without receiving any assets. The impact is a loss of funds for the buyer, as they pay the full auction price but receive nothing in return.\n",
+            "severity": "Medium",
             "location": [
-                "UpgradeAdapterEthereum.s.sol::upgradeExistingLockboxes",
-                "UpgradeAdapterEthereum.s.sol::upgradeExistingLockbox"
+                "contracts/feeAuction/FeeAuction.sol::buy#64-80",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
             ],
             "files": [
-                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/scripts/ops/V110/ethereum/UpgradeAdapterEthereum.s.sol"
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Initial auction start price can be lower than minimum start price",
+            "description": "The setStartPrice function in FeeAuction does not validate that the new start price is at least the minStartPrice. This allows an admin to set a start price below the intended minimum, potentially enabling users to acquire assets at negligible cost. The root cause is the lack of input validation in the function. An attacker with admin access or a compromised admin could exploit this to drain value from the protocol. The impact is economic loss due to unauthorized low-price asset acquisition, undermining the auction's intended price discovery mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::setStartPrice#85-89",
+                "FeeAuction.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "FeeAuction’s buy function allows purchasing at sub-optimal prices by adding tokens during an active auction",
+            "description": "The FeeAuction.buy function does not fix the asset amounts at the start of the auction. An attacker can call realizeInterest on FractionalReserve to add more tokens to the auction and then immediately buy all tokens at the current (low) price, effectively getting the added tokens for free. The root cause is the dynamic inclusion of newly added tokens in the auction without price adjustment. This behavior creates undefined and exploitable auction dynamics. The impact is unfair profit for the attacker and loss of revenue for the protocol, especially if MEV searchers are not active to arbitrage the opportunity.\n",
+            "severity": "Low",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
+            "description": "The FeeAuction.buy function does not validate that assets are actually transferred before accepting payment. A malicious actor can front-run a legitimate buy transaction, depleting the asset balance, and causing the victim's transaction to pay without receiving anything. The root cause is the lack of a check ensuring non-zero asset transfer before payment. This creates a race condition exploitable via MEV. The impact is financial loss for victims who pay double the price (due to price doubling after each successful buy) but receive no assets.\n",
+            "severity": "High",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Fee auction allows assets to be purchased for free",
+            "description": "The Dutch auction mechanism in the FeeAuction contract allows the price to decay linearly to zero over time, enabling users to claim fee tokens for free when the auction expires without bids. The root cause is the lack of a minimum price floor in the currentPrice function. Although this behavior may be intentional (as suggested by code comments), it represents a value leakage risk for the protocol. Attackers can wait until the auction ends and then purchase valuable protocol fees at zero cost. The impact is a direct loss of revenue for the protocol, undermining the economic sustainability of the fee collection mechanism and potentially discouraging participation in earlier, higher-priced stages of the auction.\n",
+            "severity": "Informational",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol#L52-L57",
+                "FeeAuction.sol"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
             ]
         }
     ],
     "affected_files": {
-        "UpgradeAdapterEthereum.s.sol": "pragma solidity ^0.8.0;\n\nimport \"scripts/DeployFraxOFTProtocol/DeployFraxOFTProtocol.s.sol\";\nimport { FraxOFTMintableAdapterUpgradeable } from \"contracts/FraxOFTMintableAdapterUpgradeable.sol\";\nimport { ERC1967Utils } from \"@openzeppelin-5/contracts/proxy/ERC1967/ERC1967Utils.sol\";\n\ninterface IERC20PermitPermissionedOptiMintable {\n    function addMinter(address) external;\n}\n\n// forge script scripts/ops/V110/ethereum/UpgradeAdapterEthereum.s.sol --rpc-url https://eth-mainnet.public.blastapi.io\ncontract UpgradeAdapter is DeployFraxOFTProtocol {\n    \n    address frxUsd = 0xCAcd6fd266aF91b8AeD52aCCc382b4e165586E29;\n    address sfrxUsd = 0xcf62F905562626CfcDD2261162a51fd02Fc9c5b6;\n\n    address frxUsdMintableLockboxImp;\n    address sfrxUsdMintableLockboxImp;\n\n    modifier prankAndWriteTxs(address who) {\n        vm.startPrank(who);\n        _;\n        vm.stopPrank();\n\n        new SafeTxUtil().writeTxs(serializedTxs, filename());\n        delete serializedTxs;\n    }\n\n    function filename() public view override returns (string memory) {\n        string memory root = vm.projectRoot();\n        root = string.concat(root, \"/scripts/ops/V110/ethereum/txs/UpgradeAdapter\");\n\n        return string.concat(root, \"-comptroller.json\");\n    }\n\n    function run() public override {\n        deployMintableLockboxes();\n        generateComptrollerTxs();\n    }\n\n    function generateComptrollerTxs() public prankAndWriteTxs(broadcastConfig.delegate) {\n        addMinterRoles();\n        upgradeExistingLockboxes();\n    }\n\n    function addMinterRoles() public {\n        addMinterRole(frxUsd, ethFrxUsdLockbox);\n        addMinterRole(sfrxUsd, ethSFrxUsdLockbox);\n    }\n\n    function addMinterRole(address _token, address _lockbox) public {\n        bytes memory data = abi.encodeCall(\n            IERC20PermitPermissionedOptiMintable.addMinter,\n            (_lockbox)\n        );\n        (bool success, ) = _token.call(data);\n        require(success, \"Add minter role failed\");\n        serializedTxs.push(\n            SerializedTx({\n                name: \"Add minter role\",\n                to: _token,\n                value: 0,\n                data: data\n            })\n        );\n    }\n\n    /// @dev to prevent the script from reverting due to inherited validation\n    function _validateAndPopulateMainnetOfts() internal override {}\n\n    function deployMintableLockboxes() broadcastAs(senderDeployerPK) public {\n        frxUsdMintableLockboxImp = deployMintableLockbox(frxUsd);\n        sfrxUsdMintableLockboxImp = deployMintableLockbox(sfrxUsd);\n    }\n\n    function deployMintableLockbox(address _token) public returns (address) {\n        return address(\n            new FraxOFTMintableAdapterUpgradeable(\n                _token,\n                broadcastConfig.endpoint\n            )\n        );\n    }\n\n    function upgradeExistingLockboxes() public {\n        upgradeExistingLockbox(fraxtalFrxUsdLockbox, frxUsdMintableLockboxImp);\n        upgradeExistingLockbox(fraxtalSFrxUsdLockbox, sfrxUsdMintableLockboxImp);\n    }\n\n    function upgradeExistingLockbox(\n        address _lockbox,\n        address _implementation\n    ) public {\n        bytes memory data = abi.encodeCall(\n            ProxyAdmin.upgrade,\n            (\n                TransparentUpgradeableProxy(payable(_lockbox)),\n                _implementation\n            )\n        );\n\n        bytes32 adminSlot = vm.load(_lockbox, ERC1967Utils.ADMIN_SLOT);\n        proxyAdmin = address(uint160(uint256(adminSlot)));\n        (bool success, ) = proxyAdmin.call(data);\n        require(success, \"Upgrade failed\");\n        serializedTxs.push(\n            SerializedTx({\n                name: \"Upgrade Lockbox\",\n                to: _lockbox,\n                value: 0,\n                data: data\n            })\n        );\n    }\n}"
+        "FeeAuction.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IAuctionCallback } from \"../interfaces/IAuctionCallback.sol\";\n\nimport { IFeeAuction } from \"../interfaces/IFeeAuction.sol\";\nimport { FeeAuctionStorageUtils } from \"../storage/FeeAuctionStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { IERC20, SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title Fee Auction\n/// @author kexley, @capLabs\n/// @notice Fees are sold via a dutch auction\ncontract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUtils {\n    using SafeERC20 for IERC20;\n\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the fee auction\n    /// @param _accessControl Access control address\n    /// @param _paymentToken Payment token address\n    /// @param _paymentRecipient Payment recipient address\n    /// @param _duration Duration of auction in seconds\n    /// @param _minStartPrice Minimum start price in payment token decimals\n    function initialize(\n        address _accessControl,\n        address _paymentToken,\n        address _paymentRecipient,\n        uint256 _duration,\n        uint256 _minStartPrice\n    ) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n\n        FeeAuctionStorage storage $ = get();\n        $.paymentToken = _paymentToken;\n        $.paymentRecipient = _paymentRecipient;\n        $.startPrice = _minStartPrice;\n        $.startTimestamp = block.timestamp;\n        if (_duration == 0) revert NoDuration();\n        $.duration = _duration;\n        $.minStartPrice = _minStartPrice;\n    }\n\n    /// @notice Current price in the payment token, linearly decays toward 0 over time\n    /// @return price Current price\n    function currentPrice() public view returns (uint256 price) {\n        FeeAuctionStorage storage $ = get();\n        uint256 elapsed = block.timestamp - $.startTimestamp;\n        if (elapsed > $.duration) elapsed = $.duration;\n        price = $.startPrice * (1e27 - (elapsed * 1e27 / $.duration)) / 1e27;\n    }\n\n    /// @notice Buy fees in exchange for the payment token\n    /// @dev Starts new auction where start price is double the settled price of this one\n    /// @param _assets Assets to buy\n    /// @param _receiver Receiver address for the assets\n    /// @param _callback Optional callback data\n    function buy(address[] calldata _assets, address _receiver, bytes calldata _callback) external {\n        uint256 price = currentPrice();\n        FeeAuctionStorage storage $ = get();\n        $.startTimestamp = block.timestamp;\n\n        uint256 newStartPrice = price * 2;\n        if (newStartPrice < $.minStartPrice) newStartPrice = $.minStartPrice;\n        $.startPrice = newStartPrice;\n\n        uint256[] memory balances = _transferOutAssets(_assets, _receiver);\n\n        if (_callback.length > 0) IAuctionCallback(msg.sender).auctionCallback(_assets, balances, price, _callback);\n\n        IERC20($.paymentToken).safeTransferFrom(msg.sender, $.paymentRecipient, price);\n\n        emit Buy(msg.sender, price, _assets, balances);\n    }\n\n    /// @notice Set the start price of the current auction\n    /// @dev This will affect the current price, use with caution\n    /// @param _startPrice New start price\n    function setStartPrice(uint256 _startPrice) external checkAccess(this.setStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        $.startPrice = _startPrice;\n        emit SetStartPrice(_startPrice);\n    }\n\n    /// @notice Set duration of auctions\n    /// @dev This will affect the current price, use with caution\n    /// @param _duration New duration in seconds\n    function setDuration(uint256 _duration) external checkAccess(this.setDuration.selector) {\n        if (_duration == 0) revert NoDuration();\n        FeeAuctionStorage storage $ = get();\n        $.duration = _duration;\n        emit SetDuration(_duration);\n    }\n\n    /// @notice Set minimum start price\n    /// @param _minStartPrice New minimum start price\n    function setMinStartPrice(uint256 _minStartPrice) external checkAccess(this.setMinStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        $.minStartPrice = _minStartPrice;\n        emit SetMinStartPrice(_minStartPrice);\n    }\n\n    /// @dev Transfer all specified assets to the receiver from this address\n    /// @param _assets Asset addresses\n    /// @param _receiver Receiver address\n    /// @return balances Balances transferred to receiver\n    function _transferOutAssets(address[] calldata _assets, address _receiver)\n        internal\n        returns (uint256[] memory balances)\n    {\n        uint256 assetsLength = _assets.length;\n        balances = new uint256[](assetsLength);\n        for (uint256 i; i < assetsLength; ++i) {\n            address asset = _assets[i];\n            balances[i] = IERC20(asset).balanceOf(address(this));\n            if (balances[i] > 0) IERC20(asset).safeTransfer(_receiver, balances[i]);\n        }\n    }\n\n    /// @notice Get the payment token address\n    /// @return token Address of the token used for payments\n    function paymentToken() external view returns (address token) {\n        token = get().paymentToken;\n    }\n\n    /// @notice Get the payment recipient address\n    /// @return recipient Address that receives the payments\n    function paymentRecipient() external view returns (address recipient) {\n        recipient = get().paymentRecipient;\n    }\n\n    /// @notice Get the current start price\n    /// @return price Current start price in payment token decimals\n    function startPrice() external view returns (uint256 price) {\n        price = get().startPrice;\n    }\n\n    /// @notice Get the start timestamp of the current auction\n    /// @return timestamp Timestamp when the current auction started\n    function startTimestamp() external view returns (uint256 timestamp) {\n        timestamp = get().startTimestamp;\n    }\n\n    /// @notice Get the auction duration\n    /// @return auctionDuration Duration in seconds\n    function duration() external view returns (uint256 auctionDuration) {\n        auctionDuration = get().duration;\n    }\n\n    /// @notice Get the minimum start price\n    /// @return price Minimum start price in payment token decimals\n    function minStartPrice() external view returns (uint256 price) {\n        price = get().minStartPrice;\n    }\n\n    /// @dev Only admin can upgrade\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
     }
 }

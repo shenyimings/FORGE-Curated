@@ -1,49 +1,32 @@
 {
     "vfp_id": "vfp_00147",
-    "project_name": "cantina_rocketpool_jun2025.pdf",
+    "project_name": "cantina_charm_june2025.pdf",
     "findings": [
         {
-            "id": 2,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-439"
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
                 ]
             },
-            "title": "Implementation of EIP-7782 changing assumed block time of 12 seconds will cause protocol-wide issues",
-            "description": "The protocol assumes a fixed block time of 12 seconds across multiple contracts, which will cause widespread malfunctions if Ethereum reduces block times to 6 seconds as proposed in EIP-7782.\n\nThe root cause is the hardcoding of secondsPerSlot = 12 in various time-calculation functions throughout the codebase, instead of using a dynamic or configurable value. This assumption is embedded in critical logic such as withdrawal timing, epoch calculations, penalty periods, and proposal age limits.\n\nAn attacker or systemic change (such as a network hard fork) that reduces block times would cause miscalculations in functions like notifyExit(), notifyFinalBalance(), and getCurrentEpoch(). For example, withdrawableTime and distributableTime would be miscalculated, leading to delayed or incorrect distributions. Additionally, getCurrentSlot() would return incorrect values, allowing malicious node operators to bypass exit challenges and steal funds.\n\nThe impact is protocol-wide functional degradation, including incorrect reward distribution, extended upgrade delays, improper penalty enforcement, and potential loss of user funds due to flawed exit challenge mechanisms.\n",
-            "severity": "High",
+            "title": "Insufficient factory check during vault creation",
+            "description": "1. **Description:** When creating a new vault in AlphaProVaultFactory, the contract checks for a field but does not verify that the provided Uniswap V3 pool address is valid for the given token pair and fee.\n2. **Cause:** The factory does not perform a lookup or validation to confirm that the provided pool address corresponds to the correct (token0, token1, fee) triplet.\n3. **Exploitation:** An attacker could provide a fake or incorrect pool address during vault creation, leading to integration with a malicious or non-functional pool.\n4. **Impact:** This could result in loss of funds or inability to operate the vault correctly due to interaction with an invalid Uniswap V3 pool.\n",
+            "severity": "Medium",
             "location": [
-                "RocketDAOProtocolSettingsAuction.sol#19",
-                "RocketDAOProtocolSettingsAuction.sol#38-40",
-                "RocketDAOProtocolSettingsAuction.sol#73-76",
-                "RocketDAOProtocolSettingsProposals.sol#24",
-                "RocketDAOProtocolSettingsProposals.sol#61-64",
-                "RocketDAOProtocolSettingsProposals.sol#114-117",
-                "RocketMegapoolDelegateBase.sol#13",
-                "RocketMegapoolDelegate.sol#24",
-                "RocketMegapoolDelegate.sol#401-406",
-                "RocketMegapoolDelegate.sol#510",
-                "RocketMegapoolDelegate.sol#523",
-                "RocketMegapoolDelegate.sol#561-564",
-                "RocketMegapoolDelegate.sol#587-588",
-                "RocketMegapoolDelegate.sol#690-696",
-                "RocketMegapoolDelegate.sol#699-704",
-                "RocketMegapoolPenalties.sol#15",
-                "RocketMegapoolPenalties.sol#89-94",
-                "RocketNetworkPenalties.sol#16",
-                "RocketNetworkPenalties.sol#128-133",
-                "BlockRoots.sol#19",
-                "BlockRoots.sol#29-38"
+                "AlphaProVaultFactory.sol#L46-L47"
             ],
             "files": [
-                "rocketpool/contracts/contract/dao/protocol/settings/RocketDAOProtocolSettingsAuction.sol"
+                "alpha-contracts-v2.1/contracts/AlphaProVaultFactory.sol"
             ]
         }
     ],
     "affected_files": {
-        "RocketDAOProtocolSettingsAuction.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity 0.8.30;\n\nimport \"./RocketDAOProtocolSettings.sol\";\nimport \"../../../../interface/dao/protocol/settings/RocketDAOProtocolSettingsAuctionInterface.sol\";\n\n/// @notice Network auction settings\ncontract RocketDAOProtocolSettingsAuction is RocketDAOProtocolSettings, RocketDAOProtocolSettingsAuctionInterface {\n\n    constructor(RocketStorageInterface _rocketStorageAddress) RocketDAOProtocolSettings(_rocketStorageAddress, \"auction\") {\n        version = 3;\n        // Initialise settings on deployment\n        if(!getBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")))) {\n            // Apply settings\n            setSettingBool(\"auction.lot.create.enabled\", true);      \n            setSettingBool(\"auction.lot.bidding.enabled\", true);\n            setSettingUint(\"auction.lot.value.minimum\", 1 ether);   \n            setSettingUint(\"auction.lot.value.maximum\", 10 ether);\n            setSettingUint(\"auction.lot.duration\", 50400);          // 7 days\n            setSettingUint(\"auction.price.start\", 1 ether);         // 100%\n            setSettingUint(\"auction.price.reserve\", 0.5 ether);     // 50%\n            // Settings initialised\n            setBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")), true);\n        }\n    }\n\n    /// @dev Overrides inherited setting method with extra sanity checks for this contract\n    function setSettingUint(string memory _settingPath, uint256 _value) override public onlyDAOProtocolProposal {\n        // Some safety guards for certain settings\n        if(getBool(keccak256(abi.encodePacked(settingNameSpace, \"deployed\")))) {\n            bytes32 settingKey = keccak256(abi.encodePacked(_settingPath));\n            if(settingKey == keccak256(abi.encodePacked(\"auction.lot.value.minimum\"))) {\n                // >= 1 RPL (RPIP-33)\n                require(_value >= 1 ether, \"Value must be >= 1 RPL\");\n            } else if(settingKey == keccak256(abi.encodePacked(\"auction.lot.value.maximum\"))) {\n                // >= 1 RPL (RPIP-33)\n                require(_value >= 1 ether, \"Value must be >= 1 RPL\");\n            } else if(settingKey == keccak256(abi.encodePacked(\"auction.lot.duration\"))) {\n                // >= 1 day (RPIP-33) (approximated by blocks)\n                require(_value >= 7200, \"Value must be >= 7200\");\n            } else if(settingKey == keccak256(abi.encodePacked(\"auction.price.start\"))) {\n                // >= 10% (RPIP-33)\n                require(_value >= 0.1 ether, \"Value must be >= 10%\");\n            } else if(settingKey == keccak256(abi.encodePacked(\"auction.price.reserve\"))) {\n                // >= 10% (RPIP-33)\n                require(_value >= 0.1 ether, \"Value must be >= 10%\");\n            }\n        }\n        // Update setting now\n        setUint(keccak256(abi.encodePacked(settingNameSpace, _settingPath)), _value);\n    }\n\n    /// @notice Lot creation currently enabled\n    function getCreateLotEnabled() override external view returns (bool) {\n        return getSettingBool(\"auction.lot.create.enabled\");\n    }\n\n    /// @notice Bidding on lots currently enabled\n    function getBidOnLotEnabled() override external view returns (bool) {\n        return getSettingBool(\"auction.lot.bidding.enabled\");\n    }\n\n    /// @notice The minimum lot size relative to ETH value\n    function getLotMinimumEthValue() override external view returns (uint256) {\n        return getSettingUint(\"auction.lot.value.minimum\");\n    }\n\n    /// @notice The maximum lot size relative to ETH value\n    function getLotMaximumEthValue() override external view returns (uint256) {\n        return getSettingUint(\"auction.lot.value.maximum\");\n    }\n\n    /// @notice The maximum auction duration in blocks\n    function getLotDuration() override external view returns (uint256) {\n        return getSettingUint(\"auction.lot.duration\");\n    }\n\n    /// @notice The starting price relative to current RPL price, as a fraction of 1 ether\n    function getStartingPriceRatio() override external view returns (uint256) {\n        return getSettingUint(\"auction.price.start\");\n    }\n\n    /// @notice The reserve price relative to current RPL price, as a fraction of 1 ether\n    function getReservePriceRatio() override external view returns (uint256) {\n        return getSettingUint(\"auction.price.reserve\");\n    }\n\n}\n"
+        "AlphaProVaultFactory.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.0;\npragma abicoder v2;\n\nimport {Clones} from \"@openzeppelin/contracts/proxy/Clones.sol\";\nimport {IUniswapV3Pool} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {IUniswapV3Factory} from \"@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol\";\nimport \"./AlphaProVault.sol\";\n\n/**\n * @title   Alpha Pro Vault Factory\n * @notice  A factory contract for creating new vaults\n */\ncontract AlphaProVaultFactory {\n    event NewVault(address vault);\n    event UpdateProtocolFee(uint24 protocolFee);\n\n    event UpdateGovernance(address governance);\n\n    address public immutable template;\n    address[] public vaults;\n    mapping(address => bool) public isVault;\n    mapping(address => bool) public allowedFactories;\n\n    address public governance;\n    address public pendingGovernance;\n    uint24 public protocolFee;\n\n    /**\n     * @param _template A deployed AlphaProVault contract\n     * @param _governance Charm Finance governance address\n     * @param _protocolFee Fee multiplied by 1e6. Hard capped at 25%.\n     */\n    constructor(address _template, address _governance, uint24 _protocolFee) {\n        template = _template;\n        governance = _governance;\n        protocolFee = _protocolFee;\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n    }\n\n    /**\n     * @notice Create a new Alpha Pro Vault\n     * @param params InitizalizeParams Underlying Uniswap V3 pool address\n     */\n    function createVault(VaultParams calldata params) external returns (address vaultAddress) {\n        IUniswapV3Pool pool = IUniswapV3Pool(params.pool);\n        IUniswapV3Factory poolFactory = IUniswapV3Factory(pool.factory());\n        require(allowedFactories[address(poolFactory)], \"allowedFactories\");\n        require(params.pool == poolFactory.getPool(pool.token0(), pool.token1(), pool.fee()), \"pool mismatch\");\n        vaultAddress =\n            Clones.cloneDeterministic(template, keccak256(abi.encode(msg.sender, block.chainid, numVaults())));\n        AlphaProVault(vaultAddress).initialize(params, address(this));\n        vaults.push(vaultAddress);\n        isVault[vaultAddress] = true;\n        emit NewVault(vaultAddress);\n    }\n\n    function setAllowedFactory(address factory, bool allowed) external onlyGovernance {\n        allowedFactories[factory] = allowed;\n    }\n\n    function numVaults() public view returns (uint256) {\n        return vaults.length;\n    }\n\n    /**\n     * @notice Change the protocol fee charged on pool fees earned from\n     * Uniswap, expressed as multiple of 1e-6. Fee is hard capped at 25%.\n     */\n    function setProtocolFee(uint24 _protocolFee) external onlyGovernance {\n        require(_protocolFee <= 25e4, \"protocolFee must be <= 250000\");\n        protocolFee = _protocolFee;\n        emit UpdateProtocolFee(_protocolFee);\n    }\n\n    /**\n     * @notice Governance address is not updated until the new governance\n     * address has called `acceptGovernance()` to accept this responsibility.\n     */\n    function setGovernance(address _governance) external onlyGovernance {\n        pendingGovernance = _governance;\n    }\n\n    /**\n     * @notice `setGovernance()` should be called by the existing fee recipient\n     * address prior to calling this function.\n     */\n    function acceptGovernance() external {\n        require(msg.sender == pendingGovernance, \"pendingGovernance\");\n        governance = msg.sender;\n        emit UpdateGovernance(msg.sender);\n    }\n\n    modifier onlyGovernance() {\n        require(msg.sender == governance, \"governance\");\n        _;\n    }\n}\n"
     }
 }

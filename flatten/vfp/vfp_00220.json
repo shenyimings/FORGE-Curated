@@ -3,41 +3,30 @@
     "project_name": "cantina_steakhouse_nov2025.pdf",
     "findings": [
         {
-            "id": 1,
+            "id": 21,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
                 ]
             },
-            "title": "Stale adapter NAV mints free shares",
-            "description": "The BoxAdapterCached contract's realAssets() function returns a cached value of totalAssets without refreshing it based on the latest balance in the Box, even when yield has accrued. This stale value is used by VaultV2 during deposit previews, causing previewDeposit and previewMint to calculate an inflated number of shares. An attacker can monitor off-chain for NAV drift, deposit when the cached value is low, receive more shares than fair value, and later redeem them at the updated NAV, effectively stealing yield from honest users. The root cause is the lack of automatic cache invalidation or refresh in realAssets(). The impact is recurring economic loss proportional to the NAV drift, which is repeatable whenever the cache remains stale due to inactivity of allocators.\n",
-            "severity": "Low",
-            "location": [
-                "BoxAdapterCached.sol#L104-L106"
-            ],
-            "files": [
-                "box/src/BoxAdapterCached.sol"
-            ]
-        },
-        {
-            "id": 18,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ]
-            },
-            "title": "Return cached totalAssets after update",
-            "description": "The _updateTotalAssets function updates totalAssets but does not return it, forcing callers to read it from storage immediately after. Returning the value would allow in-memory use and avoid an SLOAD. The root cause is missing return value optimization. The impact is unnecessary gas cost from redundant storage reads.\n",
+            "title": "Factory mapping can be overwritten",
+            "description": "The BoxAdapterFactory allows overwriting the boxAdapter mapping for existing vault-box pairs. While this does not affect on-chain authorization (governance uses vault.addAdapter), it can mislead off-chain tooling that relies on the factory as a source of truth. The root cause is lack of overwrite protection. The impact is informational inconsistency, potentially causing operational confusion or errors in external systems.\n",
             "severity": "Informational",
             "location": [
-                "BoxAdapterCached.sol#L108-L126"
+                "BoxAdapterFactory.sol#L18-L25"
             ],
             "files": [
-                "box/src/BoxAdapterCached.sol"
+                "box/src/factories/BoxAdapterFactory.sol"
             ]
         }
     ],
     "affected_files": {
-        "BoxAdapterCached.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\n// Copyright (c) 2025 Morpho Association, Steakhouse Financial\npragma solidity 0.8.28;\n\nimport {IERC4626} from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {SafeCast} from \"@openzeppelin/contracts/utils/math/SafeCast.sol\";\nimport {IVaultV2} from \"./../lib/vault-v2/src/interfaces/IVaultV2.sol\";\nimport {MathLib} from \"./../lib/vault-v2/src/libraries/MathLib.sol\";\nimport {SafeERC20Lib} from \"./../lib/vault-v2/src/libraries/SafeERC20Lib.sol\";\nimport {IBox} from \"./interfaces/IBox.sol\";\nimport {IBoxAdapter} from \"./interfaces/IBoxAdapter.sol\";\n\ncontract BoxAdapterCached is IBoxAdapter {\n    using MathLib for uint256;\n    using SafeCast for uint256;\n\n    /* EVENTS */\n    event UpdateTotalAsset(uint256 oldTotalAssets, uint256 totalAssets);\n\n    /* IMMUTABLES */\n\n    address public immutable factory;\n    address public immutable parentVault;\n    IBox public immutable box;\n    bytes32 public immutable adapterId;\n\n    /* STORAGE */\n\n    address public skimRecipient;\n    uint256 public totalAssets;\n    uint256 public totalAssetsTimestamp;\n\n    /* FUNCTIONS */\n\n    constructor(address _parentVault, IBox _box) {\n        factory = msg.sender;\n        parentVault = _parentVault;\n        box = _box;\n        adapterId = keccak256(abi.encode(\"this\", address(this)));\n        address asset = IVaultV2(_parentVault).asset();\n        require(asset == _box.asset(), AssetMismatch());\n        SafeERC20Lib.safeApprove(asset, _parentVault, type(uint256).max);\n        SafeERC20Lib.safeApprove(asset, address(_box), type(uint256).max);\n    }\n\n    function setSkimRecipient(address newSkimRecipient) external {\n        require(msg.sender == IVaultV2(parentVault).owner(), NotAuthorized());\n        skimRecipient = newSkimRecipient;\n        emit SetSkimRecipient(newSkimRecipient);\n    }\n\n    /// @dev Skims the adapter's balance of `token` and sends it to `skimRecipient`.\n    /// @dev This is useful to handle rewards that the adapter has earned.\n    function skim(address token) external {\n        require(msg.sender == skimRecipient, NotAuthorized());\n        require(token != address(box), CannotSkimBoxShares());\n        uint256 balance = IERC20(token).balanceOf(address(this));\n        SafeERC20Lib.safeTransfer(token, skimRecipient, balance);\n        emit Skim(token, balance);\n    }\n\n    /// @dev Does not log anything because the ids (logged in the parent vault) are enough.\n    /// @dev Returns the ids of the allocation and the change in allocation.\n    function allocate(bytes memory data, uint256 assets, bytes4, address) external returns (bytes32[] memory, int256) {\n        require(data.length == 0, InvalidData());\n        require(msg.sender == parentVault, NotAuthorized());\n\n        if (assets > 0) IERC4626(box).deposit(assets, address(this));\n        // Safe casts because bounded by Vault V2 which requires totalAssets to stay below ~10^35\n        _updateTotalAssets();\n        int256 newAllocation = totalAssets.toInt256();\n        int256 oldAllocation = allocation().toInt256();\n\n        return (ids(), newAllocation - oldAllocation);\n    }\n\n    /// @dev Does not log anything because the ids (logged in the parent vault) are enough.\n    /// @dev Returns the ids of the deallocation and the change in allocation.\n    function deallocate(bytes memory data, uint256 assets, bytes4, address) external returns (bytes32[] memory, int256) {\n        require(data.length == 0, InvalidData());\n        require(msg.sender == parentVault, NotAuthorized());\n\n        if (assets > 0) IERC4626(box).withdraw(assets, address(this), address(this));\n        // Safe casts because bounded by Vault V2 which requires totalAssets to stay below ~10^35\n        _updateTotalAssets();\n        int256 newAllocation = totalAssets.toInt256();\n        int256 oldAllocation = allocation().toInt256();\n\n        return (ids(), newAllocation - oldAllocation);\n    }\n\n    /// @dev Returns adapter's ids.\n    function ids() public view returns (bytes32[] memory) {\n        bytes32[] memory ids_ = new bytes32[](1);\n        ids_[0] = adapterId;\n        return ids_;\n    }\n\n    function allocation() public view returns (uint256) {\n        return IVaultV2(parentVault).allocation(adapterId);\n    }\n\n    function realAssets() external view returns (uint256) {\n        return allocation() != 0 ? totalAssets : 0;\n    }\n\n    /// @dev Updates the cached total assets of the adapter.\n    /// @dev Allowed: Vault allocator, sentinel or anyone after 24 hours of inactivity\n    function updateTotalAssets() external {\n        require(\n            IVaultV2(parentVault).isAllocator(msg.sender) ||\n                IVaultV2(parentVault).isSentinel(msg.sender) ||\n                totalAssetsTimestamp + 1 days < block.timestamp,\n            NotAuthorized()\n        );\n\n        uint256 oldTotalAssets = totalAssets;\n        _updateTotalAssets();\n        emit UpdateTotalAsset(oldTotalAssets, totalAssets);\n    }\n\n    function _updateTotalAssets() internal {\n        totalAssets = box.previewRedeem(box.balanceOf(address(this)));\n        totalAssetsTimestamp = block.timestamp;\n    }\n\n    function adapterData() external view returns (bytes memory) {\n        return abi.encode(\"this\", address(this));\n    }\n}\n"
+        "BoxAdapterFactory.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\n// Copyright (c) 2025 Morpho Association, Steakhouse Financial\npragma solidity 0.8.28;\n\nimport {BoxAdapter} from \"./../BoxAdapter.sol\";\nimport {IBox} from \"./../interfaces/IBox.sol\";\nimport {IBoxAdapter} from \"./../interfaces/IBoxAdapter.sol\";\nimport {IBoxAdapterFactory} from \"./../interfaces/IBoxAdapterFactory.sol\";\n\ncontract BoxAdapterFactory is IBoxAdapterFactory {\n    /* STORAGE */\n\n    mapping(address parentVault => mapping(IBox box => IBoxAdapter)) public boxAdapter;\n    mapping(address account => bool) public isBoxAdapter;\n\n    /* FUNCTIONS */\n\n    /// @dev Returns the address of the deployed BoxAdapter.\n    function createBoxAdapter(address parentVault, IBox box) external returns (IBoxAdapter) {\n        BoxAdapter _boxAdapter = new BoxAdapter(parentVault, box);\n        boxAdapter[parentVault][box] = _boxAdapter;\n        isBoxAdapter[address(_boxAdapter)] = true;\n        emit CreateBoxAdapter(parentVault, address(box), _boxAdapter);\n        return _boxAdapter;\n    }\n}\n"
     }
 }

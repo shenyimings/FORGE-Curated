@@ -1,35 +1,33 @@
 {
     "vfp_id": "vfp_00283",
-    "project_name": "Uniswap Labs UNIfication Fees Diff Audit.md",
+    "project_name": "UMA Oracle Bridging Contracts Upgrade Audit.md",
     "findings": [
         {
-            "id": 2,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-221"
-                ],
-                "3": [
-                    "CWE-223"
-                ],
-                "4": [
-                    "CWE-778"
+                    "CWE-1068"
                 ]
             },
-            "title": "Lack of Event Emission in `release` Function",
-            "description": "1. **Description:** The `release` function in the `ExchangeReleaser.sol` abstract contract does not emit an event upon successful execution, despite performing a critical operation: releasing assets from the `TokenJar`.\n2. **Cause:** The function was implemented without including an event to log the release action, likely an oversight in design for off-chain observability.\n3. **Exploitation:** This cannot be exploited maliciously, but it hinders external systems from tracking or reacting to asset releases in real time.\n4. **Impact:** The absence of an event reduces the transparency and auditability of the system, making it difficult for indexers, monitoring tools, and users to observe when and how assets are released, potentially affecting trust and integration capabilities.\n",
+            "title": "Misleading or Incorrect Docstrings",
+            "description": "Several docstrings and comments in the codebase are inaccurate or unclear, potentially leading to misunderstandings during maintenance or integration. Specifically, the use of \"its\" instead of \"it is\", references to \"ancillary data\" instead of \"compressed ancillary data\", and incorrect statements about conditional compression when in fact compression is always applied, all contribute to misleading documentation. The cause is outdated or imprecise commenting that does not reflect the current implementation. While this does not introduce direct security risks, it can lead to incorrect assumptions by developers or off-chain systems interacting with the contracts. The impact is reduced code clarity and potential integration errors. These issues were resolved by updating the relevant comments in the codebase.\n",
             "severity": "Informational",
             "location": [
-                "ExchangeReleaser.sol::release"
+                "AncillaryDataCompression.sol#L17",
+                "AncillaryDataCompression.sol#L19",
+                "OracleSpoke.sol#L107-L108",
+                "OracleSpoke.sol#L252",
+                "OracleChildTunnel.sol#L196"
             ],
             "files": [
-                "protocol-fees/src/releasers/ExchangeReleaser.sol"
+                "protocol/packages/core/contracts/cross-chain-oracle/AncillaryDataCompression.sol"
             ]
         }
     ],
     "affected_files": {
-        "ExchangeReleaser.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.29;\n\nimport {Currency} from \"v4-core/types/Currency.sol\";\nimport {ERC20} from \"solmate/src/tokens/ERC20.sol\";\nimport {SafeTransferLib} from \"solmate/src/utils/SafeTransferLib.sol\";\nimport {ResourceManager} from \"../base/ResourceManager.sol\";\nimport {Nonce} from \"../base/Nonce.sol\";\nimport {IAssetSink} from \"../interfaces/IAssetSink.sol\";\nimport {IReleaser} from \"../interfaces/IReleaser.sol\";\n\n/// @title ExchangeReleaser\n/// @notice A contract that releases assets from an AssetSink in exchange for transferring a\n/// threshold\n/// amount of a resource token\n/// @dev Inherits from ResourceManager for resource transferring functionality and Nonce for replay\n/// protection\n/// @custom:security-contact security@uniswap.org\nabstract contract ExchangeReleaser is IReleaser, ResourceManager, Nonce {\n  using SafeTransferLib for ERC20;\n\n  /// @inheritdoc IReleaser\n  IAssetSink public immutable ASSET_SINK;\n\n  /// @notice Creates a new ExchangeReleaser instance\n  /// @param _resource The address of the resource token that must be transferred\n  /// @param _assetSink The address of the AssetSink contract holding the assets\n  /// @param _recipient The address that will receive the resource tokens\n  constructor(address _resource, uint256 _threshold, address _assetSink, address _recipient)\n    ResourceManager(_resource, _threshold, msg.sender, _recipient)\n  {\n    ASSET_SINK = IAssetSink(payable(_assetSink));\n  }\n\n  /// @inheritdoc IReleaser\n  function release(uint256 _nonce, Currency[] calldata assets, address recipient) external virtual {\n    _release(_nonce, assets, recipient);\n  }\n\n  /// @notice Internal function to handle the nonce check, transfer the RESOURCE, and call the\n  /// release of assets on the AssetSink.\n  function _release(uint256 _nonce, Currency[] calldata assets, address recipient)\n    internal\n    handleNonce(_nonce)\n  {\n    RESOURCE.safeTransferFrom(msg.sender, RESOURCE_RECIPIENT, threshold);\n    ASSET_SINK.release(assets, recipient);\n  }\n}\n"
+        "AncillaryDataCompression.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.0;\n\nimport { AncillaryData } from \"../common/implementation/AncillaryData.sol\";\n\n/**\n * @title Library for compressing ancillary data when bridging DVM price requests to mainnet.\n * @notice This provides internal method for origin chain oracles to compress ancillary data by replacing it with the\n * hash of the original ancillary data and adding additional information to track back the original ancillary data on\n * mainnet.\n */\nlibrary AncillaryDataCompression {\n    /**\n     * @notice Compresses ancillary data by providing sufficient information to track back the original ancillary data\n     * on mainnet.\n     * @dev The compression replaces original ancillary data with its hash and adds address of origin chain oracle and\n     * block number so that its more efficient to fetch original ancillary data from PriceRequestBridged event on origin\n     * chain indexed by parentRequestId. This parentRequestId can be reconstructed by taking keccak256 hash of ABI\n     * encoded price identifier, time and ancillary data.\n     * @param ancillaryData original ancillary data to be processed.\n     * @param requester address of the requester who initiated the price request.\n     * @param requestBlockNumber block number when the price request was initiated.\n     * @return compressed ancillary data.\n     */\n    function compress(\n        bytes memory ancillaryData,\n        address requester,\n        uint256 requestBlockNumber\n    ) internal view returns (bytes memory) {\n        return\n            AncillaryData.appendKeyValueUint(\n                AncillaryData.appendKeyValueAddress(\n                    AncillaryData.appendKeyValueAddress(\n                        AncillaryData.appendKeyValueUint(\n                            AncillaryData.appendKeyValueBytes32(\"\", \"ancillaryDataHash\", keccak256(ancillaryData)),\n                            \"childBlockNumber\",\n                            requestBlockNumber\n                        ),\n                        \"childOracle\",\n                        address(this)\n                    ),\n                    \"childRequester\",\n                    requester\n                ),\n                \"childChainId\",\n                block.chainid\n            );\n    }\n}\n"
     }
 }

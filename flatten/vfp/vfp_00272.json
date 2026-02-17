@@ -1,35 +1,30 @@
 {
     "vfp_id": "vfp_00272",
-    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "project_name": "Jovay Rollup Contracts Audit.md",
     "findings": [
         {
             "id": 38,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-437"
+                    "CWE-477"
                 ]
             },
-            "title": "ICapToken.initialize and CapToken.initialize mismatch",
-            "description": "There is a mismatch between the ICapToken interface and the CapToken implementation regarding the initialize function signature. The root cause is an inconsistency between interface and implementation, which can lead to silent failures during deployment or upgrades if the proxy system relies on correct function selectors. If a contract calls initialize through the interface, it may fail or behave unexpectedly. The impact includes potential initialization failures, broken upgrades, or incorrect state setup, which could render the contract unusable or insecure.\n",
+            "title": "Duplicate Ownership Transfer in Initialize Emits Two OwnershipTransferred Events",
+            "description": "In `BridgeBase.sol`, the `initialize` function first calls `OwnableUpgradeable.__Ownable_init()`, which sets the owner to `_msgSender()`, and then calls `_transferOwnership(owner)` to set it again to the provided `owner` argument. This results in two `OwnershipTransferred` events being emitted in the same transaction.\n\nThe root cause is the use of an outdated OpenZeppelin library (v4.x) where `__Ownable_init()` does not accept an initial owner parameter, forcing a second ownership transfer. This pattern is unnecessary and stems from version limitations.\n\nWhile not directly exploitable, this behavior can confuse off-chain indexers and on-chain systems that monitor ownership changes, especially those that assume the first `OwnershipTransferred` event reflects the final owner.\n\nThe impact is operational: it can lead to incorrect state interpretation by external systems, such as governance dashboards or monitoring tools, potentially causing erroneous alerts or decisions based on incomplete event parsing.\n",
             "severity": null,
             "location": [
-                "contracts/interfaces/ICapToken.sol#L7-L8",
-                "contracts/token/CapToken.sol#L23-L30"
+                "BridgeBase.sol::initialize#32",
+                "BridgeBase.sol::_transferOwnership#39"
             ],
             "files": [
-                "cap-contracts/contracts/interfaces/ICapToken.sol",
-                "cap-contracts/contracts/token/CapToken.sol"
+                "jovay-contracts/rollup_contracts/contracts/common/BridgeBase.sol"
             ]
         }
     ],
     "affected_files": {
-        "ICapToken.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IERC20 } from \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\n\ninterface ICapToken is IERC20 {\n    function initialize(\n        string memory name,\n        string memory symbol,\n        address accessControl,\n        address feeAuction,\n        address oracle,\n        address[] calldata assets,\n        address insuranceFund\n    ) external;\n}\n",
-        "CapToken.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Vault } from \"../vault/Vault.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\n\n/// @title Cap Token\n/// @author kexley, @capLabs\n/// @notice Token representing the basket of underlying assets\ncontract CapToken is UUPSUpgradeable, Vault {\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the Cap token\n    /// @param _name Name of the cap token\n    /// @param _symbol Symbol of the cap token\n    /// @param _accessControl Access controller\n    /// @param _feeAuction Fee auction address\n    /// @param _oracle Oracle address\n    /// @param _assets Asset addresses to mint Cap token with\n    /// @param _insuranceFund Insurance fund\n    function initialize(\n        string memory _name,\n        string memory _symbol,\n        address _accessControl,\n        address _feeAuction,\n        address _oracle,\n        address[] calldata _assets,\n        address _insuranceFund\n    ) external initializer {\n        __Vault_init(_name, _symbol, _accessControl, _feeAuction, _oracle, _assets, _insuranceFund);\n        __UUPSUpgradeable_init();\n    }\n\n    /// @dev Only admin can upgrade\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
+        "BridgeBase.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\nimport {AddressUpgradeable} from \"@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol\";\n\nimport \"./interfaces/IBridgeBase.sol\";\n\nabstract contract BridgeBase is OwnableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, IBridgeBase {\n    using AddressUpgradeable for address;\n\n    address public mailBox;\n\n    address public toBridge;\n\n    modifier onlyMailBox() {\n        // check caller is mailBox\n        if (_msgSender() != mailBox) {\n            revert ErrorCallerIsNotMailBox();\n        }\n        _;\n    }\n\n    constructor(){\n        _disableInitializers();\n    }\n\n    function initialize(address mailBox_, address toBridge_, address owner) external initializer {\n        OwnableUpgradeable.__Ownable_init();\n        PausableUpgradeable.__Pausable_init();\n        ReentrancyGuardUpgradeable.__ReentrancyGuard_init();\n\n        require(mailBox_ != address(0) && toBridge_ != address(0) && owner != address(0), \"initialize contract address must not zero\");\n        mailBox = mailBox_;\n        toBridge = toBridge_;\n        _transferOwnership(owner);\n    }\n\n    function setMailBox(address mailBox_) external whenPaused onlyOwner {\n        require(mailBox_ != address(0), \"mailBox cannot be set to 0\");\n        mailBox = mailBox_;\n    }\n\n    function setToBridge(address toBridge_) external whenPaused onlyOwner {\n        require(toBridge_ != address(0), \"toBridge cannot be set to 0\");\n        toBridge = toBridge_;\n    }\n\n    function pause() external onlyOwner {\n        _pause();\n    }\n\n    function unpause() external onlyOwner {\n        _unpause();\n    }\n\n    // function _doCallback(address to_, bytes memory msg_) internal {\n    //     if (msg_.length > 0 && to_.code.length > 0) {\n    //         (bool success,) = to_.call(msg_);\n    //         require(success, \"LayerBase: callback failed\");\n    //     }\n    // }\n\n    function mailBoxCall(bytes memory msg_) internal {\n        mailBox.functionCallWithValue(msg_, msg.value, \"LayerBase: mailbox call failed\");\n    }\n\n    uint256[50] private __gap;\n}\n"
     }
 }

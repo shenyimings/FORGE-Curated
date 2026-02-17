@@ -1,96 +1,26 @@
 {
     "vfp_id": "vfp_00565",
-    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
+    "project_name": "cantina_seamless_april2025.pdf",
     "findings": [
         {
-            "id": 27,
+            "id": 4,
             "category": {
                 "1": [
                     "CWE-710"
-                ],
-                "2": [
-                    "CWE-1164"
-                ],
-                "3": [
-                    "CWE-563"
                 ]
             },
-            "title": "Unused REWARDS_TOKEN Variable",
-            "description": "The REWARDS_TOKEN variable in DIARewardsDistribution is declared but never used. The root cause is leftover code from prior development. This increases contract size and may confuse auditors. The impact is minimal, limited to code clarity and gas efficiency.\n",
-            "severity": "Low",
+            "title": "Struct that is written to and accessed in storage could be optimized from 3 slots to 1",
+            "description": "1. **Description:** The Auction struct in DataTypes.sol uses three storage slots due to inefficient packing of its fields, increasing gas costs for storage operations.\n2. **Cause:** The struct contains two uint256 timestamps and a bool, which are not tightly packed, resulting in suboptimal storage layout.\n3. **Exploitation:** This is not exploitable in a security sense but leads to higher gas consumption on every write and read operation involving the struct.\n4. **Impact:** Increased transaction costs for users interacting with functionality that uses the Auction struct, reducing efficiency and economic viability.\n",
+            "severity": "Informational",
             "location": [
-                "DIARewardsDistribution"
+                "DataTypes.sol::#L38-L46"
             ],
             "files": [
-                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Incorrect Calculation of Accrued Rewards in updateRewardRatePerDay",
-            "description": "In the DIARewardsDistribution contract's updateRewardRatePerDay function, two flaws exist: (1) it uses the updated rewardRatePerDay instead of the oldRewardRate to calculate rewards accrued since the last update, leading to incorrect accruals based on the new rate rather than the historical one; and (2) it divides rewardsAccrued by 10000 before adding to rewardAccumulator, which is later divided again by 10000 when calculating user rewards, resulting in excessive division and lost rewards. The cause is flawed arithmetic logic in accumulator updates. An attacker with rate-setting privileges could exploit this by rapidly changing rates to siphon or erase rewards. The impact is significant financial loss due to miscalculated and unfairly distributed rewards.\n",
-            "severity": "High",
-            "location": [
-                "DIARewardsDistribution::updateRewardRatePerDay"
-            ],
-            "files": [
-                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
-            ]
-        },
-        {
-            "id": 20,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Missing zero-address validation and boundaries check in DIARewardsDistribution constructor",
-            "description": "The constructor of DIARewardsDistribution does not validate that rewardsTokenAddress or newRewardsWallet are non-zero addresses, allowing deployment with invalid parameters that would render the contract non-functional. Additionally, the rewardRatePerDay parameter lacks bounds checking, enabling it to be set to excessively high values. The root cause is missing input validation. An attacker or mistaken deployment could set zero addresses or extreme reward rates, leading to failed transactions or disproportionate reward claims. The impact includes potential denial of service from zero addresses and economic imbalance from excessive rewards.\n",
-            "severity": "Low",
-            "location": [
-                "DIARewardsDistribution::constructor"
-            ],
-            "files": [
-                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
-            ]
-        },
-        {
-            "id": 28,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Unlimited reward rate enables overflow DoS attack in DIARewardsDistribution",
-            "description": "The updateRewardRatePerDay() function allows setting arbitrarily high reward rates, which can cause arithmetic overflow in reward calculations. The root cause is missing upper bounds validation. An attacker or malicious owner could set rewardRatePerDay to type(uint256).max, causing getRewardForStakingStore() to overflow and revert. This leads to a denial-of-service where reward-dependent functions become unusable. The impact is temporary disruption of core functionality until the rate is lowered.\n",
-            "severity": "Low",
-            "location": [
-                "DIARewardsDistribution::updateRewardRatePerDay",
-                "DIARewardsDistribution::getRewardForStakingStore"
-            ],
-            "files": [
-                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
+                "leverage-tokens/src/types/DataTypes.sol"
             ]
         }
     ],
     "affected_files": {
-        "DIARewardsDistribution.sol": "// SPDX-License-Identifier: GPL\n\npragma solidity 0.8.29;\n\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\n\n/**\n * @title DIARewardsDistribution\n * @notice Abstract contract for managing token rewards distribution\n * @dev Provides base functionality for reward rate and wallet management\n */\nabstract contract DIARewardsDistribution is Ownable {\n    /// @notice The ERC20 token used for rewards\n    IERC20 public immutable REWARDS_TOKEN;\n\n    // Reward rate per day, with 10 decimals\n    uint256 public rewardRatePerDay;\n\n    /// @notice Address of the wallet that holds rewards\n    /// @dev This wallet must approve tokens for the staking contract\n    address public rewardsWallet;\n\n    /// @notice Error thrown when an invalid address is provided\n    error InvalidAddress();\n\n    /// @notice Emitted when reward rate is updated\n    /// @param oldRewardRate The previous reward rate\n    /// @param newRewardRate The new reward rate\n    event RewardRateUpdated(uint256 oldRewardRate, uint256 newRewardRate);\n\n    /// @notice Emitted when rewards wallet is updated\n    /// @param oldWallet The previous rewards wallet address\n    /// @param newWallet The new rewards wallet address\n    event RewardsWalletUpdated(address oldWallet, address newWallet);\n\n    /**\n     * @notice Initializes the contract with reward parameters\n     * @param rewardsTokenAddress Address of the ERC20 token used for rewards\n     * @param newRewardsWallet Address of the wallet that holds rewards\n     * @param newRewardRate Initial reward rate per day\n     */\n    constructor(\n        address rewardsTokenAddress,\n        address newRewardsWallet,\n        uint256 newRewardRate\n    ) {\n        REWARDS_TOKEN = IERC20(rewardsTokenAddress);\n        rewardRatePerDay = newRewardRate;\n        rewardsWallet = newRewardsWallet;\n    }\n\n    /**\n     * @notice Updates the daily reward rate\n     * @dev Only callable by the contract owner\n     * @param newRewardRate The new reward rate per day\n     * @custom:event Emits RewardRateUpdated with old and new values\n     */\n    function updateRewardRatePerDay(uint256 newRewardRate) external onlyOwner {\n        emit RewardRateUpdated(rewardRatePerDay, newRewardRate);\n        rewardRatePerDay = newRewardRate;\n    }\n\n    /**\n     * @notice Updates the rewards wallet address\n     * @dev Only callable by the contract owner\n     * @param newWalletAddress The new rewards wallet address\n     * @custom:revert InvalidAddress if new wallet address is zero\n     * @custom:event Emits RewardsWalletUpdated with old and new values\n     */\n    function updateRewardsWallet(address newWalletAddress) external onlyOwner {\n        if (newWalletAddress == address(0)) {\n            revert InvalidAddress();\n        }\n        emit RewardsWalletUpdated(rewardsWallet, newWalletAddress);\n        rewardsWallet = newWalletAddress;\n    }\n\n    /**\n     * @notice Calculates the reward for a given staking store\n     * @dev Must be implemented by inheriting contracts\n     * @param stakingStoreIndex The index of the staking store\n     * @return The calculated reward amount\n     */\n    function getRewardForStakingStore(\n        uint256 stakingStoreIndex\n    ) public virtual returns (uint256);\n}\n"
+        "DataTypes.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {ILendingAdapter} from \"src/interfaces/ILendingAdapter.sol\";\nimport {IRebalanceAdapterBase} from \"src/interfaces/IRebalanceAdapterBase.sol\";\nimport {ILeverageToken} from \"src/interfaces/ILeverageToken.sol\";\n\n/// @dev Enum defining internal actions that a LendingAdapter can perform on a lending pool\nenum ActionType {\n    AddCollateral,\n    RemoveCollateral,\n    Borrow,\n    Repay\n}\n\n/// @dev Enum defining actions that users can perform on a LeverageToken\nenum ExternalAction {\n    Deposit,\n    Withdraw\n}\n\n/// @dev Struct that contains all data related to a LeverageToken action\nstruct ActionData {\n    /// @dev Amount of collateral added or withdrawn\n    uint256 collateral;\n    /// @dev Amount of debt borrowed or repaid\n    uint256 debt;\n    /// @dev Amount of equity added or withdrawn before fees, denominated in collateral asset\n    uint256 equity;\n    /// @dev Amount of shares minted or burned to user\n    uint256 shares;\n    /// @dev Fee charged for the action to the leverage token, denominated in collateral asset\n    uint256 tokenFee;\n    /// @dev Fee charged for the action to the treasury, denominated in collateral asset\n    uint256 treasuryFee;\n}\n\n/// @dev Struct containing auction parameters\nstruct Auction {\n    /// @dev Whether the LeverageToken is over-collateralized\n    bool isOverCollateralized;\n    /// @dev Timestamp when the auction started\n    uint256 startTimestamp;\n    /// @dev Timestamp when the auction ends/ended\n    uint256 endTimestamp;\n}\n\n/// @dev Struct that contains the base LeverageToken config stored in LeverageManager\nstruct BaseLeverageTokenConfig {\n    /// @dev LendingAdapter for the LeverageToken\n    ILendingAdapter lendingAdapter;\n    /// @dev RebalanceAdapter for the LeverageToken\n    IRebalanceAdapterBase rebalanceAdapter;\n}\n\n/// @dev Struct that contains the entire LeverageToken config\nstruct LeverageTokenConfig {\n    /// @dev LendingAdapter for the LeverageToken\n    ILendingAdapter lendingAdapter;\n    /// @dev RebalanceAdapter for the LeverageToken\n    IRebalanceAdapterBase rebalanceAdapter;\n    /// @dev Fee for deposit action\n    uint256 depositTokenFee;\n    /// @dev Fee for withdraw action, defined as a percentage\n    uint256 withdrawTokenFee;\n}\n\n/// @dev Struct that contains all data describing the state of a LeverageToken\nstruct LeverageTokenState {\n    /// @dev Collateral denominated in debt asset\n    uint256 collateralInDebtAsset;\n    /// @dev Debt\n    uint256 debt;\n    /// @dev Equity denominated in debt asset\n    uint256 equity;\n    /// @dev Collateral ratio on 8 decimals\n    uint256 collateralRatio;\n}\n\n/// @dev Struct that contains all data related to a rebalance action\nstruct RebalanceAction {\n    /// @dev LeverageToken to perform the action on\n    ILeverageToken leverageToken;\n    /// @dev Type of action to perform\n    ActionType actionType;\n    /// @dev Amount to perform the action with\n    uint256 amount;\n}\n\n/// @dev Struct that contains all data related to a token transfer\nstruct TokenTransfer {\n    /// @dev Token to transfer\n    address token;\n    /// @dev Amount to transfer\n    uint256 amount;\n}\n"
     }
 }

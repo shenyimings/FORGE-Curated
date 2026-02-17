@@ -1,63 +1,32 @@
 {
     "vfp_id": "vfp_00280",
-    "project_name": "Jovay Rollup Contracts Audit.md",
+    "project_name": "Morpheus - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 34,
+            "id": 4,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-1076"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1099"
+                    "CWE-1288"
                 ]
             },
-            "title": "public Function or Variable Prefixed With Underscore",
-            "description": "In `AppendOnlyMerkleTree.sol`, the public state variable `_branches` is prefixed with an underscore, which contradicts Solidity naming conventions where underscores are reserved for internal/private members. The root cause is incorrect naming style. While this does not introduce a security issue, it can confuse developers into thinking the variable is private. The impact is low, affecting code readability and adherence to community standards.\n",
+            "title": "Chainlink may return stale prices leading to incorrect token valuation",
+            "description": "The `getChainLinkDataFeedLatestAnswer` function in `ChainLinkDataConsumer.sol` retrieves price data from Chainlink oracles but does not validate the freshness of the data by checking the `updatedAt` timestamp. If the oracle has not updated within its heartbeat period, the returned price may be stale, leading the protocol to use outdated values for critical operations such as valuation or collateral calculations. The cause is the absence of a staleness check in the price retrieval logic. An attacker could exploit network congestion or oracle downtime to manipulate the system using old prices, especially in volatile market conditions. The impact is low, as it may lead to temporary mispricing, but the likelihood is also low due to Chainlink's generally reliable uptime.\n",
             "severity": "Low",
             "location": [
-                "AppendOnlyMerkleTree.sol::_branches#22"
+                "ChainLinkDataConsumer.sol#L75-L89"
             ],
             "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
-            ]
-        },
-        {
-            "id": 36,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-665"
-                ],
-                "3": [
-                    "CWE-908"
-                ],
-                "4": [
-                    "CWE-457"
-                ]
-            },
-            "title": "Appending Before Merkle Tree Initialization Results in Permanent Root Inconsistency",
-            "description": "The `append` routine in `AppendOnlyMerkleTree.sol` can be called before the zero-hash cache is initialized because the guard check enforcing initialization is commented out. This allows the `_appendMsgHash` function to execute with all `_zeroHashes` values set to zero, leading to incorrect internal node computations that mix real data with zero values instead of canonical zero hashes.\n\nThe root cause is the disabled initialization guard and the lack of explicit assignment of `_zeroHashes[0] = bytes32(0)` in `_initializeMerkleTree`, which relies on default storage values and reduces code clarity. An attacker or misconfigured contract could invoke `_appendMsgHash` before initialization, corrupting the tree structure.\n\nOnce the tree is later initialized, the zero-hash cache changes, making all previously computed branches and the exposed `_msgRoot` mathematically invalid. This results in permanent failure of all Merkle proof verifications and consistency checks.\n\nThe impact is severe: it can lead to irreversible data inconsistency in the Merkle tree, breaking any functionality that depends on correct root computation, such as message inclusion proofs or state validation, potentially compromising the integrity of the rollup system.\n",
-            "severity": null,
-            "location": [
-                "AppendOnlyMerkleTree.sol::append",
-                "AppendOnlyMerkleTree.sol::_appendMsgHash",
-                "AppendOnlyMerkleTree.sol::_initializeMerkleTree"
-            ],
-            "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/libraries/common/AppendOnlyMerkleTree.sol"
+                "SmartContracts/contracts/capital-protocol/ChainLinkDataConsumer.sol"
             ]
         }
     ],
     "affected_files": {
-        "AppendOnlyMerkleTree.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.24;\n\nabstract contract AppendOnlyMerkleTree {\n    /// @dev The maximum height of the withdraw merkle tree.\n    uint256 private constant MAX_TREE_HEIGHT = 40;\n\n    /// @notice The merkle root of the current merkle tree.\n    /// @dev This is actual equal to `branches[n]`.\n    bytes32 internal _msgRoot;\n\n    /// @notice The next unused message index.\n    uint256 internal _nextMsgIndex;\n\n    /// @notice The list of zero hash in each height.\n    bytes32[MAX_TREE_HEIGHT] private _zeroHashes;\n\n    /// @notice The list of minimum merkle proofs needed to compute next root.\n    /// @dev Only first `n` elements are used, where `n` is the minimum value that `2^{n-1} >= currentMaxNonce + 1`.\n    /// It means we only use `currentMaxNonce + 1` leaf nodes to construct the merkle tree.\n    bytes32[MAX_TREE_HEIGHT] public _branches;\n\n    function _initializeMerkleTree() internal {\n        // Compute hashes in empty sparse Merkle tree\n        for (uint256 height = 0; height + 1 < MAX_TREE_HEIGHT; height++) {\n            _zeroHashes[height + 1] = _efficientHash(_zeroHashes[height], _zeroHashes[height]);\n        }\n    }\n\n    function _appendMsgHash(bytes32 msgHash) internal returns (uint256, bytes32) {\n        // can called only after initialize\n        // require(_zeroHashes[1] != bytes32(0), \"call before initialization\");\n\n        uint256 currentMsgIndex = _nextMsgIndex;\n        bytes32 hash = msgHash;\n        uint256 height = 0;\n\n        while (currentMsgIndex != 0) {\n            if (currentMsgIndex % 2 == 0) {\n                // it may be used in next round.\n                _branches[height] = hash;\n                // it's a left child, the right child must be null\n                hash = _efficientHash(hash, _zeroHashes[height]);\n            } else {\n                // it's a right child, use previously computed hash\n                hash = _efficientHash(_branches[height], hash);\n            }\n            unchecked {\n                height += 1;\n            }\n            currentMsgIndex >>= 1;\n        }\n\n        _branches[height] = hash;\n        _msgRoot = hash;\n\n        currentMsgIndex = _nextMsgIndex;\n        unchecked {\n            _nextMsgIndex = currentMsgIndex + 1;\n        }\n\n        return (currentMsgIndex, hash);\n    }\n\n    function _efficientHash(bytes32 a, bytes32 b) private pure returns (bytes32 value) {\n        // solhint-disable-next-line no-inline-assembly\n        assembly {\n            mstore(0x00, a)\n            mstore(0x20, b)\n            value := keccak256(0x00, 0x40)\n        }\n    }\n}\n"
+        "ChainLinkDataConsumer.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport {UUPSUpgradeable} from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport {OwnableUpgradeable} from \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\n\nimport {AggregatorV3Interface} from \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\nimport {DecimalsConverter} from \"@solarity/solidity-lib/libs/decimals/DecimalsConverter.sol\";\n\nimport {IChainLinkDataConsumer, IERC165} from \"../interfaces/capital-protocol/IChainLinkDataConsumer.sol\";\n\n/**\n * @dev https://docs.chain.link/data-feeds/getting-started\n */\ncontract ChainLinkDataConsumer is IChainLinkDataConsumer, OwnableUpgradeable, UUPSUpgradeable {\n    using DecimalsConverter for uint256;\n\n    mapping(bytes32 => address[]) public dataFeeds;\n\n    /**********************************************************************************************/\n    /*** Init, IERC165                                                                          ***/\n    /**********************************************************************************************/\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    function ChainLinkDataConsumer_init() external initializer {\n        __Ownable_init();\n        __UUPSUpgradeable_init();\n    }\n\n    function supportsInterface(bytes4 interfaceId_) external pure returns (bool) {\n        return interfaceId_ == type(IChainLinkDataConsumer).interfaceId || interfaceId_ == type(IERC165).interfaceId;\n    }\n\n    /**********************************************************************************************/\n    /*** Add or remove data feeds                                                               ***/\n    /**********************************************************************************************/\n\n    /**\n     * @dev https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1\n     */\n    function updateDataFeeds(string[] calldata paths_, address[][] calldata feeds_) external onlyOwner {\n        require(paths_.length == feeds_.length, \"CLDC: mismatched array lengths\");\n        for (uint256 i = 0; i < paths_.length; i++) {\n            require(feeds_[i].length > 0, \"CLDC: empty feed array\");\n            dataFeeds[getPathId(paths_[i])] = feeds_[i];\n\n            emit DataFeedSet(paths_[i], feeds_[i]);\n        }\n    }\n\n    function getPathId(string memory path_) public pure returns (bytes32) {\n        return keccak256(abi.encodePacked(path_));\n    }\n\n    function decimals() public pure returns (uint8) {\n        return 18;\n    }\n\n    /**********************************************************************************************/\n    /*** Get data feeds                                                                         ***/\n    /**********************************************************************************************/\n\n    function getChainLinkDataFeedLatestAnswer(bytes32 pathId_) external view returns (uint256) {\n        address[] memory dataFeeds_ = dataFeeds[pathId_];\n\n        uint256 res_ = 0;\n        uint8 baseDecimals_ = 0;\n        for (uint256 i = 0; i < dataFeeds_.length; i++) {\n            AggregatorV3Interface aggregator_ = AggregatorV3Interface(dataFeeds_[i]);\n\n            try aggregator_.latestRoundData() returns (uint80, int256 answer_, uint256, uint256, uint80) {\n                if (answer_ <= 0) {\n                    return 0;\n                }\n\n                if (res_ == 0) {\n                    res_ = uint256(answer_);\n                    baseDecimals_ = aggregator_.decimals();\n                } else {\n                    res_ = (res_ * uint256(answer_)) / (10 ** aggregator_.decimals());\n                }\n            } catch {\n                return 0;\n            }\n        }\n\n        return res_.convert(baseDecimals_, 18);\n    }\n\n    /**********************************************************************************************/\n    /*** UUPS                                                                                   ***/\n    /**********************************************************************************************/\n\n    function version() external pure returns (uint256) {\n        return 1;\n    }\n\n    function _authorizeUpgrade(address) internal view override onlyOwner {}\n}\n"
     }
 }

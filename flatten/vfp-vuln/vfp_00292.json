@@ -1,32 +1,30 @@
 {
     "vfp_id": "vfp_00292",
-    "project_name": "cantina_generic_money_nov2025.pdf",
+    "project_name": "f(x) v2 Audit.md",
     "findings": [
         {
-            "id": 1,
+            "id": 47,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-20"
+                    "CWE-755"
                 ],
                 "3": [
-                    "CWE-1287"
+                    "CWE-248"
                 ]
             },
-            "title": "Vault price manipulation allows yield manager to mint tokens",
-            "description": "The yield manager can mint additional tokens when the perceived value of backing assets exceeds the total shares. This vulnerability arises because the _additionalOwnedAssets() function, used to determine asset value, is susceptible to manipulation—such as through an attacker distorting pool prices in Curve 3pool. By inflating the perceived asset value, an attacker can trigger erroneous yield distribution and minting. The yield manager, especially if malicious, could front-run these calls and redirect funds. The impact includes unauthorized token minting and potential theft of protocol funds, especially when combined with governance-controlled yield distribution.\n",
+            "title": "High Severity: Flashloan Functionality Blocked",
+            "description": "1.  **Description:** A flaw completely blocks the flashloan functionality of the protocol.\n2.  **Cause:** The root cause is not detailed in this chunk, but it likely involves a logic error or access control issue in the flashloan execution path.\n3.  **Exploitation:** This may not be directly exploitable by attackers but prevents intended functionality from working.\n4.  **Impact:** Users and integrations relying on flashloans (e.g., Morpho, Balancer) would be unable to use the feature, impairing protocol functionality and composability.\n",
             "severity": "High",
-            "location": [
-                "YieldManager.sol::#L51-L61"
-            ],
+            "location": [],
             "files": [
-                "67cb0291/generic-protocol/src/controller/YieldManager.sol"
+                "fx-protocol-contracts/contracts/periphery/facets/MorphoFlashLoanCallbackFacet.sol"
             ]
         }
     ],
     "affected_files": {
-        "YieldManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.29;\n\nimport { Math } from \"@openzeppelin/contracts/utils/math/Math.sol\";\n\nimport { BaseController } from \"./BaseController.sol\";\nimport { AccountingLogic } from \"./AccountingLogic.sol\";\n\n/**\n * @title YieldManager\n * @dev Abstract contract that manages yield distribution for the protocol.\n * Handles the calculation and distribution of yield generated from backing assets,\n * including protocol fee collection and safety buffer management.\n */\nabstract contract YieldManager is BaseController, AccountingLogic {\n    using Math for uint256;\n\n    /**\n     * @dev Role identifier for addresses authorized to distribute yield\n     */\n    bytes32 public constant YIELD_MANAGER_ROLE = keccak256(\"YIELD_MANAGER_ROLE\");\n\n    /**\n     * @dev Emitted when yield is distributed to the yield distributor\n     */\n    event YieldDistributed(address indexed yieldDistributor, uint256 yield);\n\n    /**\n     * @dev Thrown when yield distribution is paused (share redemption price != mint price)\n     */\n    error Yield_DistributionPaused();\n    /**\n     * @dev Thrown when the safety buffer exceeds the available yield\n     */\n    error Yield_ExcessiveSafetyBuffer();\n\n    /**\n     * @dev Initializer function for the YieldManager contract\n     * @notice This function should be called during contract initialization\n     */\n    // forge-lint: disable-next-line(mixed-case-function)\n    function __YieldManager_init() internal onlyInitializing { }\n\n    /**\n     * @notice Distributes yield generated from backing assets to the yield distributor\n     * @dev Calculates yield as the difference between backing assets value and share total supply.\n     * Deducts safety buffer and protocol fees before distribution.\n     * Only callable when share redemption price equals mint price (distribution not paused).\n     * @return yield The net amount of yield distributed after fees and safety buffer\n     */\n    function distributeYield() external nonReentrant onlyRole(YIELD_MANAGER_ROLE) returns (uint256 yield) {\n        uint256 value = backingAssetsValue();\n        require(_shareRedemptionPrice(value) == SHARE_MINT_PRICE, Yield_DistributionPaused());\n\n        yield = value - _share.totalSupply(); // share redemption price is 1 with same decimals\n        require(yield > safetyBufferYieldDeduction, Yield_ExcessiveSafetyBuffer());\n        yield -= safetyBufferYieldDeduction;\n\n        _share.mint(address(_yieldDistributor), yield);\n        emit YieldDistributed(address(_yieldDistributor), yield);\n    }\n}\n"
+        "MorphoFlashLoanCallbackFacet.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.20;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport { IMorphoFlashLoanCallback } from \"../../interfaces/Morpho/IMorphoFlashLoanCallback.sol\";\n\nimport { LibRouter } from \"../libraries/LibRouter.sol\";\n\ncontract MorphoFlashLoanCallbackFacet is IMorphoFlashLoanCallback {\n  using SafeERC20 for IERC20;\n\n  /**********\n   * Errors *\n   **********/\n\n  /// @dev Thrown when the caller is not morpho.\n  error ErrorNotFromMorpho();\n\n  error ErrorNotFromRouterFlashLoan();\n\n  /***********************\n   * Immutable Variables *\n   ***********************/\n\n  /// @dev The address of Morpho Blue contract.\n  /// In ethereum, it is 0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb.\n  address private immutable morpho;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  constructor(address _morpho) {\n    morpho = _morpho;\n  }\n\n  /****************************\n   * Public Mutated Functions *\n   ****************************/\n\n  /// @inheritdoc IMorphoFlashLoanCallback\n  function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {\n    if (msg.sender != morpho) revert ErrorNotFromMorpho();\n\n    // make sure call invoked by router\n    LibRouter.RouterStorage storage $ = LibRouter.routerStorage();\n    if ($.flashLoanContext != LibRouter.HAS_FLASH_LOAN) revert ErrorNotFromRouterFlashLoan();\n\n    (address token, bytes memory realData) = abi.decode(data, (address, bytes));\n    (bool success, ) = address(this).call(realData);\n    // below lines will propagate inner error up\n    if (!success) {\n      // solhint-disable-next-line no-inline-assembly\n      assembly {\n        let ptr := mload(0x40)\n        let size := returndatasize()\n        returndatacopy(ptr, 0, size)\n        revert(ptr, size)\n      }\n    }\n\n    // flashloan fee is zero in Morpho\n    LibRouter.approve(token, msg.sender, assets);\n  }\n}\n"
     }
 }

@@ -1,26 +1,146 @@
 {
     "vfp_id": "vfp_00593",
-    "project_name": "Lido V3 _ Consensys Diligence.md",
+    "project_name": "f(x) v2 Audit.md",
     "findings": [
         {
-            "id": 21,
+            "id": 41,
             "category": {
                 "1": [
-                    "CWE-693"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
                 ]
             },
-            "title": "No Override of `renounceRole`",
-            "description": "The `AccessControlConfirmable` contract does not override `renounceRole`, allowing administrators to permanently renounce critical roles like `DEFAULT_ADMIN_ROLE`.\n\nThe root cause is the missing override that would prevent or control role renunciation.\n\nAn attacker with admin access could renounce their role, permanently locking out governance and preventing future updates.\n\nThe impact is potential loss of governance control and inability to upgrade or fix the system.\n",
-            "severity": "Low",
+            "title": "Missing Named Parameters in Mappings",
+            "description": "Mappings are declared without named parameters, reducing clarity about key and value meanings. The cause is the use of older syntax despite Solidity 0.8.18+ supporting named parameters. This harms code readability and makes it harder to understand mapping structure. The impact is reduced maintainability and increased risk of logic errors.\n",
+            "severity": null,
             "location": [
-                "AccessControlConfirmable.sol"
+                "AssetManagement.sol::allocations#22",
+                "FxUSDBasePool.sol::redeemRequests#141",
+                "FxUSDRegeneracy.sol::markets#97",
+                "PoolManager.sol::poolInfo#141",
+                "PoolManager.sol::rewardSplitter#144",
+                "PoolManager.sol::tokenRates#147",
+                "PoolStorage.sol::positionData#145",
+                "PoolStorage.sol::positionMetadata#151",
+                "PoolStorage.sol::tickBitmap#154",
+                "PoolStorage.sol::tickData#157",
+                "PoolStorage.sol::tickTreeData#160",
+                "ProtocolFees.sol::accumulatedPoolOpenFees#108",
+                "ProtocolFees.sol::accumulatedPoolCloseFees#115",
+                "ProtocolFees.sol::accumulatedPoolMiscFees#122",
+                "SavingFxUSD.sol::lockedProxy#105"
             ],
             "files": [
-                "core/contracts/0.8.25/utils/AccessControlConfirmable.sol"
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
+                ]
+            },
+            "title": "Strategy Allocation Could Fail",
+            "description": "The `alloc` function in the AssetManagement contract does not validate whether the strategy supports the specified token. For example, the AaveV3Strategy only interacts with its predefined `ASSET`, and sending an unsupported token could result in irrecoverable funds. The root cause is the lack of pre-allocation checks on token compatibility. An attacker or mistaken governance action could allocate funds to a strategy with an unsupported token, leading to permanent loss of assets. The impact is potential fund loss due to misconfiguration, especially in the absence of automated validation.\n",
+            "severity": "Low",
+            "location": [
+                "AssetManagement.sol::alloc#40",
+                "AaveV3Strategy.sol::withdraw#53",
+                "AaveV3Strategy.sol::kill#63"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Incorrect Strategy for an Asset Can Never Be Updated",
+            "description": "The `alloc` function does not validate that the new strategy implements the `kill()` function. If an invalid strategy is set, subsequent attempts to update or kill it will revert, making it impossible to recover funds or correct the configuration. The root cause is the lack of interface checks or fallback mechanisms for strategy replacement. Once a non-compliant strategy is set, the system becomes stuck, leading to a permanent lock of assets. The impact is a critical governance failure that could result in irreversible fund loss if exploited or misconfigured.\n",
+            "severity": "Low",
+            "location": [
+                "AssetManagement.sol::alloc#40-44",
+                "AssetManagement.sol::kill#33"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Lack of event emissions",
+            "description": "Critical state-changing functions such as `kill`, `alloc`, and `manage` in `AssetManagement.sol`, and `updateOnchainSpotEncodings` in oracle contracts do not emit events. The cause is missing event declarations after state modifications. Without events, off-chain systems cannot reliably track state changes, making monitoring, indexing, and user notifications difficult or impossible. This reduces transparency and auditability of the protocol. The impact includes degraded user experience, inability to detect malicious activity in real-time, and increased operational risk due to lack of observability.\n",
+            "severity": null,
+            "location": [
+                "AssetManagement.sol::kill#30-38",
+                "AssetManagement.sol::alloc#40-44",
+                "AssetManagement.sol::manage#46-52",
+                "BTCDerivativeOracleBase.sol::updateOnchainSpotEncodings#108-114",
+                "LSDPriceOracleBase.sol::updateOnchainSpotEncodings#125-137"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
+            ]
+        },
+        {
+            "id": 24,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Silent Shortfall in `_transferOut`",
+            "description": "The `_transferOut` function in `AssetManagement` attempts to transfer a specific amount by first using its own balance and then withdrawing the shortfall from a strategy. However, the `AaveV3Strategy.withdraw` function does not revert if insufficient liquidity is available but instead returns what it can. This means `_transferOut` may complete successfully while transferring less than requested, violating the expected all-or-nothing behavior. The cause is the lack of a post-withdraw amount verification. The impact is that callers may assume funds were fully transferred when they were not, leading to incorrect accounting, user fund loss, or protocol insolvency in edge cases.\n",
+            "severity": null,
+            "location": [
+                "AssetManagement.sol::_transferOut#57-68",
+                "AaveV3Strategy.sol::withdraw#55"
+            ],
+            "files": [
+                "fx-protocol-contracts/contracts/fund/AssetManagement.sol"
             ]
         }
     ],
     "affected_files": {
-        "AccessControlConfirmable.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\n\n// See contracts/COMPILERS.md\npragma solidity 0.8.25;\n\nimport {AccessControlEnumerable} from \"@openzeppelin/contracts-v5.2/access/extensions/AccessControlEnumerable.sol\";\nimport {Confirmations} from \"./Confirmations.sol\";\n\n/**\n * @title AccessControlConfirmable\n * @author Lido\n * @notice An extension of AccessControlEnumerable that allows executing functions by mutual confirmation.\n * @dev This contract extends Confirmations and AccessControlEnumerable and adds a confirmation mechanism.\n */\nabstract contract AccessControlConfirmable is AccessControlEnumerable, Confirmations {\n\n    constructor() {\n        __Confirmations_init();\n    }\n\n    function _isValidConfirmer(bytes32 _role) internal view override returns (bool) {\n        return hasRole(_role, msg.sender);\n    }\n}\n"
+        "AssetManagement.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.26;\n\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\nimport { AccessControlUpgradeable } from \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\n\nimport { IStrategy } from \"./IStrategy.sol\";\n\nabstract contract AssetManagement is AccessControlUpgradeable {\n  using SafeERC20 for IERC20;\n\n  bytes32 public constant ASSET_MANAGER_ROLE = keccak256(\"ASSET_MANAGER_ROLE\");\n\n  struct Allocation {\n    address strategy;\n    uint96 capacity;\n  }\n\n  mapping(address => Allocation) public allocations;\n\n  /**\n   * @dev This empty reserved space is put in place to allow future versions to add new\n   * variables without shifting down storage in the inheritance chain.\n   */\n  uint256[49] private __gap;\n\n  function kill(address asset) public onlyRole(DEFAULT_ADMIN_ROLE) {\n    Allocation memory curAlloc = allocations[asset];\n    if (curAlloc.strategy != address(0)) {\n      IStrategy(curAlloc.strategy).kill();\n      curAlloc.strategy = address(0);\n      curAlloc.capacity = 0;\n      allocations[asset] = curAlloc;\n    }\n  }\n\n  function alloc(address asset, address strategy, uint96 capacity) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    Allocation memory oldAlloc = allocations[asset];\n    if (oldAlloc.strategy != address(0)) kill(asset);\n    allocations[asset] = Allocation({ strategy: strategy, capacity: capacity });\n  }\n\n  function manage(address asset, uint256 amount) external onlyRole(ASSET_MANAGER_ROLE) {\n    Allocation memory curAlloc = allocations[asset];\n    uint256 managed = IStrategy(curAlloc.strategy).totalSupply();\n    if (managed + amount > curAlloc.capacity) revert();\n    IERC20(asset).safeTransfer(curAlloc.strategy, amount);\n    IStrategy(curAlloc.strategy).deposit(amount);\n  }\n\n  function _transferOut(address asset, uint256 amount, address receiver) internal {\n    uint256 balance = IERC20(asset).balanceOf(address(this));\n    if (balance >= amount) {\n      IERC20(asset).safeTransfer(receiver, amount);\n    } else {\n      IERC20(asset).safeTransfer(receiver, balance);\n      uint256 diff = amount - balance;\n      Allocation memory curAlloc = allocations[asset];\n      if (curAlloc.strategy == address(0)) revert();\n      IStrategy(curAlloc.strategy).withdraw(diff, receiver);\n    }\n  }\n}\n"
     }
 }

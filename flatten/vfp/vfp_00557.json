@@ -1,59 +1,52 @@
 {
     "vfp_id": "vfp_00557",
-    "project_name": "Across Audit.md",
+    "project_name": "Mitosis - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 7,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-285"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-862"
+                    "CWE-1286"
                 ]
             },
-            "title": "Missing Access Control for `setDestinationSettler`",
-            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
-            "severity": "Critical",
+            "title": "Missing public-key validation",
+            "description": "The LibSecp256k1.sol library lacks proper validation of secp256k1 public keys before use. The root cause is the absence of checks for invalid or malformed public key points, which could lead to incorrect cryptographic operations. While the EVM's built-in ecverify function may handle some edge cases, failing to validate inputs at the contract level increases the risk of unexpected behavior or potential malleability issues. This could be exploited in edge cases involving malformed signatures or keys, though no direct exploit path is demonstrated. The impact is informational, as the risk is low and likely mitigated by lower-level checks, but it represents a deviation from secure coding practices for cryptographic libraries.\n",
+            "severity": "Informational",
             "location": [
-                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
-                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
-                "ERC7683OrderDepositor.sol::_resolveFor#161",
-                "ERC7683OrderDepositor.sol#L216"
+                "protocol/src/lib/LibSecp256k1.sol"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
             ]
         },
         {
-            "id": 6,
+            "id": 8,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-755"
+                    "CWE-20"
                 ]
             },
-            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
-            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
-            "severity": "Medium",
+            "title": "Missing Curve Validation in Public-Key Decompression",
+            "description": "The LibSecp256k1 library's uncompressPubkey function fails to verify that the decompressed (x, y) coordinates lie on the Secp256k1 elliptic curve. This is caused by the absence of a validation step after deriving the y-coordinate using EllipticCurve.deriveY. An attacker could provide a compressed public key that decompresses to a point not on the curve, which may lead to cryptographic inconsistencies or potential vulnerabilities in systems relying on valid elliptic curve points. Although this function is not currently used in the main product, its presence in the codebase poses a latent risk if it is ever invoked in a security-critical context. The impact includes potential weakening of authentication or signature verification mechanisms if the function were to be used in the future.\n",
+            "severity": "Informational",
             "location": [
-                "ERC7683OrderDepositorExternal.sol#L58",
-                "ERC7683OrderDepositorExternal.sol#L60-L73",
-                "ZkStack_Adapter.sol#L147",
-                "ZkStack_CustomGasToken_Adapter.sol#L189",
-                "ZkSync_Adapter.sol#L241"
+                "LibSecp256k1.sol::uncompressPubkey"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/lib/LibSecp256k1.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC7683OrderDepositorExternal.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { ERC7683OrderDepositor } from \"./ERC7683OrderDepositor.sol\";\nimport \"../SpokePool.sol\";\nimport \"../external/interfaces/IPermit2.sol\";\nimport \"@uma/core/contracts/common/implementation/MultiCaller.sol\";\n\n/**\n * @notice ERC7683OrderDepositorExternal processes an external order type and translates it into an AcrossV3Deposit\n * that it sends to the SpokePool contract.\n * @custom:security-contact bugs@across.to\n */\ncontract ERC7683OrderDepositorExternal is ERC7683OrderDepositor, Ownable, MultiCaller {\n    using SafeERC20 for IERC20;\n\n    event SetDestinationSettler(\n        uint256 indexed chainId,\n        address indexed prevDestinationSettler,\n        address indexed destinationSettler\n    );\n\n    SpokePool public immutable SPOKE_POOL;\n\n    // Mapping of chainIds to destination settler addresses.\n    mapping(uint256 => address) public destinationSettlers;\n\n    constructor(\n        SpokePool _spokePool,\n        IPermit2 _permit2,\n        uint256 _quoteBeforeDeadline\n    ) ERC7683OrderDepositor(_permit2, _quoteBeforeDeadline) {\n        SPOKE_POOL = _spokePool;\n    }\n\n    function setDestinationSettler(uint256 chainId, address destinationSettler) external {\n        address prevDestinationSettler = destinationSettlers[chainId];\n        destinationSettlers[chainId] = destinationSettler;\n        emit SetDestinationSettler(chainId, prevDestinationSettler, destinationSettler);\n    }\n\n    function _callDeposit(\n        address depositor,\n        address recipient,\n        address inputToken,\n        address outputToken,\n        uint256 inputAmount,\n        uint256 outputAmount,\n        uint256 destinationChainId,\n        address exclusiveRelayer,\n        uint32 quoteTimestamp,\n        uint32 fillDeadline,\n        uint32 exclusivityDeadline,\n        bytes memory message\n    ) internal override {\n        IERC20(inputToken).safeIncreaseAllowance(address(SPOKE_POOL), inputAmount);\n\n        SPOKE_POOL.depositV3(\n            depositor,\n            recipient,\n            inputToken,\n            outputToken,\n            inputAmount,\n            outputAmount,\n            destinationChainId,\n            exclusiveRelayer,\n            quoteTimestamp,\n            fillDeadline,\n            exclusivityDeadline,\n            message\n        );\n    }\n\n    function _currentDepositId() internal view override returns (uint32) {\n        return SPOKE_POOL.numberOfDeposits();\n    }\n\n    function _destinationSettler(uint256 chainId) internal view override returns (address) {\n        return destinationSettlers[chainId];\n    }\n}\n"
+        "LibSecp256k1.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { EllipticCurve } from '@elliptic-curve-solidity/contracts/EllipticCurve.sol';\n\nimport { StdError } from './StdError.sol';\n\nlibrary LibSecp256k1 {\n  uint256 constant AA = 0;\n  uint256 constant BB = 7;\n  uint256 constant PP = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F;\n\n  /**\n   * @notice Verifies that the given key is a compressed 33-byte secp256k1 public key on the curve.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   */\n  function verifyCmpPubkey(bytes memory cmpPubkey) internal pure {\n    uncompressPubkey(cmpPubkey);\n  }\n\n  /**\n   * @notice Verifies that the given key is a uncompressed 65-byte secp256k1 public key on the curve.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   */\n  function verifyUncmpPubkey(bytes memory uncmpPubkey) internal pure {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    bool isOnCurve = EllipticCurve.isOnCurve(x, y, AA, BB, PP);\n    require(isOnCurve, StdError.InvalidParameter('uncmpPubkey: not on curve'));\n  }\n\n  /**\n   * @notice Verifies that the given public key is a compressed 33-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param cmpPubkey The key to be verified if it is a valid compressed 33-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the compressed public key\n   */\n  function verifyCmpPubkeyWithAddress(bytes memory cmpPubkey, address expectedAddress) internal pure {\n    bytes memory uncmpPubkey = uncompressPubkey(cmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Verifies that the given public key is a uncompressed 65-byte secp256k1 public key on the curve and corresponds to the expected address.\n   * @param uncmpPubkey The key to be verified if it is a valid uncompressed 65-byte public key\n   * @param expectedAddress The expected address to be compared with the derived address from the uncompressed public key\n   */\n  function verifyUncmpPubkeyWithAddress(bytes memory uncmpPubkey, address expectedAddress) internal pure {\n    verifyUncmpPubkey(uncmpPubkey);\n    require(\n      deriveAddressFromUncmpPubkey(uncmpPubkey) == expectedAddress,\n      StdError.InvalidParameter('uncmpPubkey: the derived address is not expected')\n    );\n  }\n\n  /**\n   * @notice Uncompresses a compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   * @return uncmpPubkey The uncompressed 65-byte public key\n   */\n  function uncompressPubkey(bytes memory cmpPubkey) internal pure returns (bytes memory uncmpPubkey) {\n    require(cmpPubkey.length == 33, StdError.InvalidParameter('cmpPubKey.length'));\n    require(cmpPubkey[0] == 0x02 || cmpPubkey[0] == 0x03, StdError.InvalidParameter('cmpPubKey[0]'));\n\n    uint8 prefix = uint8(cmpPubkey[0]);\n    uint256 x;\n    assembly {\n      x := mload(add(cmpPubkey, 0x21))\n    }\n    uint256 y = EllipticCurve.deriveY(prefix, x, AA, BB, PP);\n\n    uncmpPubkey = new bytes(65);\n    uncmpPubkey[0] = 0x04;\n    assembly {\n      mstore(add(uncmpPubkey, 0x21), x)\n      mstore(add(uncmpPubkey, 0x41), y)\n    }\n    return uncmpPubkey;\n  }\n\n  /**\n   * @notice Compresses an uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   * @return cmpPubkey The compressed 33-byte public key\n   */\n  function compressPubkey(bytes memory uncmpPubkey) internal pure returns (bytes memory cmpPubkey) {\n    require(uncmpPubkey.length == 65, StdError.InvalidParameter('uncmpPubkey.length'));\n    require(uncmpPubkey[0] == 0x04, StdError.InvalidParameter('uncmpPubkey[0]'));\n\n    uint256 x;\n    uint256 y;\n    assembly {\n      x := mload(add(uncmpPubkey, 0x21))\n      y := mload(add(uncmpPubkey, 0x41))\n    }\n\n    cmpPubkey = new bytes(33);\n    cmpPubkey[0] = bytes1(uint8(y % 2 == 0 ? 0x02 : 0x03));\n    assembly {\n      mstore(add(cmpPubkey, 0x21), x)\n    }\n    return cmpPubkey;\n  }\n\n  /**\n   * @notice Derives an EVM address from an uncompressed 65-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid uncompressed 65-byte secp256k1 public key.\n   * @param uncmpPubkey The uncompressed 65-byte public key\n   */\n  function deriveAddressFromUncmpPubkey(bytes memory uncmpPubkey) internal pure returns (address) {\n    bytes memory noPrefix = new bytes(64);\n\n    // Copy uncmpPubkey[1:] to noPrefix\n    assembly {\n      mcopy(add(noPrefix, 0x20), add(uncmpPubkey, 0x21), 0x40)\n    }\n\n    return address(uint160(uint256(keccak256(noPrefix))));\n  }\n\n  /**\n   * @notice Derives an EVM address from a compressed 33-byte secp256k1 public key.\n   * @dev It assumes that the given public key is a valid compressed 33-byte secp256k1 public key.\n   * @param cmpPubkey The compressed 33-byte public key\n   */\n  function deriveAddressFromCmpPubkey(bytes memory cmpPubkey) internal pure returns (address) {\n    return deriveAddressFromUncmpPubkey(uncompressPubkey(cmpPubkey));\n  }\n}\n"
     }
 }

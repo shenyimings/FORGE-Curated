@@ -1,59 +1,26 @@
 {
     "vfp_id": "vfp_00270",
-    "project_name": "Across Audit.md",
+    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 11,
             "category": {
                 "1": [
-                    "CWE-284"
-                ],
-                "2": [
-                    "CWE-285"
-                ],
-                "3": [
-                    "CWE-862"
+                    "CWE-682"
                 ]
             },
-            "title": "Missing Access Control for `setDestinationSettler`",
-            "description": "The `ERC7683OrderDepositorExternal` contract contains a function `setDestinationSettler` that allows mapping a chain ID to a settler contract address. This mapping is used by the `ERC7683OrderDepositor` contract when constructing fill instructions for cross-chain orders. \nThe root cause of the vulnerability is the absence of access control on the `setDestinationSettler` function, meaning any external account can call it and modify the settler address for any chain. \nAn attacker could exploit this by setting the `destinationSettler` to a malicious contract address. When a relayer attempts to fill an order on the destination chain, they must approve tokens to the `destinationSettler`. The malicious settler could then drain these approved funds during the fill process. \nThe impact is critical: loss of user funds by malicious settler contracts due to unrestricted write access to a critical routing parameter.\n",
-            "severity": "Critical",
+            "title": "Incorrect Calculation of Accrued Rewards in updateRewardRatePerDay",
+            "description": "In the DIARewardsDistribution contract's updateRewardRatePerDay function, two flaws exist: (1) it uses the updated rewardRatePerDay instead of the oldRewardRate to calculate rewards accrued since the last update, leading to incorrect accruals based on the new rate rather than the historical one; and (2) it divides rewardsAccrued by 10000 before adding to rewardAccumulator, which is later divided again by 10000 when calculating user rewards, resulting in excessive division and lost rewards. The cause is flawed arithmetic logic in accumulator updates. An attacker with rate-setting privileges could exploit this by rapidly changing rates to siphon or erase rewards. The impact is significant financial loss due to miscalculated and unfairly distributed rewards.\n",
+            "severity": "High",
             "location": [
-                "ERC7683OrderDepositorExternal.sol::setDestinationSettler#38-42",
-                "ERC7683OrderDepositorExternal.sol::_destinationSettler#80-82",
-                "ERC7683OrderDepositor.sol::_resolveFor#161",
-                "ERC7683OrderDepositor.sol#L216"
+                "DIARewardsDistribution::updateRewardRatePerDay"
             ],
             "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-755"
-                ]
-            },
-            "title": "Some Contracts Might Not Work Properly with USDT Allowance",
-            "description": "Several contracts, including `ERC7683OrderDepositorExternal`, `ZkStack_Adapter`, and `ZkStack_CustomGasToken_Adapter`, use `safeIncreaseAllowance` to manage token approvals. However, tokens like USDT revert when changing allowances from a non-zero value to another non-zero value. \nThe root cause is the use of `safeIncreaseAllowance` without first resetting the allowance to zero, which violates the requirements of certain ERC-20 tokens. \nAn attacker could exploit this by front-running or reusing approvals, forcing subsequent transactions to fail when using USDT. For example, if a previous approval was not fully spent, a new `safeIncreaseAllowance` call would revert, blocking deposit creation. \nThe impact is medium: transaction failures for USDT and similar tokens, leading to denial of service for users attempting to bridge these assets.\n",
-            "severity": "Medium",
-            "location": [
-                "ERC7683OrderDepositorExternal.sol#L58",
-                "ERC7683OrderDepositorExternal.sol#L60-L73",
-                "ZkStack_Adapter.sol#L147",
-                "ZkStack_CustomGasToken_Adapter.sol#L189",
-                "ZkSync_Adapter.sol#L241"
-            ],
-            "files": [
-                "contracts/contracts/erc7683/ERC7683OrderDepositorExternal.sol"
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIARewardsDistribution.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC7683OrderDepositorExternal.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport { ERC7683OrderDepositor } from \"./ERC7683OrderDepositor.sol\";\nimport \"../SpokePool.sol\";\nimport \"../external/interfaces/IPermit2.sol\";\nimport \"@uma/core/contracts/common/implementation/MultiCaller.sol\";\n\n/**\n * @notice ERC7683OrderDepositorExternal processes an external order type and translates it into an AcrossV3Deposit\n * that it sends to the SpokePool contract.\n * @custom:security-contact bugs@across.to\n */\ncontract ERC7683OrderDepositorExternal is ERC7683OrderDepositor, Ownable, MultiCaller {\n    using SafeERC20 for IERC20;\n\n    event SetDestinationSettler(\n        uint256 indexed chainId,\n        address indexed prevDestinationSettler,\n        address indexed destinationSettler\n    );\n\n    SpokePool public immutable SPOKE_POOL;\n\n    // Mapping of chainIds to destination settler addresses.\n    mapping(uint256 => address) public destinationSettlers;\n\n    constructor(\n        SpokePool _spokePool,\n        IPermit2 _permit2,\n        uint256 _quoteBeforeDeadline\n    ) ERC7683OrderDepositor(_permit2, _quoteBeforeDeadline) {\n        SPOKE_POOL = _spokePool;\n    }\n\n    function setDestinationSettler(uint256 chainId, address destinationSettler) external {\n        address prevDestinationSettler = destinationSettlers[chainId];\n        destinationSettlers[chainId] = destinationSettler;\n        emit SetDestinationSettler(chainId, prevDestinationSettler, destinationSettler);\n    }\n\n    function _callDeposit(\n        address depositor,\n        address recipient,\n        address inputToken,\n        address outputToken,\n        uint256 inputAmount,\n        uint256 outputAmount,\n        uint256 destinationChainId,\n        address exclusiveRelayer,\n        uint32 quoteTimestamp,\n        uint32 fillDeadline,\n        uint32 exclusivityDeadline,\n        bytes memory message\n    ) internal override {\n        IERC20(inputToken).safeIncreaseAllowance(address(SPOKE_POOL), inputAmount);\n\n        SPOKE_POOL.depositV3(\n            depositor,\n            recipient,\n            inputToken,\n            outputToken,\n            inputAmount,\n            outputAmount,\n            destinationChainId,\n            exclusiveRelayer,\n            quoteTimestamp,\n            fillDeadline,\n            exclusivityDeadline,\n            message\n        );\n    }\n\n    function _currentDepositId() internal view override returns (uint32) {\n        return SPOKE_POOL.numberOfDeposits();\n    }\n\n    function _destinationSettler(uint256 chainId) internal view override returns (address) {\n        return destinationSettlers[chainId];\n    }\n}\n"
+        "DIARewardsDistribution.sol": "// SPDX-License-Identifier: GPL\n\npragma solidity 0.8.29;\n\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\n\n/**\n * @title DIARewardsDistribution\n * @notice Abstract contract for managing token rewards distribution\n * @dev Provides base functionality for reward rate and wallet management\n */\nabstract contract DIARewardsDistribution is Ownable {\n    /// @notice The ERC20 token used for rewards\n    IERC20 public immutable REWARDS_TOKEN;\n\n    // Reward rate per day, with 10 decimals\n    uint256 public rewardRatePerDay;\n\n    /// @notice Address of the wallet that holds rewards\n    /// @dev This wallet must approve tokens for the staking contract\n    address public rewardsWallet;\n\n    /// @notice Error thrown when an invalid address is provided\n    error InvalidAddress();\n\n    /// @notice Emitted when reward rate is updated\n    /// @param oldRewardRate The previous reward rate\n    /// @param newRewardRate The new reward rate\n    event RewardRateUpdated(uint256 oldRewardRate, uint256 newRewardRate);\n\n    /// @notice Emitted when rewards wallet is updated\n    /// @param oldWallet The previous rewards wallet address\n    /// @param newWallet The new rewards wallet address\n    event RewardsWalletUpdated(address oldWallet, address newWallet);\n\n    /**\n     * @notice Initializes the contract with reward parameters\n     * @param rewardsTokenAddress Address of the ERC20 token used for rewards\n     * @param newRewardsWallet Address of the wallet that holds rewards\n     * @param newRewardRate Initial reward rate per day\n     */\n    constructor(\n        address rewardsTokenAddress,\n        address newRewardsWallet,\n        uint256 newRewardRate\n    ) {\n        REWARDS_TOKEN = IERC20(rewardsTokenAddress);\n        rewardRatePerDay = newRewardRate;\n        rewardsWallet = newRewardsWallet;\n    }\n\n    /**\n     * @notice Updates the daily reward rate\n     * @dev Only callable by the contract owner\n     * @param newRewardRate The new reward rate per day\n     * @custom:event Emits RewardRateUpdated with old and new values\n     */\n    function updateRewardRatePerDay(uint256 newRewardRate) external onlyOwner {\n        emit RewardRateUpdated(rewardRatePerDay, newRewardRate);\n        rewardRatePerDay = newRewardRate;\n    }\n\n    /**\n     * @notice Updates the rewards wallet address\n     * @dev Only callable by the contract owner\n     * @param newWalletAddress The new rewards wallet address\n     * @custom:revert InvalidAddress if new wallet address is zero\n     * @custom:event Emits RewardsWalletUpdated with old and new values\n     */\n    function updateRewardsWallet(address newWalletAddress) external onlyOwner {\n        if (newWalletAddress == address(0)) {\n            revert InvalidAddress();\n        }\n        emit RewardsWalletUpdated(rewardsWallet, newWalletAddress);\n        rewardsWallet = newWalletAddress;\n    }\n\n    /**\n     * @notice Calculates the reward for a given staking store\n     * @dev Must be implemented by inheriting contracts\n     * @param stakingStoreIndex The index of the staking store\n     * @return The calculated reward amount\n     */\n    function getRewardForStakingStore(\n        uint256 stakingStoreIndex\n    ) public virtual returns (uint256);\n}\n"
     }
 }

@@ -1,29 +1,75 @@
 {
     "vfp_id": "vfp_00256",
-    "project_name": "ChainSecurity_StudioV_Neulock_Audit.pdf",
+    "project_name": "Frax0 Mesh - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 13,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-691"
+                    "CWE-682"
                 ],
                 "2": [
-                    "CWE-834"
+                    "CWE-1339"
                 ]
             },
-            "title": "Gas Griefing by Adding Many Unlock Keys",
-            "description": "The function `NeuDaoLockV1.setNeuDaoAddress()` deletes elements from the `keyTokenIds` array by iterating through the entire array, which becomes increasingly expensive as more token IDs are added. There is no upper bound on the array length aside from the total supply of NEU tokens.\nThe use of an unbounded array without efficient removal mechanisms leads to increasing gas costs for array cleanup during function execution.\nAn attacker could add a large number of key token IDs, causing future calls to `setNeuDaoAddress()` to consume excessive gas, potentially making the function unusable due to block gas limits.\nThis could result in the inability to update the Neu DAO address, leading to a denial of service for critical contract functionality.\n",
-            "severity": "Informational",
+            "title": "Incorrect condition for determining dust removal",
+            "description": "The RemoteCustodian contract fails to remove dust from share amounts when the custodian token's decimals are less than or equal to six, due to a conditional check based on custodianTknDecimals() rather than the frxUSD token's decimals. This causes inconsistencies in cross-chain transfers where dust is not properly handled, leading to discrepancies between deposited assets and received shares. An attacker could exploit this by crafting deposits with dust that get rounded up during conversion but not properly accounted for during transfer, resulting in the contract holding more assets than the corresponding shares justify. This leads to a loss of user funds and incorrect accounting in cross-chain operations.\n",
+            "severity": "Medium",
             "location": [
-                "NeuDaoLockV1.setNeuDaoAddress"
+                "RemoteCustodian.sol::_removeDustFrxUsdFloor",
+                "RemoteCustodian.sol::_removeDustFrxUsdCeil",
+                "RemoteCustodian.sol::_convertToAssets",
+                "RemoteCustodian.sol::previewMint",
+                "RemoteCustodian.sol::mint",
+                "RemoteCustodian.sol::_convertToShares",
+                "RemoteCustodian.sol::previewDeposit"
             ],
             "files": [
-                "neulock-onchain/contracts/old/LockV1.sol"
+                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ]
+            },
+            "title": "Incorrect Transfer event parameters",
+            "description": "The StakedFrxUSD3 contract emits the Transfer event with from = msg.sender instead of the actual token owner in internal transfer logic, violating ERC-20 event semantics. This occurs because the event is incorrectly parameterized in the __transfer function. Off-chain services that rely on Transfer events for balance tracking or transaction monitoring will misattribute the source of the transfer, leading to incorrect accounting, flawed analytics, and potential front-end display errors. While this does not directly enable fund theft, it compromises the reliability of event-based systems and can lead to operational issues in wallets and explorers.\n",
+            "severity": "Informational",
+            "location": [
+                "StakedFrxUSD3.sol::__transfer"
+            ],
+            "files": [
+                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Incorrect EIP-712 domain separator in upgradable proxy",
+            "description": "The StakedFrxUSD3 contract uses Solmate’s DOMAIN_SEPARATOR() in a proxy context, which caches the domain separator based on the implementation address rather than the proxy address. This violates EIP-712, which requires the verifying contract to be the proxy itself. As a result, signatures (e.g., for permit) may be invalid or bound to the wrong contract address, breaking compatibility with wallets and third-party services that rely on EIP-712 signatures. This undermines the security and usability of off-chain signing mechanisms and can prevent legitimate users from authorizing transactions.\n",
+            "severity": "Informational",
+            "location": [
+                "StakedFrxUSD3.sol::__domainSeparatorV4"
+            ],
+            "files": [
+                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
             ]
         }
     ],
     "affected_files": {
-        "LockV1.sol": "// SPDX-License-Identifier: CC0-1.0\npragma solidity 0.8.28;\n\nimport \"@openzeppelin/contracts/access/AccessControl.sol\";\n\nimport {INeuDaoLockV1} from \"../interfaces/ILockV1.sol\";\nimport {INeuV3, INeuTokenV3} from \"../interfaces/INeuV3.sol\";\n\n/**\n * @dev NeuDaoLock locks Ether donated from Neulock's sponsors until the\n * operator (currently managed by Studio V) sets the address of a permanent DAO\n * contract and the holders of at least 7 governance tokens agree to unlock the\n * funds by calling unlock(tokenId), which registers their token as a \"key\".\n * \n * The operator can set the DAO address and, after that, the holders of\n * governance tokens can vote for unlocking the funds. If the operator changes\n * the DAO address, the votes are reset.\n * \n * Given that there are at least 7 key tokens, anyone can call withdraw() to\n * send the locked funds to the DAO address.\n */\ncontract NeuDaoLockV1 is AccessControl, INeuDaoLockV1 {\n    bytes32 public constant OPERATOR_ROLE = keccak256(\"OPERATOR_ROLE\");\n    uint256 public constant REQUIRED_KEY_TOKENS = 7;\n    INeuTokenV3 immutable private _neuContract;\n\n    address public neuDaoAddress;\n    uint256[] public keyTokenIds;\n\n    constructor(\n        address defaultAdmin,\n        address operator,\n        address neuContractAddress\n    ) {\n        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);\n        _grantRole(OPERATOR_ROLE, operator);\n\n        _neuContract = INeuTokenV3(neuContractAddress);\n    }\n\n    function setNeuDaoAddress(address newNeoDaoAddress) external onlyRole(OPERATOR_ROLE) {\n        delete keyTokenIds;\n        // slither-disable-next-line missing-zero-check (we may want to set it again to 0x0, to prevent users from unlocking before we decide on a new DAO)\n        neuDaoAddress = newNeoDaoAddress;\n\n        emit AddressChange(newNeoDaoAddress);\n    }\n\n    function unlock(uint256 neuTokenId) external {\n        require(_neuContract.ownerOf(neuTokenId) == msg.sender, \"Caller does not own NEU\");\n        require(_neuContract.isGovernanceToken(neuTokenId), \"Provided token is not governance\");\n        require(neuDaoAddress != address(0), \"NEU DAO address not set\");\n\n        uint256 keyTokenIdsLength = keyTokenIds.length;\n\n        for (uint256 i = 0; i < keyTokenIdsLength; i++) {\n            require(keyTokenIds[i] != neuTokenId, \"Token already used as key\");\n        }\n\n        keyTokenIds.push(neuTokenId);\n\n        emit Unlock(neuTokenId);\n    }\n\n    function cancelUnlock(uint256 neuTokenId) external {\n        require(_neuContract.ownerOf(neuTokenId) == msg.sender, \"Caller does not own NEU\");\n\n        uint256 keyTokenIdsLength = keyTokenIds.length;\n\n        for (uint256 i = 0; i < keyTokenIdsLength; i++) {\n            if (keyTokenIds[i] == neuTokenId) {\n                keyTokenIds[i] = keyTokenIds[keyTokenIdsLength - 1];\n                // slither-disable-next-line costly-loop (we return after the costly call)\n                keyTokenIds.pop();\n\n                emit UnlockCancel(neuTokenId);\n                return;\n            }\n        }\n        revert(\"NEU not found\");\n    }\n\n    function withdraw() external {\n        require(neuDaoAddress != address(0), \"NEU DAO address not set\");\n        require(keyTokenIds.length >= REQUIRED_KEY_TOKENS, \"Not enough key tokens\");\n\n        uint256 balance = address(this).balance;\n\n        emit Withdraw(balance);\n\n        // slither-disable-start low-level-calls (calling like this is the best practice for sending Ether)\n        // slither-disable-next-line arbitrary-send-eth (neuDaoAddress is only set by the operator and approved by key holders who have called unlock())\n        (bool sent, ) = address(neuDaoAddress).call{value: balance}(\"\");\n        require(sent, \"Failed to send Ether\");\n        // slither-disable-end low-level-calls\n    }\n\n    receive() external payable {}\n}"
+        "SFrxUSDOFTUpgradeable.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.22;\n\nimport { OFTUpgradeable } from \"@fraxfinance/layerzero-v2-upgradeable/oapp/contracts/oft/OFTUpgradeable.sol\";\nimport { SendParam } from \"@fraxfinance/layerzero-v2-upgradeable/oapp/contracts/oft/interfaces/IOFT.sol\";\n\nimport {EIP3009Module} from \"contracts/modules/EIP3009Module.sol\";\nimport {PermitModule} from \"contracts/modules/PermitModule.sol\";\n\nimport {ERC20Upgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\n\ncontract SFrxUSDOFTUpgradeable is OFTUpgradeable, EIP3009Module, PermitModule {\n    constructor(address _lzEndpoint) OFTUpgradeable(_lzEndpoint) {\n        _disableInitializers();\n    }\n\n   function version() public pure returns (string memory) {\n        return \"1.1.0\";\n    }\n\n    // Admin\n    /// @dev This method is called specifically when upgrading an existing OFT\n    function initializeV110() external reinitializer(3) {\n        __EIP712_init(name(), version());\n    }\n\n\n    function name() public pure override returns (string memory) {\n        return \"Staked Frax USD\";\n    }\n\n    function symbol() public pure override returns (string memory) {\n        return \"sfrxUSD\";\n    }\n\n    // Helper views\n\n    function toLD(uint64 _amountSD) external view returns (uint256 amountLD) {\n        return _toLD(_amountSD);\n    }\n\n    function toSD(uint256 _amountLD) external view returns (uint64 amountSD) {\n        return _toSD(_amountLD);\n    }\n\n    function removeDust(uint256 _amountLD) public view returns (uint256 amountLD) {\n        return _removeDust(_amountLD);\n    }\n\n    function debitView(uint256 _amountLD, uint256 _minAmountLD, uint32 _dstEid) external view returns (uint256 amountSentLD, uint256 amountReceivedLD) {\n        /// @dev: _dstEid is unused in _debitView\n        return _debitView(_amountLD, _minAmountLD, _dstEid);\n    }\n\n    function buildMsgAndOptions(\n        SendParam calldata _sendParam,\n        uint256 _amountLD\n    ) external view returns (bytes memory message, bytes memory options) {\n        return _buildMsgAndOptions(_sendParam, _amountLD);\n    }\n\n    //==============================================================================\n    // Overrides\n    //==============================================================================\n\n    /// @dev supports EIP3009\n    function _transfer(address from, address to, uint256 amount) internal override(EIP3009Module, ERC20Upgradeable) {\n        return ERC20Upgradeable._transfer(from, to, amount);\n    }\n\n    /// @dev supports EIP2612\n    function _approve(address owner, address spender, uint256 amount) internal override(PermitModule, ERC20Upgradeable) {\n        return ERC20Upgradeable._approve(owner, spender, amount);\n    }\n}\n"
     }
 }

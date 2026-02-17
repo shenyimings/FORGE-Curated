@@ -1,6 +1,6 @@
 {
     "vfp_id": "vfp_00521",
-    "project_name": "cantina_centrifuge_aug2025.pdf",
+    "project_name": "Uniswap Calibur Audit.md",
     "findings": [
         {
             "id": 8,
@@ -9,49 +9,42 @@
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-1041"
+                    "CWE-758"
                 ]
             },
-            "title": "Redundant check in newManager()",
-            "description": "The newManager() function includes a check that the token address is not zero, but this is redundant because the Spoke::shareToken() function already performs the same validation. The cause is duplicated validation logic. This does not introduce a security risk but reduces code clarity and increases gas slightly due to an unnecessary check. The impact is minimal, but removing the redundant check would improve code maintainability and efficiency.\n",
-            "severity": null,
+            "title": "Different Pragma Directives Are Used",
+            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
+            "severity": "Low",
             "location": [
-                "newManager",
-                "Spoke::shareToken"
+                "ERC4337Account.sol#2",
+                "ERC7739Utils.sol#2"
             ],
             "files": [
-                "protocol-v3/src/managers/OnOfframpManager.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
             ]
         },
         {
-            "id": 9,
+            "id": 11,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-1076"
-                ],
-                "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1099"
+                    "CWE-1068"
                 ]
             },
-            "title": "Naming inconsistencies in OnOfframpManager",
-            "description": "The OnOfframpManager constructor uses a parameter named spoke_ which is assigned to the state variable contractUpdater, creating a naming mismatch. This is inconsistent with the OnOfframpManagerFactory, which uses contractUpdater_ as the parameter name. Additionally, the error NotSpoke() in the update function is outdated and does not align with standard authorization error naming. The cause is inconsistent naming conventions. This can lead to confusion during audits or maintenance, increasing the risk of human error. While not a direct vulnerability, it affects code readability and long-term security.\n",
-            "severity": null,
+            "title": "Misleading Docstring",
+            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
+            "severity": "Low",
             "location": [
-                "OnOfframpManager",
-                "OnOfframpManagerFactory"
+                "IERC4337Account.sol#18"
             ],
             "files": [
-                "protocol-v3/src/managers/OnOfframpManager.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
             ]
         }
     ],
     "affected_files": {
-        "OnOfframpManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.28;\n\nimport {IOnOfframpManager} from \"./interfaces/IOnOfframpManager.sol\";\nimport {IOnOfframpManagerFactory} from \"./interfaces/IOnOfframpManagerFactory.sol\";\nimport {IDepositManager, IWithdrawManager} from \"./interfaces/IBalanceSheetManager.sol\";\n\nimport {CastLib} from \"../misc/libraries/CastLib.sol\";\nimport {IERC165} from \"../misc/interfaces/IERC165.sol\";\nimport {SafeTransferLib} from \"../misc/libraries/SafeTransferLib.sol\";\n\nimport {PoolId} from \"../common/types/PoolId.sol\";\nimport {AssetId} from \"../common/types/AssetId.sol\";\nimport {ShareClassId} from \"../common/types/ShareClassId.sol\";\n\nimport {IBalanceSheet} from \"../spoke/interfaces/IBalanceSheet.sol\";\nimport {IUpdateContract} from \"../spoke/interfaces/IUpdateContract.sol\";\nimport {UpdateContractType, UpdateContractMessageLib} from \"../spoke/libraries/UpdateContractMessageLib.sol\";\n\n/// @title  OnOfframpManager\n/// @notice Balance sheet manager for depositing and withdrawing ERC20 assets.\n///         - Onramping is permissionless: once an asset is allowed to be onramped and ERC20 assets have been\n///           transferred to the manager, anyone can trigger the balance sheet deposit.\n///         - Offramping is permissioned: only predefined relayers can trigger withdrawals to predefined\n///           offramp accounts.\ncontract OnOfframpManager is IOnOfframpManager {\n    using CastLib for *;\n\n    PoolId public immutable poolId;\n    address public immutable contractUpdater;\n    ShareClassId public immutable scId;\n    IBalanceSheet public immutable balanceSheet;\n\n    mapping(address asset => bool) public onramp;\n    mapping(address relayer => bool) public relayer;\n    mapping(address asset => mapping(address receiver => bool isEnabled)) public offramp;\n\n    constructor(PoolId poolId_, ShareClassId scId_, address spoke_, IBalanceSheet balanceSheet_) {\n        poolId = poolId_;\n        scId = scId_;\n        contractUpdater = spoke_;\n        balanceSheet = balanceSheet_;\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Owner actions\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IUpdateContract\n    function update(PoolId poolId_, ShareClassId scId_, bytes calldata payload) external {\n        require(poolId == poolId_, InvalidPoolId());\n        require(scId == scId_, InvalidShareClassId());\n        require(msg.sender == contractUpdater, NotSpoke());\n\n        uint8 kind = uint8(UpdateContractMessageLib.updateContractType(payload));\n\n        if (kind == uint8(UpdateContractType.UpdateAddress)) {\n            UpdateContractMessageLib.UpdateContractUpdateAddress memory m =\n                UpdateContractMessageLib.deserializeUpdateContractUpdateAddress(payload);\n\n            if (m.kind == \"onramp\") {\n                (address asset, uint256 tokenId) = balanceSheet.spoke().idToAsset(AssetId.wrap(m.assetId));\n                require(tokenId == 0, ERC6909NotSupported());\n\n                onramp[asset] = m.isEnabled;\n\n                if (m.isEnabled) SafeTransferLib.safeApprove(asset, address(balanceSheet), type(uint256).max);\n                else SafeTransferLib.safeApprove(asset, address(balanceSheet), 0);\n\n                emit UpdateOnramp(asset, m.isEnabled);\n            } else if (m.kind == \"relayer\") {\n                address relayer_ = m.what.toAddress();\n\n                relayer[relayer_] = m.isEnabled;\n                emit UpdateRelayer(relayer_, m.isEnabled);\n            } else if (m.kind == \"offramp\") {\n                (address asset, uint256 tokenId) = balanceSheet.spoke().idToAsset(AssetId.wrap(m.assetId));\n                require(tokenId == 0, ERC6909NotSupported());\n                address receiver = m.what.toAddress();\n\n                offramp[asset][receiver] = m.isEnabled;\n                emit UpdateOfframp(asset, receiver, m.isEnabled);\n            } else {\n                revert UnknownUpdateContractKind();\n            }\n        } else {\n            revert UnknownUpdateContractType();\n        }\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // Deposit & withdraw actions\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IDepositManager\n    function deposit(address asset, uint256, /* tokenId */ uint128 amount, address /* owner */ ) external {\n        require(onramp[asset], NotAllowedOnrampAsset());\n\n        balanceSheet.deposit(poolId, scId, asset, 0, amount);\n    }\n\n    /// @inheritdoc IWithdrawManager\n    function withdraw(address asset, uint256, /* tokenId */ uint128 amount, address receiver) external {\n        require(relayer[msg.sender], NotRelayer());\n        require(receiver != address(0) && offramp[asset][receiver], InvalidOfframpDestination());\n\n        balanceSheet.withdraw(poolId, scId, asset, 0, receiver, amount);\n    }\n\n    //----------------------------------------------------------------------------------------------\n    // ERC-165\n    //----------------------------------------------------------------------------------------------\n\n    /// @inheritdoc IERC165\n    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {\n        return interfaceId == type(IDepositManager).interfaceId || interfaceId == type(IWithdrawManager).interfaceId\n            || interfaceId == type(IERC165).interfaceId;\n    }\n}\n\ncontract OnOfframpManagerFactory is IOnOfframpManagerFactory {\n    address public immutable contractUpdater;\n    IBalanceSheet public immutable balanceSheet;\n\n    constructor(address contractUpdater_, IBalanceSheet balanceSheet_) {\n        contractUpdater = contractUpdater_;\n        balanceSheet = balanceSheet_;\n    }\n\n    /// @inheritdoc IOnOfframpManagerFactory\n    function newManager(PoolId poolId, ShareClassId scId) external returns (IOnOfframpManager) {\n        require(address(balanceSheet.spoke().shareToken(poolId, scId)) != address(0), InvalidIds());\n\n        OnOfframpManager manager = new OnOfframpManager{salt: keccak256(abi.encode(poolId.raw(), scId.raw()))}(\n            poolId, scId, contractUpdater, balanceSheet\n        );\n\n        emit DeployOnOfframpManager(poolId, scId, address(manager));\n        return IOnOfframpManager(manager);\n    }\n}\n"
+        "ERC4337Account.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {EntrypointLib} from \"./libraries/EntrypointLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\n/// @title ERC4337Account\n/// @notice A base contract which allows for the entrypoint to have a default value that can be updated\nabstract contract ERC4337Account is IERC4337Account, BaseAuthorization {\n    using EntrypointLib for *;\n\n    /// ERC-4337 defined constants\n    uint256 internal constant SIG_VALIDATION_SUCCEEDED = 0;\n    uint256 internal constant SIG_VALIDATION_FAILED = 1;\n\n    /// @notice The cached entrypoint address\n    uint256 internal _CACHED_ENTRYPOINT;\n\n    modifier onlyEntryPoint() {\n        if (msg.sender != ENTRY_POINT()) revert NotEntryPoint();\n        _;\n    }\n\n    /// @inheritdoc IERC4337Account\n    function updateEntryPoint(address entryPoint) external onlyThis {\n        _CACHED_ENTRYPOINT = entryPoint.pack();\n        emit EntryPointUpdated(entryPoint);\n    }\n\n    /// @inheritdoc IERC4337Account\n    function ENTRY_POINT() public view override returns (address) {\n        return _CACHED_ENTRYPOINT.isOverriden() ? _CACHED_ENTRYPOINT.unpack() : Static.ENTRY_POINT_V_0_8;\n    }\n\n    // https://github.com/coinbase/smart-wallet/blob/main/src/CoinbaseSmartWallet.sol#L100\n    function _payEntryPoint(uint256 missingAccountFunds) internal {\n        assembly (\"memory-safe\") {\n            if missingAccountFunds {\n                // Ignore failure (it's EntryPoint's job to verify, not the account's).\n                pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))\n            }\n        }\n    }\n}\n"
     }
 }

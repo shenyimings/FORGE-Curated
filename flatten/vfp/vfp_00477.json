@@ -1,9 +1,282 @@
 {
     "vfp_id": "vfp_00477",
-    "project_name": "ackee-blockchain-let's-get-hai-new-core-features-report.pdf",
+    "project_name": "SSO Account OIDC Recovery Solidity Audit.md",
     "findings": [
         {
-            "id": 23,
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-1293"
+                ]
+            },
+            "title": "Unauthorized Control via Manipulated pendingPasskeyHash in startRecovery Process",
+            "description": "The `startRecovery` function in the `OidcRecoveryValidator` contract does not validate the `pendingPasskeyHash` parameter before storing it, even though it is critical for determining who can complete the recovery. While the ZK proof verifies ownership of the OIDC identity, the `pendingPasskeyHash` is not bound to the proof. This allows an attacker who possesses a valid ZK proof (e.g., a malicious third party or compromised prover) to set a `pendingPasskeyHash` for which they control the private key, thereby hijacking the recovery process and taking control of the target account. The impact is full unauthorized account takeover. The root cause is the lack of cryptographic binding between the `pendingPasskeyHash` and the ZK proof.\n",
+            "severity": "Medium",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#201",
+                "OidcRecoveryValidator.sol#L239C58-L239C76"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-362"
+                ]
+            },
+            "title": "Front-Running in addOidcAccount Account Registration",
+            "description": "The `addOidcAccount` function in the `OidcRecoveryValidator` contract uses a `digestIndex` mapping to prevent reuse of OIDC digests. However, since the registration transaction is visible in the mempool, a malicious actor can monitor pending transactions and front-run a legitimate user by submitting a transaction with the same `oidcDigest`. This causes the legitimate user's transaction to revert, blocking their ability to register their OIDC identity. Although the risk is currently mitigated by the lack of public mempools on elastic chain operators, this remains a potential future threat. The root cause is the absence of a commitment-reveal scheme or account binding in the registration process.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::addOidcAccount#163"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Inflexible Recovery Process Termination in OidcRecoveryValidator",
+            "description": "The `OidcRecoveryValidator` contract does not provide a way to cancel an ongoing recovery process without completely removing the account's OIDC linkage via `deleteOidcAccount`. This forces users to choose between leaving a recovery pending or losing the ability to recover in the future. The root cause is the absence of a dedicated cancellation mechanism. This reduces user control and security flexibility, especially if the user regains access through alternative means.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#239",
+                "OidcRecoveryValidator.sol::deleteOidcAccount#182"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ]
+            },
+            "title": "Delayed Recovery Validation May Compromise Account Security",
+            "description": "The `OidcRecoveryValidator` contract checks the proof's time limit only during `startRecovery`, but not during `validateTransaction`. This allows a significant delay between the two steps, during which the proof could expire. If the user regains access through another method (e.g., guardians), the pending recovery could still be completed later, leading to unauthorized account takeover. The root cause is the lack of time validation during the second step. This creates a dangerous time window where recovery can be finalized long after it should be valid.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#202",
+                "OidcRecoveryValidator.sol::validateTransaction"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "Old digestIndex Not Released on OIDC Account Update",
+            "description": "When a user updates their OIDC account via `addOidcAccount`, the old `digestIndex` mapping is not cleared. This permanently reserves the old digest, preventing the user from reusing it even for their own account. If the user wishes to revert to a previous OIDC identity, they are blocked by the uniqueness check. The root cause is the failure to delete the old digest from the mapping before assigning the new one. This leads to inefficient state usage and reduced user flexibility.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::digestIndex#108",
+                "OidcRecoveryValidator.sol::addOidcAccount#163"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "The `addOidcAccount` Function Always returns `false`",
+            "description": "The `addOidcAccount` function incorrectly determines whether a new account is being added or an existing one is being updated by checking the length of a `bytes32` field (`oidcDigest.length`). Since `bytes32` always has a length of 32 bytes regardless of content, the condition `accountData[msg.sender].oidcDigest.length == 0` will never be true, causing the function to always return `false`, indicating an update even for new accounts.\n\nThe root cause is a misunderstanding of how fixed-size byte arrays work in Solidity—length checks are not meaningful for `bytes32`. This leads to incorrect state signaling via return value and event emission, potentially misleading off-chain systems that rely on this boolean to detect new account linkages.\n\nAn attacker or user cannot directly exploit this for financial gain, but the incorrect return value and event data could be leveraged in a social engineering context or to disrupt account monitoring systems that expect accurate new-account detection.\n\nThe impact is primarily on system correctness and observability, leading to potential misinterpretation of user onboarding events and incorrect analytics or alerting based on account creation.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::addOidcAccount#163",
+                "OidcRecoveryValidator.sol::oidcDataForAddress#319"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "Inconsistencies in Account Recovery Data During Recovery Process",
+            "description": "The `addOidcAccount` function updates only a subset of the account's recovery-related fields (`oidcDigest`, `iss`, `sub`, and `digestIndex`), leaving critical state variables such as `readyToRecover`, `pendingPasskeyHash`, and `recoverNonce` unchanged. This can result in stale recovery state persisting after a new OIDC account is linked.\n\nThe cause is incomplete state management during account update—fields related to ongoing recovery are not reset or synchronized, creating a risk that a previous recovery session remains active even after the user has re-linked their OIDC identity.\n\nAn attacker who knows a previously used `publicKey` could exploit this by initiating a recovery after the user has called `addOidcAccount`, potentially allowing restoration of access using outdated credentials, provided the user had previously started a recovery and then re-linked their account.\n\nThe impact is a potential compromise of the recovery mechanism's integrity, allowing unintended recovery paths and mixing of state from different recovery sessions, which undermines the security model of the account recovery system.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::addOidcAccount#163",
+                "OidcRecoveryValidator.sol::validateTransaction#201"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Insufficient Validation in Recovery Process May Lead to Wasted Recovery Attempts",
+            "description": "The recovery process in `OidcRecoveryValidator` allows a recovery attempt to be consumed even if the `WebAuthValidator` fails to add the new `publicKey` due to invalid `credentialId` or `originDomain`. This occurs because the call to `WebAuthValidator` returns `false` instead of reverting, but the recovery nonce is still incremented.\n\nThe root cause is the lack of validation that the `publicKey` was actually added before consuming a recovery attempt. The system assumes success based on transaction completion rather than the actual outcome of the key registration.\n\nAn attacker who knows a user's `publicKey` can deliberately submit recovery transactions with invalid parameters, causing the `WebAuthValidator` to reject the key while still consuming the user's recovery attempt, effectively performing a denial-of-service on the recovery mechanism.\n\nThe impact is the depletion of a user's recovery attempts without actual progress, potentially locking them out of recovery if all attempts are exhausted through malicious or accidental misuse.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::validateTransaction#201",
+                "WebAuthValidator.sol::addPubkey#94"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Insufficient Validation of `iss` Argument Length in `addOidcAccount`",
+            "description": "The `addOidcAccount` function validates that the `iss` (issuer) string is non-empty but does not enforce an upper length limit. However, the associated zero-knowledge circuit expects `iss` to be less than 32 characters, as defined in the circuit template.\n\nThe cause is a missing on-chain validation that mirrors off-chain constraints. While the circuit enforces the length during proof generation, the contract allows longer values to be stored, creating a mismatch between on-chain data and what can be proven.\n\nAn attacker or user could store an `iss` value longer than 31 characters, which would be accepted on-chain but unusable in recovery because it cannot generate a valid ZK proof. This breaks the recovery flow for that account.\n\nThe impact is a denial-of-service condition for account recovery, where a user may be unable to recover their account if they have stored an `iss` value that exceeds the circuit's expected length, even if it was accepted by the contract.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::addOidcAccount#165",
+                "jwt-tx-validation.circom#L43",
+                "jwt-tx-validation.circom#L138"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "`OidcRecoveryValidator` Does Not Follow the ERC-1271 Flow",
+            "description": "The `validateSignature` function in `OidcRecoveryValidator` reverts when called, instead of returning `false` as specified by ERC-1271. This deviation prevents the `ERC1271Handler` from properly handling signature validation and returning the required magic value.\n\nThe cause is incorrect implementation of the ERC-1271 standard, which mandates that invalid signatures should be indicated by returning `0x00000000` (via `false`) rather than reverting, to allow the handler contract to respond appropriately.\n\nAn attacker cannot directly exploit this, but any external system or wallet that relies on ERC-1271 signature validation will fail to interact correctly with accounts using this validator, leading to rejected transactions or failed authentication.\n\nThe impact is reduced interoperability and potential failure of signature verification in compliant systems, undermining the contract's integration with standard wallet infrastructure.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::validateSignature#289",
+                "ERC1271Handler.sol::isValidSignature#37"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-188"
+                ],
+                "3": [
+                    "CWE-198"
+                ]
+            },
+            "title": "Endianness Mismatch in senderHash Representation Between Contract and Circuit",
+            "description": "The `startRecovery` function in the `OidcRecoveryValidator` contract splits the 32-byte `senderHash` into two parts for circuit input, but uses inconsistent endianness: the first part is processed in little-endian format after a right shift, while the second part (the least significant byte) is used without reversal. This results in a mixed byte order representation of the same logical value. The root cause is the inconsistent handling of byte order during serialization, particularly the use of `_reverse` on part of the hash but not the whole. An attacker could potentially exploit this by crafting inputs that cause the circuit to reconstruct an incorrect `senderHash`, leading to failed proof verification or unexpected behavior in the recovery process. The impact includes potential denial of service for legitimate recovery attempts or, in worst-case scenarios, successful recovery by an unauthorized party if the mismatch leads to an exploitable logic flaw in the circuit validation.\n",
+            "severity": "Medium",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#231-233",
+                "OidcRecoveryValidator.sol::_reverse"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ]
+            },
+            "title": "Unnecessary override Keyword in onInstall and onUninstall",
+            "description": "The `onInstall` and `onUninstall` functions in the `OidcRecoveryValidator` contract are marked with the `override` keyword, implying they override a function from a base contract. However, they are actually implementing abstract functions from an interface, not overriding a concrete implementation. The root cause is a misuse of Solidity inheritance syntax, which can mislead developers about the contract's inheritance hierarchy. While this does not lead to direct exploitation, it can cause confusion during code review or future development, potentially resulting in incorrect assumptions about function behavior or inheritance structure. The impact is primarily on code maintainability and auditability, increasing the risk of introducing bugs during future modifications due to misunderstanding the contract's design.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::onInstall",
+                "OidcRecoveryValidator.sol::onUninstall"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 18,
             "category": {
                 "1": [
                     "CWE-710"
@@ -12,18 +285,82 @@
                     "CWE-1164"
                 ]
             },
-            "title": "Unused functions",
-            "description": "The `assertGt(int256, int256)` function in the `Assertions.sol` library is not used anywhere in the codebase, while its `uint256` overload is used. This leads to unnecessary code bloat and potential confusion during maintenance or review. The root cause is the inclusion of an unused function variant without a clear use case. Although the function is not exploited directly, its presence increases code complexity and maintenance burden. The impact is limited to code quality and readability, with no direct security risk.\n",
-            "severity": "Informational",
+            "title": "Redundant Inheritance from VerifierCaller in OidcRecoveryValidator",
+            "description": "The `OidcRecoveryValidator` contract inherits from `VerifierCaller`, but does not use any of its functions or features. This unnecessary inheritance increases the contract's bytecode size and adds complexity without functional benefit. The root cause is leftover or premature inheritance that was not cleaned up during development. While this does not introduce a direct security exploit, it increases deployment and execution gas costs and complicates the codebase, making it harder to audit and maintain. The impact includes higher operational costs and an increased attack surface due to unnecessary code being present in the contract.\n",
+            "severity": "Low",
             "location": [
-                "Assertions.sol::assertGt#43-46"
+                "OidcRecoveryValidator.sol"
             ],
             "files": [
-                "core/src/libraries/Assertions.sol"
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Inconsistent Handling of addOidcAccount Return Value in OidcRecoveryValidator",
+            "description": "The `onInstall` function in `OidcRecoveryValidator` calls `addOidcAccount` but ignores its return value, which could indicate success or failure. This creates ambiguity about whether the operation succeeded, potentially hiding errors during installation. The root cause is a lack of proper error handling or documentation for the ignored return value. If the function reverts on failure, this may not be an issue, but without explicit handling or documentation, it's unclear whether this behavior is intentional. The impact is reduced code clarity and potential for silent failures, which could lead to inconsistent contract state if the operation fails but the installation proceeds anyway.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::onInstall#149"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 20,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1061"
+                ]
+            },
+            "title": "Redundant External Call to hashIssuer in OidcRecoveryValidator",
+            "description": "The `startRecovery` function makes an external call to `hashIssuer` in the `OidcKeyRegistry` contract, which performs a simple hashing operation without accessing any state. This external call introduces unnecessary gas overhead and complexity. The root cause is architectural over-engineering, where a stateless utility function is placed in another contract unnecessarily. While the team acknowledged this and chose not to fix it due to low gas costs, the vulnerability lies in the inefficiency and potential for increased attack surface through external calls. The impact is higher transaction costs and a slight increase in risk due to inter-contract dependencies, though the actual exploitability is low.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#210",
+                "OidcKeyRegistry.sol::hashIssuer"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Incorrect Comment on Public Key in startRecovery Function",
+            "description": "The comment in the `startRecovery` function states that the first `CIRCOM_BIGINT_CHUNKS` elements represent the \"OIDC provider public key\", but in reality, only the modulus is included, not the full public key (which would include the exponent). This misleading comment can cause confusion for developers and auditors, leading to incorrect assumptions about the data being passed to the circuit. The root cause is outdated or inaccurate documentation. The impact is primarily on code maintainability and auditability, increasing the risk of integration errors or misinterpretation of the protocol's security model, especially by external developers or auditors relying on comments.\n",
+            "severity": "Low",
+            "location": [
+                "OidcRecoveryValidator.sol::startRecovery#219"
+            ],
+            "files": [
+                "zksync-sso-clave-contracts/src/validators/OidcRecoveryValidator.sol"
             ]
         }
     ],
     "affected_files": {
-        "Assertions.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.20;\n\n/**\n * @title Assertions\n * @notice This library contains assertions for common requirement checks\n */\nlibrary Assertions {\n  // --- Errors ---\n\n  /// @dev Throws if `_x` is not greater than `_y`\n  error NotGreaterThan(uint256 _x, uint256 _y);\n  /// @dev Throws if `_x` is not lesser than `_y`\n  error NotLesserThan(uint256 _x, uint256 _y);\n  /// @dev Throws if `_x` is not greater than or equal to `_y`\n  error NotGreaterOrEqualThan(uint256 _x, uint256 _y);\n  /// @dev Throws if `_x` is not lesser than or equal to `_y`\n  error NotLesserOrEqualThan(uint256 _x, uint256 _y);\n  /// @dev Throws if `_x` is not greater than `_y`\n  error IntNotGreaterThan(int256 _x, int256 _y);\n  /// @dev Throws if `_x` is not lesser than `_y`\n  error IntNotLesserThan(int256 _x, int256 _y);\n  /// @dev Throws if `_x` is not greater than or equal to `_y`\n  error IntNotGreaterOrEqualThan(int256 _x, int256 _y);\n  /// @dev Throws if `_x` is not lesser than or equal to `_y`\n  error IntNotLesserOrEqualThan(int256 _x, int256 _y);\n  /// @dev Throws if checked amount is null\n  error NullAmount();\n  /// @dev Throws if checked address is null\n  error NullAddress();\n  /// @dev Throws if checked address contains no code\n  error NoCode(address _contract);\n\n  // --- Assertions ---\n\n  /// @dev Asserts that `_x` is greater than `_y` and returns `_x`\n  function assertGt(uint256 _x, uint256 _y) internal pure returns (uint256 __x) {\n    if (_x <= _y) revert NotGreaterThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is greater than `_y` and returns `_x`\n  function assertGt(int256 _x, int256 _y) internal pure returns (int256 __x) {\n    if (_x <= _y) revert IntNotGreaterThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is greater than or equal to `_y` and returns `_x`\n  function assertGtEq(uint256 _x, uint256 _y) internal pure returns (uint256 __x) {\n    if (_x < _y) revert NotGreaterOrEqualThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is greater than or equal to `_y` and returns `_x`\n  function assertGtEq(int256 _x, int256 _y) internal pure returns (int256 __x) {\n    if (_x < _y) revert IntNotGreaterOrEqualThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is lesser than `_y` and returns `_x`\n  function assertLt(uint256 _x, uint256 _y) internal pure returns (uint256 __x) {\n    if (_x >= _y) revert NotLesserThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is lesser than `_y` and returns `_x`\n  function assertLt(int256 _x, int256 _y) internal pure returns (int256 __x) {\n    if (_x >= _y) revert IntNotLesserThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is lesser than or equal to `_y` and returns `_x`\n  function assertLtEq(uint256 _x, uint256 _y) internal pure returns (uint256 __x) {\n    if (_x > _y) revert NotLesserOrEqualThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is lesser than or equal to `_y` and returns `_x`\n  function assertLtEq(int256 _x, int256 _y) internal pure returns (int256 __x) {\n    if (_x > _y) revert IntNotLesserOrEqualThan(_x, _y);\n    return _x;\n  }\n\n  /// @dev Asserts that `_x` is not null and returns `_x`\n  function assertNonNull(uint256 _x) internal pure returns (uint256 __x) {\n    if (_x == 0) revert NullAmount();\n    return _x;\n  }\n\n  /// @dev Asserts that `_address` is not null and returns `_address`\n  function assertNonNull(address _address) internal pure returns (address __address) {\n    if (_address == address(0)) revert NullAddress();\n    return _address;\n  }\n\n  /// @dev Asserts that `_address` contains code and returns `_address`\n  function assertHasCode(address _address) internal view returns (address __address) {\n    if (_address.code.length == 0) revert NoCode(_address);\n    return _address;\n  }\n}\n"
+        "OidcRecoveryValidator.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { Transaction } from \"@matterlabs/zksync-contracts/l2/system-contracts/libraries/TransactionHelper.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\nimport { Initializable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\n\nimport { WebAuthValidator } from \"./WebAuthValidator.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { IModule } from \"../interfaces/IModule.sol\";\nimport { VerifierCaller } from \"../helpers/VerifierCaller.sol\";\nimport { OidcKeyRegistry } from \"../OidcKeyRegistry.sol\";\nimport { Groth16Verifier } from \"../autogenerated/JwtTxValidationVerifier.sol\";\nimport { Utils } from \"../helpers/Utils.sol\";\nimport { IValidatorManager } from \"../interfaces/IValidatorManager.sol\";\n\n/// @title OidcRecoveryValidator\n/// @author Matter Labs\n/// @custom:security-contact security@matterlabs.dev\n/// @dev This contract allows secure account recovery for an SSO account using OIDC (Open Id Connect) protocol.\ncontract OidcRecoveryValidator is VerifierCaller, IModuleValidator, Initializable {\n  /// @notice The number of public inputs for the zk proof.\n  uint8 constant PUB_SIGNALS_LENGTH = 20;\n\n  /// @notice Emitted when an SSO account updates their associated OIDC account.\n  /// @param account The address of the SSO account that updated their OIDC data.\n  /// @param oidcDigest Digest generated from data that identifies the user. Calculated as: PoseidonHash(sub || aud || iss || salt).\n  /// @param iss The OIDC issuer.\n  /// @param isNew True if the OIDC key is new, false if it is an update.\n  event OidcAccountUpdated(address indexed account, bytes32 oidcDigest, string iss, bool isNew);\n\n  /// @notice Emitted when an OIDC account is deleted.\n  /// @param account The address of the SSO account that deleted the associated OIDC data.\n  /// @param oidcDigest The PoseidonHash(sub || aud || iss || salt) of the OIDC key.\n  event OidcAccountDeleted(address indexed account, bytes32 oidcDigest);\n\n  /// @notice Thrown when calling `validateSignature` since it is not implemented.\n  error ValidateSignatureNotImplemented();\n\n  /// @notice Thrown when no address is found for a given OIDC digest.\n  /// @param digest The OIDC digest.\n  error AddressNotFoundForDigest(bytes32 digest);\n\n  /// @notice Thrown when trying to add an OIDC account with an OIDC digest that is already registered in another account.\n  /// @param digest The OIDC digest.\n  error OidcDigestAlreadyRegisteredInAnotherAccount(bytes32 digest);\n\n  /// @notice Thrown when there is no OIDC data for a given address.\n  /// @param account The address.\n  error NoOidcDataForGivenAddress(address account);\n\n  /// @notice Thrown when the zk proof verification fails.\n  error ZkProofVerificationFailed();\n\n  /// @notice Thrown when the time limit has expired.\n  error TimeLimitExpired();\n\n  error WebAuthValidatorNotPresentInAccount(address account);\n\n  /// @notice The data for an OIDC account.\n  /// @param oidcDigest Digest that identifies an account. It's calculated as: PoseidonHash(sub || aud || iss || salt) of the OIDC key.\n  /// @param iss The OIDC issuer.\n  /// @param readyToRecover Indicating if recovery is active (true after `startRecovery` and false once recovery is completed).\n  /// @param pendingPasskeyHash The hash of the pending passkey.\n  /// @param recoverNonce The value is used to build the jwt nonce, and gets incremented each time a zk proof is successfully verified to prevent replay attacks.\n  /// @param addedOn The timestamp when the OIDC account was added.\n  struct OidcData {\n    bytes32 oidcDigest;\n    string iss;\n    bool readyToRecover;\n    bytes32 pendingPasskeyHash;\n    uint256 recoverNonce;\n    uint256 addedOn;\n  }\n\n  /// @notice Data needed to associate a new oidc account to an sso account.\n  /// @param oidcDigest The PoseidonHash(sub || aud || iss || salt) of the OIDC key.\n  /// @param iss The OIDC issuer. See https://openid.net/specs/openid-connect-core-1_0.html#IDToken\n  struct OidcCreationData {\n    bytes32 oidcDigest;\n    string iss;\n  }\n\n  /// @notice The data for a zk proof. pB is expected to be already in the order needed for the verifier.\n  struct ZkProof {\n    uint[2] pA;\n    uint[2][2] pB;\n    uint[2] pC;\n  }\n\n  /// @notice The data for starting a recovery process.\n  /// @param zkProof The zk proof.\n  /// @param issHash The hash of the OIDC issuer.\n  /// @param kid The key id (kid) of the OIDC key.\n  /// @param pendingPasskeyHash The hash of the pending passkey to be added.\n  /// @param timeLimit If the recovery process is started after this moment it will fail.\n  struct StartRecoveryData {\n    ZkProof zkProof;\n    bytes32 kid;\n    bytes32 pendingPasskeyHash;\n    uint256 timeLimit;\n  }\n\n  /// @notice The mapping of account addresses to their OIDC data.\n  mapping(address account => OidcData oidcData) accountData;\n\n  /// @notice The mapping of OIDC digests to their corresponding account addresses, used to retrieve the user's address during the recovery process.\n  mapping(bytes32 oidcDigest => address account) digestIndex;\n\n  /// @notice The address of the OIDC key registry.\n  address public keyRegistry;\n\n  /// @notice The address of the zk verifier.\n  address public verifier;\n\n  /// @notice The address of the web authentication validator.\n  address public webAuthValidator;\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  /// @notice Initializes the validator.\n  /// @param _keyRegistry The address of the OIDC key registry.\n  /// @param _verifier The address of the zk verifier.\n  /// @param _webAuthValidator The address of the web authentication validator.\n  function initialize(address _keyRegistry, address _verifier, address _webAuthValidator) external initializer {\n    require(_keyRegistry != address(0), \"_keyRegistry cannot be zero address\");\n    require(_verifier != address(0), \"_verifier cannot be zero address\");\n    require(_webAuthValidator != address(0), \"_webAuthValidator cannot be zero address\");\n\n    keyRegistry = _keyRegistry;\n    verifier = _verifier;\n    webAuthValidator = _webAuthValidator;\n  }\n\n  /// @notice Runs on module install\n  /// @param data ABI-encoded OidcCreationData key to add immediately, or empty if not needed\n  function onInstall(bytes calldata data) external override {\n    IValidatorManager asValidator = IValidatorManager(msg.sender);\n\n    bool passKeyModuleIsPresent = asValidator.isModuleValidator(webAuthValidator);\n    if (!passKeyModuleIsPresent) {\n      revert WebAuthValidatorNotPresentInAccount(msg.sender);\n    }\n\n    if (data.length > 0) {\n      OidcCreationData memory oidcCreationData = abi.decode(data, (OidcCreationData));\n      addOidcAccount(oidcCreationData.oidcDigest, oidcCreationData.iss);\n    }\n  }\n\n  /// @notice Runs on module uninstall\n  /// @dev Deletes the OIDC account for the caller, freeing it for use by another SSO account.\n  function onUninstall(bytes calldata) external override {\n    _deleteOidcAccount();\n  }\n\n  /// @notice Adds an `OidcData` for the caller.\n  /// @param oidcDigest PoseidonHash(sub || aud || iss || salt).\n  /// @param iss The OIDC issuer.\n  /// @return true if the key was added, false if it was updated.\n  function addOidcAccount(bytes32 oidcDigest, string memory iss) public returns (bool) {\n    require(oidcDigest != bytes32(0), \"oidcDigest cannot be empty\");\n    require(bytes(iss).length > 0, \"oidcDigest cannot be empty\");\n\n    bool isNew = accountData[msg.sender].oidcDigest.length == 0;\n    if (digestIndex[oidcDigest] != address(0)) {\n      revert OidcDigestAlreadyRegisteredInAnotherAccount(oidcDigest);\n    }\n\n    accountData[msg.sender].oidcDigest = oidcDigest;\n    accountData[msg.sender].iss = iss;\n    accountData[msg.sender].addedOn = block.timestamp;\n    digestIndex[oidcDigest] = msg.sender;\n\n    emit OidcAccountUpdated(msg.sender, oidcDigest, iss, isNew);\n    return isNew;\n  }\n\n  /// @notice Deletes the OIDC account for the caller, freeing it for use by another SSO account.\n  function deleteOidcAccount() external {\n    _deleteOidcAccount();\n  }\n\n  /// @notice Deletes the OIDC account for the caller, freeing it for use by another SSO account.\n  function _deleteOidcAccount() private {\n    bytes32 digest = accountData[msg.sender].oidcDigest;\n    delete digestIndex[digest];\n    delete accountData[msg.sender];\n\n    emit OidcAccountDeleted(msg.sender, digest);\n  }\n\n  /// @notice Starts the recovery process for the target account.\n  /// @param data The data for starting a recovery process.\n  /// @param targetAccount The address of the account to start the recovery process for.\n  /// @dev Queries the OIDC key registry for the provider's public key (`pkop`).\n  /// @dev Calls the verifier contract to validate the zk proof.\n  /// @dev If the proof is valid, it sets the recovery data for the target account.\n  function startRecovery(StartRecoveryData calldata data, address targetAccount) external {\n    if (data.timeLimit < block.timestamp) {\n      revert TimeLimitExpired();\n    }\n\n    OidcKeyRegistry keyRegistryContract = OidcKeyRegistry(keyRegistry);\n    Groth16Verifier verifierContract = Groth16Verifier(verifier);\n\n    OidcData memory oidcData = accountData[targetAccount];\n    bytes32 issHash = keyRegistryContract.hashIssuer(oidcData.iss);\n    OidcKeyRegistry.Key memory key = keyRegistryContract.getKey(issHash, data.kid);\n\n    bytes32 senderHash = keccak256(abi.encode(msg.sender, oidcData.recoverNonce, data.timeLimit));\n\n    // Fill public inputs\n    uint8 index = 0;\n    uint[PUB_SIGNALS_LENGTH] memory publicInputs;\n\n    // First CIRCOM_BIGINT_CHUNKS elements are the oidc provider public key.\n    for (uint8 i = 0; i < key.n.length; ++i) {\n      publicInputs[index] = uint(key.n[i]);\n      ++index;\n    }\n\n    // Then the digest\n    publicInputs[index] = uint(oidcData.oidcDigest);\n    ++index;\n\n    // Lastly the sender hash split into two 31-byte chunks (fields)\n    // Reverse ensures correct little-endian representation\n    publicInputs[index] = _reverse(uint256(senderHash) >> 8) >> 8;\n    ++index;\n    publicInputs[index] = (uint256(senderHash) << 248) >> 248;\n\n    if (!verifierContract.verifyProof(data.zkProof.pA, data.zkProof.pB, data.zkProof.pC, publicInputs)) {\n      revert ZkProofVerificationFailed();\n    }\n\n    accountData[targetAccount].pendingPasskeyHash = data.pendingPasskeyHash;\n    accountData[targetAccount].recoverNonce += 1;\n    accountData[targetAccount].readyToRecover = true;\n  }\n\n  /// @notice Only allows transaction setting a new passkey for the sender, and only if `startRecovery` was successfully\n  ///         called before\n  /// @dev Only allows calls to `addValidationKey` on the `WebAuthValidator` contract.\n  /// @dev Validates that the transaction adds the pending passkey to the account.\n  /// @dev It only allows to use passkeys previously set in `startRecovery`\n  /// @param transaction The transaction data being validated.\n  /// @return true if the transaction is valid and authorized, false otherwise.\n  function validateTransaction(bytes32, Transaction calldata transaction) external returns (bool) {\n    address target = Utils.safeCastToAddress(transaction.to);\n    if (target != webAuthValidator) {\n      return false;\n    }\n\n    if (transaction.data.length < 4) {\n      return false;\n    }\n\n    bytes4 selector = bytes4(transaction.data[:4]);\n\n    // Check for calling \"addValidationKey\" method by anyone on WebAuthValidator contract\n    if (selector != WebAuthValidator.addValidationKey.selector) {\n      return false;\n    }\n\n    // Decode the key from the transaction data and check against the pending passkey hash\n    (, bytes32[2] memory newPasskeyPubKey, ) = abi.decode(transaction.data[4:], (bytes, bytes32[2], string));\n    bytes32 passkeyHash = keccak256(abi.encode(newPasskeyPubKey[0], newPasskeyPubKey[1]));\n    OidcData memory oidcData = accountData[msg.sender];\n\n    if (!oidcData.readyToRecover) {\n      return false;\n    }\n\n    if (oidcData.pendingPasskeyHash != passkeyHash) {\n      return false;\n    }\n\n    // Reset pending passkey hash\n    accountData[msg.sender].pendingPasskeyHash = bytes32(0);\n    accountData[msg.sender].readyToRecover = false;\n    return true;\n  }\n\n  /// @notice Unimplemented because signature validation is not required.\n  /// @dev This module is only used to set new passkeys, arbitrary signature validation is out of the scope of this module.\n  function validateSignature(bytes32, bytes memory) external pure returns (bool) {\n    revert ValidateSignatureNotImplemented();\n  }\n\n  /// @inheritdoc IERC165\n  function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {\n    return\n      interfaceId == type(IERC165).interfaceId ||\n      interfaceId == type(IModuleValidator).interfaceId ||\n      interfaceId == type(IModule).interfaceId;\n  }\n\n  /// @notice Returns the address for a given OIDC digest.\n  /// @param digest The OIDC digest.\n  /// @return account The address for the given OIDC digest.\n  function addressForDigest(bytes32 digest) external view returns (address) {\n    address addr = digestIndex[digest];\n    if (addr == address(0)) {\n      revert AddressNotFoundForDigest(digest);\n    }\n\n    return addr;\n  }\n\n  /// @notice Returns the OIDC data for a given address.\n  /// @param account The address to get the OIDC data for.\n  /// @return data The OIDC data for the given address.\n  function oidcDataForAddress(address account) external view returns (OidcData memory) {\n    OidcData memory data = accountData[account];\n\n    if (data.oidcDigest == bytes32(0)) {\n      revert NoOidcDataForGivenAddress(account);\n    }\n\n    return data;\n  }\n\n  /// @notice Reverses the byte order of a given uint256.\n  /// @param input The uint256 to reverse.\n  /// @return uint256 The reversed version of the input.\n  function _reverse(uint256 input) private pure returns (uint256) {\n    uint256 res = 0;\n    uint256 shifted = input;\n    uint256 mask = 0xff;\n\n    for (uint i = 0; i < 32; ++i) {\n      uint256 oneByte = (shifted & mask) << ((32 - i - 1) * 8);\n      shifted = shifted >> 8;\n      res = res + oneByte;\n    }\n\n    return res;\n  }\n}\n"
     }
 }

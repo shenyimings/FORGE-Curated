@@ -3,7 +3,7 @@
     "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 1,
             "category": {
                 "1": [
                     "CWE-707"
@@ -12,94 +12,25 @@
                     "CWE-20"
                 ],
                 "3": [
-                    "CWE-1284"
+                    "CWE-1288"
                 ]
             },
-            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
-            "description": "The FeeAuction.buy function does not validate the _assets parameter, allowing users to call the function with an empty array or token addresses that have zero balance in the contract. This causes the transaction to proceed without transferring any assets to the buyer. The root cause is the lack of input validation before processing the asset transfer and payment. An attacker or user could exploit this by calling buy with an empty _assets array or including tokens not held by the contract, resulting in a successful payment without receiving any assets. The impact is a loss of funds for the buyer, as they pay the full auction price but receive nothing in return.\n",
-            "severity": "Medium",
-            "location": [
-                "contracts/feeAuction/FeeAuction.sol::buy#64-80",
-                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
-                "FeeAuction.sol::buy"
-            ],
-            "files": [
-                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
-            ]
-        },
-        {
-            "id": 12,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
-            "description": "The FeeAuction.buy function does not validate that assets are actually transferred before accepting payment. A malicious actor can front-run a legitimate buy transaction, depleting the asset balance, and causing the victim's transaction to pay without receiving anything. The root cause is the lack of a check ensuring non-zero asset transfer before payment. This creates a race condition exploitable via MEV. The impact is financial loss for victims who pay double the price (due to price doubling after each successful buy) but receive no assets.\n",
+            "title": "Incorrect oracle staleness period leads to price feed DoS",
+            "description": "The PriceOracle contract uses a single staleness period for all price feeds, despite different assets having different update frequencies (e.g., stablecoins updated every 24 hours vs. ETH/BTC every hour). This misconfiguration causes the oracle to either reject valid prices from slow-updating assets or accept stale prices from fast-updating ones. The root cause is the use of a global staleness threshold without per-asset customization. An attacker or system failure could exploit this by manipulating the timing of price updates, leading to denial of service in price retrieval. The impact is that critical functions relying on price feeds may revert or operate with incorrect data, disrupting lending, borrowing, and liquidation mechanisms.\n",
             "severity": "High",
             "location": [
-                "contracts/feeAuction/FeeAuction.sol::buy",
-                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
-                "FeeAuction.sol::buy"
+                "contracts/oracle/PriceOracle.sol::__PriceOracle_init_unchained#21-25",
+                "contracts/deploy/service/DeployInfra.sol::_deployInfra#36-40",
+                "Oracle.sol"
             ],
             "files": [
-                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
-            ]
-        },
-        {
-            "id": 57,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
-            "description": "The buy function allows purchasing zero assets, which can be exploited in front-running attacks. The cause is the lack of a slippage protection mechanism and validation for non-zero asset amounts. An attacker could exploit this by front-running legitimate bids with zero-asset transactions to manipulate auction state or extract value. This undermines auction fairness and can lead to loss of user funds.\n",
-            "severity": "High",
-            "location": [
-                "FeeAuction.sol::buy"
-            ],
-            "files": [
-                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
-            ]
-        },
-        {
-            "id": 45,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
-            "description": "This vulnerability arises from the lack of input validation in the FeeAuction.buy function, which allows users to make a payment without transferring any assets. The root cause is the absence of a check for zero-length asset arrays. An attacker could exploit this by calling the buy function with an empty assets array, leading to unintended state changes without actual asset transfer. This could disrupt auction mechanics and potentially allow manipulation of auction outcomes or gas griefing.\n",
-            "severity": "Medium",
-            "location": [
-                "FeeAuction.sol::buy"
-            ],
-            "files": [
-                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+                "cap-contracts/contracts/oracle/PriceOracle.sol",
+                "cap-contracts/contracts/deploy/service/DeployInfra.sol"
             ]
         }
     ],
     "affected_files": {
-        "FeeAuction.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IFeeAuction } from \"../interfaces/IFeeAuction.sol\";\nimport { FeeAuctionStorageUtils } from \"../storage/FeeAuctionStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { IERC20, SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title Fee Auction\n/// @author kexley, @capLabs\n/// @notice Fees are sold via a dutch auction\ncontract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUtils {\n    using SafeERC20 for IERC20;\n\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the fee auction\n    /// @param _accessControl Access control address\n    /// @param _paymentToken Payment token address\n    /// @param _paymentRecipient Payment recipient address\n    /// @param _duration Duration of auction in seconds\n    /// @param _minStartPrice Minimum start price in payment token decimals\n    function initialize(\n        address _accessControl,\n        address _paymentToken,\n        address _paymentRecipient,\n        uint256 _duration,\n        uint256 _minStartPrice\n    ) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n\n        FeeAuctionStorage storage $ = get();\n        $.paymentToken = _paymentToken;\n        $.paymentRecipient = _paymentRecipient;\n        $.startPrice = _minStartPrice;\n        $.startTimestamp = block.timestamp;\n        if (_duration == 0) revert NoDuration();\n        $.duration = _duration;\n        if (_minStartPrice == 0) revert NoMinStartPrice();\n        $.minStartPrice = _minStartPrice;\n    }\n\n    /// @notice Current price in the payment token, linearly decays toward 10% of the start price over time\n    /// @return price Current price\n    function currentPrice() public view returns (uint256 price) {\n        FeeAuctionStorage storage $ = get();\n        uint256 elapsed = block.timestamp - $.startTimestamp;\n        if (elapsed > $.duration) elapsed = $.duration;\n        price = $.startPrice * (1e27 - (elapsed * 0.9e27 / $.duration)) / 1e27;\n    }\n\n    /// @notice Buy fees in exchange for the payment token\n    /// @dev Starts new auction where start price is double the settled price of this one\n    /// @param _maxPrice Maximum price to pay\n    /// @param _assets Assets to buy\n    /// @param _minAmounts Minimum amounts to buy\n    /// @param _receiver Receiver address for the assets\n    /// @param _deadline Deadline for the auction\n    function buy(\n        uint256 _maxPrice,\n        address[] calldata _assets,\n        uint256[] calldata _minAmounts,\n        address _receiver,\n        uint256 _deadline\n    ) external {\n        uint256 price = currentPrice();\n        if (price > _maxPrice) revert InvalidPrice();\n        if (_assets.length == 0 || _assets.length != _minAmounts.length) revert InvalidAssets();\n        if (_receiver == address(0)) revert InvalidReceiver();\n        if (_deadline < block.timestamp) revert InvalidDeadline();\n\n        FeeAuctionStorage storage $ = get();\n        $.startTimestamp = block.timestamp;\n\n        uint256 newStartPrice = price * 2;\n        if (newStartPrice < $.minStartPrice) newStartPrice = $.minStartPrice;\n        $.startPrice = newStartPrice;\n\n        uint256[] memory balances = _transferOutAssets(_assets, _minAmounts, _receiver);\n\n        IERC20($.paymentToken).safeTransferFrom(msg.sender, $.paymentRecipient, price);\n\n        emit Buy(msg.sender, price, _assets, balances);\n    }\n\n    /// @notice Set the start price of the current auction\n    /// @dev This will affect the current price, use with caution\n    /// @param _startPrice New start price\n    function setStartPrice(uint256 _startPrice) external checkAccess(this.setStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        if (_startPrice < $.minStartPrice) revert InvalidStartPrice();\n        $.startPrice = _startPrice;\n        emit SetStartPrice(_startPrice);\n    }\n\n    /// @notice Set duration of auctions\n    /// @dev This will affect the current price, use with caution\n    /// @param _duration New duration in seconds\n    function setDuration(uint256 _duration) external checkAccess(this.setDuration.selector) {\n        if (_duration == 0) revert NoDuration();\n        FeeAuctionStorage storage $ = get();\n        $.duration = _duration;\n        emit SetDuration(_duration);\n    }\n\n    /// @notice Set minimum start price\n    /// @param _minStartPrice New minimum start price\n    function setMinStartPrice(uint256 _minStartPrice) external checkAccess(this.setMinStartPrice.selector) {\n        if (_minStartPrice == 0) revert NoMinStartPrice();\n        FeeAuctionStorage storage $ = get();\n        $.minStartPrice = _minStartPrice;\n        emit SetMinStartPrice(_minStartPrice);\n    }\n\n    /// @dev Transfer all specified assets to the receiver from this address\n    /// @param _assets Asset addresses\n    /// @param _minAmounts Minimum amounts to buy\n    /// @param _receiver Receiver address\n    /// @return balances Balances transferred to receiver\n    function _transferOutAssets(address[] calldata _assets, uint256[] calldata _minAmounts, address _receiver)\n        internal\n        returns (uint256[] memory balances)\n    {\n        uint256 assetsLength = _assets.length;\n        balances = new uint256[](assetsLength);\n        for (uint256 i; i < assetsLength; ++i) {\n            address asset = _assets[i];\n            uint256 balance = IERC20(asset).balanceOf(address(this));\n            balances[i] = balance;\n            if (balance < _minAmounts[i]) revert InsufficientBalance(asset, balance, _minAmounts[i]);\n            if (balance > 0) IERC20(asset).safeTransfer(_receiver, balance);\n        }\n    }\n\n    /// @notice Get the payment token address\n    /// @return token Address of the token used for payments\n    function paymentToken() external view returns (address token) {\n        token = get().paymentToken;\n    }\n\n    /// @notice Get the payment recipient address\n    /// @return recipient Address that receives the payments\n    function paymentRecipient() external view returns (address recipient) {\n        recipient = get().paymentRecipient;\n    }\n\n    /// @notice Get the current start price\n    /// @return price Current start price in payment token decimals\n    function startPrice() external view returns (uint256 price) {\n        price = get().startPrice;\n    }\n\n    /// @notice Get the start timestamp of the current auction\n    /// @return timestamp Timestamp when the current auction started\n    function startTimestamp() external view returns (uint256 timestamp) {\n        timestamp = get().startTimestamp;\n    }\n\n    /// @notice Get the auction duration\n    /// @return auctionDuration Duration in seconds\n    function duration() external view returns (uint256 auctionDuration) {\n        auctionDuration = get().duration;\n    }\n\n    /// @notice Get the minimum start price\n    /// @return price Minimum start price in payment token decimals\n    function minStartPrice() external view returns (uint256 price) {\n        price = get().minStartPrice;\n    }\n\n    /// @dev Only admin can upgrade\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
+        "PriceOracle.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\nimport { IOracle } from \"../interfaces/IOracle.sol\";\nimport { IPriceOracle } from \"../interfaces/IPriceOracle.sol\";\nimport { PriceOracleStorageUtils } from \"../storage/PriceOracleStorageUtils.sol\";\n\n/// @title Oracle for fetching prices\n/// @author kexley, @capLabs\n/// @dev Payloads are stored on this contract and calculation logic is hosted on external libraries\ncontract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {\n    /// @dev Initialize the price oracle\n    /// @param _accessControl Access control address\n    /// @param _staleness Staleness period in seconds for asset prices\n    function __PriceOracle_init(address _accessControl, uint256 _staleness) internal onlyInitializing {\n        __Access_init(_accessControl);\n        __PriceOracle_init_unchained(_staleness);\n    }\n\n    /// @dev Initialize unchained\n    /// @param _staleness Staleness period in seconds for asset prices\n    function __PriceOracle_init_unchained(uint256 _staleness) internal onlyInitializing {\n        getPriceOracleStorage().staleness = _staleness;\n    }\n\n    /// @notice Fetch the price for an asset\n    /// @dev If initial price fetch fails or is stale then a backup source is used, reverts if both fail\n    /// @param _asset Asset address\n    /// @return price Price of the asset\n    /// @return lastUpdated Latest timestamp of the price\n    function getPrice(address _asset) external view returns (uint256 price, uint256 lastUpdated) {\n        PriceOracleStorage storage $ = getPriceOracleStorage();\n        IOracle.OracleData memory data = $.oracleData[_asset];\n\n        (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n        if (price == 0 || _isStale(lastUpdated)) {\n            data = $.backupOracleData[_asset];\n            (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n            if (_isStale(lastUpdated)) revert StalePrice(lastUpdated);\n        }\n    }\n\n    /// @notice View the oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Oracle data for an asset\n    function priceOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().oracleData[_asset];\n    }\n\n    /// @notice View the backup oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Backup oracle data for an asset\n    function priceBackupOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().backupOracleData[_asset];\n    }\n\n    /// @notice View the staleness period for asset prices\n    /// @return stalenessPeriod Staleness period in seconds for asset prices\n    function staleness() external view returns (uint256 stalenessPeriod) {\n        stalenessPeriod = getPriceOracleStorage().staleness;\n    }\n\n    /// @notice Set a price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceOracleData.selector)\n    {\n        getPriceOracleStorage().oracleData[_asset] = _oracleData;\n        emit SetPriceOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set a backup price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceBackupOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceBackupOracleData.selector)\n    {\n        getPriceOracleStorage().backupOracleData[_asset] = _oracleData;\n        emit SetPriceBackupOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set the staleness period for asset prices\n    /// @param _staleness Staleness period in seconds for asset prices\n    function setStaleness(uint256 _staleness) external checkAccess(this.setStaleness.selector) {\n        getPriceOracleStorage().staleness = _staleness;\n        emit SetStaleness(_staleness);\n    }\n\n    /// @dev Calculate price using an adapter and payload but do not revert on errors\n    /// @param _adapter Adapter for calculation logic\n    /// @param _payload Encoded call to adapter with all required data\n    /// @return price Calculated price\n    function _getPrice(address _adapter, bytes memory _payload)\n        private\n        view\n        returns (uint256 price, uint256 lastUpdated)\n    {\n        (bool success, bytes memory returnedData) = _adapter.staticcall(_payload);\n        if (success) (price, lastUpdated) = abi.decode(returnedData, (uint256, uint256));\n    }\n\n    /// @dev Check if a price is stale\n    /// @param _lastUpdated Last updated timestamp\n    /// @return isStale True if the price is stale\n    function _isStale(uint256 _lastUpdated) internal view returns (bool isStale) {\n        isStale = block.timestamp - _lastUpdated > getPriceOracleStorage().staleness;\n    }\n}\n",
+        "DeployInfra.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { AccessControl } from \"../../access/AccessControl.sol\";\n\nimport { Delegation } from \"../../delegation/Delegation.sol\";\nimport { Lender } from \"../../lendingPool/Lender.sol\";\nimport { Oracle } from \"../../oracle/Oracle.sol\";\n\nimport { L2Token } from \"../../token/L2Token.sol\";\nimport { Vault } from \"../../vault/Vault.sol\";\n\nimport { PreMainnetVault } from \"../../testnetCampaign/PreMainnetVault.sol\";\nimport {\n    ImplementationsConfig,\n    InfraConfig,\n    L2VaultConfig,\n    PreMainnetInfraConfig,\n    UsersConfig,\n    VaultConfig\n} from \"../interfaces/DeployConfigs.sol\";\nimport { LzAddressbook } from \"../utils/LzUtils.sol\";\nimport { ProxyUtils } from \"../utils/ProxyUtils.sol\";\n\ncontract DeployInfra is ProxyUtils {\n    function _deployInfra(ImplementationsConfig memory implementations, UsersConfig memory users)\n        internal\n        returns (InfraConfig memory d)\n    {\n        // deploy proxy contracts\n        d.accessControl = _proxy(implementations.accessControl);\n        d.lender = _proxy(implementations.lender);\n        d.oracle = _proxy(implementations.oracle);\n        d.delegation = _proxy(implementations.delegation);\n\n        // init infra instances\n        AccessControl(d.accessControl).initialize(users.access_control_admin);\n        Lender(d.lender).initialize(d.accessControl, d.delegation, d.oracle, 1.33e27, 1 hours, 1 days, 0.1e27, 0.91e27);\n        Oracle(d.oracle).initialize(d.accessControl, 1 hours);\n        Delegation(d.delegation).initialize(d.accessControl, d.oracle, 1 days);\n    }\n\n    function _deployPreMainnetInfra(\n        LzAddressbook memory srcAddressbook,\n        LzAddressbook memory dstAddressbook,\n        address asset,\n        uint48 maxCampaignLength\n    ) internal returns (PreMainnetInfraConfig memory d) {\n        d.preMainnetVault = address(\n            new PreMainnetVault(asset, address(srcAddressbook.endpointV2), dstAddressbook.eid, maxCampaignLength)\n        );\n    }\n\n    function _deployL2InfraForVault(\n        UsersConfig memory users,\n        VaultConfig memory l1Vault,\n        LzAddressbook memory addressbook\n    ) internal returns (L2VaultConfig memory d) {\n        address lzEndpoint = address(addressbook.endpointV2);\n        string memory name;\n        string memory symbol;\n        address delegate = users.vault_config_admin;\n\n        name = Vault(l1Vault.capToken).name();\n        symbol = Vault(l1Vault.capToken).symbol();\n        d.bridgedCapToken = address(new L2Token(name, symbol, lzEndpoint, delegate));\n\n        name = Vault(l1Vault.stakedCapToken).name();\n        symbol = Vault(l1Vault.stakedCapToken).symbol();\n        d.bridgedStakedCapToken = address(new L2Token(name, symbol, lzEndpoint, delegate));\n    }\n}\n"
     }
 }

@@ -1,35 +1,30 @@
 {
     "vfp_id": "vfp_00602",
-    "project_name": "cantina_generic_money_nov2025.pdf",
+    "project_name": "f(x) v2 Audit.md",
     "findings": [
         {
-            "id": 7,
+            "id": 47,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-221"
+                    "CWE-755"
                 ],
                 "3": [
-                    "CWE-223"
-                ],
-                "4": [
-                    "CWE-778"
+                    "CWE-248"
                 ]
             },
-            "title": "Missing vault update events",
-            "description": "The GenericUnit contract does not emit VaultUpdate events when a vault linked to a share is modified, as recommended by ERC-7575. While this is not a mandatory requirement, emitting such events improves transparency and allows external systems to track vault changes reliably. The absence of these events reduces observability and may hinder integration with indexing services or monitoring tools, potentially delaying detection of critical configuration changes.\n",
-            "severity": "Informational",
-            "location": [
-                "GenericUnit.sol::#L51-L52"
-            ],
+            "title": "High Severity: Flashloan Functionality Blocked",
+            "description": "1.  **Description:** A flaw completely blocks the flashloan functionality of the protocol.\n2.  **Cause:** The root cause is not detailed in this chunk, but it likely involves a logic error or access control issue in the flashloan execution path.\n3.  **Exploitation:** This may not be directly exploitable by attackers but prevents intended functionality from working.\n4.  **Impact:** Users and integrations relying on flashloans (e.g., Morpho, Balancer) would be unable to use the feature, impairing protocol functionality and composability.\n",
+            "severity": "High",
+            "location": [],
             "files": [
-                "67cb0291/generic-protocol/src/unit/GenericUnit.sol"
+                "fx-protocol-contracts/contracts/periphery/facets/MorphoFlashLoanCallbackFacet.sol"
             ]
         }
     ],
     "affected_files": {
-        "GenericUnit.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.29;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { IERC165 } from \"@openzeppelin/contracts/utils/introspection/IERC165.sol\";\n\nimport { ERC20Mintable } from \"./ERC20Mintable.sol\";\nimport { IGenericShare, IERC7575Share } from \"../interfaces/IGenericShare.sol\";\nimport { IController } from \"../interfaces/IController.sol\";\n\n/**\n * @title GenericUnit\n * @notice A mintable ERC20 token that represents stable unit within the Generic Protocol.\n * @dev This contract extends ERC20Mintable to provide a mintable ERC20 token that adheres to the\n * IERC7575Share interface. It includes functionality to query associated vaults for specific assets.\n * The controller address receives mint/burn privileges upon deployment.\n */\ncontract GenericUnit is IGenericShare, ERC20Mintable {\n    /**\n     * @notice Initializes the GenericUnit token with metadata and sets the owner.\n     * @dev The owner address gets mint/burn privileges.\n     * @param controller Address to be set as the owner\n     * @param name ERC20 token name\n     * @param symbol ERC20 token symbol\n     */\n    constructor(\n        address controller,\n        string memory name,\n        string memory symbol\n    )\n        ERC20Mintable(controller, name, symbol)\n    { }\n\n    /**\n     * @notice Returns the address of the Vault for the given asset.\n     * @dev Vault changes do not emit VaultChange event as this is handled by the Controller.\n     * @param asset The address of the asset.\n     * @return The address of the associated Vault.\n     */\n    function vault(address asset) external view returns (address) {\n        return IController(owner()).vaultFor(asset);\n    }\n\n    /**\n     * @notice Checks if the contract supports a specific interface.\n     * @dev Returns true for IERC165, IERC20, and IERC7575Share interfaces.\n     * @param interfaceId The interface identifier to check\n     * @return True if the interface is supported, false otherwise\n     */\n    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {\n        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC20).interfaceId\n            || interfaceId == type(IERC7575Share).interfaceId;\n    }\n}\n"
+        "MorphoFlashLoanCallbackFacet.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.20;\n\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport { IMorphoFlashLoanCallback } from \"../../interfaces/Morpho/IMorphoFlashLoanCallback.sol\";\n\nimport { LibRouter } from \"../libraries/LibRouter.sol\";\n\ncontract MorphoFlashLoanCallbackFacet is IMorphoFlashLoanCallback {\n  using SafeERC20 for IERC20;\n\n  /**********\n   * Errors *\n   **********/\n\n  /// @dev Thrown when the caller is not morpho.\n  error ErrorNotFromMorpho();\n\n  error ErrorNotFromRouterFlashLoan();\n\n  /***********************\n   * Immutable Variables *\n   ***********************/\n\n  /// @dev The address of Morpho Blue contract.\n  /// In ethereum, it is 0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb.\n  address private immutable morpho;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  constructor(address _morpho) {\n    morpho = _morpho;\n  }\n\n  /****************************\n   * Public Mutated Functions *\n   ****************************/\n\n  /// @inheritdoc IMorphoFlashLoanCallback\n  function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {\n    if (msg.sender != morpho) revert ErrorNotFromMorpho();\n\n    // make sure call invoked by router\n    LibRouter.RouterStorage storage $ = LibRouter.routerStorage();\n    if ($.flashLoanContext != LibRouter.HAS_FLASH_LOAN) revert ErrorNotFromRouterFlashLoan();\n\n    (address token, bytes memory realData) = abi.decode(data, (address, bytes));\n    (bool success, ) = address(this).call(realData);\n    // below lines will propagate inner error up\n    if (!success) {\n      // solhint-disable-next-line no-inline-assembly\n      assembly {\n        let ptr := mload(0x40)\n        let size := returndatasize()\n        returndatacopy(ptr, 0, size)\n        revert(ptr, size)\n      }\n    }\n\n    // flashloan fee is zero in Morpho\n    LibRouter.approve(token, msg.sender, assets);\n  }\n}\n"
     }
 }

@@ -1,32 +1,30 @@
 {
     "vfp_id": "vfp_00397",
-    "project_name": "cantina_coinbase_flywheel_sep2025.pdf",
+    "project_name": "cantina_horizen_april2025.pdf",
     "findings": [
         {
-            "id": 3,
+            "id": 8,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-755"
+                    "CWE-657"
                 ],
                 "3": [
-                    "CWE-248"
+                    "CWE-637"
                 ]
             },
-            "title": "Reverting token transfers can undo payout batches",
-            "description": "When batch payouts are processed, a single failing transfer (e.g., due to a recipient being on a blocklist like USDC) causes the entire batch to revert. The cause is the use of unchecked transfers in a loop without error handling. An attacker cannot directly trigger this unless they control a blocklisted address, but the system becomes fragile under edge cases. The impact is delayed or failed payouts, requiring manual intervention to retry, which reduces reliability and user trust.\n",
-            "severity": "Low",
-            "location": [
-                "Campaign.sol#L41-L49"
-            ],
+            "title": "The AccessControl in ZenToken is obsolete",
+            "description": "The ZenToken contract imports and uses OpenZeppelin's AccessControl, but only for managing minters. Since minting is a one-time process and no other role-based access is needed, AccessControl introduces unnecessary complexity and bloat. The root cause is over-engineering access control for a simple use case. This leads to unused functions and increased contract size, which could confuse auditors and users. A simpler mapping of minters with a one-time disable mechanism would suffice.\n",
+            "severity": "Informational",
+            "location": [],
             "files": [
-                "flywheel/src/Campaign.sol"
+                "horizen-migration/erc20-migration/contracts/ZenToken.sol"
             ]
         }
     ],
     "affected_files": {
-        "Campaign.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.29;\n\nimport {SafeTransferLib} from \"solady/utils/SafeTransferLib.sol\";\n\nimport {Flywheel} from \"./Flywheel.sol\";\n\n/// @title Campaign\n///\n/// @notice Holds funds for a single campaign\n///\n/// @dev Deployed on demand by protocol via clones\ncontract Campaign {\n    /// @notice ERC-7528 address for native token\n    address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;\n\n    /// @notice Address that created this token store\n    address public immutable flywheel;\n\n    /// @notice Emitted when the contract URI is updated\n    event ContractURIUpdated();\n\n    /// @notice Call sender is not flywheel\n    error OnlyFlywheel();\n\n    /// @notice Constructor\n    constructor() {\n        flywheel = msg.sender;\n    }\n\n    /// @notice Allow receiving native token\n    receive() external payable {}\n\n    /// @notice Send tokens to a recipient, called by escrow during capture/refund\n    ///\n    /// @param token The token being received\n    /// @param recipient Address to receive the tokens\n    /// @param amount Amount of tokens to receive\n    ///\n    /// @return success True if the transfer was successful\n    function sendTokens(address token, address recipient, uint256 amount) external returns (bool) {\n        if (msg.sender != flywheel) revert OnlyFlywheel();\n        if (token == NATIVE_TOKEN) {\n            SafeTransferLib.safeTransferETH(recipient, amount);\n        } else {\n            SafeTransferLib.safeTransfer(token, recipient, amount);\n        }\n        return true;\n    }\n\n    /// @notice Updates the metadata for the contract\n    function updateContractURI() external {\n        if (msg.sender != flywheel) revert OnlyFlywheel();\n        emit ContractURIUpdated();\n    }\n\n    /// @notice Returns the URI for the contract\n    ///\n    /// @return uri The URI for the contract\n    function contractURI() external view returns (string memory uri) {\n        return Flywheel(flywheel).campaignURI(address(this));\n    }\n}\n"
+        "ZenToken.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol\";\nimport \"./interfaces/IVesting.sol\";\n\n/// @title ZEN official ERC-20 smart contract\n/// @notice Minting role is granted in the constructor to the Vault Contracts, responsible for\n///         restoring EON and Zend balances.\n\ncontract ZenToken is ERC20Capped {\n    // Simple mapping to track authorized minters\n    mapping(address => bool) public minters;\n\n    uint256 internal constant TOTAL_ZEN_SUPPLY = 21_000_000;\n    uint256 internal constant TOKEN_SIZE = 10 ** 18;\n\n    address public immutable horizenFoundationVested;\n    address public immutable horizenDaoVested;\n\n    uint8 private numOfMinters;\n\n    uint256 public constant DAO_SUPPLY_PERCENTAGE = 60;\n    uint256 public constant INITIAL_SUPPLY_PERCENTAGE = 25;\n\n    error AddressParameterCantBeZero(string paramName);\n    error CallerNotMinter(address caller);\n\n    modifier canMint() {\n        // Checks that the calling account has the minter role\n        if (!minters[msg.sender]) {\n            revert CallerNotMinter(msg.sender);\n        }\n        _;\n    }\n\n    /// @notice Smart contract constructor\n    /// @param tokenName Name of the token\n    /// @param tokenSymbol Ticker of the token\n    /// @param _eonBackupContract Address of EON Vault contract\n    /// @param _zendBackupContract Address of ZEND Vault contract\n    /// @param _horizenFoundationVested Address who will receive the remaining portion of Zen reserved to the Foundation (with locking period)\n    /// @param _horizenDaoVested Address who will receive the remaining portion of Zen reserved to the DAO (with locking period)\n    constructor(\n        string memory tokenName,\n        string memory tokenSymbol,\n        address _eonBackupContract,\n        address _zendBackupContract,\n        address _horizenFoundationVested,\n        address _horizenDaoVested\n    ) ERC20(tokenName, tokenSymbol) ERC20Capped(TOTAL_ZEN_SUPPLY * TOKEN_SIZE) {\n        if (_eonBackupContract == address(0))\n            revert AddressParameterCantBeZero(\"_eonBackupContract\");\n        if (_zendBackupContract == address(0))\n            revert AddressParameterCantBeZero(\"_zendBackupContract\");\n        if (_horizenFoundationVested == address(0))\n            revert AddressParameterCantBeZero(\"_horizenFoundationVested\");\n        if (_horizenDaoVested == address(0))\n            revert AddressParameterCantBeZero(\"_horizenDaoVested\");\n\n        // Grant the minter role to a specified account\n        minters[_eonBackupContract] = true;\n        minters[_zendBackupContract] = true;\n\n        numOfMinters = 2;\n        \n        horizenFoundationVested = _horizenFoundationVested;\n        horizenDaoVested = _horizenDaoVested;\n    }\n\n    function mint(address to, uint256 amount) public canMint {\n        _mint(to, amount);\n    }\n\n    function notifyMintingDone() public canMint {\n        minters[msg.sender] = false;\n        unchecked {\n            --numOfMinters;\n        }\n        if (numOfMinters == 0) {\n            uint256 remainingSupply = cap() - totalSupply();\n            //Horizen DAO is eligible of 60% of the remaining supply. The rest is for the Foundation.\n            uint256 daoSupply = (remainingSupply * DAO_SUPPLY_PERCENTAGE) / 100;\n            uint256 foundationSupply = remainingSupply - daoSupply;\n\n            uint256 daoInitialSupply = (daoSupply * INITIAL_SUPPLY_PERCENTAGE) / 100;\n            uint256 foundationInitialSupply = (foundationSupply * INITIAL_SUPPLY_PERCENTAGE) / 100;\n            _mint(\n                IVesting(horizenFoundationVested).beneficiary(),\n                foundationInitialSupply\n            );\n            _mint(\n                horizenFoundationVested,\n                foundationSupply - foundationInitialSupply\n            );\n            _mint(\n                IVesting(horizenDaoVested).beneficiary(),\n                daoInitialSupply\n            );\n            _mint(horizenDaoVested, daoSupply - daoInitialSupply);\n\n            IVesting(horizenFoundationVested).startVesting();\n            IVesting(horizenDaoVested).startVesting();\n        }\n    }\n}\n"
     }
 }

@@ -1,50 +1,33 @@
 {
     "vfp_id": "vfp_00535",
-    "project_name": "Uniswap Calibur Audit.md",
+    "project_name": "cantina_eco_february2025.pdf",
     "findings": [
         {
-            "id": 8,
+            "id": 12,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-758"
-                ]
-            },
-            "title": "Different Pragma Directives Are Used",
-            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
-            "severity": "Low",
-            "location": [
-                "ERC4337Account.sol#2",
-                "ERC7739Utils.sol#2"
-            ],
-            "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-710"
+                    "CWE-20"
                 ],
-                "2": [
-                    "CWE-1068"
+                "3": [
+                    "CWE-1286"
                 ]
             },
-            "title": "Misleading Docstring",
-            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
+            "title": "Missing validation of orderDataType and incorrect EIP-712 encoding may break ERC-7683 requirement",
+            "description": "The `orderDataType` field in `OnchainCrossChainOrder` and `GaslessCrossChainOrder` is not validated against the correct typehashes. Additionally, the EIP-712 encoding contains errors, such as incorrect struct names and missing fields.\n\nThis breaks ERC-7683 compliance, as the standard requires ABI decodability and correct typehash validation.\n\nFillers relying on proper EIP-712 signing may fail to process intents, leading to interoperability issues.\n\nThe impact is low, as it affects compliance and integration but does not directly compromise funds.\n",
             "severity": "Low",
             "location": [
-                "IERC4337Account.sol#18"
+                "EcoERC7683.sol#L21-L47",
+                "EcoERC7683.sol#L49-L55"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+                "eco-routes/contracts/types/EcoERC7683.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC4337Account.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {EntrypointLib} from \"./libraries/EntrypointLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\n/// @title ERC4337Account\n/// @notice A base contract which allows for the entrypoint to have a default value that can be updated\nabstract contract ERC4337Account is IERC4337Account, BaseAuthorization {\n    using EntrypointLib for *;\n\n    /// ERC-4337 defined constants\n    uint256 internal constant SIG_VALIDATION_SUCCEEDED = 0;\n    uint256 internal constant SIG_VALIDATION_FAILED = 1;\n\n    /// @notice The cached entrypoint address\n    uint256 internal _CACHED_ENTRYPOINT;\n\n    modifier onlyEntryPoint() {\n        if (msg.sender != ENTRY_POINT()) revert NotEntryPoint();\n        _;\n    }\n\n    /// @inheritdoc IERC4337Account\n    function updateEntryPoint(address entryPoint) external onlyThis {\n        _CACHED_ENTRYPOINT = entryPoint.pack();\n        emit EntryPointUpdated(entryPoint);\n    }\n\n    /// @inheritdoc IERC4337Account\n    function ENTRY_POINT() public view override returns (address) {\n        return _CACHED_ENTRYPOINT.isOverriden() ? _CACHED_ENTRYPOINT.unpack() : Static.ENTRY_POINT_V_0_8;\n    }\n\n    // https://github.com/coinbase/smart-wallet/blob/main/src/CoinbaseSmartWallet.sol#L100\n    function _payEntryPoint(uint256 missingAccountFunds) internal {\n        assembly (\"memory-safe\") {\n            if missingAccountFunds {\n                // Ignore failure (it's EntryPoint's job to verify, not the account's).\n                pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))\n            }\n        }\n    }\n}\n"
+        "EcoERC7683.sol": "/* -*- c-basic-offset: 4 -*- */\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {TokenAmount, Route, Call} from \"./Intent.sol\";\n/**\n * @title EcoERC7683\n * @dev ERC7683 orderData subtypes designed for Eco Protocol\n */\n\n/**\n * @notice contains everything which, when combined with other aspects of GaslessCrossChainOrder\n * is sufficient to publish an intent via Eco Protocol\n * @dev the orderData field of GaslessCrossChainOrder should be decoded as GaslessCrosschainOrderData\\\n * @param route the route data\n * @param creator the address of the intent creator\n * @param prover the address of the prover contract this intent will be proven against\n * @param nativeValue the amount of native token offered as a reward\n * @param tokens the addresses and amounts of reward tokens\n */\nstruct OnchainCrosschainOrderData {\n    Route route;\n    address creator;\n    address prover;\n    uint256 nativeValue;\n    TokenAmount[] rewardTokens;\n}\n/**\n * @notice contains everything which, when combined with other aspects of GaslessCrossChainOrder\n * is sufficient to publish an intent via Eco Protocol\n * @dev the orderData field of GaslessCrossChainOrder should be decoded as GaslessCrosschainOrderData\n * @param destination the ID of the chain where the intent was created\n * @param inbox the inbox contract on the destination chain that will fulfill the intent\n * @param calls the call instructions to be called during intent fulfillment\n * @param prover the address of the prover contract this intent will be proven against\n * @param nativeValue the amount of native token offered as a reward\n * @param tokens the addresses and amounts of reward tokens\n */\nstruct GaslessCrosschainOrderData {\n    uint256 destination;\n    address inbox;\n    TokenAmount[] routeTokens;\n    Call[] calls;\n    address prover;\n    uint256 nativeValue;\n    TokenAmount[] rewardTokens;\n}\n\n//EIP712 typehashes\nbytes32 constant ONCHAIN_CROSSCHAIN_ORDER_DATA_TYPEHASH = keccak256(\n    \"OnchainCrosschainOrderData(Route route,address creator,address prover,uint256 nativeValue,TokenAmount[] rewardTokens)Route(bytes32 salt,uint256 source,uint256 destination,address inbox,TokenAmount[] tokens,Call[] calls)TokenAmount(address token,uint256 amount)Call(address target,bytes data,uint256 value)\"\n);\nbytes32 constant GASLESS_CROSSCHAIN_ORDER_DATA_TYPEHASH = keccak256(\n    \"GaslessCrosschainOrderData(uint256 destination,address inbox,TokenAmount[] routeTokens,Call[] calls,address prover,uint256 nativeValue,TokenAmount[] rewardTokens)TokenAmount(address token,uint256 amount)Call(address target,bytes data,uint256 value)\"\n);\n"
     }
 }

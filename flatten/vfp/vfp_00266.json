@@ -1,58 +1,52 @@
 {
     "vfp_id": "vfp_00266",
-    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "project_name": "Jovay Rollup Contracts Audit.md",
     "findings": [
         {
-            "id": 21,
+            "id": 24,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-754"
+                    "CWE-1164"
                 ],
                 "3": [
-                    "CWE-252"
+                    "CWE-561"
                 ]
             },
-            "title": "Lack of verification on ERC4626 vault withdrawal amounts",
-            "description": "The divest function reduces the recorded loaned amount before the actual withdrawal occurs and does not verify the return value from the ERC4626 vault's withdraw call. The root cause is the failure to validate the actual amount received versus the expected divestAmount. If the vault returns fewer assets than requested (due to losses or other factors), the accounting system still assumes the full amount was withdrawn, creating a discrepancy between recorded and actual assets. While current integrations with Yearn vaults prevent losses by reverting, future integration with other ERC4626 vaults that allow losses could lead to systematic asset shortfalls. The impact is a gradual erosion of protocol solvency as unaccounted losses accumulate over time.\n",
-            "severity": "Informational",
+            "title": "‘TRANSFER_ROLE’ Role Declared but Never Used",
+            "description": "The `TRANSFER_ROLE` constant is defined in `ERC20Token.sol` but is never assigned or checked in any function within the contract. This creates unnecessary code bloat and confusion about the intended access control model. The root cause is incomplete or outdated role management logic. An attacker cannot exploit this directly, but it may indicate a design inconsistency or a missing feature. Future developers might assume the role is functional and attempt to use it, leading to unexpected behavior. The impact is low, primarily affecting code clarity and maintainability.\n",
+            "severity": "Low",
             "location": [
-                "contracts/vault/libraries/FractionalReserveLogic.sol#L63-L66",
-                "Vault.sol"
+                "ERC20Token.sol#20"
             ],
             "files": [
-                "cap-contracts/contracts/vault/libraries/FractionalReserveLogic.sol"
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
             ]
         },
         {
-            "id": 15,
+            "id": 9,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-221"
-                ],
-                "3": [
-                    "CWE-223"
+                    "CWE-1076"
                 ]
             },
-            "title": "Unaccounted external vault investment losses can create withdrawal shortfalls",
-            "description": "The protocol invests idle assets in external vaults such as Yearn but fails to account for losses incurred during divestment. When the protocol changes the address of an external vault, it divests from the current vault regardless of any losses, and these losses are not tracked or reflected in the system's accounting. The root cause is the absence of loss tracking during divestment operations. This creates a \"first out\" advantage where early withdrawers can redeem their full amounts while later withdrawers may face shortfalls because the physical assets no longer exist to back their balances. The protocol continues to report the original total supply despite having fewer physical tokens, leading to an inability to fulfill withdrawal requests. This threatens the solvency of the system and creates an unfair distribution of losses among users.\n",
-            "severity": "Medium",
+            "title": "Redundant `ADMIN_ROLE` Definition Instead of Using `DEFAULT_ADMIN_ROLE`",
+            "description": "The `ERC20Token` contract defines a custom `ADMIN_ROLE` and assigns it as the admin of all other roles, instead of using OpenZeppelin's built-in `DEFAULT_ADMIN_ROLE`. This creates redundancy and potential confusion in access control management.\n\nThe root cause is unnecessary customization of a standard pattern. OpenZeppelin's `AccessControl` defaults to `DEFAULT_ADMIN_ROLE` as the admin of new roles, so failing to assign it can result in roles being unmanageable.\n\nWhile not directly exploitable, this design increases the risk of privilege escalation or loss of control if new roles are added and `DEFAULT_ADMIN_ROLE` remains unassigned. It also consumes more gas due to extra role definitions.\n\nThe impact is increased maintenance complexity, higher risk of administrative errors, and suboptimal gas usage. It does not pose an immediate security threat but reduces code clarity and safety.\n",
+            "severity": "Low",
             "location": [
-                "contracts/vault/libraries/FractionalReserveLogic.sol",
-                "contracts/vault/FractionalReserve.sol",
-                "FractionalReserve.sol"
+                "ERC20Token.sol::ADMIN_ROLE#34-38"
             ],
             "files": [
-                "cap-contracts/contracts/vault/libraries/FractionalReserveLogic.sol"
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
             ]
         }
     ],
     "affected_files": {
-        "FractionalReserveLogic.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport { IFractionalReserve } from \"../../interfaces/IFractionalReserve.sol\";\nimport { IERC4626 } from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title Fractional Reserve Logic\n/// @author kexley, @capLabs\n/// @notice Idle capital is put to work in fractional reserve vaults and can be recalled when\n/// withdrawing, redeeming or borrowing.\nlibrary FractionalReserveLogic {\n    using SafeERC20 for IERC20;\n\n    /// @dev Loss not allowed from fractional reserve\n    error LossFromFractionalReserve(address asset, address vault, uint256 loss);\n\n    /// @notice Invest unborrowed capital in a fractional reserve vault\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    function invest(IFractionalReserve.FractionalReserveStorage storage $, address _asset) external {\n        uint256 assetBalance = IERC20(_asset).balanceOf(address(this));\n        uint256 reserveBalance = $.reserve[_asset];\n\n        if (assetBalance > reserveBalance) {\n            uint256 investAmount = assetBalance - reserveBalance;\n            $.loaned[_asset] += investAmount;\n            IERC20(_asset).forceApprove($.vault[_asset], investAmount);\n            IERC4626($.vault[_asset]).deposit(investAmount, address(this));\n        }\n    }\n\n    /// @notice Divest all from a fractional reserve vault\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    function divest(IFractionalReserve.FractionalReserveStorage storage $, address _asset) external {\n        if ($.vault[_asset] != address(0)) {\n            uint256 loanedAssets = $.loaned[_asset];\n            $.loaned[_asset] = 0;\n\n            uint256 vaultBalance = IERC20($.vault[_asset]).balanceOf(address(this));\n            if (vaultBalance > 0) {\n                uint256 redeemedAssets = IERC4626($.vault[_asset]).redeem(vaultBalance, address(this), address(this));\n                if (redeemedAssets > loanedAssets) {\n                    IERC20(_asset).safeTransfer($.feeAuction, redeemedAssets - loanedAssets);\n                } else if (redeemedAssets < loanedAssets) {\n                    revert LossFromFractionalReserve(_asset, $.vault[_asset], loanedAssets - redeemedAssets);\n                }\n            }\n        }\n    }\n\n    /// @notice Divest capital from a fractional reserve vault when not enough funds are held in reserve\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    /// @param _withdrawAmount Amount to withdraw to fulfil\n    function divest(IFractionalReserve.FractionalReserveStorage storage $, address _asset, uint256 _withdrawAmount)\n        external\n    {\n        if ($.vault[_asset] != address(0)) {\n            uint256 assetBalance = IERC20(_asset).balanceOf(address(this));\n\n            if (_withdrawAmount > assetBalance) {\n                /// Divest both the withdrawal amount and the buffer reserve for later withdrawals\n                uint256 divestAmount = _withdrawAmount + $.reserve[_asset] - assetBalance;\n                if (divestAmount > $.loaned[_asset]) divestAmount = $.loaned[_asset];\n                if (divestAmount > 0) {\n                    $.loaned[_asset] -= divestAmount;\n\n                    IERC4626($.vault[_asset]).withdraw(divestAmount, address(this), address(this));\n\n                    if (IERC20(_asset).balanceOf(address(this)) < divestAmount + assetBalance) {\n                        uint256 loss = divestAmount + assetBalance - IERC20(_asset).balanceOf(address(this));\n                        revert LossFromFractionalReserve(_asset, $.vault[_asset], loss);\n                    }\n                }\n            }\n        }\n    }\n\n    /// @notice Set the fractional reserve vault for an asset\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    /// @param _vault Fractional reserve vault\n    function setFractionalReserveVault(\n        IFractionalReserve.FractionalReserveStorage storage $,\n        address _asset,\n        address _vault\n    ) external {\n        $.vault[_asset] = _vault;\n    }\n\n    /// @notice Set the reserve level for an asset\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    /// @param _reserve Reserve level in asset decimals\n    function setReserve(IFractionalReserve.FractionalReserveStorage storage $, address _asset, uint256 _reserve)\n        external\n    {\n        $.reserve[_asset] = _reserve;\n    }\n\n    /// @notice Realize interest from a fractional reserve vault\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    function realizeInterest(IFractionalReserve.FractionalReserveStorage storage $, address _asset) external {\n        IERC4626($.vault[_asset]).withdraw(claimableInterest($, _asset), $.feeAuction, address(this));\n    }\n\n    /// @notice Interest from a fractional reserve vault\n    /// @param $ Storage pointer\n    /// @param _asset Asset address\n    /// @return interest Claimable amount of asset\n    function claimableInterest(IFractionalReserve.FractionalReserveStorage storage $, address _asset)\n        public\n        view\n        returns (uint256 interest)\n    {\n        uint256 vaultShares = IERC4626($.vault[_asset]).balanceOf(address(this));\n        uint256 vaultAssets = IERC4626($.vault[_asset]).convertToAssets(vaultShares);\n        interest = vaultAssets > $.loaned[_asset] ? vaultAssets - $.loaned[_asset] : 0;\n    }\n}\n"
+        "ERC20Token.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20CappedUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol\";\n\nimport \"./interfaces/IERC20Token.sol\";\n\n/**\n* @title Asset Token Contract\n* @notice Asset token contract, used to manage assets\n* @dev inherit ERC20BurnableUpgradeable, ERC20CappedUpgradeable, AccessControlEnumerableUpgradeable\n */\ncontract ERC20Token is AccessControlEnumerableUpgradeable, ERC20BurnableUpgradeable, ERC20CappedUpgradeable, IERC20Token {\n    //roles\n    bytes32 public constant ADMIN_ROLE = keccak256(abi.encodePacked(\"ADMIN_ROLE\"));\n    bytes32 public constant MINTER_ROLE = keccak256(abi.encodePacked(\"MINTER_ROLE\"));\n    bytes32 public constant BURNER_ROLE = keccak256(abi.encodePacked(\"BURNER_ROLE\"));\n    bytes32 public constant TRANSFER_ROLE = keccak256(abi.encodePacked(\"TRANSFER_ROLE\"));\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    function initialize(string calldata name_, string calldata symbol_, uint256 cap_, address admin_) external initializer {\n        __Context_init_unchained();\n        __AccessControl_init_unchained();\n        __ERC20_init_unchained(name_, symbol_);\n        __AccessControlEnumerable_init_unchained();\n        __ERC20Burnable_init_unchained();\n        __ERC20Capped_init_unchained(cap_);\n\n        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(BURNER_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(TRANSFER_ROLE, ADMIN_ROLE);\n        _grantRole(ADMIN_ROLE, admin_);\n    }\n\n    function hasRole(bytes32 role, address account) public view virtual override(AccessControlUpgradeable, IAccessControlUpgradeable) returns (bool) {\n        return super.hasRole(role, account) || super.hasRole(getRoleAdmin(role), account);\n    }\n\n    /**\n     * @dev See {ERC20-_mint}.\n     */\n    function _mint(address account, uint256 amount) internal override (ERC20Upgradeable, ERC20CappedUpgradeable) {\n        super._mint(account, amount);\n    }\n\n    /**\n     * @dev require MINTER_ROLE=keccak256(abi.encodePacked(\"MINTER_ROLE\"))\n     */\n    function mint(address account, uint256 amount) external onlyRole(MINTER_ROLE) {\n        _mint(account, amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burn(uint256 amount) public override onlyRole(BURNER_ROLE) {\n        super.burn(amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burn(address account, uint256 amount) public override onlyRole(BURNER_ROLE) {\n        _burn(account, amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burnFrom(address account, uint256 amount) public override onlyRole(BURNER_ROLE) {\n        super.burnFrom(account, amount);\n    }\n}"
     }
 }

@@ -1,32 +1,121 @@
 {
     "vfp_id": "vfp_00489",
-    "project_name": "SSO Account OIDC Recovery Solidity Audit.md",
+    "project_name": "Parallel Protocol - Zenith Audit Report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-693"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-345"
+                    "CWE-755"
                 ],
                 "3": [
-                    "CWE-347"
+                    "CWE-248"
                 ]
             },
-            "title": "Potential Signature Replay Attack in ERC1271Handler",
-            "description": "The `isValidSignature` function in the `ERC1271Handler` contract lacks sufficient validation to prevent signature replay attacks. For EOA signatures, the function only verifies the signature's validity and its association with a `k1owner`, without imposing restrictions on how the hash is constructed. This allows an attacker to reuse a historical transaction hash and signature to execute unauthorized actions on behalf of the account. Additionally, the removal of EIP712 logic in the updated version eliminates safeguards such as inclusion of chain ID and contract address in the hash, enabling cross-chain and cross-account signature reuse. The impact includes unauthorized execution of transactions and potential loss of account control. The vulnerability stems from insufficient input validation and the absence of replay protection mechanisms.\n",
+            "title": "sPRL2.sol cannot claim extra reward token because of interface mismatch",
+            "description": "The sPRL2 contract attempts to claim extra reward tokens by querying the baseToken from an IAuraStashToken interface, but some extra reward contracts do not implement the baseToken function, causing the call to revert. This occurs because the code assumes all extra reward tokens are wrapped via AuraStashToken, but in reality, some are direct ERC20 tokens like USDC. As a result, when the contract tries to claim rewards, the entire transaction reverts if any extra reward token lacks the baseToken function. This prevents users from claiming valid rewards, leading to loss of access to earned tokens and reduced user trust in the protocol.\n",
             "severity": "High",
             "location": [
-                "ERC1271Handler.sol::isValidSignature#25"
+                "sPRL2.sol#L248"
             ],
             "files": [
-                "zksync-sso-clave-contracts/src/handlers/ERC1271Handler.sol"
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-404"
+                ],
+                "3": [
+                    "CWE-772"
+                ]
+            },
+            "title": "CVX rewards cannot be claimed in sPRL2",
+            "description": "The sPRL2 contract calls AURA_VAULT.getReward(), which mints CVX rewards to the sPRL2 contract, but sPRL2 lacks any mechanism to transfer these tokens out. The CVX tokens remain trapped in the contract because the design assumes no tokens should be held, but CVX is an exception that is minted directly. There is no function to allow administrators or users to recover these tokens, making them permanently inaccessible. An attacker cannot directly exploit this, but users are indirectly harmed as protocol-generated rewards are lost, reducing the economic incentive for staking and potentially leading to fund loss if large amounts accumulate.\n",
+            "severity": "High",
+            "location": [
+                "sPRL2.sol#L241"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "The calculation of withdrawable WETH and PRL amounts in the withdrawPRLAndWeth function of sPRL2 is incorrect",
+            "description": "In the _exitPool function, the return values are ordered as (_wethAmount, _prlAmount), but the calling function withdrawPRLAndWeth treats the first returned value as prlAmount and the second as wethAmount, effectively swapping them. This incorrect assignment causes the protocol to attempt transferring WETH amount as PRL and vice versa, which will fail due to insufficient balance or incorrect token addresses. The root cause is a mismatch in return value ordering between the internal function and its caller. This leads to failed withdrawals, preventing users from accessing their funds and resulting in a denial of service for the withdrawal functionality.\n",
+            "severity": "High",
+            "location": [
+                "sPRL2.sol#L232",
+                "sPRL2.sol#L362"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "unlockingAmount is not updated after the BPT token withdrawal is completed in sPRL2.sol",
+            "description": "The sPRL2 contract fails to update the unlockingAmount state variable after completing withdrawals in the withdraw function. While sPRL1 correctly decrements unlockingAmount by the withdrawn amount, sPRL2 omits this step. The root cause is a missing state update in the withdraw implementation. This leads to an inflated unlockingAmount value that does not reflect actual locked tokens. The impact is incorrect off-chain reporting, misleading analytics, and potential issues with systems that rely on unlockingAmount for decision-making, though it does not directly affect on-chain functionality or fund safety.\n",
+            "severity": "Low",
+            "location": [
+                "sPRL2.sol::withdraw",
+                "TimeLockPenaltyERC20.sol::_withdrawMultiple"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-666"
+                ],
+                "3": [
+                    "CWE-826"
+                ]
+            },
+            "title": "Some rewards may be sent to wrong fee receiver in sPRL2.sol",
+            "description": "The sPRL2 contract updates the feeReceiver without first claiming and sending accumulated rewards to the current fee receiver. When updateFeeReceiver is called, any pending rewards in the contract will be sent to the new fee receiver instead of the one that earned them. The root cause is the lack of a pre-update reward claim in the overridden function. This results in rewards being attributed to the wrong entity, violating the principle of fair distribution. The impact includes misallocation of staking rewards, reduced trust in the protocol's fairness, and potential disputes over reward ownership.\n",
+            "severity": "Informational",
+            "location": [
+                "sPRL2.sol::claimRewards",
+                "sPRL2.sol::updateFeeReceiver"
+            ],
+            "files": [
+                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/sPRL/sPRL2.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC1271Handler.sol": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.24;\n\nimport { IERC1271Upgradeable } from \"@openzeppelin/contracts-upgradeable/interfaces/IERC1271Upgradeable.sol\";\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\nimport { SignatureDecoder } from \"../libraries/SignatureDecoder.sol\";\nimport { IModuleValidator } from \"../interfaces/IModuleValidator.sol\";\nimport { OwnerManager } from \"../managers/OwnerManager.sol\";\nimport { ValidatorManager } from \"../managers/ValidatorManager.sol\";\n\n/// @title ERC1271Handler\n/// @author Matter Labs\n/// @notice Contract which provides ERC1271 signature validation\n/// @notice The implementation is inspired by Clave wallet.\nabstract contract ERC1271Handler is IERC1271Upgradeable, OwnerManager, ValidatorManager {\n  bytes4 private constant _ERC1271_MAGIC = 0x1626ba7e;\n\n  /**\n   * @dev Should return whether the signature provided is valid for the provided data. Does not run validation hooks.\n   * @param hash bytes32 - Hash of the data that is signed\n   * @param signature bytes calldata - K1 owner signature OR validator address concatenated to signature\n   * @return magicValue bytes4 - Magic value if the signature is valid, 0 otherwise\n   */\n  function isValidSignature(bytes32 hash, bytes memory signature) external view override returns (bytes4 magicValue) {\n    if (signature.length == 65) {\n      (address signer, ECDSA.RecoverError err) = ECDSA.tryRecover(hash, signature);\n      return\n        signer == address(0) || err != ECDSA.RecoverError.NoError || !_isK1Owner(signer) ? bytes4(0) : _ERC1271_MAGIC;\n    }\n\n    (bytes memory decodedSignature, address validator) = SignatureDecoder.decodeSignatureNoHookData(signature);\n\n    bool isValid = _isModuleValidator(validator) &&\n      IModuleValidator(validator).validateSignature(hash, decodedSignature);\n\n    magicValue = isValid ? _ERC1271_MAGIC : bytes4(0);\n  }\n}\n"
+        "sPRL2.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.25;\n\nimport { TimeLockPenaltyERC20, IERC20, IERC20Permit } from \"./TimeLockPenaltyERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { Address } from \"@openzeppelin/contracts/utils/Address.sol\";\n\nimport { IBalancerV3Router } from \"contracts/interfaces/IBalancerV3Router.sol\";\nimport {\n    IAuraBoosterLite,\n    IVirtualBalanceRewardPool,\n    IAuraRewardPool,\n    IAuraStashToken\n} from \"contracts/interfaces/IAura.sol\";\nimport { IWrappedNative } from \"contracts/interfaces/IWrappedNative.sol\";\n\n/// @title sPRL2\n/// @author Cooper Labs\n/// @custom:contact security@cooperlabs.xyz\n/// @dev Staked into Aura doesn't credit any erc20 tokens to the contract.\n/// @notice sPRL2 is a staking contract that allows users to deposit PRL and WETH into a Balancer V3 pool that is\n/// staked into the Aura Pool.\ncontract sPRL2 is TimeLockPenaltyERC20 {\n    using Address for address payable;\n    using SafeERC20 for IERC20;\n\n    string constant NAME = \"Stake 20WETH-80PRL Aura Deposit Vault\";\n    string constant SYMBOL = \"sPRL2\";\n\n    /// @dev Aura Pool PID is hardcoded and must be updated before deploying\n    uint256 public constant AURA_POOL_PID = 19;\n\n    //-------------------------------------------\n    // Storage\n    //-------------------------------------------\n\n    /// @notice The Balancer V3 router.\n    IBalancerV3Router public immutable BALANCER_ROUTER;\n    /// @notice The Aura Booster Lite contract.\n    IAuraBoosterLite public immutable AURA_BOOSTER_LITE;\n    /// @notice The Aura Vault contract.\n    IAuraRewardPool public immutable AURA_VAULT;\n    /// @notice The PRL token.\n    IERC20 public immutable PRL;\n    /// @notice The WETH token.\n    IWrappedNative public immutable WETH;\n    /// @notice The BPT token.\n    IERC20 public immutable BPT;\n    /// @notice Whether the pair is reversed.\n    bool public immutable isReversedBalancerPair;\n\n    //-------------------------------------------\n    // Events\n    //-------------------------------------------\n\n    /// @notice Event emitted when a user withdraws PRL and WETH for multiple requests.\n    /// @param requestIds The IDs of the withdrawal requests.\n    /// @param user The address of the user.\n    /// @param prlAmount The amount of PRL received.\n    /// @param wethAmount The amount of WETH received.\n    /// @param slashBptAmount The amount of BPT sent to the fee receiver.\n    event WithdrawlPRLAndWeth(\n        uint256[] requestIds, address user, uint256 prlAmount, uint256 wethAmount, uint256 slashBptAmount\n    );\n\n    /// @notice Event emitted when a user withdraws BPT for multiple requests.\n    /// @param requestIds The IDs of the withdrawal requests.\n    /// @param user The address of the user.\n    /// @param bptAmount The amount of BPT received.\n    /// @param slashBptAmount The amount of BPT sent to the fee receiver.\n    event WithdrawlBPT(uint256[] requestIds, address user, uint256 bptAmount, uint256 slashBptAmount);\n\n    //-------------------------------------------\n    // Errors\n    //-------------------------------------------\n\n    /// @notice Error thrown when the deposit fails.\n    error AuraDepositFailed();\n\n    //-------------------------------------------\n    // Constructor\n    //-------------------------------------------\n\n    /// @notice Constructor for the sPRL2 contract.\n    /// @param _stakedAuraBPT The address of the Staked Aura BPT token.\n    /// @param _feeReceiver The address of the fee receiver.\n    /// @param _accessManager The address of the access manager.\n    /// @param _startPenaltyPercentage The start penalty percentage.\n    /// @param _timeLockDuration The time lock duration.\n    /// @param _balancerRouter The address of the Balancer V3 router.\n    /// @param _auraBoosterLite The address of the Aura Booster Lite contract.\n    /// @param _auraVault The address of the Aura Vault contract.\n    /// @param _balancerBPT The address of the Balancer BPT token.\n    /// @param _prl The address of the PRL token.\n    /// @param _weth The address of the WETH token.\n    constructor(\n        address _stakedAuraBPT,\n        address _feeReceiver,\n        address _accessManager,\n        uint256 _startPenaltyPercentage,\n        uint64 _timeLockDuration,\n        IBalancerV3Router _balancerRouter,\n        IAuraBoosterLite _auraBoosterLite,\n        IAuraRewardPool _auraVault,\n        IERC20 _balancerBPT,\n        IERC20 _prl,\n        IWrappedNative _weth\n    )\n        TimeLockPenaltyERC20(\n            NAME,\n            SYMBOL,\n            _stakedAuraBPT,\n            _feeReceiver,\n            _accessManager,\n            _startPenaltyPercentage,\n            _timeLockDuration\n        )\n    {\n        BALANCER_ROUTER = _balancerRouter;\n        AURA_BOOSTER_LITE = _auraBoosterLite;\n        AURA_VAULT = _auraVault;\n        PRL = _prl;\n        WETH = _weth;\n        BPT = _balancerBPT;\n        isReversedBalancerPair = address(_weth) > address(_prl);\n    }\n\n    //-------------------------------------------\n    // External Functions\n    //-------------------------------------------\n\n    /// @notice Deposit BPT into the Aura Pool and mint the equivalent amount of sPRL2.\n    /// @param _amount The amount of BPT to deposit.\n    function depositBPT(uint256 _amount) external whenNotPaused nonReentrant {\n        BPT.safeTransferFrom(msg.sender, address(this), _amount);\n        _depositIntoAuraAndStake(_amount);\n        _deposit(_amount);\n    }\n\n    /// @notice Deposit PRL and WETH.\n    /// @param _maxPrlAmount The maximum amount of PRL to deposit.\n    /// @param _maxWethAmount The maximum amount of WETH to deposit.\n    /// @param _exactBptAmount The exact amount of BPT to mint.\n    /// @param _deadline The deadline for the permit.\n    /// @param _v The v parameter for the permit.\n    /// @param _r The r parameter for the permit.\n    /// @param _s The s parameter for the permit.\n    function depositPRLAndWeth(\n        uint256 _maxPrlAmount,\n        uint256 _maxWethAmount,\n        uint256 _exactBptAmount,\n        uint256 _deadline,\n        uint8 _v,\n        bytes32 _r,\n        bytes32 _s\n    )\n        external\n        whenNotPaused\n        nonReentrant\n        returns (uint256[] memory amountsIn, uint256 bptAmount)\n    {\n        // @dev using try catch to avoid reverting the transaction in case of front-running\n        try IERC20Permit(address(PRL)).permit(msg.sender, address(this), _maxPrlAmount, _deadline, _v, _r, _s) { }\n            catch { }\n\n        PRL.safeTransferFrom(msg.sender, address(this), _maxPrlAmount);\n        WETH.transferFrom(msg.sender, address(this), _maxWethAmount);\n\n        (amountsIn, bptAmount) = _joinPool(_maxPrlAmount, _maxWethAmount, _exactBptAmount, false);\n\n        _deposit(bptAmount);\n    }\n\n    /// @notice Deposit PRL and ETH.\n    /// @param _maxPrlAmount The maximum amount of PRL to deposit.\n    /// @param _exactBptAmount The exact amount of BPT to mint.\n    /// @param _deadline The deadline for the permit.\n    /// @param _v The v parameter for the permit.\n    /// @param _r The r parameter for the permit.\n    /// @param _s The s parameter for the permit.\n    function depositPRLAndEth(\n        uint256 _maxPrlAmount,\n        uint256 _exactBptAmount,\n        uint256 _deadline,\n        uint8 _v,\n        bytes32 _r,\n        bytes32 _s\n    )\n        external\n        payable\n        whenNotPaused\n        nonReentrant\n        returns (uint256[] memory amountsIn, uint256 bptAmount)\n    {\n        // @dev using try catch to avoid reverting the transaction in case of front-running\n        try IERC20Permit(address(PRL)).permit(msg.sender, address(this), _maxPrlAmount, _deadline, _v, _r, _s) { }\n            catch { }\n\n        PRL.safeTransferFrom(msg.sender, address(this), _maxPrlAmount);\n\n        (amountsIn, bptAmount) = _joinPool(_maxPrlAmount, msg.value, _exactBptAmount, true);\n\n        _deposit(bptAmount);\n    }\n\n    /// @notice Withdraw BPT for multiple requests.\n    /// @param _requestIds The request IDs to withdraw from.\n    function withdrawBPT(uint256[] calldata _requestIds) external nonReentrant {\n        (uint256 totalBptAmount, uint256 totalBptAmountSlashed) = _withdrawMultiple(_requestIds);\n        _exitAuraVaultAndUnstake(totalBptAmount, totalBptAmountSlashed);\n        emit WithdrawlBPT(_requestIds, msg.sender, totalBptAmount, totalBptAmountSlashed);\n        BPT.safeTransfer(msg.sender, totalBptAmount);\n    }\n\n    /// @notice Withdraw PRL and WETH for multiple requests.\n    /// @param _requestIds The request IDs to withdraw from.\n    /// @param _minPrlAmount The minimum amount of PRL to receive.\n    /// @param _minWethAmount The minimum amount of WETH to receive.\n    /// @return prlAmount The amount of PRL received.\n    /// @return wethAmount The amount of WETH received.\n    function withdrawPRLAndWeth(\n        uint256[] calldata _requestIds,\n        uint256 _minPrlAmount,\n        uint256 _minWethAmount\n    )\n        external\n        nonReentrant\n        returns (uint256 prlAmount, uint256 wethAmount)\n    {\n        (uint256 totalBptAmount, uint256 totalBptAmountSlashed) = _withdrawMultiple(_requestIds);\n\n        (prlAmount, wethAmount) = _exitPool(totalBptAmount, totalBptAmountSlashed, _minPrlAmount, _minWethAmount);\n\n        emit WithdrawlPRLAndWeth(_requestIds, msg.sender, prlAmount, wethAmount, totalBptAmountSlashed);\n        PRL.safeTransfer(msg.sender, prlAmount);\n        WETH.transfer(msg.sender, wethAmount);\n    }\n\n    /// @notice Claim rewards from Aura Pool and transfer them to the fee receiver.\n    function claimRewards() external {\n        AURA_VAULT.getReward();\n        IERC20 mainRewardToken = IERC20(AURA_VAULT.rewardToken());\n        uint256 mainRewardBalance = mainRewardToken.balanceOf(address(this));\n        if (mainRewardBalance > 0) {\n            mainRewardToken.safeTransfer(feeReceiver, mainRewardBalance);\n        }\n\n        address[] memory extraRewards = AURA_VAULT.extraRewards();\n        uint256 extraRewardsLength = extraRewards.length;\n        if (extraRewardsLength > 0) {\n            uint256 i;\n            for (; i < extraRewardsLength; ++i) {\n                IAuraStashToken auraStashToken =\n                    IAuraStashToken(IVirtualBalanceRewardPool(extraRewards[i]).rewardToken());\n                IERC20 extraRewardToken = IERC20(auraStashToken.baseToken());\n                uint256 rewardBalance = extraRewardToken.balanceOf(address(this));\n                if (rewardBalance > 0) {\n                    extraRewardToken.safeTransfer(feeReceiver, rewardBalance);\n                }\n            }\n        }\n    }\n\n    /// @notice Allow users to emergency withdraw assets without penalties.\n    /// @dev This function can only be called when the contract is paused.\n    /// @param _amount The amount of assets to unlock.\n    function emergencyWithdraw(uint256 _amount) external whenPaused nonReentrant {\n        _burn(msg.sender, _amount);\n        _exitAuraVaultAndUnstake(_amount, 0);\n        emit EmergencyWithdraw(msg.sender, _amount);\n        BPT.safeTransfer(msg.sender, _amount);\n    }\n\n    /// @notice Allow ETH to be received.\n    receive() external payable { }\n\n    //-------------------------------------------\n    // Internal Functions\n    //-------------------------------------------\n\n    /// @notice Join the pool.\n    /// @param _maxPrlAmount The maximum amount of PRL to deposit.\n    /// @param _maxEthAmount The maximum amount of ETH to deposit.\n    /// @param _exactBptAmount The exact amount of BPT to mint.\n    /// @param _isEth Whether the ETH is being deposited by the user.\n    /// @return amountsIn The amounts of PRL and ETH deposited.\n    /// @return bptAmount The amount of BPT received.\n    function _joinPool(\n        uint256 _maxPrlAmount,\n        uint256 _maxEthAmount,\n        uint256 _exactBptAmount,\n        bool _isEth\n    )\n        internal\n        returns (uint256[] memory amountsIn, uint256 bptAmount)\n    {\n        uint256[] memory maxAmountsIn = new uint256[](2);\n        (maxAmountsIn[0], maxAmountsIn[1]) =\n            isReversedBalancerPair ? (_maxPrlAmount, _maxEthAmount) : (_maxEthAmount, _maxPrlAmount);\n\n        /// @dev Approve tokens.\n        PRL.approve(address(BALANCER_ROUTER), _maxPrlAmount);\n        WETH.approve(address(BALANCER_ROUTER), _maxEthAmount);\n\n        /// @dev Wrap ETH.\n        if (_isEth) {\n            WETH.deposit{ value: _maxEthAmount }();\n        }\n        /// @dev Deposit into Balancer V3\n        uint256[] memory _amountsIn =\n            BALANCER_ROUTER.addLiquidityProportional(address(BPT), maxAmountsIn, _exactBptAmount, false, \"\");\n\n        /// @dev Reset approvals in case not all tokens were used\n        PRL.approve(address(BALANCER_ROUTER), 0);\n        WETH.approve(address(BALANCER_ROUTER), 0);\n\n        /// @dev Deposit into Aura\n        _depositIntoAuraAndStake(_exactBptAmount);\n\n        /// @dev Return any remaining PRL.\n        uint256 prlBalanceToReturn = PRL.balanceOf(address(this));\n        if (prlBalanceToReturn > 0) {\n            PRL.transfer(msg.sender, prlBalanceToReturn);\n        }\n\n        /// @dev Return any remaining WETH.\n        uint256 wethBalanceToReturn = WETH.balanceOf(address(this));\n        if (wethBalanceToReturn > 0) {\n            if (_isEth) {\n                WETH.withdraw(wethBalanceToReturn);\n                payable(msg.sender).sendValue(wethBalanceToReturn);\n            } else {\n                WETH.transfer(msg.sender, wethBalanceToReturn);\n            }\n        }\n\n        return (_amountsIn, _exactBptAmount);\n    }\n\n    /// @notice Deposit BPT into the Aura Pool and stake it.\n    /// @param _bptAmount The amount of BPT to deposit.\n    function _depositIntoAuraAndStake(uint256 _bptAmount) internal {\n        BPT.approve(address(AURA_BOOSTER_LITE), _bptAmount);\n        if (!AURA_BOOSTER_LITE.deposit(AURA_POOL_PID, _bptAmount, true)) revert AuraDepositFailed();\n    }\n\n    /// @notice Exit the pool.\n    /// @dev Unstake\n    /// @dev Balancer V3 will revert if the amount of tokens received is less than the minimum expected.\n    /// @param _bptAmount The amount of BPT to withdraw.\n    /// @param _minPrlAmount The minimum amount of PRL to receive.\n    /// @param _minWethAmount The minimum amount of WETH to receive.\n    /// @return _wethAmount The amount of WETH received.\n    /// @return _prlAmount The amount of PRL received.\n    function _exitPool(\n        uint256 _bptAmount,\n        uint256 _bptAmountSlashed,\n        uint256 _minPrlAmount,\n        uint256 _minWethAmount\n    )\n        internal\n        returns (uint256 _wethAmount, uint256 _prlAmount)\n    {\n        /// @dev Exit the Aura Vault and unstake the BPT.\n        _exitAuraVaultAndUnstake(_bptAmount, _bptAmountSlashed);\n\n        uint256[] memory minAmountsOut = new uint256[](2);\n        (minAmountsOut[0], minAmountsOut[1]) =\n            isReversedBalancerPair ? (_minPrlAmount, _minWethAmount) : (_minWethAmount, _minPrlAmount);\n\n        BPT.approve(address(BALANCER_ROUTER), _bptAmount);\n\n        BALANCER_ROUTER.removeLiquidityProportional(address(BPT), _bptAmount, minAmountsOut, false, \"\");\n\n        _prlAmount = PRL.balanceOf(address(this));\n        _wethAmount = WETH.balanceOf(address(this));\n    }\n\n    /// @notice Exit the Aura Vault and unstake the BPT.\n    /// @param _amount The amount of Aura BPT to unstake.\n    /// @param _amountSlashed The amount of Aura BPT to slash.\n    function _exitAuraVaultAndUnstake(uint256 _amount, uint256 _amountSlashed) internal {\n        AURA_VAULT.withdrawAndUnwrap(_amount + _amountSlashed, false);\n        // Transfer the slash amount of BPT to the fee receiver\n        if (_amountSlashed > 0) {\n            BPT.safeTransfer(feeReceiver, _amountSlashed);\n        }\n    }\n}\n"
     }
 }

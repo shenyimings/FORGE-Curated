@@ -1,50 +1,35 @@
 {
     "vfp_id": "vfp_00274",
-    "project_name": "Jovay Rollup Contracts Audit.md",
+    "project_name": "Uniswap Labs UNIfication Fees Diff Audit.md",
     "findings": [
         {
-            "id": 8,
+            "id": 2,
             "category": {
                 "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Gas Handling Inconsistencies in Bridge Message Execution",
-            "description": "The `L2ETHBridge.finalizeDeposit` function forwards `gasleft() / 2` to the recipient during the external call. This arbitrary split may leave insufficient gas for the callee to complete its execution, especially if it performs complex operations or calls other contracts.\n\nThe root cause is the use of a heuristic-based gas forwarding pattern instead of a fixed reserve. This approach is not robust and can lead to unpredictable behavior depending on the initial gas context.\n\nAn attacker could trigger a deposit to a contract that requires more than half of the remaining gas, causing the call to revert. This would prevent the user from receiving their funds, even though the message is valid.\n\nThe impact is potential failure of deposit finalization, leading to user funds being stuck and requiring manual intervention. It reduces the reliability of the bridge and introduces unnecessary risk in message execution.\n",
-            "severity": "Low",
-            "location": [
-                "L2ETHBridge.sol::finalizeDeposit#45"
-            ],
-            "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-707"
+                    "CWE-664"
                 ],
                 "2": [
-                    "CWE-20"
+                    "CWE-221"
                 ],
                 "3": [
-                    "CWE-1284"
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
                 ]
             },
-            "title": "Zero-Amount Withdraw Allows Spam Messaging",
-            "description": "The `L2ETHBridge.withdraw` function only checks that `msg.value` is non-zero but does not validate that the `amount_` parameter is greater than zero. This allows users to initiate withdrawals with zero value by paying a minimal ETH amount as `msg.value`, which is later refunded.\n\nThe root cause is missing input validation on the withdrawal amount. The system treats these zero-amount calls as valid messages, which are then included in batches and must be processed by relayers on L1.\n\nAn attacker can exploit this by submitting a large number of zero-amount withdrawals at low cost, forcing relayers to process spam messages. This increases the load on the system and delays legitimate withdrawals, especially under future ZK proof verification which is gas-intensive.\n\nThe impact is a potential denial of service due to resource exhaustion, increased costs for relayers, and degraded user experience as real transactions are delayed in the queue.\n",
-            "severity": "Medium",
+            "title": "Lack of Event Emission in `release` Function",
+            "description": "1. **Description:** The `release` function in the `ExchangeReleaser.sol` abstract contract does not emit an event upon successful execution, despite performing a critical operation: releasing assets from the `TokenJar`.\n2. **Cause:** The function was implemented without including an event to log the release action, likely an oversight in design for off-chain observability.\n3. **Exploitation:** This cannot be exploited maliciously, but it hinders external systems from tracking or reacting to asset releases in real time.\n4. **Impact:** The absence of an event reduces the transparency and auditability of the system, making it difficult for indexers, monitoring tools, and users to observe when and how assets are released, potentially affecting trust and integration capabilities.\n",
+            "severity": "Informational",
             "location": [
-                "L2ETHBridge.sol::withdraw#21-31",
-                "L2Mailbox.sol::sendMsg#43-75"
+                "ExchangeReleaser.sol::release"
             ],
             "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
+                "protocol-fees/src/releasers/ExchangeReleaser.sol"
             ]
         }
     ],
     "affected_files": {
-        "L2ETHBridge.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"../../L1/bridge/interfaces/IL1ETHBridge.sol\";\nimport \"../../common/BridgeBase.sol\";\nimport \"../interfaces/IL2Mailbox.sol\";\nimport \"./interfaces/IL2ETHBridge.sol\";\nimport \"solidity-bytes-utils/contracts/BytesLib.sol\";\nimport {L2Mailbox} from \"../core/L2Mailbox.sol\";\n\ncontract L2ETHBridge is BridgeBase, IL2ETHBridge {\n    uint256 public balance;\n\n    /**\n     * The sender account transfers to tokenbridge to lock the assets;\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param gasLimit_ gas limit\n     * @param msg_ data\n     */\n    function withdraw(address to_, uint256 amount_, uint256 gasLimit_, bytes memory msg_) external payable override nonReentrant whenNotPaused {\n        require(msg.value > 0, \"withdraw zero eth\");\n        require(balance >= amount_, \"insufficient balance\");\n\n        address sender_ = _msgSender();\n\n        bytes memory message_ = abi.encodeCall(IL1ETHBridge.finalizeWithdraw, (sender_, to_, amount_, msg_));\n        balance -= amount_;\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, amount_, message_, gasLimit_, sender_)));\n        emit WithdrawETH(sender_, to_, amount_, message_);\n    }\n\n\n    /**\n     * Complete the transfer of L1 assets\n     * @param sender_ transfer initiator\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param msg_ data\n     */\n    function finalizeDeposit(address sender_, address to_, uint256 amount_, bytes calldata msg_) external payable override nonReentrant onlyMailBox whenNotPaused {\n        require(msg.value == amount_, \"msg.value mismatch\");\n        balance += amount_;\n\n        (bool success_,) = to_.call{value : amount_, gas : gasleft() / 2}(\"\");\n        require(success_, \"ETH transfer failed\");\n// TODO : add call msg with deposit\n//        _doCallback(to_, msg_);\n\n        emit FinalizeDepositETH(sender_, to_, amount_, msg_);\n    }\n\n    function claimDeposit(bytes calldata msg_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        IL2Mailbox(mailBox).claimAmount(target, amount, nonce,depositHash);\n    }\n\n    function claimDeposit(bytes calldata msg_, address new_refund_address_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        require(msg.sender == sender, \"claimDeposit change refund must called by origin sender\");\n        IL2Mailbox(mailBox).claimAmount(new_refund_address_, amount, nonce, depositHash);\n    }\n}\n"
+        "ExchangeReleaser.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.29;\n\nimport {Currency} from \"v4-core/types/Currency.sol\";\nimport {ERC20} from \"solmate/src/tokens/ERC20.sol\";\nimport {SafeTransferLib} from \"solmate/src/utils/SafeTransferLib.sol\";\nimport {ResourceManager} from \"../base/ResourceManager.sol\";\nimport {Nonce} from \"../base/Nonce.sol\";\nimport {IAssetSink} from \"../interfaces/IAssetSink.sol\";\nimport {IReleaser} from \"../interfaces/IReleaser.sol\";\n\n/// @title ExchangeReleaser\n/// @notice A contract that releases assets from an AssetSink in exchange for transferring a\n/// threshold\n/// amount of a resource token\n/// @dev Inherits from ResourceManager for resource transferring functionality and Nonce for replay\n/// protection\n/// @custom:security-contact security@uniswap.org\nabstract contract ExchangeReleaser is IReleaser, ResourceManager, Nonce {\n  using SafeTransferLib for ERC20;\n\n  /// @inheritdoc IReleaser\n  IAssetSink public immutable ASSET_SINK;\n\n  /// @notice Creates a new ExchangeReleaser instance\n  /// @param _resource The address of the resource token that must be transferred\n  /// @param _assetSink The address of the AssetSink contract holding the assets\n  /// @param _recipient The address that will receive the resource tokens\n  constructor(address _resource, uint256 _threshold, address _assetSink, address _recipient)\n    ResourceManager(_resource, _threshold, msg.sender, _recipient)\n  {\n    ASSET_SINK = IAssetSink(payable(_assetSink));\n  }\n\n  /// @inheritdoc IReleaser\n  function release(uint256 _nonce, Currency[] calldata assets, address recipient) external virtual {\n    _release(_nonce, assets, recipient);\n  }\n\n  /// @notice Internal function to handle the nonce check, transfer the RESOURCE, and call the\n  /// release of assets on the AssetSink.\n  function _release(uint256 _nonce, Currency[] calldata assets, address recipient)\n    internal\n    handleNonce(_nonce)\n  {\n    RESOURCE.safeTransferFrom(msg.sender, RESOURCE_RECIPIENT, threshold);\n    ASSET_SINK.release(assets, recipient);\n  }\n}\n"
     }
 }
