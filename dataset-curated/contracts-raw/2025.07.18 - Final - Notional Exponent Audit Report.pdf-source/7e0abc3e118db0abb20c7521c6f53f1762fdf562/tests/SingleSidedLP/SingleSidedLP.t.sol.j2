@@ -1,0 +1,195 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
+
+import "../../SingleSidedLP/harness/index.sol";
+
+contract Test_{{ contractName }} is VaultRewarderTests {
+    {% if (skipTests | length) > 0 -%}
+    function _stringEqual(string memory a, string memory b) private pure returns(bool) {
+      return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
+    }
+
+    function _shouldSkip(string memory name) internal pure override returns(bool) {
+        {% for test in skipTests -%}
+            if (_stringEqual(name, "{{ test }}")) return true;
+        {% endfor %}
+        return false;
+    }
+
+    {% endif -%}
+
+    function setUp() public override {
+        {% if forkBlock is defined -%}
+        FORK_BLOCK = {{ forkBlock }};
+        {% endif -%}
+        harness = new Harness_{{contractName}}();
+
+        {% if whale is defined -%}
+        WHALE = {{ whale }};
+        {% endif -%}
+        // NOTE: need to enforce some minimum deposit here b/c of rounding issues
+        // on the DEX side, even though we short circuit 0 deposits
+        minDeposit = {{ setUp.minDeposit }};
+        maxDeposit = {{ setUp.maxDeposit }};
+        maxRelEntryValuation = {{ setUp.maxRelEntryValuation }} * BASIS_POINT;
+        maxRelExitValuation = {{ setUp.maxRelExitValuation }} * BASIS_POINT;
+
+        {% if setUp.flashLender is defined -%}
+        flashLender = {{ setUp.flashLender }};
+        {% endif -%}
+
+        super.setUp();
+    }
+}
+
+contract Harness_{{ contractName }} is 
+{% if vaultType == "WeightedPool" -%}
+    WeightedPoolHarness
+{% elif vaultType == "ComposablePool" -%}
+    ComposablePoolHarness
+{% elif vaultType == "WrappedComposablePool" -%}
+    WrappedComposablePoolHarness
+{% elif vaultType == "Curve2TokenConvex" -%}
+    Curve2TokenConvexHarness
+{% elif vaultType == "Curve2Token" -%}
+    Curve2TokenHarness
+{% endif %} {
+    function getVaultName() public pure override returns (string memory) {
+        return '{{ vaultName}}';
+    }
+
+    function getDeploymentConfig() public view override returns (
+        VaultConfigParams memory params, uint80 maxPrimaryBorrow
+    ) {
+        params = getTestVaultConfig();
+        params.feeRate5BPS = {{ config.feeRate5BPS }};
+        params.liquidationRate = {{ config.liquidationRate }};
+        params.reserveFeeShare = {{ config.reserveFeeShare }};
+        params.maxBorrowMarketIndex = {{ config.maxBorrowMarketIndex }};
+        params.minCollateralRatioBPS = {{ config.minCollateralRatioBPS }};
+        params.maxRequiredAccountCollateralRatioBPS = {{ config.maxRequiredAccountCollateralRatioBPS }};
+        params.maxDeleverageCollateralRatioBPS = {{ config.maxDeleverageCollateralRatioBPS }};
+
+        // NOTE: these are always in 8 decimals
+        params.minAccountBorrowSize = {{ config.minAccountBorrowSize }};
+        maxPrimaryBorrow = {{ config.maxPrimaryBorrow }};
+    }
+
+    function getRequiredOracles() public override pure returns (
+        address[] memory token, address[] memory oracle
+    ) {
+        token = new address[]({{ oracles | length }});
+        oracle = new address[]({{ oracles | length }});
+
+        {% for oracle in oracles -%}
+        // {{ oracle.symbol }}
+        token[{{ loop.index - 1 }}] = {{ oracle.tokenAddress }};
+        oracle[{{ loop.index - 1 }}] = {{ oracle.oracleAddress }};
+        {% endfor %}
+    }
+
+    function getTradingPermissions() public pure override returns (
+        address[] memory token, ITradingModule.TokenPermissions[] memory permissions
+    ) {
+        {%- if not settings.useAccountClaim -%}
+        {%- set tokenLength = rewards | length + (permissions | default([]) | length) %}
+        {% else -%}
+        {%- set tokenLength = permissions | default([]) | length %}
+        {% endif -%}
+        token = new address[]({{ tokenLength }});
+        permissions = new ITradingModule.TokenPermissions[]({{ tokenLength }});
+
+        {% if not settings.useAccountClaim %}{% for reward in rewards -%}
+        // {{ reward.symbol }}
+        token[{{ loop.index - 1}}] = {{ reward.tokenAddress}};
+        permissions[{{ loop.index - 1}}] = ITradingModule.TokenPermissions(
+            // 0x, EXACT_IN_SINGLE, EXACT_IN_BATCH
+            { allowSell: true, dexFlags: 8, tradeTypeFlags: 5 }
+        );
+        {% endfor %}{% endif %}
+
+        {% for p in (permissions | default([])) -%}
+        token[{{ rewards | length + loop.index - 1 }}] = {{ p.tokenAddress }};
+        permissions[{{ rewards | length + loop.index - 1 }}] = ITradingModule.TokenPermissions(
+            { allowSell: true, dexFlags: 1 << {{ p.dexId }}, tradeTypeFlags: {{ p.tradeTypeFlags }} }
+        );
+        {% endfor %}
+    }
+
+    {%- if settings.useAccountClaim %}
+    function getRewardSettings() public pure override returns (StrategyVaultHarness.RewardSettings[] memory rewards) {
+        rewards = new StrategyVaultHarness.RewardSettings[]({{ rewards | length }});
+        {% for reward in rewards -%}
+        // {{ reward.symbol }}
+        rewards[{{ loop.index - 1 }}] = StrategyVaultHarness.RewardSettings({
+            token: {{ reward.tokenAddress }},
+            emissionRatePerYear: 0,
+            endTime: 0
+        });
+        {% endfor %}
+    }
+
+    function hasRewardReinvestmentRole() public view override returns (bool) {
+        return false;
+    }
+    {% endif %}
+
+    constructor() {
+        {% if existingDeployment is defined -%}
+        EXISTING_DEPLOYMENT = {{ existingDeployment }};
+        {% endif -%}
+
+        {% if balancerPoolId is defined -%}
+        balancerPoolId = {{ balancerPoolId }};
+        balancerPool = {{ balancerPool }};
+        {% endif -%}
+
+        SingleSidedLPMetadata memory _m;
+        _m.primaryBorrowCurrency = {{ primaryBorrowCurrency }};
+        _m.settings = StrategyVaultSettings({
+            deprecated_emergencySettlementSlippageLimitPercent: 0,
+            maxPoolShare: {{ settings.maxPoolShare }},
+            oraclePriceDeviationLimitPercent: {{ settings.oraclePriceDeviationLimitPercent }},
+            numRewardTokens: {{ settings.numRewardTokens }},
+            forceClaimAfter: {{ settings.forceClaimAfter }}
+        });
+        _m.rewardPool = IERC20({{ rewardPool }});
+        {%- if whitelistedReward %}
+        _m.whitelistedReward = {{ whitelistedReward }};
+        {% endif %}
+
+        {% if vaultType == "Curve2Token" or vaultType == "Curve2TokenConvex" %}
+        _m.poolToken = IERC20({{ poolToken }});
+        lpToken = {{ lpToken }};
+        curveInterface = CurveInterface.{{ curveInterface }};
+        {% endif %}
+
+        _m.rewardTokens = new IERC20[]({{ rewards | length}});
+        {% for reward in rewards -%}
+        // {{ reward.symbol }}
+        _m.rewardTokens[{{ loop.index - 1}}] = IERC20({{ reward.tokenAddress }});
+        {% endfor %}
+
+        {%- if vaultType == "WrappedComposablePool" %}
+        WrappedComposableMetadata memory meta;
+        meta.meta = _m;
+        meta.defaultSlippage = {{ wrapped.defaultSlippage }};
+        meta.dexId = {{ wrapped.dexId }};
+        meta.exchangeData = {{ wrapped.exchangeData }};
+        meta.borrowToken = {{ wrapped.borrowToken }};
+        setMetadata(meta);
+        {%- else %}
+        setMetadata(_m);
+        {%- endif %}
+    }
+}
+
+contract Deploy_{{ contractName }} is Harness_{{ contractName }}, DeployProxyVault {
+    function setUp() public override {
+        harness = new Harness_{{contractName}}();
+    }
+
+    function deployVault() internal override returns (address impl, bytes memory _metadata) {
+        return deployVaultImplementation();
+    }
+}

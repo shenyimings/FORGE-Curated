@@ -53,17 +53,15 @@ contract PerpetualState is
         initGovernance();
         Configuration.initialize(PERPETUAL_CONFIGURATION_DELAY);
         StarkExOperator.initialize();
-
-        // The StateRoot struct has room for 3 trees for compatability with StarkEx.
-        // Perpertual only uses two of these trees.
+        //  Validium tree is not utilized in Perpetual. Initializing its root and height to -1.
         StateRoot.initialize(
             initialSequenceNumber,
-            uint256(-1), // NOT IN USE.
-            initialState[0], // PositionTreeRoots.
-            initialState[2], // OrderTreeRoots.
-            uint256(-1), // NOT IN USE.
-            initialState[1], // PositionTreeHeights.
-            initialState[3] // OrderTreeHeights.
+            uint256(-1), // validiumVaultRoot.
+            initialState[0], // rollupVaultRoot.
+            initialState[2], // orderRoot.
+            uint256(-1), // validiumTreeHeight.
+            initialState[1], // rollupTreeHeight.
+            initialState[3] // orderTreeHeight.
         );
         sharedStateHash = keccak256(abi.encodePacked(initialState));
         PerpetualEscapes.initialize(escapeVerifierAddress_);
@@ -87,6 +85,6 @@ contract PerpetualState is
     }
 
     function identify() external pure override returns (string memory) {
-        return "StarkWare_PerpetualState_2023_4";
+        return "StarkWare_PerpetualState_2022_2";
     }
 }

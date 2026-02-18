@@ -11,12 +11,6 @@ import "../interfaces/MGovernance.sol";
    of the Proxy. For this reason, for example, the implementation of MainContract (MainGovernance)
    exposes mainIsGovernor, which calls the internal _isGovernor method.
 */
-struct GovernanceInfoStruct {
-    mapping(address => bool) effectiveGovernors;
-    address candidateGovernor;
-    bool initialized;
-}
-
 abstract contract Governance is MGovernance {
     event LogNominatedGovernor(address nominatedGovernor);
     event LogNewGovernorAccepted(address acceptedGovernor);
@@ -39,14 +33,14 @@ abstract contract Governance is MGovernance {
     function initGovernance() internal {
         GovernanceInfoStruct storage gub = getGovernanceInfo();
         require(!gub.initialized, "ALREADY_INITIALIZED");
-        gub.initialized = true; // to ensure acceptNewGovernor() won't fail.
+        gub.initialized = true; // to ensure addGovernor() won't fail.
         // Add the initial governer.
-        acceptNewGovernor(msg.sender);
+        addGovernor(msg.sender);
     }
 
-    function _isGovernor(address user) internal view override returns (bool) {
+    function _isGovernor(address testGovernor) internal view override returns (bool) {
         GovernanceInfoStruct storage gub = getGovernanceInfo();
-        return gub.effectiveGovernors[user];
+        return gub.effectiveGovernors[testGovernor];
     }
 
     /*
@@ -54,35 +48,28 @@ abstract contract Governance is MGovernance {
     */
     function _cancelNomination() internal onlyGovernance {
         GovernanceInfoStruct storage gub = getGovernanceInfo();
-        if (gub.candidateGovernor != address(0x0)) {
-            gub.candidateGovernor = address(0x0);
-            emit LogNominationCancelled();
-        }
+        gub.candidateGovernor = address(0x0);
+        emit LogNominationCancelled();
     }
 
     function _nominateNewGovernor(address newGovernor) internal onlyGovernance {
         GovernanceInfoStruct storage gub = getGovernanceInfo();
-        require(newGovernor != address(0x0), "BAD_ADDRESS");
         require(!_isGovernor(newGovernor), "ALREADY_GOVERNOR");
-        require(gub.candidateGovernor == address(0x0), "OTHER_CANDIDATE_PENDING");
         gub.candidateGovernor = newGovernor;
         emit LogNominatedGovernor(newGovernor);
     }
 
     /*
-      The acceptNewGovernor is called in two cases:
+      The addGovernor is called in two cases:
       1. by _acceptGovernance when a new governor accepts its role.
       2. by initGovernance to add the initial governor.
       The difference is that the init path skips the nominate step
       that would fail because of the onlyGovernance modifier.
     */
-    function acceptNewGovernor(address newGovernor) private {
+    function addGovernor(address newGovernor) private {
         require(!_isGovernor(newGovernor), "ALREADY_GOVERNOR");
         GovernanceInfoStruct storage gub = getGovernanceInfo();
         gub.effectiveGovernors[newGovernor] = true;
-
-        // Emit governance information.
-        emit LogNewGovernorAccepted(newGovernor);
     }
 
     function _acceptGovernance() internal {
@@ -91,8 +78,11 @@ abstract contract Governance is MGovernance {
         require(msg.sender == gub.candidateGovernor, "ONLY_CANDIDATE_GOVERNOR");
 
         // Update state.
-        acceptNewGovernor(msg.sender);
+        addGovernor(gub.candidateGovernor);
         gub.candidateGovernor = address(0x0);
+
+        // Send a notification about the change of governor.
+        emit LogNewGovernorAccepted(msg.sender);
     }
 
     /*

@@ -41,7 +41,6 @@ contract MemoryPageFactRegistry is FactRegistry, MemoryPageFactRegistryConstants
             uint256 prod
         )
     {
-        // Ensure 'memoryPairs.length' is bounded as a sanity check (the bound is somewhat arbitrary).
         require(memoryPairs.length < 2**20, "Too many memory values.");
         require(memoryPairs.length % 2 == 0, "Size of memoryPairs must be even.");
         require(z < prime, "Invalid value of z.");
@@ -58,7 +57,7 @@ contract MemoryPageFactRegistry is FactRegistry, MemoryPageFactRegistryConstants
         uint256 alpha,
         uint256 prime
     )
-        private
+        internal
         pure
         returns (
             bytes32 factHash,
@@ -142,8 +141,7 @@ contract MemoryPageFactRegistry is FactRegistry, MemoryPageFactRegistryConstants
         require(prime < 2**254, "prime is too big for the optimizations in this function.");
         require(z < prime, "Invalid value of z.");
         require(alpha < prime, "Invalid value of alpha.");
-        // Ensure 'startAddr' less then prime and bounded as a sanity check (the bound is somewhat arbitrary).
-        require((startAddr < prime) && (startAddr < 2**64), "Invalid value of startAddr.");
+        require(startAddr < 2**64 && startAddr < prime, "Invalid value of startAddr.");
 
         uint256 nValues = values.length;
 

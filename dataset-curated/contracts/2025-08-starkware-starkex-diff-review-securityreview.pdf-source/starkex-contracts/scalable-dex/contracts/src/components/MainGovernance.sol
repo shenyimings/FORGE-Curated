@@ -45,8 +45,8 @@ contract MainGovernance is GovernanceStorage, Governance {
         return governanceInfo[MAIN_GOVERNANCE_INFO_TAG];
     }
 
-    function mainIsGovernor(address user) external view returns (bool) {
-        return _isGovernor(user);
+    function mainIsGovernor(address testGovernor) external view returns (bool) {
+        return _isGovernor(testGovernor);
     }
 
     function mainNominateNewGovernor(address newGovernor) external {

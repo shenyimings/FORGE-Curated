@@ -31,9 +31,9 @@ abstract contract MTokenAssetData {
         virtual
         returns (uint256);
 
-    function calculateMintableAssetId(uint256 assetType, bytes calldata mintingBlob)
+    function calculateMintableAssetId(uint256 assetType, bytes memory mintingBlob)
         public
-        view
+        pure
         virtual
         returns (uint256);
 }

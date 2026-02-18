@@ -80,7 +80,7 @@ abstract contract StarkVerifier is
         uint256 nFriSteps = friStepSizes.length;
         for (uint256 i = 1; i < nFriSteps; i++) {
             uint256 friStepSize = friStepSizes[i];
-            require(friStepSize >= FRI_MIN_STEP_SIZE, "Min supported fri step size is 2.");
+            require(friStepSize > 1, "Only the first fri step size can be 0");
             require(friStepSize <= FRI_MAX_STEP_SIZE, "Max supported fri step size is 4.");
             expectedLogDegBound += friStepSize;
         }
@@ -103,12 +103,14 @@ abstract contract StarkVerifier is
             "Invalid proofParams."
         );
         uint256 logBlowupFactor = proofParams[PROOF_PARAMS_LOG_BLOWUP_FACTOR_OFFSET];
-        // Ensure 'logBlowupFactor' is bounded as a sanity check (the bound is somewhat arbitrary).
+        // Ensure 'logBlowupFactor' is bounded from above as a sanity check
+        // (the bound is somewhat arbitrary).
         require(logBlowupFactor <= 16, "logBlowupFactor must be at most 16");
         require(logBlowupFactor >= 1, "logBlowupFactor must be at least 1");
 
         uint256 proofOfWorkBits = proofParams[PROOF_PARAMS_PROOF_OF_WORK_BITS_OFFSET];
-        // Ensure 'proofOfWorkBits' is bounded as a sanity check (the bound is somewhat arbitrary).
+        // Ensure 'proofOfWorkBits' is bounded from above as a sanity check
+        // (the bound is somewhat arbitrary).
         require(proofOfWorkBits <= 50, "proofOfWorkBits must be at most 50");
         require(proofOfWorkBits >= minProofOfWorkBits, "minimum proofOfWorkBits not satisfied");
         require(proofOfWorkBits < numSecurityBits, "Proofs may not be purely based on PoW.");
@@ -174,7 +176,11 @@ abstract contract StarkVerifier is
 
     function getNColumnsInComposition() internal pure virtual returns (uint256);
 
+    function getMmCoefficients() internal pure virtual returns (uint256);
+
     function getMmOodsValues() internal pure virtual returns (uint256);
+
+    function getMmOodsCoefficients() internal pure virtual returns (uint256);
 
     function getNCoefficients() internal pure virtual returns (uint256);
 
@@ -222,7 +228,7 @@ abstract contract StarkVerifier is
     function adjustQueryIndicesAndPrepareEvalPoints(uint256[] memory ctx) internal view {
         uint256 nUniqueQueries = ctx[MM_N_UNIQUE_QUERIES];
         uint256 friQueue = getPtr(ctx, MM_FRI_QUEUE);
-        uint256 friQueueEnd = friQueue + nUniqueQueries * FRI_QUEUE_SLOT_SIZE_IN_BYTES;
+        uint256 friQueueEnd = friQueue + nUniqueQueries * 0x60;
         uint256 evalPointsPtr = getPtr(ctx, MM_OODS_EVAL_POINTS);
         uint256 log_evalDomainSize = ctx[MM_LOG_EVAL_DOMAIN_SIZE];
         uint256 evalDomainSize = ctx[MM_EVAL_DOMAIN_SIZE];
@@ -284,7 +290,7 @@ abstract contract StarkVerifier is
             for {
 
             } lt(friQueue, friQueueEnd) {
-                friQueue := add(friQueue, FRI_QUEUE_SLOT_SIZE_IN_BYTES)
+                friQueue := add(friQueue, 0x60)
             } {
                 let queryIdx := mload(friQueue)
                 // Adjust queryIdx, see comment in function description.
@@ -331,7 +337,7 @@ abstract contract StarkVerifier is
         uint256 nUniqueQueries = ctx[MM_N_UNIQUE_QUERIES];
         uint256 channelPtr = getPtr(ctx, MM_CHANNEL);
         uint256 friQueue = getPtr(ctx, MM_FRI_QUEUE);
-        uint256 friQueueEnd = friQueue + nUniqueQueries * FRI_QUEUE_SLOT_SIZE_IN_BYTES;
+        uint256 friQueueEnd = friQueue + nUniqueQueries * 0x60;
         uint256 merkleQueuePtr = getPtr(ctx, MM_MERKLE_QUEUE);
         uint256 rowSize = 0x20 * nColumns;
         uint256 proofDataSkipBytes = 0x20 * (nTotalColumns - nColumns);
@@ -343,7 +349,7 @@ abstract contract StarkVerifier is
             for {
 
             } lt(friQueue, friQueueEnd) {
-                friQueue := add(friQueue, FRI_QUEUE_SLOT_SIZE_IN_BYTES)
+                friQueue := add(friQueue, 0x60)
             } {
                 let merkleLeaf := and(keccak256(proofPtr, rowSize), COMMITMENT_MASK)
                 if eq(rowSize, 0x20) {
@@ -420,7 +426,7 @@ abstract contract StarkVerifier is
 
         address oodsAddress = oodsContractAddress;
         uint256 friQueue = getPtr(ctx, MM_FRI_QUEUE);
-        uint256 returnDataSize = MAX_N_QUERIES * FRI_QUEUE_SLOT_SIZE_IN_BYTES;
+        uint256 returnDataSize = MAX_N_QUERIES * 0x60;
         assembly {
             // Call the OODS contract.
             if iszero(
@@ -520,8 +526,11 @@ abstract contract StarkVerifier is
             ctx[MM_TRACE_COMMITMENT + 1] = uint256(readHash(channelPtr, true));
         }
 
-        // Send constraint polynomial random element.
-        VerifierChannel.sendFieldElements(channelPtr, 1, getPtr(ctx, MM_COMPOSITION_ALPHA));
+        VerifierChannel.sendFieldElements(
+            channelPtr,
+            getNCoefficients(),
+            getPtr(ctx, getMmCoefficients())
+        );
         // emit LogGas("Generate coefficients", gasleft());
 
         ctx[MM_OODS_COMMITMENT] = uint256(readHash(channelPtr, true));
@@ -537,7 +546,11 @@ abstract contract StarkVerifier is
         // emit LogGas("Read OODS commitments", gasleft());
         oodsConsistencyCheck(ctx);
         // emit LogGas("OODS consistency check", gasleft());
-        VerifierChannel.sendFieldElements(channelPtr, 1, getPtr(ctx, MM_OODS_ALPHA));
+        VerifierChannel.sendFieldElements(
+            channelPtr,
+            getNOodsCoefficients(),
+            getPtr(ctx, getMmOodsCoefficients())
+        );
         // emit LogGas("Generate OODS coefficients", gasleft());
         ctx[MM_FRI_COMMITMENTS] = uint256(VerifierChannel.readHash(channelPtr, true));
 
@@ -566,7 +579,7 @@ abstract contract StarkVerifier is
             ctx[MM_N_UNIQUE_QUERIES],
             ctx[MM_EVAL_DOMAIN_SIZE] - 1,
             getPtr(ctx, MM_FRI_QUEUE),
-            FRI_QUEUE_SLOT_SIZE_IN_BYTES
+            0x60
         );
         // emit LogGas("Send queries", gasleft());
 

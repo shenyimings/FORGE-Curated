@@ -20,8 +20,8 @@ contract GenericGovernance is Governance {
         }
     }
 
-    function isGovernor(address user) external view returns (bool) {
-        return _isGovernor(user);
+    function isGovernor(address testGovernor) external view returns (bool) {
+        return _isGovernor(testGovernor);
     }
 
     function nominateNewGovernor(address newGovernor) external {

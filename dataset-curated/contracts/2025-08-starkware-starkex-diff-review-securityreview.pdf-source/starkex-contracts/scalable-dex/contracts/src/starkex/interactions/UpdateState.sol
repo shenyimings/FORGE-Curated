@@ -11,7 +11,7 @@ import "../../components/VerifyFactChain.sol";
 import "../../interfaces/MAcceptModifications.sol";
 import "../../interfaces/MFreezable.sol";
 import "../../interfaces/MOperator.sol";
-import "../../libraries/Addresses.sol";
+import "../../libraries/Common.sol";
 
 /**
   The StarkEx contract tracks the state of the off-chain exchange service by storing Merkle roots

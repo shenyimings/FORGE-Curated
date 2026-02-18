@@ -14,20 +14,16 @@ import "../interfaces/MGovernance.sol";
 */
 abstract contract Operator is MGovernance, MOperator {
     function registerOperator(address newOperator) external override onlyGovernance {
-        if (!isOperator(newOperator)) {
-            getOperators()[newOperator] = true;
-            emit LogOperatorAdded(newOperator);
-        }
+        getOperators()[newOperator] = true;
+        emit LogOperatorAdded(newOperator);
     }
 
     function unregisterOperator(address removedOperator) external override onlyGovernance {
-        if (isOperator(removedOperator)) {
-            getOperators()[removedOperator] = false;
-            emit LogOperatorRemoved(removedOperator);
-        }
+        getOperators()[removedOperator] = false;
+        emit LogOperatorRemoved(removedOperator);
     }
 
-    function isOperator(address user) public view override returns (bool) {
-        return getOperators()[user];
+    function isOperator(address testedOperator) public view override returns (bool) {
+        return getOperators()[testedOperator];
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0.
 pragma solidity ^0.6.12;
 
-import "../libraries/Addresses.sol";
+import "../libraries/Common.sol";
 import "../interfaces/MTokenTransfers.sol";
 import "../interfaces/MTokenAssetData.sol";
 import "../interfaces/MTokenQuantization.sol";

@@ -11,10 +11,14 @@ import "../CairoVerifierContract.sol";
 abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOffsets, CairoVerifierContract {
     IPeriodicColumn pedersenPointsX;
     IPeriodicColumn pedersenPointsY;
+    IPeriodicColumn ecdsaPointsX;
+    IPeriodicColumn ecdsaPointsY;
 
     function initPeriodicColumns(address[] memory auxPolynomials) internal {
         pedersenPointsX = IPeriodicColumn(auxPolynomials[1]);
         pedersenPointsY = IPeriodicColumn(auxPolynomials[2]);
+        ecdsaPointsX = IPeriodicColumn(auxPolynomials[3]);
+        ecdsaPointsY = IPeriodicColumn(auxPolynomials[4]);
     }
 
     function getLayoutInfo()
@@ -24,6 +28,7 @@ abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOf
             (1 << OUTPUT_BUILTIN_BIT) |
             (1 << PEDERSEN_BUILTIN_BIT) |
             (1 << RANGE_CHECK_BUILTIN_BIT) |
+            (1 << ECDSA_BUILTIN_BIT) |
             (1 << BITWISE_BUILTIN_BIT);
     }
 
@@ -75,6 +80,20 @@ abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOf
             RC_BUILTIN_RATIO, 1, nSteps, 'range_check');
         ctx[MM_RC16__PERM__PUBLIC_MEMORY_PROD] = 1;
 
+        // "ecdsa" memory segment.
+        ctx[MM_INITIAL_ECDSA_ADDR] = publicInput[OFFSET_ECDSA_BEGIN_ADDR];
+        validateBuiltinPointers(
+            ctx[MM_INITIAL_ECDSA_ADDR], publicInput[OFFSET_ECDSA_STOP_PTR],
+            ECDSA_BUILTIN_RATIO, 2, nSteps, 'ecdsa');
+
+        ctx[MM_ECDSA__SIG_CONFIG_ALPHA] = 1;
+        ctx[MM_ECDSA__SIG_CONFIG_BETA] =
+            0x6f21413efbe40de150e596d72f7a8c5609ad26c15c915c1f4cdfcb99cee9e89;
+        ctx[MM_ECDSA__SIG_CONFIG_SHIFT_POINT_X] =
+            0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804;
+        ctx[MM_ECDSA__SIG_CONFIG_SHIFT_POINT_Y] =
+            0x3ca0cfe4b3bc6ddf346d49d06ea0ed34e621062c0e056c1d0405d266e10268a;
+
         // "bitwise" memory segment.
         ctx[MM_INITIAL_BITWISE_ADDR] = publicInput[OFFSET_BITWISE_BEGIN_ADDR];
         validateBuiltinPointers(
@@ -97,6 +116,16 @@ abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOf
         uint256 zPointPowPedersen = fpow(oodsPoint, nPedersenHashCopies);
         ctx[MM_PERIODIC_COLUMN__PEDERSEN__POINTS__X] = pedersenPointsX.compute(zPointPowPedersen);
         ctx[MM_PERIODIC_COLUMN__PEDERSEN__POINTS__Y] = pedersenPointsY.compute(zPointPowPedersen);
+
+        // The number of copies in the ECDSA signature periodic columns is
+        // nSteps / ECDSA_BUILTIN_RATIO / ECDSA_BUILTIN_REPETITIONS.
+        uint256 nEcdsaSignatureCopies = safeDiv(
+            2 ** ctx[MM_LOG_N_STEPS],
+            ECDSA_BUILTIN_RATIO * ECDSA_BUILTIN_REPETITIONS);
+        uint256 zPointPowEcdsa = fpow(oodsPoint, nEcdsaSignatureCopies);
+
+        ctx[MM_PERIODIC_COLUMN__ECDSA__GENERATOR_POINTS__X] = ecdsaPointsX.compute(zPointPowEcdsa);
+        ctx[MM_PERIODIC_COLUMN__ECDSA__GENERATOR_POINTS__Y] = ecdsaPointsY.compute(zPointPowEcdsa);
 
         ctx[MM_DILUTED_CHECK__PERMUTATION__INTERACTION_ELM] = ctx[MM_INTERACTION_ELEMENTS +
             3];
@@ -143,7 +172,7 @@ abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOf
         // Now we can compute p_{n_bits} and q_{n_bits} in 'n_bits' steps and we are done.
         uint256 z = ctx[MM_DILUTED_CHECK__INTERACTION_Z];
         uint256 alpha = ctx[MM_DILUTED_CHECK__INTERACTION_ALPHA];
-        uint256 diffMultiplier = 1 << DILUTED_SPACING;
+        uint256 diffMultiplier = 1 << BITWISE__DILUTED_SPACING;
         uint256 diffX = diffMultiplier - 2;
         // Initialize p, q and x to p_1, q_1 and x_0 respectively.
         uint256 p = 1 + z;
@@ -152,7 +181,7 @@ abstract contract LayoutSpecific is MemoryMap, StarkParameters, CpuPublicInputOf
         assembly {
             for {
                 let i := 1
-            } lt(i, DILUTED_N_BITS) {
+            } lt(i, BITWISE__DILUTED_N_BITS) {
                 i := add(i, 1)
             } {
                 x := addmod(x, diffX, K_MODULUS)

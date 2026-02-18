@@ -36,11 +36,11 @@ abstract contract AvailabilityVerifiers is MainStorage, LibConstants, MApprovalC
         view
         returns (address[] memory _verifers)
     {
-        return availabilityVerifiersChain.verifiers;
+        return availabilityVerifiersChain.list;
     }
 
     function isAvailabilityVerifier(address verifierAddress) external view returns (bool) {
-        return findEntry(availabilityVerifiersChain.verifiers, verifierAddress) != ENTRY_NOT_FOUND;
+        return findEntry(availabilityVerifiersChain.list, verifierAddress) != ENTRY_NOT_FOUND;
     }
 
     function registerAvailabilityVerifier(address verifier, string calldata identifier) external {

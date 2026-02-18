@@ -3,11 +3,9 @@ pragma solidity ^0.6.12;
 
 import "../../interfaces/ExternalInitializer.sol";
 import "../../interfaces/Identity.sol";
-import "../../libraries/Addresses.sol";
+import "../../libraries/Common.sol";
 import "../../libraries/LibConstants.sol";
 import "../../components/MainStorage.sol";
-import {ApprovalChainData} from "../../libraries/StarkExTypes.sol";
-import "../../starkex/components/StarkExStorage.sol";
 
 /*
   This contract is an external initializing contract that performs required adjustments for V3->V4.5
@@ -47,7 +45,7 @@ contract V3toV45ChangesExternalInitializer is ExternalInitializer, MainStorage, 
         require(newRollupTreeHeigh < ROLLUP_VAULTS_BIT, "INVALID_ROLLUP_HEIGHT");
 
         // Flush the current verifiers & availabilityVerifier list.
-        delete verifiersChain.verifiers;
+        delete verifiersChain.list;
 
         // ApprovalChain addEntry performs all the required checks for us.
         addEntry(verifiersChain, newVerifierAddress, MAX_VERIFIER_COUNT, verifierIdHash);
@@ -71,25 +69,25 @@ contract V3toV45ChangesExternalInitializer is ExternalInitializer, MainStorage, 
       2. The verifier ID is passed as hash, and not as string.
     */
     function addEntry(
-        ApprovalChainData storage chain,
+        StarkExTypes.ApprovalChainData storage chain,
         address entry,
         uint256 maxLength,
         bytes32 hashExpectedId
     ) internal {
-        address[] storage verifiers = chain.verifiers;
+        address[] storage list = chain.list;
         require(entry.isContract(), "ADDRESS_NOT_CONTRACT");
         bytes32 hashRealId = keccak256(abi.encodePacked(Identity(entry).identify()));
         require(hashRealId == hashExpectedId, "UNEXPECTED_CONTRACT_IDENTIFIER");
-        require(verifiers.length < maxLength, "CHAIN_AT_MAX_CAPACITY");
-        require(findEntry(verifiers, entry) == ENTRY_NOT_FOUND, "ENTRY_ALREADY_EXISTS");
-        chain.verifiers.push(entry); // NOLINT controlled-array-length;
-        chain.verifierAllowedRemovalTime[entry] = 0;
+        require(list.length < maxLength, "CHAIN_AT_MAX_CAPACITY");
+        require(findEntry(list, entry) == ENTRY_NOT_FOUND, "ENTRY_ALREADY_EXISTS");
+        chain.list.push(entry); // NOLINT controlled-array-length;
+        chain.unlockedForRemovalTime[entry] = 0;
     }
 
-    function findEntry(address[] storage verifiers, address entry) internal view returns (uint256) {
-        uint256 n_entries = verifiers.length;
+    function findEntry(address[] storage list, address entry) internal view returns (uint256) {
+        uint256 n_entries = list.length;
         for (uint256 i = 0; i < n_entries; i++) {
-            if (verifiers[i] == entry) {
+            if (list[i] == entry) {
                 return i;
             }
         }

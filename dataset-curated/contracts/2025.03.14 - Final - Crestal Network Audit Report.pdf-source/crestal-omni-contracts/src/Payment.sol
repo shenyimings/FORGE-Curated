@@ -22,20 +22,12 @@ contract Payment {
 
     // This is to support gasless flow: normally, the caller must always be the msg.sender
     // slither-disable-next-line arbitrary-send-erc20
-    function payWithERC20(address erc20TokenAddress, uint256 amount, address fromAddress, address toAddress) internal {
+    function payWithERC20(address erc20TokenAddress, uint256 amount, address fromAddress, address toAddress) public {
         // check from and to address
         require(fromAddress != toAddress, "Cannot transfer to self address");
         require(toAddress != address(0), "Invalid to address");
         require(amount > 0, "Amount must be greater than 0");
         IERC20 token = IERC20(erc20TokenAddress);
         token.safeTransferFrom(fromAddress, toAddress, amount);
-    }
-
-    function payWithNativeToken(address payable toAddress, uint256 amount) internal {
-        require(toAddress != address(0), "Invalid to address");
-        require(amount > 0, "Amount must be greater than 0");
-
-        (bool success,) = toAddress.call{value: amount}("");
-        require(success, "Native token transfer failed");
     }
 }

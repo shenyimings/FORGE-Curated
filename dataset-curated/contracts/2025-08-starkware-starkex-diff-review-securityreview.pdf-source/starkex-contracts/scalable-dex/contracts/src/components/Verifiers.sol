@@ -29,11 +29,11 @@ import "./MainStorage.sol";
 */
 abstract contract Verifiers is MainStorage, LibConstants, MApprovalChain {
     function getRegisteredVerifiers() external view returns (address[] memory _verifers) {
-        return verifiersChain.verifiers;
+        return verifiersChain.list;
     }
 
     function isVerifier(address verifierAddress) external view returns (bool) {
-        return findEntry(verifiersChain.verifiers, verifierAddress) != ENTRY_NOT_FOUND;
+        return findEntry(verifiersChain.list, verifierAddress) != ENTRY_NOT_FOUND;
     }
 
     function registerVerifier(address verifier, string calldata identifier) external {

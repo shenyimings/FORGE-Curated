@@ -8,19 +8,22 @@ contract FactRegistry is IQueryableFactRegistry {
     mapping(bytes32 => bool) private verifiedFact;
 
     // Indicates whether the Fact Registry has at least one fact registered.
-    bool anyFactRegistered = false;
+    bool anyFactRegistered;
 
     /*
-      Checks if a fact was registered.
+      Checks if a fact has been verified.
     */
-    function isValid(bytes32 fact) external view virtual override returns (bool) {
-        return internalIsValid(fact);
+    function isValid(bytes32 fact) external view override returns (bool) {
+        return _factCheck(fact);
     }
 
     /*
-      The internal implementation that checks if the fact was registered.
+      This is an internal method to check if the fact is already registered.
+      In current implementation of FactRegistry it's identical to isValid().
+      But the check is against the local fact registry,
+      So for a derived referral fact registry, it's not the same.
     */
-    function internalIsValid(bytes32 fact) internal view virtual returns (bool) {
+    function _factCheck(bytes32 fact) internal view returns (bool) {
         return verifiedFact[fact];
     }
 
