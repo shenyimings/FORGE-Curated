@@ -105,13 +105,13 @@ FORGE-Curated/
 
 | Metric | Value |
 | --- | --- |
-| **Total Projects** | 248 |
-| **Valid Projects** | 248 |
-| **Total Files Analyzed** | 208 |
-| **Total Findings** | 2,556 |
-| **Total Solidity Files** | 28,862 |
-| **Total Lines of Code (LoC)** | 4,720,377 |
-| **Avg. LoC per Project** | ~19,033 |
+| **Total Audit Reports Processed** | 323 |
+| **Reports with Accessible Source Code** | 208 |
+| **Total Projects** | 252 |
+| **Total Findings** | 2,469 |
+| **Total Solidity Files** | 29,221 |
+| **Total Lines of Code (LoC)** | 4,762,386 |
+| **Avg. LoC per Project** | ~18,898 |
 | **Avg. Files per Project** | ~116 |
 | **Solidity Version Distribution** | --- |
 | ^0.8 | 198 |
@@ -125,18 +125,18 @@ FORGE-Curated/
 | Severity Level | Count |
 | --- | --- |
 | **Critical** | 67 |
-| **High** | 251 |
-| **Medium** | 438 |
-| **Low** | 778 |
-| **Informational** | 887 |
-| **N/A** | 93 |
+| **High** | 244 |
+| **Medium** | 430 |
+| **Low** | 772 |
+| **Informational** | 879 |
+| **N/A** | 77 |
 
 ### Dataset Composition
 
 | Metric | Value |
 | --- | --- |
-| **Total Vulnerability-File Pairs (VFPs)** | 651 |
-| **High-Impact VFPs (Medium/High/Critical)** | 318 |
+| **Total Vulnerability-File Pairs (VFPs)** | 627 |
+| **High-Impact VFPs (Medium/High/Critical)** | 304 |
 
 > [!NOTE]
 > Many to-many relationship between findings and files, so the number of VFPs is less than total findings.
@@ -178,7 +178,7 @@ JSON files in [dataset-curated/findings](dataset-curated/findings) and [dataset-
 | `title` | `str` | The title of the finding as stated in the report. |
 | `description` | `str` | Detailed description of the vulnerability. |
 | `severity` | `Union[str, List]` | Severity level (e.g., High, Medium, Low, Critical). |
-| `location` | `Union[str, List]` | Precise location in the code extracted by LLM, usually following a format like `filename.sol::function#line`. |
+| `location` | `Union[str, List]` | Precise location in the code extracted by LLM, usually following a format like `filename.sol::function#StartLine-EndLine`. |
 | `files` | `List[str]` | List of files affected by this finding. |
 
 
@@ -279,7 +279,7 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 * **For LLM Evaluation:**
   * **Binary/Multi-class:** Ask the LLM to identify if a specific CWE exists in the affected files or list all possible CWEs.
   * **LLM-as-a-Judge:** Given the rich context (Title/Description/Location) in our dataset, you can ignore strict CWE matching and use another LLM to judge if your system "caught the point."
-* **Tools:** We plan to develop automated evaluation tools. In the meantime, you can look at third-party alternatives like [scabench](https://github.com/scabench-org/scabench) or [auditagent-scoring-algo](https://github.com/NethermindEth/auditagent-scoring-algo).
+* **Tools:** We plan to develop automated evaluation tools. In the meantime, you can look at third-party alternatives like [EVMbench](https://github.com/paradigmxyz/evmbench) by OpenAI, [scabench](https://github.com/scabench-org/scabench), or [auditagent-scoring-algo](https://github.com/NethermindEth/auditagent-scoring-algo).
 
 
 
