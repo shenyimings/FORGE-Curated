@@ -1,9 +1,55 @@
 {
     "vfp_id": "vfp_00100",
-    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "project_name": "cantina_euler_pr111_oct2025.pdf",
     "findings": [
         {
-            "id": 33,
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Default fee recipient can be set to zero address",
+            "description": "The function setDefaultRecipient in EulerSwapProtocolFeeConfig.sol assigns the defaultRecipient without validating that the provided address is non-zero. This allows the default fee recipient to be set to the zero address, which may result in fees being burned instead of being sent to a valid recipient. This behavior breaks compatibility with the previous implementation, where fees sent to address(0) were deposited into the Euler account, thereby increasing the account's NAV. By allowing address(0), the system now risks losing fees permanently and disrupting expected economic flows.\nThe root cause is the lack of input validation in the setDefaultRecipient function. An attacker or misconfigured admin could set the recipient to address(0), leading to irreversible loss of fees collected from pools that rely on the default configuration.\nThis could be exploited by a malicious or compromised admin setting the default recipient to zero, or by accidental misconfiguration during deployment or updates.\nThe impact includes potential loss of protocol and liquidity provider fees, reduced trust in the system's economic model, and deviation from expected behavior in fee distribution.\n",
+            "severity": "Low",
+            "location": [
+                "EulerSwapProtocolFeeConfig.sol#L56"
+            ],
+            "files": [
+                "euler-swap/src/EulerSwapProtocolFeeConfig.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing events for administrative state changes",
+            "description": "The functions setAdmin, setDefault, setOverride, and removeOverride in EulerSwapProtocolFeeConfig.sol modify critical administrative state without emitting corresponding events. This omission reduces on-chain observability, making it difficult for external systems such as indexers, monitoring tools, and auditors to track configuration changes over time. Without events, detecting unauthorized or erroneous changes becomes significantly harder, increasing the risk during incident response and post-mortem analysis.\nThe root cause is the absence of event emissions in these functions, which is a deviation from standard smart contract design patterns that emphasize transparency and traceability.\nAn attacker who gains temporary admin access could make stealthy changes that are hard to detect, or legitimate changes could go unnoticed by governance or monitoring systems.\nThe impact is reduced transparency and auditability, which weakens operational security and complicates compliance and forensic investigations.\n",
+            "severity": "Low",
+            "location": [
+                "EulerSwapProtocolFeeConfig.sol#L48-L65"
+            ],
+            "files": [
+                "euler-swap/src/EulerSwapProtocolFeeConfig.sol"
+            ]
+        },
+        {
+            "id": 6,
             "category": {
                 "1": [
                     "CWE-707"
@@ -12,44 +58,62 @@
                     "CWE-20"
                 ],
                 "3": [
-                    "CWE-1284"
+                    "CWE-1287"
                 ]
             },
-            "title": "Lack of minimum debt threshold enables unliquidatable small positions",
-            "description": "The protocol allows users to partially repay debt via the exitPosition() function, potentially leaving behind minimal debt (e.g., 1 wei). Since liquidation rewards are proportional to repaid debt and gas costs are fixed, liquidators have no economic incentive to liquidate such tiny debts.\n\nThe root cause is the absence of a minimum debt threshold or a mechanism to enforce full repayment before closing a position.\n\nA borrower can strategically leave behind negligible debt after partial repayment, effectively creating an unliquidatable position.\n\nOver time, accumulation of these positions skews the protocol’s debt accounting and may lead to insolvency, especially on high-gas chains like Ethereum.\n",
-            "severity": "Medium",
-            "location": [
-                "AbstractLendingRouter.sol::exitPosition#120",
-                "AbstractLendingRouter.sol::_exitWithRepay"
-            ],
+            "title": "Do not use EVC sub-accounts as fee recipients",
+            "description": "The functions setDefault and setOverride in EulerSwapProtocolFeeConfig, along with fee transfer logic in SwapLib, allow EVC sub-accounts to be set as fee recipients without remapping them to their owner addresses. Unlike other parts of the system (e.g., bond redemption), fee transfers use the recipient address directly, which means fees sent to an EVC sub-account may be lost because such accounts lack control keys.\nThe root cause is the lack of validation or remapping logic for EVC sub-accounts in the fee distribution path.\nAn admin could accidentally or intentionally set a sub-account as a fee recipient, resulting in irreversible loss of fees. This could be exploited by a malicious actor with admin privileges to drain protocol revenue.\nThe impact includes potential loss of LP and protocol fees, reduced trust in the system, and operational risk due to misconfiguration.\n",
+            "severity": "Informational",
+            "location": [],
             "files": [
-                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/routers/AbstractLendingRouter.sol"
+                "euler-swap/src/EulerSwapProtocolFeeConfig.sol"
             ]
         },
         {
-            "id": 30,
+            "id": 7,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-754"
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1287"
                 ]
             },
-            "title": "User unable to migrate under certain edge case",
-            "description": "During migration, the _exitWithRepay function sets assetToRepay to type(uint256).max, which can result in both assetToRepay and sharesToRepay being zero when the user has no debt. This causes the Morpho.repay() call to revert due to the UtilsLib.exactlyOneZero(assets, shares) check, which requires exactly one of the two values to be zero.\n\nThe root cause is the lack of a conditional check to skip repayment when the user has no debt. Since users without debt have zero borrow shares, and assetToRepay is set to max (which Morpho interprets as zero), both parameters become zero, violating Morpho Blue's safety invariant.\n\nAn attacker cannot exploit this, but legitimate users with only collateral and no debt are unable to migrate their positions, leading to a denial of service for a core protocol feature.\n\nThe impact is medium, as it affects a specific edge case (users with no debt), but migration is a critical function for protocol flexibility and user experience.\n",
-            "severity": "Medium",
+            "title": "Admin address must not be an EVC sub-account",
+            "description": "The setAdmin function in EulerSwapProtocolFeeConfig allows the admin to be set to an EVC sub-account, which cannot authenticate via standard mechanisms. The onlyAdmin modifier uses _authenticateCallerWithStandardContextState(true), which fails if the caller is a sub-account, effectively bricking administrative functions.\nThe root cause is the absence of validation to prevent EVC sub-accounts from being assigned as admin.\nIf the admin is set to a sub-account, critical administrative functions become permanently inaccessible, leading to a loss of governance control over the contract.\nThe impact is potential permanent loss of administrative control, rendering the contract immutable and unable to respond to emergencies or upgrades.\n",
+            "severity": "Informational",
             "location": [
-                "AbstractLendingRouter.sol::_exitWithRepay#237",
-                "MorphoLendingRouter.sol::repay#192",
-                "Morpho.sol::repay#278"
+                "EulerSwapProtocolFeeConfig.sol#L38-L50"
             ],
             "files": [
-                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/routers/AbstractLendingRouter.sol"
+                "euler-swap/src/EulerSwapProtocolFeeConfig.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Protocol fee override can target non existent pool",
+            "description": "The setOverride function in EulerSwapProtocolFeeConfig allows setting fee overrides for any address, without verifying that the target is a valid EulerSwap pool. This enables the creation of configuration entries for non-existent or stale pool addresses, leading to cluttered and potentially misleading configuration state.\nThe root cause is the lack of validation against the pool registry or factory to confirm pool existence before storing an override.\nWhile not directly exploitable for financial gain, this could be used to create confusion during audits or operations, or to waste gas on无效 configurations.\nThe impact is operational complexity, increased risk of misconfiguration, and reduced clarity in fee configuration management.\n",
+            "severity": "Informational",
+            "location": [
+                "EulerSwapProtocolFeeConfig.sol#L61-L65"
+            ],
+            "files": [
+                "euler-swap/src/EulerSwapProtocolFeeConfig.sol"
             ]
         }
     ],
     "affected_files": {
-        "AbstractLendingRouter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport {ILendingRouter, VaultPosition} from \"../interfaces/ILendingRouter.sol\";\nimport {\n    NotAuthorized,\n    CannotExitPositionWithinCooldownPeriod,\n    CannotInitiateWithdraw,\n    CannotForceWithdraw,\n    InvalidLendingRouter,\n    NoExistingPosition,\n    LiquidatorHasPosition,\n    CannotEnterPosition,\n    CannotLiquidateZeroShares,\n    InsufficientSharesHeld\n} from \"../interfaces/Errors.sol\";\nimport {ERC20} from \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport {TokenUtils} from \"../utils/TokenUtils.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport {IYieldStrategy} from \"../interfaces/IYieldStrategy.sol\";\nimport {RewardManagerMixin} from \"../rewards/RewardManagerMixin.sol\";\nimport {ILendingRouter} from \"../interfaces/ILendingRouter.sol\";\nimport {ADDRESS_REGISTRY, COOLDOWN_PERIOD} from \"../utils/Constants.sol\";\n\nabstract contract AbstractLendingRouter is ILendingRouter {\n    using SafeERC20 for ERC20;\n    using TokenUtils for ERC20;\n\n    mapping(address user => mapping(address operator => bool approved)) private s_isApproved;\n\n    /*** Authorization Methods ***/\n    modifier isAuthorized(address onBehalf, address vault) {\n        // In this case msg.sender is the operator\n        if (msg.sender != onBehalf && !isApproved(onBehalf, msg.sender)) {\n            revert NotAuthorized(msg.sender, onBehalf);\n        }\n\n        _;\n\n        // Clear the current account after the transaction is finished\n        IYieldStrategy(vault).clearCurrentAccount();\n    }\n\n    /// @inheritdoc ILendingRouter\n    function setApproval(address operator, bool approved) external override {\n        if (operator == msg.sender) revert NotAuthorized(msg.sender, operator);\n        s_isApproved[msg.sender][operator] = approved;\n    }\n\n    /// @inheritdoc ILendingRouter\n    function isApproved(address user, address operator) public view override returns (bool) {\n        return s_isApproved[user][operator];\n    }\n\n    /// @inheritdoc ILendingRouter\n    function enterPosition(\n        address onBehalf,\n        address vault,\n        uint256 depositAssetAmount,\n        uint256 borrowAmount,\n        bytes calldata depositData\n    ) public override isAuthorized(onBehalf, vault) {\n        _enterPosition(onBehalf, vault, depositAssetAmount, borrowAmount, depositData, address(0));\n    }\n\n    /// @inheritdoc ILendingRouter\n    function migratePosition(\n        address onBehalf,\n        address vault,\n        address migrateFrom\n    ) public override isAuthorized(onBehalf, vault) {\n        if (!ADDRESS_REGISTRY.isLendingRouter(migrateFrom)) revert InvalidLendingRouter();\n        // Borrow amount is set to the amount of debt owed to the previous lending router\n        (uint256 borrowAmount, /* */, /* */) = ILendingRouter(migrateFrom).healthFactor(onBehalf, vault);\n\n        _enterPosition(onBehalf, vault, 0, borrowAmount, bytes(\"\"), migrateFrom);\n    }\n\n    function _enterPosition(\n        address onBehalf,\n        address vault,\n        uint256 depositAssetAmount,\n        uint256 borrowAmount,\n        bytes memory depositData,\n        address migrateFrom\n    ) internal {\n        address asset = IYieldStrategy(vault).asset();\n        // Cannot enter a position if the account already has a native share balance\n        if (IYieldStrategy(vault).balanceOf(onBehalf) > 0) revert CannotEnterPosition();\n\n        if (depositAssetAmount > 0) {\n            // Take any margin deposit from the sender initially\n            ERC20(asset).safeTransferFrom(msg.sender, address(this), depositAssetAmount);\n        }\n\n        if (borrowAmount > 0) {\n            _flashBorrowAndEnter(\n                onBehalf, vault, asset, depositAssetAmount, borrowAmount, depositData, migrateFrom\n            );\n        } else {\n            _enterOrMigrate(onBehalf, vault, asset, depositAssetAmount, depositData, migrateFrom);\n        }\n\n        ADDRESS_REGISTRY.setPosition(onBehalf, vault);\n    }\n\n    /// @inheritdoc ILendingRouter\n    function exitPosition(\n        address onBehalf,\n        address vault,\n        address receiver,\n        uint256 sharesToRedeem,\n        uint256 assetToRepay,\n        bytes calldata redeemData\n    ) external override isAuthorized(onBehalf, vault) {\n        _checkExit(onBehalf, vault);\n\n        address asset = IYieldStrategy(vault).asset();\n        if (0 < assetToRepay) {\n            _exitWithRepay(onBehalf, vault, asset, receiver, sharesToRedeem, assetToRepay, redeemData);\n        } else {\n            address migrateTo = _isMigrate(receiver) ? receiver : address(0);\n            uint256 assetsWithdrawn = _redeemShares(onBehalf, vault, asset, migrateTo, sharesToRedeem, redeemData);\n            if (0 < assetsWithdrawn) ERC20(asset).safeTransfer(receiver, assetsWithdrawn);\n        }\n\n        if (balanceOfCollateral(onBehalf, vault) == 0) {\n            ADDRESS_REGISTRY.clearPosition(onBehalf, vault);\n        }\n    }\n\n    /// @inheritdoc ILendingRouter\n    function liquidate(\n        address liquidateAccount,\n        address vault,\n        uint256 sharesToLiquidate,\n        uint256 debtToRepay\n    ) external override returns (uint256 sharesToLiquidator) {\n        if (sharesToLiquidate == 0) revert CannotLiquidateZeroShares();\n\n        address liquidator = msg.sender;\n        VaultPosition memory position = ADDRESS_REGISTRY.getVaultPosition(liquidator, vault);\n        // If the liquidator has a position then they cannot liquidate or they will have\n        // a native balance and a balance on the lending market.\n        if (position.lendingRouter != address(0)) revert LiquidatorHasPosition();\n\n        uint256 balanceBefore = balanceOfCollateral(liquidateAccount, vault);\n        if (balanceBefore == 0) revert InsufficientSharesHeld();\n\n        // Runs any checks on the vault to ensure that the liquidation can proceed, whitelists the lending platform\n        // to transfer collateral to the lending router. The current account is set in this method.\n        IYieldStrategy(vault).preLiquidation(liquidator, liquidateAccount, sharesToLiquidate, balanceBefore);\n\n        // After this call, address(this) will have the liquidated shares\n        sharesToLiquidator = _liquidate(liquidator, vault, liquidateAccount, sharesToLiquidate, debtToRepay);\n\n        // Transfers the shares to the liquidator from the lending router and does any post liquidation logic. The\n        // current account is cleared in this method.\n        IYieldStrategy(vault).postLiquidation(liquidator, liquidateAccount, sharesToLiquidator);\n\n        // The liquidator will receive shares in their native balance and then they can call redeem\n        // on the yield strategy to get the assets.\n\n        // Clear the position if the liquidator has taken all the shares, in the case of an insolvency,\n        // the account's position will just be left on the lending market with zero collateral. The account\n        // would be able to create a new position on this lending router or a new position on a different\n        // lending router. If they do create a new position on an insolvent account their old debt may\n        // be applied to their new position.\n        if (sharesToLiquidator == balanceBefore) ADDRESS_REGISTRY.clearPosition(liquidateAccount, vault);\n    }\n\n    /// @inheritdoc ILendingRouter\n    function initiateWithdraw(\n        address onBehalf,\n        address vault,\n        bytes calldata data\n    ) external override isAuthorized(onBehalf, vault) returns (uint256 requestId) {\n        requestId = _initiateWithdraw(vault, onBehalf, data);\n    }\n\n    /// @inheritdoc ILendingRouter\n    function forceWithdraw(address account, address vault, bytes calldata data) external returns (uint256 requestId) {\n        // Can only force a withdraw if health factor is negative, this allows a liquidator to\n        // force a withdraw and liquidate a position at a later time.\n        (uint256 borrowed, /* */, uint256 maxBorrow) = healthFactor(account, vault);\n        if (borrowed <= maxBorrow) revert CannotForceWithdraw(account);\n\n        requestId = _initiateWithdraw(vault, account, data);\n\n        // Clear the current account since this method is not called using isAuthorized\n        IYieldStrategy(vault).clearCurrentAccount();\n    }\n\n    /// @inheritdoc ILendingRouter\n    function claimRewards(address vault) external returns (uint256[] memory rewards) {\n        return RewardManagerMixin(vault).claimAccountRewards(msg.sender, balanceOfCollateral(msg.sender, vault));\n    }\n\n    /// @inheritdoc ILendingRouter\n    function healthFactor(address borrower, address vault) public override virtual returns (uint256 borrowed, uint256 collateralValue, uint256 maxBorrow);\n\n    /// @inheritdoc ILendingRouter\n    function balanceOfCollateral(address account, address vault) public override view virtual returns (uint256 collateralBalance);\n\n\n    /*** Internal Methods ***/\n\n    function _checkExit(address onBehalf, address vault) internal view  {\n        VaultPosition memory position = ADDRESS_REGISTRY.getVaultPosition(onBehalf, vault);\n        if (position.lendingRouter != address(this)) revert NoExistingPosition();\n        if (block.timestamp - position.lastEntryTime < COOLDOWN_PERIOD) {\n            revert CannotExitPositionWithinCooldownPeriod();\n        }\n    }\n\n    /// @dev Checks if an exitPosition call is a migration, this would be called via a lending router\n    function _isMigrate(address receiver) internal view returns (bool) {\n        return receiver == msg.sender && ADDRESS_REGISTRY.isLendingRouter(msg.sender);\n    }\n\n    /// @dev Enters a position or migrates shares from a previous lending router\n    function _enterOrMigrate(\n        address onBehalf,\n        address vault,\n        address asset,\n        uint256 assetAmount,\n        bytes memory depositData,\n        address migrateFrom\n    ) internal returns (uint256 sharesReceived) {\n        if (migrateFrom != address(0)) {\n            // Allow the previous lending router to repay the debt from assets held here.\n            ERC20(asset).checkApprove(migrateFrom, assetAmount);\n            sharesReceived = ILendingRouter(migrateFrom).balanceOfCollateral(onBehalf, vault);\n\n            // Must migrate the entire position\n            ILendingRouter(migrateFrom).exitPosition(\n                onBehalf, vault, address(this), sharesReceived, type(uint256).max, bytes(\"\")\n            );\n        } else {\n            ERC20(asset).approve(vault, assetAmount);\n            sharesReceived = IYieldStrategy(vault).mintShares(assetAmount, onBehalf, depositData);\n        }\n\n        _supplyCollateral(onBehalf, vault, asset, sharesReceived);\n    }\n\n    /// @dev Redeems or withdraws shares from the lending market, handles migration\n    function _redeemShares(\n        address sharesOwner,\n        address vault,\n        address asset,\n        address migrateTo,\n        uint256 sharesToRedeem,\n        bytes memory redeemData\n    ) internal returns (uint256 assetsWithdrawn) {\n        address receiver = migrateTo == address(0) ? sharesOwner : migrateTo;\n        uint256 sharesHeld = balanceOfCollateral(sharesOwner, vault);\n\n        // Allows the transfer from the lending market to the sharesOwner\n        IYieldStrategy(vault).allowTransfer(receiver, sharesToRedeem, sharesOwner);\n        _withdrawCollateral(vault, asset, sharesToRedeem, sharesOwner, receiver);\n\n        // If we are not migrating then burn the shares\n        if (migrateTo == address(0)) {\n            assetsWithdrawn = IYieldStrategy(vault).burnShares(\n                sharesOwner, sharesToRedeem, sharesHeld, redeemData\n            );\n        }\n    }\n\n    /// @dev Initiates a withdraw request for the vault shares held by the account\n    function _initiateWithdraw(\n        address vault,\n        address account,\n        bytes calldata data\n    ) internal returns (uint256 requestId) {\n        uint256 sharesHeld = balanceOfCollateral(account, vault);\n        if (sharesHeld == 0) revert InsufficientSharesHeld();\n        return IYieldStrategy(vault).initiateWithdraw(account, sharesHeld, data);\n    }\n\n    /*** Virtual Methods (lending market specific) ***/\n\n    /// @dev Flash borrows the assets and enters a position\n    function _flashBorrowAndEnter(\n        address onBehalf,\n        address vault,\n        address asset,\n        uint256 depositAssetAmount,\n        uint256 borrowAmount,\n        bytes memory depositData,\n        address migrateFrom\n    ) internal virtual;\n\n    /// @dev Supplies collateral in the amount of shares received to the lending market\n    function _supplyCollateral(\n        address onBehalf, address vault, address asset, uint256 sharesReceived\n    ) internal virtual;\n\n    /// @dev Withdraws collateral from the lending market\n    function _withdrawCollateral(\n        address vault,\n        address asset,\n        uint256 sharesToRedeem,\n        address sharesOwner,\n        address receiver\n    ) internal virtual;\n\n    /// @dev Liquidates a position on the lending market\n    function _liquidate(\n        address liquidator,\n        address vault,\n        address liquidateAccount,\n        uint256 sharesToLiquidate,\n        uint256 debtToRepay\n    ) internal virtual returns (uint256 sharesToLiquidator);\n\n    /// @dev Exits a position with a debt repayment\n    function _exitWithRepay(\n        address onBehalf,\n        address vault,\n        address asset,\n        address receiver,\n        uint256 sharesToRedeem,\n        uint256 assetToRepay,\n        bytes calldata redeemData\n    ) internal virtual;\n\n}"
+        "EulerSwapProtocolFeeConfig.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.27;\n\nimport {IEulerSwapProtocolFeeConfig} from \"./interfaces/IEulerSwapProtocolFeeConfig.sol\";\nimport {EVCUtil} from \"evc/utils/EVCUtil.sol\";\n\n/// @title EulerSwapProtocolFeeConfig contract\n/// @custom:security-contact security@euler.xyz\n/// @author Euler Labs (https://www.eulerlabs.com/)\ncontract EulerSwapProtocolFeeConfig is IEulerSwapProtocolFeeConfig, EVCUtil {\n    /// @dev Protocol fee admin\n    address public admin;\n\n    /// @dev Admin is not allowed to set a protocol fee larger than this\n    uint64 public constant MAX_PROTOCOL_FEE = 0.15e18;\n\n    /// @dev Destination of collected protocol fees, unless overridden\n    address public defaultRecipient;\n    /// @dev Default protocol fee, 1e18-scale\n    uint64 public defaultFee;\n\n    struct Override {\n        bool exists;\n        address recipient;\n        uint64 fee;\n    }\n\n    /// @dev EulerSwap-instance specific fee override\n    mapping(address pool => Override) public overrides;\n\n    error Unauthorized();\n    error InvalidProtocolFee();\n\n    constructor(address evc, address admin_) EVCUtil(evc) {\n        admin = admin_;\n    }\n\n    modifier onlyAdmin() {\n        // Ensures that the caller is not an operator, controller, etc\n        _authenticateCallerWithStandardContextState(true);\n\n        require(_msgSender() == admin, Unauthorized());\n\n        _;\n    }\n\n    /// @inheritdoc IEulerSwapProtocolFeeConfig\n    function setAdmin(address newAdmin) external onlyAdmin {\n        admin = newAdmin;\n    }\n\n    /// @inheritdoc IEulerSwapProtocolFeeConfig\n    function setDefault(address recipient, uint64 fee) external onlyAdmin {\n        require(fee <= MAX_PROTOCOL_FEE, InvalidProtocolFee());\n\n        defaultRecipient = recipient;\n        defaultFee = fee;\n    }\n\n    /// @inheritdoc IEulerSwapProtocolFeeConfig\n    function setOverride(address pool, address recipient, uint64 fee) external onlyAdmin {\n        require(fee <= MAX_PROTOCOL_FEE, InvalidProtocolFee());\n\n        overrides[pool] = Override({exists: true, recipient: recipient, fee: fee});\n    }\n\n    /// @inheritdoc IEulerSwapProtocolFeeConfig\n    function removeOverride(address pool) external onlyAdmin {\n        delete overrides[pool];\n    }\n\n    /// @inheritdoc IEulerSwapProtocolFeeConfig\n    function getProtocolFee(address pool) external view returns (address recipient, uint64 fee) {\n        Override memory o = overrides[pool];\n\n        if (o.exists) {\n            recipient = o.recipient;\n            fee = o.fee;\n\n            if (recipient == address(0)) recipient = defaultRecipient;\n        } else {\n            recipient = defaultRecipient;\n            fee = defaultFee;\n        }\n    }\n}\n"
     }
 }

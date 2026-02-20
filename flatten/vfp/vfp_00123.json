@@ -1,29 +1,67 @@
 {
     "vfp_id": "vfp_00123",
-    "project_name": "Pyth Lazer EVM - Zellic Audit Report.pdf",
+    "project_name": "cantina_euler_swap_april2025.pdf",
     "findings": [
         {
-            "id": 4,
+            "id": 14,
             "category": {
                 "1": [
                     "CWE-710"
-                ],
-                "2": [
-                    "CWE-1164"
                 ]
             },
-            "title": "Remove unused code",
-            "description": "1. **Description:** The PythLazerLib.sol file imports the forge-std console library, which is not used anywhere in the codebase. This import is dead code.\n2. **Cause:** The import was likely added for debugging during development but was not removed before the audit.\n3. **Exploitation:** There is no security risk, but unused imports increase the compiled bytecode size and can mislead auditors into thinking the library is in use.\n4. **Impact:** Slight increase in deployment cost and reduced code readability. It violates best practices for clean, maintainable code.\n",
+            "title": "Additional fuzz tests for CurveLib",
+            "description": "The report suggests adding fuzz tests for f() and fInverse() to detect reverts and overflows, and differential tests against whitepaper equations. The root cause is insufficient test coverage for edge cases. While not a vulnerability, this recommendation improves confidence in the correctness of critical mathematical functions. The impact is informational, aimed at enhancing testing and reliability for future development.\n",
             "severity": "Informational",
             "location": [
-                "PythLazerLib.sol::import {console} from \"forge-std/console.sol\""
+                "CurveLib.sol"
             ],
             "files": [
-                "pyth-crosschain/lazer/contracts/evm/src/PythLazerLib.sol"
+                "euler-swap/src/libraries/CurveLib.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-369"
+                ]
+            },
+            "title": "Division by zero occurs for CurveLib.fInverse() due to c == 0 edge case",
+            "description": "The fInverse function in CurveLib divides by 2*c without checking if c is zero. When c == 0 (e.g., cx = 0 and y == y0), this causes a division by zero and reverts. The root cause is missing edge case handling. An attacker could trigger this by creating a swap that moves to the f() curve when c == 0, causing the transaction to revert. This leads to denial of service for certain swap paths. The impact is low as it affects specific edge cases but can disrupt expected functionality.\n",
+            "severity": "Low",
+            "location": [
+                "CurveLib.sol#L85-L88",
+                "QuoteLib.sol#L181-L192"
+            ],
+            "files": [
+                "euler-swap/src/libraries/CurveLib.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-190"
+                ]
+            },
+            "title": "Calculation of term1 in CurveLib.fInverse() could overflow int256.max with extreme prices",
+            "description": "The term1 calculation in fInverse uses Math.mulDiv with py, (y - y0), and px, which can result in a value exceeding int256.max when px is very small and py is very large. The root cause is insufficient bounds checking on input prices. An attacker could exploit this by setting extreme price values, causing the int256 cast to revert. This would prevent certain swaps from completing, leading to denial of service. The impact is low as it requires extreme and likely unrealistic price values, but it is still a potential failure point.\n",
+            "severity": "Low",
+            "location": [
+                "CurveLib.sol#L55"
+            ],
+            "files": [
+                "euler-swap/src/libraries/CurveLib.sol"
             ]
         }
     ],
     "affected_files": {
-        "PythLazerLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.13;\n\nimport {console} from \"forge-std/console.sol\";\nimport {PythLazer} from \"./PythLazer.sol\";\n\nlibrary PythLazerLib {\n    enum PriceFeedProperty {\n        Price,\n        BestBidPrice,\n        BestAskPrice,\n        PublisherCount,\n        Exponent\n    }\n\n    enum Channel {\n        Invalid,\n        RealTime,\n        FixedRate50,\n        FixedRate200\n    }\n\n    function parsePayloadHeader(\n        bytes calldata update\n    )\n        public\n        pure\n        returns (uint64 timestamp, Channel channel, uint8 feedsLen, uint16 pos)\n    {\n        uint32 FORMAT_MAGIC = 2479346549;\n\n        pos = 0;\n        uint32 magic = uint32(bytes4(update[pos:pos + 4]));\n        pos += 4;\n        if (magic != FORMAT_MAGIC) {\n            revert(\"invalid magic\");\n        }\n        timestamp = uint64(bytes8(update[pos:pos + 8]));\n        pos += 8;\n        channel = Channel(uint8(update[pos]));\n        pos += 1;\n        feedsLen = uint8(update[pos]);\n        pos += 1;\n    }\n\n    function parseFeedHeader(\n        bytes calldata update,\n        uint16 pos\n    )\n        public\n        pure\n        returns (uint32 feed_id, uint8 num_properties, uint16 new_pos)\n    {\n        feed_id = uint32(bytes4(update[pos:pos + 4]));\n        pos += 4;\n        num_properties = uint8(update[pos]);\n        pos += 1;\n        new_pos = pos;\n    }\n\n    function parseFeedProperty(\n        bytes calldata update,\n        uint16 pos\n    ) public pure returns (PriceFeedProperty property, uint16 new_pos) {\n        property = PriceFeedProperty(uint8(update[pos]));\n        pos += 1;\n        new_pos = pos;\n    }\n\n    function parseFeedValueUint64(\n        bytes calldata update,\n        uint16 pos\n    ) public pure returns (uint64 value, uint16 new_pos) {\n        value = uint64(bytes8(update[pos:pos + 8]));\n        pos += 8;\n        new_pos = pos;\n    }\n\n    function parseFeedValueUint16(\n        bytes calldata update,\n        uint16 pos\n    ) public pure returns (uint16 value, uint16 new_pos) {\n        value = uint16(bytes2(update[pos:pos + 2]));\n        pos += 2;\n        new_pos = pos;\n    }\n\n    function parseFeedValueInt16(\n        bytes calldata update,\n        uint16 pos\n    ) public pure returns (int16 value, uint16 new_pos) {\n        value = int16(uint16(bytes2(update[pos:pos + 2])));\n        pos += 2;\n        new_pos = pos;\n    }\n\n    function parseFeedValueUint8(\n        bytes calldata update,\n        uint16 pos\n    ) public pure returns (uint8 value, uint16 new_pos) {\n        value = uint8(update[pos]);\n        pos += 1;\n        new_pos = pos;\n    }\n}\n"
+        "CurveLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.27;\n\nimport {Math} from \"openzeppelin-contracts/utils/math/Math.sol\";\n\nimport {IEulerSwap} from \"../interfaces/IEulerSwap.sol\";\n\nlibrary CurveLib {\n    error Overflow();\n    error CurveViolation();\n\n    /// @notice Returns true iff the specified reserve amounts would be acceptable.\n    /// Acceptable points are on, or above and to-the-right of the swapping curve.\n    function verify(IEulerSwap.Params memory p, uint256 newReserve0, uint256 newReserve1)\n        internal\n        pure\n        returns (bool)\n    {\n        if (newReserve0 > type(uint112).max || newReserve1 > type(uint112).max) return false;\n\n        if (newReserve0 >= p.equilibriumReserve0) {\n            if (newReserve1 >= p.equilibriumReserve1) return true;\n            return newReserve0\n                >= f(newReserve1, p.priceY, p.priceX, p.equilibriumReserve1, p.equilibriumReserve0, p.concentrationY);\n        } else {\n            if (newReserve1 < p.equilibriumReserve1) return false;\n            return newReserve1\n                >= f(newReserve0, p.priceX, p.priceY, p.equilibriumReserve0, p.equilibriumReserve1, p.concentrationX);\n        }\n    }\n\n    /// @dev EulerSwap curve definition\n    /// Pre-conditions: 0 < x <= x0, 1 <= {px,py} <= 1e36, {x0,y0} <= type(uint112).max, c <= 1e18\n    function f(uint256 x, uint256 px, uint256 py, uint256 x0, uint256 y0, uint256 c) internal pure returns (uint256) {\n        unchecked {\n            uint256 v = Math.mulDiv(px * (x0 - x), c * x + (1e18 - c) * x0, x * 1e18, Math.Rounding.Ceil);\n            require(v <= type(uint248).max, Overflow());\n            return y0 + (v + (py - 1)) / py;\n        }\n    }\n\n    /// @dev EulerSwap inverse function definition\n    /// Pre-conditions: 0 < x <= x0, 1 <= {px,py} <= 1e36, {x0,y0} <= type(uint112).max, c <= 1e18\n    function fInverse(uint256 y, uint256 px, uint256 py, uint256 x0, uint256 y0, uint256 c)\n        internal\n        pure\n        returns (uint256)\n    {\n        // components of quadratic equation\n        int256 B;\n        uint256 C;\n        uint256 fourAC;\n\n        unchecked {\n            int256 term1 = int256(Math.mulDiv(py * 1e18, y - y0, px, Math.Rounding.Ceil)); // scale: 1e36\n            int256 term2 = (2 * int256(c) - int256(1e18)) * int256(x0); // scale: 1e36\n            B = (term1 - term2) / int256(1e18); // scale: 1e18\n            C = Math.mulDiv((1e18 - c), x0 * x0, 1e18, Math.Rounding.Ceil); // scale: 1e36\n            fourAC = Math.mulDiv(4 * c, C, 1e18, Math.Rounding.Ceil); // scale: 1e36\n        }\n\n        uint256 absB = uint256(B >= 0 ? B : -B);\n        uint256 squaredB;\n        uint256 discriminant;\n        uint256 sqrt;\n        if (absB < 1e36) {\n            // B^2 can be calculated directly at 1e18 scale without overflowing\n            unchecked {\n                squaredB = absB * absB; // scale: 1e36\n                discriminant = squaredB + fourAC; // scale: 1e36\n                sqrt = Math.sqrt(discriminant); // // scale: 1e18\n                sqrt = (sqrt * sqrt < discriminant) ? sqrt + 1 : sqrt;\n            }\n        } else {\n            // B^2 cannot be calculated directly at 1e18 scale without overflowing\n            uint256 scale = computeScale(absB); // calculate the scaling factor such that B^2 can be calculated without overflowing\n            squaredB = Math.mulDiv(absB / scale, absB, scale, Math.Rounding.Ceil);\n            discriminant = squaredB + fourAC / (scale * scale);\n            sqrt = Math.sqrt(discriminant);\n            sqrt = (sqrt * sqrt < discriminant) ? sqrt + 1 : sqrt;\n            sqrt = sqrt * scale;\n        }\n\n        uint256 x;\n        if (B <= 0) {\n            // use the regular quadratic formula solution (-b + sqrt(b^2 - 4ac)) / 2a\n            x = Math.mulDiv(absB + sqrt, 1e18, 2 * c, Math.Rounding.Ceil) + 1;\n        } else {\n            // use the \"citardauq\" quadratic formula solution 2c / (-b + sqrt(b^2 - 4ac))\n            x = (2 * C + (absB + sqrt - 1)) / (absB + sqrt) + 1;\n        }\n\n        if (x >= x0) {\n            return x0;\n        } else {\n            return x;\n        }\n    }\n\n    /// @dev Utility to derive optimal scale for computations in fInverse\n    function computeScale(uint256 x) internal pure returns (uint256 scale) {\n        // calculate number of bits in x\n        uint256 bits = 0;\n        while (x > 0) {\n            x >>= 1;\n            bits++;\n        }\n\n        // 2^excessBits is how much we need to scale down to prevent overflow when squaring x\n        if (bits > 128) {\n            uint256 excessBits = bits - 128;\n            scale = 1 << excessBits;\n        } else {\n            scale = 1;\n        }\n    }\n}\n"
     }
 }

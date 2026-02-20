@@ -3,27 +3,30 @@
     "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
     "findings": [
         {
-            "id": 10,
+            "id": 21,
             "category": {
                 "1": [
-                    "CWE-693"
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
                 ]
             },
-            "title": "Missing Slippage Protection in Expired PT Redemption Causes User Fund Loss",
-            "description": "When redeeming expired Pendle PT tokens, the _redeemPT function calls PendlePTLib.redeemExpiredPT, which in turn calls sy.redeem with minTokenOut set to 0. This lack of slippage protection allows the SY contract to perform external DEX swaps at arbitrarily unfavorable rates during the redemption process. The root cause is the hardcoded minTokenOut: 0 in redeemExpiredPT, which fails to account for market volatility or MEV attacks. This affects two critical user flows: instant redemption and withdraw initiation. An attacker or MEV bot can exploit this by frontrunning or manipulating market conditions during the external swap, causing the user to receive significantly fewer target tokens (e.g., sUSDe) than expected. The impact is high: users suffer direct financial loss with no recourse, as the system provides no slippage guardrails during expired token redemption, undermining trust and economic security.\n",
-            "severity": "High",
+            "title": "OETH Strategy fails to generate yield due to rebasing disabled",
+            "description": "The vulnerability is a design flaw in the Origin ETH yield strategy, where OETH is used with rebasing disabled. The root cause is the direct use of OETH without opting into rebasing, as required by the Origin Protocol's design. Smart contracts holding OETH forfeit yield unless they explicitly opt in, but the Notional protocol does not do so. This issue is not exploitable by an attacker but represents a critical functional failure. The impact is that the yield strategy generates no returns, while user debt continues to accrue, significantly increasing the risk of liquidation. This undermines the core purpose of the strategy and misleads users about expected returns. The protocol team confirmed the issue and intends to migrate to Wrapped OETH to resolve it.\n",
+            "severity": "Medium",
             "location": [
-                "PendlePTLib.sol::redeemExpiredPT#87",
-                "_redeemPT#87",
-                "_executeInstantRedemption",
-                "_initiateWithdraw"
+                "Origin.sol::_stakeTokens"
             ],
             "files": [
-                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/notional-v4/src/staking/PendlePTLib.sol"
+                "0096f1f64071cafbf20062a7c092c6ec89c28275/src/withdraws/Origin.sol"
             ]
         }
     ],
     "affected_files": {
-        "PendlePTLib.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport \"../interfaces/IPendle.sol\";\nimport \"../utils/Constants.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"../utils/TokenUtils.sol\";\n\nstruct PendleDepositData {\n    uint256 minPtOut;\n    IPRouter.ApproxParams approxParams;\n    IPRouter.LimitOrderData limitOrderData;\n}\n\n/// @dev Generic Pendle PT library for interacting with the Pendle router, reduces bytecode size\nlibrary PendlePTLib {\n    using SafeERC20 for ERC20;\n    using TokenUtils for ERC20;\n\n    function swapExactTokenForPt(\n        address tokenInSy,\n        address market,\n        uint256 tokenInAmount,\n        bytes calldata pendleData\n    ) external {\n        ERC20(tokenInSy).checkApprove(address(PENDLE_ROUTER), tokenInAmount);\n        uint256 msgValue = tokenInSy == ETH_ADDRESS ? tokenInAmount : 0;\n        PendleDepositData memory data = abi.decode(pendleData, (PendleDepositData));\n\n        IPRouter.TokenInput memory tokenInput;\n        tokenInput.tokenIn = tokenInSy;\n        tokenInput.netTokenIn = tokenInAmount;\n        tokenInput.tokenMintSy = tokenInSy;\n        // When tokenIn == tokenMintSy then the swap router can be set to\n        // empty data. This means that the vault must hold the underlying sy\n        // token when we begin the execution.\n\n        PENDLE_ROUTER.swapExactTokenForPt{value: msgValue}(\n            address(this),\n            address(market),\n            data.minPtOut,\n            data.approxParams,\n            tokenInput,\n            data.limitOrderData\n        );\n    }\n\n    function swapExactPtForToken(\n        address pt,\n        address market,\n        address tokenOutSy,\n        uint256 netPtIn,\n        bytes calldata data\n    ) external returns (uint256 netTokenOut) {\n        ERC20(pt).checkApprove(address(PENDLE_ROUTER), netPtIn);\n\n        IPRouter.TokenOutput memory tokenOutput;\n        tokenOutput.tokenOut = tokenOutSy;\n        tokenOutput.tokenRedeemSy = tokenOutSy;\n        // We check the min token out later\n        // tokenInput.minTokenOut = 0;\n        IPRouter.LimitOrderData memory limitOrderData;\n        if (data.length > 0) {\n            limitOrderData = abi.decode(data, (IPRouter.LimitOrderData));\n        }\n\n        (netTokenOut, , ) = PENDLE_ROUTER.swapExactPtForToken(\n            address(this),\n            address(market),\n            netPtIn,\n            tokenOutput,\n            limitOrderData\n        );\n    }\n\n    function redeemExpiredPT(\n        IPPrincipalToken pt,\n        IPYieldToken yt,\n        IStandardizedYield sy,\n        address tokenOutSy,\n        uint256 netPtIn\n    ) external returns (uint256 netTokenOut) {\n        // PT Tokens are known to be ERC20 compliant\n        pt.transfer(address(yt), netPtIn);\n        uint256 netSyOut = yt.redeemPY(address(sy));\n        netTokenOut = sy.redeem(address(this), netSyOut, tokenOutSy, 0, true);\n    }\n}"
+        "Origin.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport {AbstractWithdrawRequestManager} from \"./AbstractWithdrawRequestManager.sol\";\nimport {WETH} from \"../utils/Constants.sol\";\nimport \"../interfaces/IOrigin.sol\";\n\ncontract OriginWithdrawRequestManager is AbstractWithdrawRequestManager {\n\n    constructor() AbstractWithdrawRequestManager(address(WETH), address(oETH), address(WETH)) { }\n\n    function _initiateWithdrawImpl(\n        address /* account */,\n        uint256 oETHToWithdraw,\n        bytes calldata /* data */\n    ) override internal returns (uint256 requestId) {\n        ERC20(YIELD_TOKEN).approve(address(OriginVault), oETHToWithdraw);\n        (requestId, ) = OriginVault.requestWithdrawal(oETHToWithdraw);\n    }\n\n    function _stakeTokens(uint256 amount, bytes memory stakeData) internal override {\n        uint256 minAmountOut;\n        if (stakeData.length > 0) (minAmountOut) = abi.decode(stakeData, (uint256));\n        WETH.approve(address(OriginVault), amount);\n        OriginVault.mint(address(WETH), amount, minAmountOut);\n    }\n\n    function _finalizeWithdrawImpl(\n        address /* account */,\n        uint256 requestId\n    ) internal override returns (uint256 tokensClaimed, bool finalized) {\n        finalized = canFinalizeWithdrawRequest(requestId);\n\n        if (finalized) {\n            uint256 balanceBefore = WETH.balanceOf(address(this));\n            OriginVault.claimWithdrawal(requestId);\n            tokensClaimed = WETH.balanceOf(address(this)) - balanceBefore;\n        }\n    }\n\n    function canFinalizeWithdrawRequest(uint256 requestId) public view returns (bool) {\n        IOriginVault.WithdrawalRequest memory request = OriginVault.withdrawalRequests(requestId);\n        IOriginVault.WithdrawalQueueMetadata memory queue = OriginVault.withdrawalQueueMetadata();\n        uint256 withdrawalClaimDelay = OriginVault.withdrawalClaimDelay();\n\n        bool claimDelayMet = request.timestamp + withdrawalClaimDelay <= block.timestamp;\n        bool queueLiquidityAvailable = request.queued <= queue.claimable;\n        bool notClaimed = request.claimed == false;\n\n        return claimDelayMet && queueLiquidityAvailable && notClaimed;\n    }\n}"
     }
 }

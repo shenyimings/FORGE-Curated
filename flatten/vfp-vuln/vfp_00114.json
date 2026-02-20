@@ -1,27 +1,33 @@
 {
     "vfp_id": "vfp_00114",
-    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "project_name": "Jovay Rollup Contracts Audit.md",
     "findings": [
         {
-            "id": 16,
+            "id": 6,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
                 ]
             },
-            "title": "Wrong capTokenDecimals value used in StakedCapAdapter.price causes inaccurate prices",
-            "description": "The StakedCapAdapter library incorrectly uses the decimal count (e.g., 18) instead of the corresponding scaling factor (10^18) in price calculations, leading to wildly inaccurate prices. The root cause is a fundamental misunderstanding of how decimal scaling works in the price function: it passes the decimal count to convertToAssets, which expects a share amount, and divides by the decimal count rather than the scaling factor. This results in price miscalculations by several orders of magnitude. An attacker can exploit this by observing the incorrect prices and executing trades that take advantage of the disparity between the reported and actual values. The impact includes potential manipulation of minting and burning operations, incorrect valuation of collateral, and possible insolvency due to erroneous price feeds being used in critical financial operations.\n",
-            "severity": "High",
+            "title": "Zero-Amount Withdraw Allows Spam Messaging",
+            "description": "The `L2ETHBridge.withdraw` function only checks that `msg.value` is non-zero but does not validate that the `amount_` parameter is greater than zero. This allows users to initiate withdrawals with zero value by paying a minimal ETH amount as `msg.value`, which is later refunded.\n\nThe root cause is missing input validation on the withdrawal amount. The system treats these zero-amount calls as valid messages, which are then included in batches and must be processed by relayers on L1.\n\nAn attacker can exploit this by submitting a large number of zero-amount withdrawals at low cost, forcing relayers to process spam messages. This increases the load on the system and delays legitimate withdrawals, especially under future ZK proof verification which is gas-intensive.\n\nThe impact is a potential denial of service due to resource exhaustion, increased costs for relayers, and degraded user experience as real transactions are delayed in the queue.\n",
+            "severity": "Medium",
             "location": [
-                "contracts/oracle/libraries/StakedCapAdapter.sol#L15-L21",
-                "StakedCapAdapter.sol::price"
+                "L2ETHBridge.sol::withdraw#21-31",
+                "L2Mailbox.sol::sendMsg#43-75"
             ],
             "files": [
-                "cap-contracts/contracts/oracle/libraries/StakedCapAdapter.sol"
+                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
             ]
         }
     ],
     "affected_files": {
-        "StakedCapAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IERC4626 } from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Staked Cap Token Adapter\n/// @notice Prices are calculated based on the underlying cap token price and accrued yield\nlibrary StakedCapAdapter {\n    /// @notice Fetch price for a staked cap token\n    /// @param _asset Staked cap token address\n    /// @return latestAnswer Price of the staked cap token fixed to 8 decimals\n    /// @return lastUpdated Latest timestamp of the price\n    function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {\n        address capToken = IERC4626(_asset).asset();\n        (latestAnswer, lastUpdated) = IOracle(msg.sender).getPrice(capToken);\n        uint256 capTokenDecimals = IERC20Metadata(capToken).decimals();\n        uint256 pricePerFullShare = IERC4626(_asset).convertToAssets(capTokenDecimals);\n        latestAnswer = latestAnswer * pricePerFullShare / capTokenDecimals;\n    }\n}\n"
+        "L2ETHBridge.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"../../L1/bridge/interfaces/IL1ETHBridge.sol\";\nimport \"../../common/BridgeBase.sol\";\nimport \"../interfaces/IL2Mailbox.sol\";\nimport \"./interfaces/IL2ETHBridge.sol\";\nimport \"solidity-bytes-utils/contracts/BytesLib.sol\";\nimport {L2Mailbox} from \"../core/L2Mailbox.sol\";\n\ncontract L2ETHBridge is BridgeBase, IL2ETHBridge {\n    uint256 public balance;\n\n    /**\n     * The sender account transfers to tokenbridge to lock the assets;\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param gasLimit_ gas limit\n     * @param msg_ data\n     */\n    function withdraw(address to_, uint256 amount_, uint256 gasLimit_, bytes memory msg_) external payable override nonReentrant whenNotPaused {\n        require(msg.value > 0, \"withdraw zero eth\");\n        require(balance >= amount_, \"insufficient balance\");\n\n        address sender_ = _msgSender();\n\n        bytes memory message_ = abi.encodeCall(IL1ETHBridge.finalizeWithdraw, (sender_, to_, amount_, msg_));\n        balance -= amount_;\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, amount_, message_, gasLimit_, sender_)));\n        emit WithdrawETH(sender_, to_, amount_, message_);\n    }\n\n\n    /**\n     * Complete the transfer of L1 assets\n     * @param sender_ transfer initiator\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param msg_ data\n     */\n    function finalizeDeposit(address sender_, address to_, uint256 amount_, bytes calldata msg_) external payable override nonReentrant onlyMailBox whenNotPaused {\n        require(msg.value == amount_, \"msg.value mismatch\");\n        balance += amount_;\n\n        (bool success_,) = to_.call{value : amount_, gas : gasleft() / 2}(\"\");\n        require(success_, \"ETH transfer failed\");\n// TODO : add call msg with deposit\n//        _doCallback(to_, msg_);\n\n        emit FinalizeDepositETH(sender_, to_, amount_, msg_);\n    }\n\n    function claimDeposit(bytes calldata msg_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        IL2Mailbox(mailBox).claimAmount(target, amount, nonce,depositHash);\n    }\n\n    function claimDeposit(bytes calldata msg_, address new_refund_address_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        require(msg.sender == sender, \"claimDeposit change refund must called by origin sender\");\n        IL2Mailbox(mailBox).claimAmount(new_refund_address_, amount, nonce, depositHash);\n    }\n}\n"
     }
 }

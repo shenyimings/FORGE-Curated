@@ -3,117 +3,90 @@
     "project_name": "The Compact Audit.md",
     "findings": [
         {
-            "id": 6,
+            "id": 11,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-1335"
-                ]
-            },
-            "title": "Target Address in `setNativeTokenBenchmark` Is Always the Zero Address",
-            "description": "The `setNativeTokenBenchmark` function is intended to derive a 20-byte recipient address by hashing a salt with the contract address and shifting the result right by 96 bits. However, the implementation reverses the operands of the `shr` opcode, shifting the literal `96` by the hash value instead of the hash by `96`.\nSince the shift distance exceeds 96 for nearly all hash values, the result is zero, causing the target address to always be the zero address. A pre-check that the balance of this address must be zero then causes the benchmark to revert, as the zero address holds a non-zero balance on Ethereum.\nThis prevents the benchmark from initializing, causing `ensureBenchmarkExceeded` to compare zero against `gas()`, which always passes. Attackers could exploit this to bypass intended gas checks, leading to incorrect gas benchmarking.\nThe impact includes failure of the gas benchmarking mechanism, potentially allowing inefficient or exploitable transfer paths to be used without detection.\n",
-            "severity": "Medium",
-            "location": [
-                "TransferBenchmarkLib.sol#48",
-                "TransferBenchmarkLib.sol#51",
-                "TransferBenchmarkLib.sol::ensureBenchmarkExceeded#197"
-            ],
-            "files": [
-                "the-compact/src/lib/TransferBenchmarkLib.sol"
-            ]
-        },
-        {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Inaccuracies in Gas Benchmarking Logic",
-            "description": "The gas benchmarking logic in `TransferBenchmarkLib` and `TransferLib` inaccurately measures the gas cost of ERC-20 token transfers because the gas sampling includes operations before and after the actual `transfer` call, such as `mstore` and success evaluation logic. This causes the benchmarked gas values to be inflated and imprecise. The root cause is incorrect placement of gas measurement instructions in inline assembly, which fails to isolate the target `call` operation. As a result, the `ensureBenchmarkExceeded` function may accept insufficient gas for actual transfers, leading to potential transaction failures or underestimation of required gas. The impact is reduced reliability of gas enforcement mechanisms, which could result in DoS conditions or failed token transfers when actual gas usage exceeds the flawed benchmark.\n",
-            "severity": "Medium",
-            "location": [
-                "TransferBenchmarkLib.sol#L148-L169",
-                "TransferLib.sol#L121-L144"
-            ],
-            "files": [
-                "the-compact/src/lib/TransferBenchmarkLib.sol"
-            ]
-        },
-        {
-            "id": 13,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Incorrect Gas Benchmarking for Native Token Transfers",
-            "description": "The `setNativeTokenBenchmark` function calls `BALANCE(target)` before performing two native token transfers, which warms the address in the EVM's access list. This causes both transfers to be treated as warm, eliminating the 2,500 gas difference between cold and warm access.\nThe root cause is the premature access via `BALANCE`, which invalidates the intended benchmark of cold vs warm transfer costs. Additionally, the benchmark fails when the account exists due to the missing 2,500 gas differential.\nThis results in an underestimated cold transfer cost, leading to incorrect gas benchmarks. Users may under-provision gas, causing transaction failures in real-world conditions.\nThe impact includes unreliable gas estimation, potential transaction reverts during withdrawals, and degraded protocol reliability under realistic network conditions.\n",
-            "severity": "Low",
-            "location": [
-                "TransferBenchmarkLib.sol::setNativeTokenBenchmark#43",
-                "TransferBenchmarkLib.sol#51",
-                "TransferBenchmarkLib.sol#76"
-            ],
-            "files": [
-                "the-compact/src/lib/TransferBenchmarkLib.sol"
-            ]
-        },
-        {
-            "id": 26,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ]
-            },
-            "title": "Unfinished Implementation Notes in Codebase",
-            "description": "The codebase contains several inline comments suggesting potential improvements or alternative implementations (e.g., using `TSTORE`, refactoring loops, bypassing `SLOAD`) that were never acted upon. These notes were left in the code and may confuse auditors or maintainers about whether the current implementation is final. The cause is incomplete cleanup of developer notes during code finalization. These ambiguous comments could lead to incorrect assumptions about the design rationale or intent, increasing the risk of misinterpretation during audits or future development. The impact is reduced code clarity and maintainability, potentially leading to unnecessary changes or missed optimizations.\n",
-            "severity": "Low",
-            "location": [
-                "TransferBenchmarkLib.sol#L109",
-                "AllocatorLogic.sol#L36",
-                "HashLib.sol#L451-L452",
-                "IdLib.sol#L163",
-                "DepositViaPermit2Logic.sol#L469-L471"
-            ],
-            "files": [
-                "the-compact/src/lib/TransferBenchmarkLib.sol"
-            ]
-        },
-        {
-            "id": 27,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1116"
+                    "CWE-1288"
                 ]
             },
-            "title": "Typographical Errors",
-            "description": "Multiple typographical errors were found in the codebase, such as \"idiosyncracies\" instead of \"idiosyncrasies\", \"dirtieed\" instead of \"dirtied\", duplicated words like \"by the by the\", and incorrect phrases like \"Ensure sure initial\". These errors occur in comments and string literals. While they do not affect runtime behavior, they reduce code professionalism and readability. The root cause is lack of proofreading during code review. The impact is minimal from a security standpoint but may affect developer experience and trust in code quality.\n",
-            "severity": "Informational",
+            "title": "No Fallback Recipient in Forced Withdrawal",
+            "description": "The `forcedWithdrawal` function allows a user to withdraw locked funds to a specified `recipient`, but does not replace a zero address with `msg.sender`, unlike the deposit functions which use `usingCallerIfNull` for this purpose.\nThe root cause is inconsistent handling of zero addresses across deposit and withdrawal logic, creating a usability gap in the forced withdrawal path.\nA user who accidentally sets the recipient to zero or omits it will cause the funds to be sent to the zero address, resulting in permanent loss.\nThe impact is accidental fund loss due to lack of input normalization, reducing user safety and increasing risk during recovery procedures.\n",
+            "severity": "Low",
             "location": [
-                "TransferBenchmarkLib.sol#L15",
-                "EmissaryLib.sol#L236",
-                "AllocatorLib.sol#L48",
-                "DepositViaPermit2Logic.sol#L54-L55",
-                "AllocatorLib.sol#L83"
+                "TheCompact.sol::forcedWithdrawal#236",
+                "DirectDepositLogic.sol#54",
+                "DirectDepositLogic.sol#158",
+                "DirectDepositLogic.sol#186",
+                "EfficiencyLib.sol::usingCallerIfNull#24",
+                "WithdrawalLogic.sol#112"
             ],
             "files": [
-                "the-compact/src/lib/TransferBenchmarkLib.sol"
+                "the-compact/src/TheCompact.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Native Token Deposit Not Bounded in `batchDeposit*ViaPermit2`",
+            "description": "The `batchDepositViaPermit2` and `batchDepositAndRegisterViaPermit2` functions accept a native token deposit via `msg.value`, but this amount is not included in the sponsor-signed data. This allows an observer to frontrun the transaction with a lower or zero value.\nThe cause is the separation of signature validation from value validation, enabling reuse of the permit nonce without enforcing the expected native amount.\nAn attacker can copy the transaction, reduce `msg.value`, and broadcast it first, consuming the nonce and causing the original transaction to revert. The relayer must then refund or re-execute, incurring gas costs and operational overhead.\nThe impact includes transaction frontrunning, denial of service for legitimate deposits, and increased operational burden on relayers, though funds are not directly lost.\n",
+            "severity": "Low",
+            "location": [
+                "TheCompact.sol::batchDepositViaPermit2#57",
+                "TheCompact.sol::batchDepositAndRegisterViaPermit2#214"
+            ],
+            "files": [
+                "the-compact/src/TheCompact.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1120"
+                ]
+            },
+            "title": "Code Simplifications",
+            "description": "Several opportunities for code simplification were identified, such as removing redundant function calls (`hasConsumedAllocatorNonce` going through unused intermediaries), inlining one-time-use functions like `_revertWithInvalidBatchAllocationIfError`, merging duplicate `_validateAllocator` functions, and eliminating redundant abstractions like `toRegisteredAllocatorWithConsumed`. These inefficiencies arise from over-engineering or incomplete refactoring. The resulting code has unnecessary complexity, longer call paths, and increased gas overhead. The impact includes higher maintenance burden, reduced readability, and slightly increased execution cost.\n",
+            "severity": "Low",
+            "location": [
+                "TheCompact.sol::hasConsumedAllocatorNonce#299",
+                "ConsumerLib.sol::isConsumedByAllocator#33",
+                "AllocatorLogic.sol::_hasConsumedAllocatorNonce#90",
+                "ValidityLib.sol::hasConsumedAllocatorNonce#188",
+                "ClaimHashLib.sol::toMessageHashes#74",
+                "ClaimHashLib.sol::toMessageHashes#92",
+                "ComponentLib.sol::_revertWithInvalidBatchAllocationIfError#361",
+                "ComponentLib.sol::_buildIdsAndAmounts#255",
+                "ClaimProcessorLib.sol::_validateAllocator#122",
+                "ClaimProcessorLib.sol::_validateAllocator#135",
+                "ValidityLib.sol::toRegisteredAllocatorWithConsumed#63-L66",
+                "ValidityLib.sol::fromRegisteredAllocatorIdWithConsumed#48-L54"
+            ],
+            "files": [
+                "the-compact/src/TheCompact.sol"
             ]
         }
     ],
     "affected_files": {
-        "TransferBenchmarkLib.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport { ConstructorLogic } from \"./ConstructorLogic.sol\";\nimport { IdLib } from \"./IdLib.sol\";\n\nimport { SafeTransferLib } from \"solady/utils/SafeTransferLib.sol\";\n\nimport { BenchmarkERC20 } from \"./BenchmarkERC20.sol\";\n\n/**\n * @title TransferBenchmarkLib\n * @notice Library contract implementing logic for benchmarking the approximate\n * cost of both native token withdrawals as well as generic ERC20 token withdrawals.\n * Designed to account for the idiosyncracies of gas pricing across various chains,\n * as well as to have functionality for updating the benchmarks should gas prices\n * change on a given chain.\n */\nlibrary TransferBenchmarkLib {\n    // Storage scope for native token benchmarks:\n    // slot: _NATIVE_TOKEN_BENCHMARK_SCOPE => benchmark.\n    uint32 private constant _NATIVE_TOKEN_BENCHMARK_SCOPE = 0x655e83a8;\n\n    // Storage scope for erc20 token benchmarks:\n    // slot: _ERC20_TOKEN_BENCHMARK_SCOPE => benchmark.\n    uint32 private constant _ERC20_TOKEN_BENCHMARK_SCOPE = 0x824664ed;\n\n    // Storage scope for erc20 token benchmark transaction uniqueness.\n    // slot: _ERC20_TOKEN_BENCHMARK_SENTINEL => block.number\n    uint32 private constant _ERC20_TOKEN_BENCHMARK_SENTINEL = 0x83ceba49;\n\n    error InvalidBenchmark();\n\n    error InsufficientStipendForWithdrawalFallback();\n\n    /**\n     * @notice Internal function for benchmarking the cost of native token transfers.\n     * Uses a deterministic address derived from the contract address and provided salt\n     * to measure the gas cost to transfer native tokens to a cold address with no balance.\n     * @param salt A bytes32 value used to derive a cold account for benchmarking.\n     * @return benchmark The measured gas cost of the native token transfer.\n     */\n    function setNativeTokenBenchmark(bytes32 salt) internal returns (uint256 benchmark) {\n        assembly (\"memory-safe\") {\n            // Derive the target for  native token transfer using address.this & salt.\n            mstore(0, address())\n            mstore(0x20, salt)\n            let target := shr(keccak256(0x0c, 0x34), 96)\n\n            // Ensure callvalue is exactly 2 wei and the target balance is zero.\n            if or(iszero(eq(callvalue(), 2)), iszero(iszero(balance(target)))) {\n                mstore(0, 0x9f608b8a)\n                revert(0x1c, 4)\n            }\n\n            // Get gas before first call.\n            let firstStart := gas()\n\n            // Perform the first call, sending 1 wei.\n            let success1 := call(gas(), target, 1, codesize(), 0, codesize(), 0)\n\n            // Get gas before second call.\n            let secondStart := gas()\n\n            // Perform the second call, sending 1 wei.\n            let success2 := call(gas(), target, 1, codesize(), 0, codesize(), 0)\n\n            // Get gas after second call.\n            let secondEnd := gas()\n\n            // Derive the benchmark cost using the first call.\n            benchmark := sub(firstStart, secondStart)\n\n            // Ensure that both calls succeeded and that the cost of the first call\n            // exceeded that of the second, indicating that the account was not warm.\n            if or(or(iszero(success1), iszero(success2)), iszero(gt(benchmark, sub(secondStart, secondEnd)))) {\n                mstore(0, 0x9f608b8a)\n                revert(0x1c, 4)\n            }\n\n            // Store the benchmark in the appropriate scope.\n            sstore(_NATIVE_TOKEN_BENCHMARK_SCOPE, benchmark)\n        }\n    }\n\n    /**\n     * @notice Internal function for benchmarking the cost of ERC20 token transfers.\n     * Measures the gas cost of transferring tokens to a zero-balance account and\n     * includes the overhead of interacting with a cold token contract.\n     * @param token The address of the ERC20 token to benchmark.\n     * @return benchmark The measured gas cost of the ERC20 token transfer.\n     */\n    function setERC20TokenBenchmark(address token) internal returns (uint256 benchmark) {\n        // Set the caller as the target.\n        address target = msg.sender;\n\n        assembly (\"memory-safe\") {\n            {\n                // Retrieve sentinel value.\n                let sentinel := sload(_ERC20_TOKEN_BENCHMARK_SENTINEL)\n\n                // Ensure it is not set to the current block number.\n                if eq(sentinel, number()) {\n                    mstore(0, 0x9f608b8a)\n                    revert(0x1c, 4)\n                }\n\n                // Store the current block number for the sentinel value.\n                // Note that TSTORE could be used here assuming it is supported;\n                // consider using Tstorish as in the reentrancy lock.\n                sstore(_ERC20_TOKEN_BENCHMARK_SENTINEL, number())\n            }\n\n            // Store function selector for name().\n            mstore(0, 0x06fdde03)\n\n            let firstCallCost\n            let secondCallCost\n\n            {\n                // Get gas before first call.\n                let firstStart := gas()\n\n                // Perform the first call.\n                let success1 := call(gas(), token, 0, 0x1c, 4, codesize(), 0)\n\n                // Get gas before second call.\n                let secondStart := gas()\n\n                // Perform the second call.\n                let success2 := call(gas(), token, 0, 0x1c, 4, codesize(), 0)\n\n                // Get gas after second call.\n                let secondEnd := gas()\n\n                // Derive the benchmark cost of the call.\n                firstCallCost := sub(firstStart, secondStart)\n                secondCallCost := sub(secondStart, secondEnd)\n\n                // Ensure that both calls succeeded and that the cost of the first call\n                // exceeded that of the second, indicating that the account was not warm.\n                if or(or(iszero(success1), iszero(success2)), iszero(gt(firstCallCost, secondCallCost))) {\n                    mstore(0, 0x9f608b8a)\n                    revert(0x1c, 4)\n                }\n            }\n\n            // Get gas before third call.\n            let thirdStart := gas()\n\n            mstore(0x14, target) // Store target `to` argument in memory.\n            mstore(0x34, 1) // Store an `amount` argument of 1 in memory.\n            mstore(0x00, 0xa9059cbb000000000000000000000000) // `transfer(address,uint256)`.\n\n            // Perform the third call and ensure it succeeds.\n            if iszero(\n                and( // The arguments of `and` are evaluated from right to left.\n                    or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.\n                    call(gas(), token, 0, 0x10, 0x44, 0, 0x20)\n                )\n            ) {\n                mstore(0, 0x9f608b8a)\n                revert(0x1c, 4)\n            }\n\n            mstore(0x34, 0) // Restore the part of the free memory pointer that was overwritten.\n\n            // Get gas after third call.\n            let thirdEnd := gas()\n\n            // Derive the execution benchmark cost using the difference.\n            let thirdCallCost := sub(thirdStart, thirdEnd)\n\n            // Combine cost of first and third calls, and remove the second call due\n            // to the fact that a single call is performed, to derive the benchmark.\n            benchmark := sub(add(firstCallCost, thirdCallCost), secondCallCost)\n\n            // Burn the transferred tokens from the target.\n            mstore(0, 0x89afcb44)\n            mstore(0x20, target)\n            if iszero(call(gas(), token, 0, 0x1c, 0x24, codesize(), 0)) {\n                mstore(0, 0x9f608b8a)\n                revert(0x1c, 4)\n            }\n\n            // Store the benchmark in the appropriate scope.\n            sstore(_ERC20_TOKEN_BENCHMARK_SCOPE, benchmark)\n        }\n    }\n\n    /**\n     * @notice Internal view function to ensure there is sufficient gas remaining to\n     * cover the benchmarked cost of a token withdrawal. Reverts if the remaining gas\n     * is less than the benchmark for the specified token type.\n     * @param token The address of the token (address(0) for native tokens).\n     */\n    function ensureBenchmarkExceeded(address token) internal view {\n        assembly (\"memory-safe\") {\n            // Select the appropriate scope based on the token in question.\n            let scope :=\n                xor(\n                    _ERC20_TOKEN_BENCHMARK_SCOPE,\n                    mul(xor(_ERC20_TOKEN_BENCHMARK_SCOPE, _NATIVE_TOKEN_BENCHMARK_SCOPE), iszero(token))\n                )\n\n            // Load benchmarked value and ensure it does not exceed available gas.\n            if gt(sload(scope), gas()) {\n                // revert InsufficientStipendForWithdrawalFallback();\n                mstore(0, 0xc5274598)\n                revert(0x1c, 4)\n            }\n        }\n    }\n\n    /**\n     * @notice Internal view function for retrieving the benchmarked gas costs for\n     * both native token and ERC20 token withdrawals.\n     * @return nativeTokenBenchmark The benchmarked gas cost for native token withdrawals.\n     * @return erc20TokenBenchmark  The benchmarked gas cost for ERC20 token withdrawals.\n     */\n    function getTokenWithdrawalBenchmarks()\n        internal\n        view\n        returns (uint256 nativeTokenBenchmark, uint256 erc20TokenBenchmark)\n    {\n        assembly (\"memory-safe\") {\n            nativeTokenBenchmark := sload(_NATIVE_TOKEN_BENCHMARK_SCOPE)\n            erc20TokenBenchmark := sload(_ERC20_TOKEN_BENCHMARK_SCOPE)\n        }\n    }\n}\n"
+        "TheCompact.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.27;\n\nimport { ITheCompact } from \"./interfaces/ITheCompact.sol\";\n\nimport { AllocatedBatchTransfer } from \"./types/BatchClaims.sol\";\nimport { AllocatedTransfer } from \"./types/Claims.sol\";\nimport { CompactCategory } from \"./types/CompactCategory.sol\";\nimport { Lock } from \"./types/Lock.sol\";\nimport { Scope } from \"./types/Scope.sol\";\nimport { ResetPeriod } from \"./types/ResetPeriod.sol\";\nimport { ForcedWithdrawalStatus } from \"./types/ForcedWithdrawalStatus.sol\";\nimport { EmissaryStatus } from \"./types/EmissaryStatus.sol\";\nimport { DepositDetails } from \"./types/DepositDetails.sol\";\n\nimport { ERC6909 } from \"solady/tokens/ERC6909.sol\";\nimport { ISignatureTransfer } from \"permit2/src/interfaces/ISignatureTransfer.sol\";\n\nimport { TheCompactLogic } from \"./lib/TheCompactLogic.sol\";\n\n/**\n * @title The Compact\n * @custom:version 1\n * @author 0age (0age.eth)\n * @notice The Compact is an ownerless ERC6909 contract that facilitates the voluntary\n *         formation and mediation of reusable \"resource locks.\"\n *         This contract has not yet been properly tested, audited, or reviewed.\n */\ncontract TheCompact is ITheCompact, ERC6909, TheCompactLogic {\n    function depositNative(bytes12 lockTag, address recipient) external payable returns (uint256) {\n        return _performCustomNativeTokenDeposit(lockTag, recipient);\n    }\n\n    function depositERC20(address token, bytes12 lockTag, uint256 amount, address recipient)\n        external\n        returns (uint256 id)\n    {\n        (id,) = _performCustomERC20Deposit(token, lockTag, amount, recipient);\n    }\n\n    function batchDeposit(uint256[2][] calldata idsAndAmounts, address recipient) external payable returns (bool) {\n        _processBatchDeposit(idsAndAmounts, recipient, false);\n\n        return true;\n    }\n\n    function depositERC20ViaPermit2(\n        ISignatureTransfer.PermitTransferFrom calldata permit,\n        address, // depositor\n        bytes12, // lockTag\n        address recipient,\n        bytes calldata signature\n    ) external returns (uint256) {\n        return _depositViaPermit2(permit.permitted.token, recipient, signature);\n    }\n\n    function batchDepositViaPermit2(\n        address, // depositor\n        ISignatureTransfer.TokenPermissions[] calldata permitted,\n        DepositDetails calldata,\n        address recipient,\n        bytes calldata signature\n    ) external payable returns (uint256[] memory) {\n        return _depositBatchViaPermit2(permitted, recipient, signature);\n    }\n\n    function allocatedTransfer(AllocatedTransfer calldata transfer) external returns (bool) {\n        return _processTransfer(transfer);\n    }\n\n    function allocatedBatchTransfer(AllocatedBatchTransfer calldata transfer) external returns (bool) {\n        return _processBatchTransfer(transfer);\n    }\n\n    function register(bytes32 claimHash, bytes32 typehash) external returns (bool) {\n        _register(msg.sender, claimHash, typehash);\n\n        return true;\n    }\n\n    function registerMultiple(bytes32[2][] calldata claimHashesAndTypehashes) external returns (bool) {\n        return _registerBatch(claimHashesAndTypehashes);\n    }\n\n    function registerFor(\n        bytes32 typehash,\n        address, // arbiter\n        address sponsor,\n        uint256, // nonce\n        uint256, // expires\n        uint256, // id\n        uint256, // amount\n        bytes32, // witness\n        bytes calldata sponsorSignature\n    ) external returns (bytes32 claimHash) {\n        return _registerFor(sponsor, typehash, sponsorSignature);\n    }\n\n    function registerBatchFor(\n        bytes32 typehash,\n        address, // arbiter\n        address sponsor,\n        uint256, // nonce\n        uint256, // expires\n        bytes32, // idsAndAmountsHash\n        bytes32, // witness\n        bytes calldata sponsorSignature\n    ) external returns (bytes32 claimHash) {\n        return _registerBatchFor(sponsor, typehash, sponsorSignature);\n    }\n\n    function registerMultichainFor(\n        bytes32 typehash,\n        address sponsor,\n        uint256, // nonce,\n        uint256, // expires,\n        bytes32, // elementsHash,\n        uint256 notarizedChainId,\n        bytes calldata sponsorSignature\n    ) external returns (bytes32 claimHash) {\n        return _registerMultichainFor(sponsor, typehash, notarizedChainId, sponsorSignature);\n    }\n\n    function depositNativeAndRegister(bytes12 lockTag, bytes32 claimHash, bytes32 typehash)\n        external\n        payable\n        returns (uint256 id)\n    {\n        id = _performCustomNativeTokenDeposit(lockTag, msg.sender);\n\n        _register(msg.sender, claimHash, typehash);\n    }\n\n    function depositNativeAndRegisterFor(\n        address recipient,\n        bytes12 lockTag,\n        address arbiter,\n        uint256 nonce,\n        uint256 expires,\n        bytes32 typehash,\n        bytes32 witness\n    ) external payable returns (uint256 id, bytes32 claimHash) {\n        id = _performCustomNativeTokenDeposit(lockTag, recipient);\n\n        claimHash = _registerUsingClaimWithWitness(recipient, id, msg.value, arbiter, nonce, expires, typehash, witness);\n    }\n\n    function depositERC20AndRegister(\n        address token,\n        bytes12 lockTag,\n        uint256 amount,\n        bytes32 claimHash,\n        bytes32 typehash\n    ) external returns (uint256 id) {\n        (id,) = _performCustomERC20Deposit(token, lockTag, amount, msg.sender);\n\n        _register(msg.sender, claimHash, typehash);\n    }\n\n    function depositERC20AndRegisterFor(\n        address recipient,\n        address token,\n        bytes12 lockTag,\n        uint256 amount,\n        address arbiter,\n        uint256 nonce,\n        uint256 expires,\n        bytes32 typehash,\n        bytes32 witness\n    ) external returns (uint256 id, bytes32 claimHash, uint256 registeredAmount) {\n        (id, registeredAmount) = _performCustomERC20Deposit(token, lockTag, amount, recipient);\n\n        claimHash =\n            _registerUsingClaimWithWitness(recipient, id, registeredAmount, arbiter, nonce, expires, typehash, witness);\n    }\n\n    function batchDepositAndRegisterMultiple(\n        uint256[2][] calldata idsAndAmounts,\n        bytes32[2][] calldata claimHashesAndTypehashes\n    ) external payable returns (bool) {\n        _processBatchDeposit(idsAndAmounts, msg.sender, false);\n\n        return _registerBatch(claimHashesAndTypehashes);\n    }\n\n    function batchDepositAndRegisterFor(\n        address recipient,\n        uint256[2][] calldata idsAndAmounts,\n        address arbiter,\n        uint256 nonce,\n        uint256 expires,\n        bytes32 typehash,\n        bytes32 witness\n    ) external payable returns (bytes32 claimHash, uint256[] memory registeredAmounts) {\n        registeredAmounts = _processBatchDeposit(idsAndAmounts, recipient, true);\n\n        claimHash = _registerUsingBatchClaimWithWitness(\n            recipient, idsAndAmounts, arbiter, nonce, expires, typehash, witness, registeredAmounts\n        );\n    }\n\n    function depositERC20AndRegisterViaPermit2(\n        ISignatureTransfer.PermitTransferFrom calldata permit,\n        address depositor, // also recipient\n        bytes12, // lockTag\n        bytes32 claimHash,\n        CompactCategory, // compactCategory\n        string calldata witness,\n        bytes calldata signature\n    ) external returns (uint256) {\n        return _depositAndRegisterViaPermit2(permit.permitted.token, depositor, claimHash, witness, signature);\n    }\n\n    function batchDepositAndRegisterViaPermit2(\n        address depositor,\n        ISignatureTransfer.TokenPermissions[] calldata permitted,\n        DepositDetails calldata,\n        bytes32, // claimHash\n        CompactCategory, // compactCategory\n        string calldata witness,\n        bytes calldata signature\n    ) external payable returns (uint256[] memory) {\n        return _depositBatchAndRegisterViaPermit2(depositor, permitted, witness, signature);\n    }\n\n    function enableForcedWithdrawal(uint256 id) external returns (uint256) {\n        return _enableForcedWithdrawal(id);\n    }\n\n    function disableForcedWithdrawal(uint256 id) external returns (bool) {\n        _disableForcedWithdrawal(id);\n\n        return true;\n    }\n\n    function forcedWithdrawal(uint256 id, address recipient, uint256 amount) external returns (bool) {\n        _processForcedWithdrawal(id, recipient, amount);\n\n        return true;\n    }\n\n    function assignEmissary(bytes12 lockTag, address emissary) external returns (bool) {\n        return _assignEmissary(lockTag, emissary);\n    }\n\n    function scheduleEmissaryAssignment(bytes12 lockTag) external returns (uint256 emissaryAssignmentAvailableAt) {\n        return _scheduleEmissaryAssignment(lockTag);\n    }\n\n    function consume(uint256[] calldata nonces) external returns (bool) {\n        return _consume(nonces);\n    }\n\n    function __registerAllocator(address allocator, bytes calldata proof) external returns (uint96) {\n        return _registerAllocator(allocator, proof);\n    }\n\n    function __benchmark(bytes32 salt) external payable {\n        _benchmark(salt);\n    }\n\n    function getRequiredWithdrawalFallbackStipends()\n        external\n        view\n        returns (uint256 nativeTokenStipend, uint256 erc20TokenStipend)\n    {\n        return _getRequiredWithdrawalFallbackStipends();\n    }\n\n    function getForcedWithdrawalStatus(address account, uint256 id)\n        external\n        view\n        returns (ForcedWithdrawalStatus, uint256)\n    {\n        return _getForcedWithdrawalStatus(account, id);\n    }\n\n    function getRegistrationStatus(address sponsor, bytes32 claimHash, bytes32 typehash)\n        external\n        view\n        returns (bool isActive, uint256 registrationTimestamp)\n    {\n        registrationTimestamp = _getRegistrationStatus(sponsor, claimHash, typehash);\n        isActive = registrationTimestamp != 0;\n    }\n\n    function getEmissaryStatus(address sponsor, bytes12 lockTag)\n        external\n        view\n        returns (EmissaryStatus status, uint256 emissaryAssignmentAvailableAt, address currentEmissary)\n    {\n        return _getEmissaryStatus(sponsor, lockTag);\n    }\n\n    function getLockDetails(uint256 id) external view returns (address, address, ResetPeriod, Scope, bytes12) {\n        return _getLockDetails(id);\n    }\n\n    function hasConsumedAllocatorNonce(uint256 nonce, address allocator) external view returns (bool) {\n        return _hasConsumedAllocatorNonce(nonce, allocator);\n    }\n\n    function DOMAIN_SEPARATOR() external view returns (bytes32) {\n        return _domainSeparator();\n    }\n\n    /**\n     * @notice Returns the name for token `id`.\n     * @param id The ERC6909 token identifier to get the name for.\n     * @return The name of the token.\n     */\n    function name(uint256 id) public view virtual override returns (string memory) {\n        return _name(id);\n    }\n\n    /**\n     * @notice Returns the symbol for token `id`.\n     * @param id The ERC6909 token identifier to get the symbol for.\n     * @return The symbol of the token.\n     */\n    function symbol(uint256 id) public view virtual override returns (string memory) {\n        return _symbol(id);\n    }\n\n    /**\n     * @notice Returns the decimals for token `id`.\n     * @param id The ERC6909 token identifier to get the decimals for.\n     * @return The decimals of the token.\n     */\n    function decimals(uint256 id) public view virtual override returns (uint8) {\n        return _decimals(id);\n    }\n\n    /**\n     * @notice Returns the ERC6909 Uniform Resource Identifier (URI) for token `id`.\n     * @param id The ERC6909 token identifier to get the URI for.\n     * @return The URI of the token.\n     */\n    function tokenURI(uint256 id) public view virtual override returns (string memory) {\n        return _tokenURI(id);\n    }\n\n    /**\n     * @notice External pure function for returning the name of the contract.\n     * @return A string representing the name of the contract.\n     */\n    function name() external pure returns (string memory) {\n        // Return the name of the contract.\n        assembly (\"memory-safe\") {\n            mstore(0x20, 0x20)\n            mstore(0x4b, 0x0b54686520436f6d70616374)\n            return(0x20, 0x60)\n        }\n    }\n\n    /**\n     * @notice Hook that is called before any standard ERC6909 token transfer. Note that this hook\n     *         is not called when performing allocated transfers or when processing claims, nor are\n     *         standard token approvals required.\n     * @param from   The address tokens are transferred from.\n     * @param to     The address tokens are transferred to.\n     * @param id     The ERC6909 token identifier.\n     * @param amount The amount of tokens being transferred.\n     */\n    function _beforeTokenTransfer(address from, address to, uint256 id, uint256 amount) internal virtual override {\n        _ensureAttested(from, to, id, amount);\n    }\n}\n"
     }
 }

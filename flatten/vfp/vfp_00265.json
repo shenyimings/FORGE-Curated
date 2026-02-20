@@ -3,24 +3,7 @@
     "project_name": "Jovay Rollup Contracts Audit.md",
     "findings": [
         {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Gas Handling Inconsistencies in Bridge Message Execution",
-            "description": "The `L2ETHBridge.finalizeDeposit` function forwards `gasleft() / 2` to the recipient during the external call. This arbitrary split may leave insufficient gas for the callee to complete its execution, especially if it performs complex operations or calls other contracts.\n\nThe root cause is the use of a heuristic-based gas forwarding pattern instead of a fixed reserve. This approach is not robust and can lead to unpredictable behavior depending on the initial gas context.\n\nAn attacker could trigger a deposit to a contract that requires more than half of the remaining gas, causing the call to revert. This would prevent the user from receiving their funds, even though the message is valid.\n\nThe impact is potential failure of deposit finalization, leading to user funds being stuck and requiring manual intervention. It reduces the reliability of the bridge and introduces unnecessary risk in message execution.\n",
-            "severity": "Low",
-            "location": [
-                "L2ETHBridge.sol::finalizeDeposit#45"
-            ],
-            "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
-            ]
-        },
-        {
-            "id": 6,
+            "id": 19,
             "category": {
                 "1": [
                     "CWE-707"
@@ -32,19 +15,37 @@
                     "CWE-1284"
                 ]
             },
-            "title": "Zero-Amount Withdraw Allows Spam Messaging",
-            "description": "The `L2ETHBridge.withdraw` function only checks that `msg.value` is non-zero but does not validate that the `amount_` parameter is greater than zero. This allows users to initiate withdrawals with zero value by paying a minimal ETH amount as `msg.value`, which is later refunded.\n\nThe root cause is missing input validation on the withdrawal amount. The system treats these zero-amount calls as valid messages, which are then included in batches and must be processed by relayers on L1.\n\nAn attacker can exploit this by submitting a large number of zero-amount withdrawals at low cost, forcing relayers to process spam messages. This increases the load on the system and delays legitimate withdrawals, especially under future ZK proof verification which is gas-intensive.\n\nThe impact is a potential denial of service due to resource exhaustion, increased costs for relayers, and degraded user experience as real transactions are delayed in the queue.\n",
-            "severity": "Medium",
+            "title": "Incomplete Security Checks in Custom Merkle Tree Library",
+            "description": "The custom WithdrawTrieVerifier library used for Merkle proof verification lacks standard safety checks, such as validating the proof length against the expected tree depth. This allows construction of proofs for intermediate nodes rather than just leaves, potentially enabling invalid withdrawals if the library is misused. While the current integration with the bridge contracts is secure, the library itself is unsafe for reuse in other contexts. The root cause is the absence of defensive checks in low-level verification logic. The impact is limited in the current context but poses a significant risk if the library is reused elsewhere without additional safeguards, potentially leading to unauthorized withdrawals or state inconsistencies.\n",
+            "severity": "Low",
             "location": [
-                "L2ETHBridge.sol::withdraw#21-31",
-                "L2Mailbox.sol::sendMsg#43-75"
+                "WithdrawTrieVerifier.sol",
+                "L1Mailbox.sol#139-160"
             ],
             "files": [
-                "jovay-contracts/rollup_contracts/contracts/L2/bridge/L2ETHBridge.sol"
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
+            ]
+        },
+        {
+            "id": 28,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Prefix Increment Operator (`++i`) Can Save Gas in Loops",
+            "description": "Several loops in the codebase use the postfix increment operator (`i++`) instead of the more gas-efficient prefix increment (`++i`). Since the return value is ignored in loop increments, using `i++` unnecessarily stores the pre-increment value, wasting gas. The root cause is suboptimal coding practice. An attacker cannot exploit this, but it increases transaction costs for all users. Over many iterations, this can result in significant gas overhead. The impact is low, but optimizing this improves efficiency and reduces operational costs.\n",
+            "severity": "Low",
+            "location": [
+                "WithdrawTrieVerifier.sol::i++#22",
+                "AppendOnlyMerkleTree.sol::height++#26"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/L1/libraries/verifier/WithdrawTrieVerifier.sol"
             ]
         }
     ],
     "affected_files": {
-        "L2ETHBridge.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.0;\n\nimport \"../../L1/bridge/interfaces/IL1ETHBridge.sol\";\nimport \"../../common/BridgeBase.sol\";\nimport \"../interfaces/IL2Mailbox.sol\";\nimport \"./interfaces/IL2ETHBridge.sol\";\nimport \"solidity-bytes-utils/contracts/BytesLib.sol\";\nimport {L2Mailbox} from \"../core/L2Mailbox.sol\";\n\ncontract L2ETHBridge is BridgeBase, IL2ETHBridge {\n    uint256 public balance;\n\n    /**\n     * The sender account transfers to tokenbridge to lock the assets;\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param gasLimit_ gas limit\n     * @param msg_ data\n     */\n    function withdraw(address to_, uint256 amount_, uint256 gasLimit_, bytes memory msg_) external payable override nonReentrant whenNotPaused {\n        require(msg.value > 0, \"withdraw zero eth\");\n        require(balance >= amount_, \"insufficient balance\");\n\n        address sender_ = _msgSender();\n\n        bytes memory message_ = abi.encodeCall(IL1ETHBridge.finalizeWithdraw, (sender_, to_, amount_, msg_));\n        balance -= amount_;\n        mailBoxCall(abi.encodeCall(IMailBoxBase.sendMsg, (toBridge, amount_, message_, gasLimit_, sender_)));\n        emit WithdrawETH(sender_, to_, amount_, message_);\n    }\n\n\n    /**\n     * Complete the transfer of L1 assets\n     * @param sender_ transfer initiator\n     * @param to_ target address\n     * @param amount_ transfer amount\n     * @param msg_ data\n     */\n    function finalizeDeposit(address sender_, address to_, uint256 amount_, bytes calldata msg_) external payable override nonReentrant onlyMailBox whenNotPaused {\n        require(msg.value == amount_, \"msg.value mismatch\");\n        balance += amount_;\n\n        (bool success_,) = to_.call{value : amount_, gas : gasleft() / 2}(\"\");\n        require(success_, \"ETH transfer failed\");\n// TODO : add call msg with deposit\n//        _doCallback(to_, msg_);\n\n        emit FinalizeDepositETH(sender_, to_, amount_, msg_);\n    }\n\n    function claimDeposit(bytes calldata msg_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        IL2Mailbox(mailBox).claimAmount(target, amount, nonce,depositHash);\n    }\n\n    function claimDeposit(bytes calldata msg_, address new_refund_address_) external override nonReentrant whenNotPaused {\n        (address l1bridge, address l2bridge, uint256 value, uint256 nonce, bytes memory depositMsg) = abi.decode(msg_[4:], (address, address, uint256, uint256, bytes));\n        bytes memory newDepositMsg = BytesLib.slice(depositMsg, 4, depositMsg.length-4);\n        (address sender, address target, uint256 amount, bytes memory data) = abi.decode(newDepositMsg, (address, address, uint256, bytes));\n        bytes32 depositHash = keccak256(msg_);\n        balance += amount;\n        require(msg.sender == sender, \"claimDeposit change refund must called by origin sender\");\n        IL2Mailbox(mailBox).claimAmount(new_refund_address_, amount, nonce, depositHash);\n    }\n}\n"
+        "WithdrawTrieVerifier.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.24;\n\n// solhint-disable no-inline-assembly\n\nlibrary WithdrawTrieVerifier {\n    /// @dev Verify the merkle proof given root, leaf node and proof.\n    /// @param _root The expected root node hash of the withdraw trie.\n    /// @param _hash The leaf node hash of the withdraw trie.\n    /// @param _nonce The index of the leaf node from left to right, starting from 0.\n    /// @param _proof The concatenated merkle proof verified the leaf node.\n    function verifyMerkleProof(\n        bytes32 _root,\n        bytes32 _hash,\n        uint256 _nonce,\n        bytes memory _proof\n    ) internal pure returns (bool) {\n        require(_proof.length % 32 == 0, \"Invalid proof\");\n        uint256 _length = _proof.length / 32;\n\n        for (uint256 i = 0; i < _length; i++) {\n            bytes32 item;\n            assembly {\n                item := mload(add(add(_proof, 0x20), mul(i, 0x20)))\n            }\n            if (_nonce % 2 == 0) {\n                _hash = _efficientHash(_hash, item);\n            } else {\n                _hash = _efficientHash(item, _hash);\n            }\n            _nonce /= 2;\n        }\n        return _hash == _root;\n    }\n\n    function _efficientHash(bytes32 a, bytes32 b) private pure returns (bytes32 value) {\n        // solhint-disable-next-line no-inline-assembly\n        assembly {\n            mstore(0x00, a)\n            mstore(0x20, b)\n            value := keccak256(0x00, 0x40)\n        }\n    }\n}\n"
     }
 }

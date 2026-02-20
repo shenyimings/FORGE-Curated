@@ -1,26 +1,35 @@
 {
     "vfp_id": "vfp_00565",
-    "project_name": "cantina_seamless_april2025.pdf",
+    "project_name": "Lido V3 _ Consensys Diligence.md",
     "findings": [
         {
-            "id": 4,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-346"
                 ]
             },
-            "title": "Struct that is written to and accessed in storage could be optimized from 3 slots to 1",
-            "description": "1. **Description:** The Auction struct in DataTypes.sol uses three storage slots due to inefficient packing of its fields, increasing gas costs for storage operations.\n2. **Cause:** The struct contains two uint256 timestamps and a bool, which are not tightly packed, resulting in suboptimal storage layout.\n3. **Exploitation:** This is not exploitable in a security sense but leads to higher gas consumption on every write and read operation involving the struct.\n4. **Impact:** Increased transaction costs for users interacting with functionality that uses the Auction struct, reducing efficiency and economic viability.\n",
-            "severity": "Informational",
+            "title": "PinnedBeaconProxy Can Hide Malicious Implementation via Constructor",
+            "description": "The vulnerability allows an attacker to deploy a malicious staking vault implementation by manipulating the constructor of the PinnedBeaconProxy, which is otherwise expected to point to a legitimate implementation. The root cause lies in the fact that the VaultHub validates only the proxy's codehash and the isOssified() status from the implementation, but does not verify the actual pinned implementation address in storage. Since the constructor of the proxy is not part of the runtime bytecode, an attacker can craft a malicious constructor that pre-initializes the PINNED_BEACON_STORAGE_SLOT with a malicious implementation address. This implementation can return false for isOssified(), bypassing the VaultHub’s checks. Once connected, the attacker can mint stETH against non-existent collateral and then drain all funds from the vault, leading to a loss of funds for the Lido protocol.\n",
+            "severity": "Critical",
             "location": [
-                "DataTypes.sol::#L38-L46"
+                "PinnedBeaconProxy.sol::constructor#L25-L39",
+                "PinnedBeaconUtils.sol::getPinnedImplementation#L16-L30",
+                "StakingVault.sol::isOssified#L180-L182",
+                "PinnedBeaconUtils.sol::ossified#L36-L38"
             ],
             "files": [
-                "leverage-tokens/src/types/DataTypes.sol"
+                "core/contracts/0.8.25/vaults/PinnedBeaconProxy.sol"
             ]
         }
     ],
     "affected_files": {
-        "DataTypes.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {ILendingAdapter} from \"src/interfaces/ILendingAdapter.sol\";\nimport {IRebalanceAdapterBase} from \"src/interfaces/IRebalanceAdapterBase.sol\";\nimport {ILeverageToken} from \"src/interfaces/ILeverageToken.sol\";\n\n/// @dev Enum defining internal actions that a LendingAdapter can perform on a lending pool\nenum ActionType {\n    AddCollateral,\n    RemoveCollateral,\n    Borrow,\n    Repay\n}\n\n/// @dev Enum defining actions that users can perform on a LeverageToken\nenum ExternalAction {\n    Deposit,\n    Withdraw\n}\n\n/// @dev Struct that contains all data related to a LeverageToken action\nstruct ActionData {\n    /// @dev Amount of collateral added or withdrawn\n    uint256 collateral;\n    /// @dev Amount of debt borrowed or repaid\n    uint256 debt;\n    /// @dev Amount of equity added or withdrawn before fees, denominated in collateral asset\n    uint256 equity;\n    /// @dev Amount of shares minted or burned to user\n    uint256 shares;\n    /// @dev Fee charged for the action to the leverage token, denominated in collateral asset\n    uint256 tokenFee;\n    /// @dev Fee charged for the action to the treasury, denominated in collateral asset\n    uint256 treasuryFee;\n}\n\n/// @dev Struct containing auction parameters\nstruct Auction {\n    /// @dev Whether the LeverageToken is over-collateralized\n    bool isOverCollateralized;\n    /// @dev Timestamp when the auction started\n    uint256 startTimestamp;\n    /// @dev Timestamp when the auction ends/ended\n    uint256 endTimestamp;\n}\n\n/// @dev Struct that contains the base LeverageToken config stored in LeverageManager\nstruct BaseLeverageTokenConfig {\n    /// @dev LendingAdapter for the LeverageToken\n    ILendingAdapter lendingAdapter;\n    /// @dev RebalanceAdapter for the LeverageToken\n    IRebalanceAdapterBase rebalanceAdapter;\n}\n\n/// @dev Struct that contains the entire LeverageToken config\nstruct LeverageTokenConfig {\n    /// @dev LendingAdapter for the LeverageToken\n    ILendingAdapter lendingAdapter;\n    /// @dev RebalanceAdapter for the LeverageToken\n    IRebalanceAdapterBase rebalanceAdapter;\n    /// @dev Fee for deposit action\n    uint256 depositTokenFee;\n    /// @dev Fee for withdraw action, defined as a percentage\n    uint256 withdrawTokenFee;\n}\n\n/// @dev Struct that contains all data describing the state of a LeverageToken\nstruct LeverageTokenState {\n    /// @dev Collateral denominated in debt asset\n    uint256 collateralInDebtAsset;\n    /// @dev Debt\n    uint256 debt;\n    /// @dev Equity denominated in debt asset\n    uint256 equity;\n    /// @dev Collateral ratio on 8 decimals\n    uint256 collateralRatio;\n}\n\n/// @dev Struct that contains all data related to a rebalance action\nstruct RebalanceAction {\n    /// @dev LeverageToken to perform the action on\n    ILeverageToken leverageToken;\n    /// @dev Type of action to perform\n    ActionType actionType;\n    /// @dev Amount to perform the action with\n    uint256 amount;\n}\n\n/// @dev Struct that contains all data related to a token transfer\nstruct TokenTransfer {\n    /// @dev Token to transfer\n    address token;\n    /// @dev Amount to transfer\n    uint256 amount;\n}\n"
+        "PinnedBeaconProxy.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\n\n// See contracts/COMPILERS.md\npragma solidity 0.8.25;\n\nimport {IBeacon} from \"@openzeppelin/contracts-v5.2/proxy/beacon/IBeacon.sol\";\nimport {BeaconProxy} from \"@openzeppelin/contracts-v5.2/proxy/beacon/BeaconProxy.sol\";\nimport {PinnedBeaconUtils} from \"./lib/PinnedBeaconUtils.sol\";\n\n/**\n * @title PinnedBeaconProxy\n * @author Lido\n * @notice\n *\n * PinnedBeaconProxy is an extended version of OpenZeppelin's BeaconProxy that adds the ability\n * to \"pin\" (ossify) specific implementation versions for individual proxy instances.\n *\n * Implementation details:\n * - Uses PinnedBeaconUtils library to manage pinned implementation state\n * - Pinned implementation is stored in a storage slot (keccak256(\"stakingVault.proxy.pinnedBeacon\") - 1)\n * - When ossified, the proxy will always use the pinned implementation instead of the beacon's implementation\n *\n */\ncontract PinnedBeaconProxy is BeaconProxy {\n    constructor(address beacon, bytes memory data) BeaconProxy(beacon, data) payable {}\n\n    function _implementation() internal view virtual override returns (address) {\n        address pinnedImpl = PinnedBeaconUtils.getPinnedImplementation();\n        if (pinnedImpl != address(0)) {\n            return pinnedImpl;\n        }\n        return IBeacon(_getBeacon()).implementation();\n    }\n\n    function implementation() external view returns (address) {\n        return _implementation();\n    }\n}\n"
     }
 }

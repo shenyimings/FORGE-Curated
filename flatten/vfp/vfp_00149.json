@@ -3,84 +3,24 @@
     "project_name": "Likwid - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 24,
+            "id": 39,
             "category": {
                 "1": [
                     "CWE-682"
                 ]
             },
-            "title": "Inconsistent margin level calculation allows unfair manipulation",
-            "description": "The marginLevel() function in MarginPosition.sol uses different formulas depending on whether leverage is zero or greater than zero. For leverage = 0, it uses liquidity-based valuation, while for leverage > 0, it uses spot price to estimate position value. The root cause is the asymmetric logic that makes leverage > 0 positions appear safer (higher margin level) even with the same economic exposure. A malicious user can exploit this by opening a leverage = 0 position and then adding a minimal leverage > 0 margin, triggering the more favorable calculation method. This inflates the perceived margin level, allowing the user to bypass liquidation thresholds or maintain risky positions. The impact is a manipulation vector that undermines the fairness and reliability of the margin system.\n",
-            "severity": "Medium",
-            "location": [
-                "MarginPosition.sol::marginLevel#63"
-            ],
-            "files": [
-                "likwid-margin/src/libraries/MarginPosition.sol"
-            ]
-        },
-        {
-            "id": 49,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "The swapFeeAmount calculation is incorrect during position close",
-            "description": "During position close, swapFeeAmount is calculated based on the full releaseAmount, but only the costAmount portion is actually swapped. The remaining closeAmount is directly released, so including it in fee calculation overestimates the fee. The root cause is incorrect fee attribution. This leads to inaccurate accounting. The impact is overstated fee metrics and potential confusion in financial reporting.\n",
-            "severity": "Informational",
-            "location": [
-                "MarginPosition.sol#L178"
-            ],
-            "files": [
-                "likwid-margin/src/libraries/MarginPosition.sol"
-            ]
-        },
-        {
-            "id": 28,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ],
-                "2": [
-                    "CWE-1339"
-                ]
-            },
-            "title": "Wrong use of mulDiv during debt updates",
-            "description": "The update() function in MarginPosition.sol uses Math.mulDiv to scale debtAmount and margin amounts based on cumulative interest indices. The root cause is the use of integer division with truncation (rounding down), which introduces small rounding losses (dust) in each position's debt calculation. Over time, these rounding errors accumulate across many users, leading to a growing discrepancy between the total accounted debt and the actual interest accrued in the pool. Eventually, this can cause the last user attempting to repay or withdraw to face a revert due to insufficient token balance, as the system's accounting shows slightly less debt than what is truly owed. The impact is unfair treatment of users and potential fund lock-up.\n",
-            "severity": "Medium",
-            "location": [
-                "MarginPosition.sol::update#92"
-            ],
-            "files": [
-                "likwid-margin/src/libraries/MarginPosition.sol"
-            ]
-        },
-        {
-            "id": 36,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-754"
-                ],
-                "3": [
-                    "CWE-394"
-                ]
-            },
-            "title": "Health check returns infinity when LP reserve is empty",
-            "description": "The marginLevel() function in MarginPosition.sol returns type(uint256).max when either debt is zero or pair reserves are not both positive. This means a position with non-zero debt could pass health checks if reserves are zero, falsely indicating solvency. The root cause is improper validation of reserve states before computing health. An attacker could exploit this by manipulating or draining reserves to bypass liquidation checks. The impact is potential bad debt accumulation and protocol losses due to failure to liquidate insolvent positions.\n",
+            "title": "Total investments are backwards with respect to liquidity",
+            "description": "In PairPosition.sol, the totalInvestment is updated using LiquidityMath.addInvestment with delta.amount0() and delta.amount1(), but deltas are positive when removing liquidity and negative when adding. This causes totalInvestment to become negative when a user has an active position. The root cause is incorrect sign handling in investment tracking. This leads to incorrect state representation. The impact is inaccurate accounting of user investments, potentially affecting UIs and downstream systems.\n",
             "severity": "Low",
             "location": [
-                "MarginPosition.sol#L37-45"
+                "PairPosition.sol#L57-58"
             ],
             "files": [
-                "likwid-margin/src/libraries/MarginPosition.sol"
+                "likwid-margin/src/libraries/PairPosition.sol"
             ]
         }
     ],
     "affected_files": {
-        "MarginPosition.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\nimport {Math} from \"./Math.sol\";\nimport {Reserves} from \"../types/Reserves.sol\";\nimport {CustomRevert} from \"./CustomRevert.sol\";\nimport {SwapMath} from \"./SwapMath.sol\";\nimport {PerLibrary} from \"./PerLibrary.sol\";\nimport {SafeCast} from \"./SafeCast.sol\";\n\n/// @title MarginPosition\n/// @notice Positions represent an owner address' margin positions\nlibrary MarginPosition {\n    using CustomRevert for bytes4;\n    using SafeCast for *;\n\n    error CannotUpdateEmptyPosition();\n\n    error InvalidBorrowAmount();\n\n    error ChangeMarginAction();\n\n    error NoChangeInPosition();\n\n    error PositionLiquidated();\n\n    struct State {\n        bool marginForOne;\n        uint128 marginAmount;\n        uint128 marginTotal;\n        uint256 depositCumulativeLast;\n        uint128 debtAmount;\n        uint256 borrowCumulativeLast;\n    }\n\n    function marginLevel(\n        State memory self,\n        Reserves pairReserves,\n        uint256 borrowCumulativeLast,\n        uint256 depositCumulativeLast\n    ) internal pure returns (uint256 level) {\n        if (self.debtAmount == 0 || !pairReserves.bothPositive()) {\n            level = type(uint256).max;\n        } else {\n            uint256 marginAmount;\n            uint256 marginTotal;\n            uint256 positionValue;\n            uint256 debtAmount;\n            uint256 repayAmount;\n            (uint128 reserve0, uint128 reserve1) = pairReserves.reserves();\n            (uint256 reserveBorrow, uint256 reserveMargin) =\n                self.marginForOne ? (reserve0, reserve1) : (reserve1, reserve0);\n            if (self.depositCumulativeLast != 0) {\n                marginAmount = Math.mulDiv(self.marginAmount, depositCumulativeLast, self.depositCumulativeLast);\n                marginTotal = Math.mulDiv(self.marginTotal, depositCumulativeLast, self.depositCumulativeLast);\n                positionValue = marginAmount + marginTotal;\n            }\n            if (self.borrowCumulativeLast != 0) {\n                debtAmount = Math.mulDiv(self.debtAmount, borrowCumulativeLast, self.borrowCumulativeLast);\n            }\n            if (marginTotal > 0) {\n                repayAmount = Math.mulDiv(reserveBorrow, positionValue, reserveMargin);\n            } else {\n                uint256 numerator = positionValue * reserveBorrow;\n                uint256 denominator = reserveMargin + positionValue;\n                repayAmount = numerator / denominator;\n            }\n            level = Math.mulDiv(repayAmount, PerLibrary.ONE_MILLION, debtAmount);\n        }\n    }\n\n    function update(\n        State storage self,\n        uint256 borrowCumulativeLast,\n        uint256 depositCumulativeLast,\n        int128 marginChangeAmount,\n        uint256 marginWithoutFee,\n        uint256 borrowAmount,\n        uint256 repayAmount\n    ) internal returns (uint256 releaseAmount, uint256 realRepayAmount) {\n        uint256 marginAmount;\n        uint256 marginTotal;\n        uint256 positionValue;\n        uint256 debtAmount;\n        if (self.depositCumulativeLast != 0) {\n            marginAmount = Math.mulDiv(self.marginAmount, depositCumulativeLast, self.depositCumulativeLast);\n            marginTotal = Math.mulDiv(self.marginTotal, depositCumulativeLast, self.depositCumulativeLast);\n            positionValue = marginAmount + marginTotal;\n        }\n        if (self.borrowCumulativeLast != 0) {\n            debtAmount = Math.mulDiv(self.debtAmount, borrowCumulativeLast, self.borrowCumulativeLast);\n        }\n        if (repayAmount > 0) {\n            if (repayAmount > debtAmount) {\n                realRepayAmount = debtAmount;\n                releaseAmount = positionValue;\n            } else {\n                releaseAmount = Math.mulDiv(positionValue, repayAmount.toUint128(), debtAmount);\n                realRepayAmount = repayAmount;\n            }\n            debtAmount -= uint128(realRepayAmount);\n            if (marginTotal > 0) {\n                uint256 marginAmountReleased = Math.mulDiv(releaseAmount, marginAmount, positionValue);\n                marginAmount = marginAmount - marginAmountReleased;\n                if (releaseAmount > marginAmountReleased) {\n                    uint256 marginTotalReleased = releaseAmount - marginAmountReleased;\n                    marginTotal = marginTotal - marginTotalReleased;\n                }\n            } else {\n                marginAmount = marginAmount - releaseAmount;\n            }\n        } else {\n            bool hasLeverage = marginTotal > 0 || marginWithoutFee > 0;\n            if (marginChangeAmount > 0) {\n                // modify\n                marginAmount += uint128(marginChangeAmount);\n                // margin or borrow\n                if (borrowAmount > 0) {\n                    if (hasLeverage && marginWithoutFee == 0) {\n                        // when margin, marginWithoutFee should >0\n                        ChangeMarginAction.selector.revertWith();\n                    }\n                    marginTotal += marginWithoutFee;\n                    debtAmount += borrowAmount;\n                }\n            } else if (marginChangeAmount < 0) {\n                //  repay or modify\n                marginAmount -= uint128(-marginChangeAmount);\n            }\n        }\n\n        self.marginAmount = marginAmount.toUint128();\n        self.marginTotal = marginTotal.toUint128();\n        self.depositCumulativeLast = depositCumulativeLast;\n        self.debtAmount = debtAmount.toUint128();\n        self.borrowCumulativeLast = borrowCumulativeLast;\n    }\n\n    function close(\n        State storage self,\n        Reserves pairReserves,\n        uint24 lpFee,\n        uint256 borrowCumulativeLast,\n        uint256 depositCumulativeLast,\n        uint256 rewardAmount,\n        uint24 closeMillionth\n    )\n        internal\n        returns (\n            uint256 releaseAmount,\n            uint256 repayAmount,\n            uint256 closeAmount,\n            uint256 lostAmount,\n            uint256 swapFeeAmount\n        )\n    {\n        if (closeMillionth == 0 || closeMillionth > PerLibrary.ONE_MILLION) {\n            PerLibrary.InvalidMillionth.selector.revertWith();\n        }\n        if (self.debtAmount > 0) {\n            uint256 marginAmount;\n            uint256 marginTotal;\n            uint256 positionValue;\n            uint256 debtAmount;\n            if (self.depositCumulativeLast != 0) {\n                marginAmount = Math.mulDiv(self.marginAmount, depositCumulativeLast, self.depositCumulativeLast);\n                marginTotal = Math.mulDiv(self.marginTotal, depositCumulativeLast, self.depositCumulativeLast);\n                positionValue = marginAmount + marginTotal;\n            }\n            if (self.borrowCumulativeLast != 0) {\n                debtAmount = Math.mulDiv(self.debtAmount, borrowCumulativeLast, self.borrowCumulativeLast);\n            }\n            positionValue -= rewardAmount;\n            releaseAmount = Math.mulDiv(positionValue, closeMillionth, PerLibrary.ONE_MILLION);\n            repayAmount = Math.mulDiv(debtAmount, closeMillionth, PerLibrary.ONE_MILLION);\n            uint256 payedAmount;\n            (payedAmount, swapFeeAmount) = SwapMath.getAmountOut(pairReserves, lpFee, !self.marginForOne, releaseAmount);\n            if (releaseAmount < positionValue && repayAmount > payedAmount) {\n                PositionLiquidated.selector.revertWith();\n            } else {\n                // releaseAmount == positionValue or repayAmount <= payedAmount\n                (uint256 costAmount,) = SwapMath.getAmountIn(pairReserves, lpFee, !self.marginForOne, repayAmount);\n                if (releaseAmount > costAmount) {\n                    closeAmount = releaseAmount - costAmount;\n                } else if (repayAmount > payedAmount) {\n                    lostAmount = repayAmount - payedAmount;\n                }\n            }\n\n            if (marginTotal > 0) {\n                uint256 marginAmountReleased = Math.mulDiv(marginAmount, closeMillionth, PerLibrary.ONE_MILLION);\n                marginAmount = marginAmount - marginAmountReleased;\n                if (releaseAmount > marginAmountReleased) {\n                    uint256 marginTotalReleased = releaseAmount - marginAmountReleased;\n                    marginTotal = marginTotal - marginTotalReleased;\n                }\n            } else {\n                marginAmount =\n                    Math.mulDiv(marginAmount, PerLibrary.ONE_MILLION - closeMillionth, PerLibrary.ONE_MILLION);\n            }\n            debtAmount -= repayAmount;\n            self.marginAmount = marginAmount.toUint128();\n            self.marginTotal = marginTotal.toUint128();\n            self.depositCumulativeLast = depositCumulativeLast;\n            self.debtAmount = debtAmount.toUint128();\n            self.borrowCumulativeLast = borrowCumulativeLast;\n        }\n    }\n}\n"
+        "PairPosition.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\nimport {BalanceDelta} from \"../types/BalanceDelta.sol\";\nimport {CustomRevert} from \"./CustomRevert.sol\";\nimport {PositionLibrary} from \"./PositionLibrary.sol\";\nimport {LiquidityMath} from \"./LiquidityMath.sol\";\n\n/// @title PairPosition\n/// @notice A library for managing liquidity positions in a pair.\n/// @dev Positions represent an owner's liquidity contribution.\nlibrary PairPosition {\n    using CustomRevert for bytes4;\n    using PositionLibrary for address;\n\n    error CannotUpdateEmptyPosition();\n\n    /// @dev Represents the state of a liquidity position.\n    struct State {\n        // The amount of liquidity in the position.\n        uint128 liquidity;\n        // The total investment value, used for tracking returns.\n        uint256 totalInvestment;\n    }\n\n    /// @notice Retrieves a position's state from storage.\n    /// @param self The mapping of position keys to position states.\n    /// @param owner The owner of the position.\n    /// @param salt A unique salt for the position.\n    /// @return position A storage pointer to the position's state.\n    function get(mapping(bytes32 => State) storage self, address owner, bytes32 salt)\n        internal\n        view\n        returns (State storage position)\n    {\n        bytes32 positionKey = owner.calculatePositionKey(salt);\n        position = self[positionKey];\n    }\n\n    /// @notice Updates a position's state with new liquidity and investment amounts.\n    /// @param self A storage pointer to the position's state to update.\n    /// @param liquidityDelta The change in liquidity.\n    /// @param delta The change in the balance of tokens.\n    /// @return The updated total investment value.\n    function update(State storage self, int128 liquidityDelta, BalanceDelta delta) internal returns (uint256) {\n        // If there's no change in liquidity and the position is empty, revert.\n        // This prevents creating empty positions or \"poking\" them without effect.\n        if (liquidityDelta == 0 && self.liquidity == 0) {\n            CannotUpdateEmptyPosition.selector.revertWith();\n        }\n\n        if (liquidityDelta != 0) {\n            self.liquidity = LiquidityMath.addDelta(self.liquidity, liquidityDelta);\n        }\n\n        // Update the total investment and store it.\n        self.totalInvestment = LiquidityMath.addInvestment(self.totalInvestment, delta.amount0(), delta.amount1());\n        return self.totalInvestment;\n    }\n}\n"
     }
 }

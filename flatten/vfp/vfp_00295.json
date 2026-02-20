@@ -1,33 +1,29 @@
 {
     "vfp_id": "vfp_00295",
-    "project_name": "ChainSecurity_Liquity_Bold_Audit.pdf",
+    "project_name": "2025-06-offchain-setcoregovernorquorumaction-securityreview.pdf",
     "findings": [
         {
-            "id": 37,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1339"
+                    "CWE-358"
                 ]
             },
-            "title": "Price Deviation in Composite Price Feed",
-            "description": "The RETHPriceFeed computes RETH/USD as the product of RETH/ETH and ETH/USD prices. With Chainlink deviation thresholds of 2% and 0.5% respectively, the combined price can deviate up to ~2.5% before updating. During branch shutdowns triggered by TCR < SCR, the protocol offers a 1% bonus on oracle price, which may be insufficient to cover this deviation. Additionally, the canonical rate from Rocket Pool updates every 24 hours, potentially delaying urgent redemptions. This creates a window where users may receive less value than expected during critical events. Liquity acknowledges this as a known and accepted risk.\n",
+            "title": "Missing Post-Execution Quorum Validation in perform Function",
+            "description": "1. **Description:** The perform function in the SetCoreGovernorQuorumAction contract does not verify that the quorum update was successfully applied after calling coreGov.relay. According to governance standards, such validation is expected to ensure the integrity of the state change.\n2. **Cause:** The function lacks an after-check to confirm that the quorum numerator has been correctly updated to the expected value (450) post-execution, which violates the governance action contract guidelines.\n3. **Exploitation:** While not directly exploitable for financial gain, a malfunction in the relay call or an unexpected revert in the target contract could result in a failed state update without the action contract detecting it, leading to an inconsistent system state.\n4. **Impact:** The lack of validation could result in the governance action appearing successful while the intended quorum change was not actually applied, undermining the reliability and auditability of the governance process.\n",
             "severity": "Informational",
             "location": [
-                "RETHPriceFeed",
-                "CompositePriceFeed._fetchPrice",
-                "TroveManager.urgentRedemption"
+                "SetCoreGovernorQuorumAction.sol::perform#18-27"
             ],
             "files": [
-                "bold/contracts/src/PriceFeeds/RETHPriceFeed.sol",
-                "bold/contracts/src/PriceFeeds/CompositePriceFeed.sol"
+                "governance/src/gov-action-contracts/governance/SetCoreGovernorQuorumAction.sol"
             ]
         }
     ],
     "affected_files": {
-        "RETHPriceFeed.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.18;\n\nimport \"./CompositePriceFeed.sol\";\nimport \"../Dependencies/IRETHToken.sol\";\n\n// import \"forge-std/console2.sol\";\n\ncontract RETHPriceFeed is CompositePriceFeed {\n    constructor(\n        address _owner,\n        address _ethUsdOracleAddress,\n        address _lstEthOracleAddress,\n        address _rateProviderAddress,\n        uint256 _ethUsdStalenessThreshold,\n        uint256 _lstEthStalenessThreshold\n    )\n        CompositePriceFeed(\n            _owner,\n            _ethUsdOracleAddress,\n            _lstEthOracleAddress,\n            _rateProviderAddress,\n            _ethUsdStalenessThreshold,\n            _lstEthStalenessThreshold\n        )\n    {}\n\n    function _getCanonicalRate() internal view override returns (uint256) {\n        // RETHToken returns exchange rate with 18 digit decimal precision\n        return IRETHToken(rateProviderAddress).getExchangeRate();\n    }\n}\n",
-        "CompositePriceFeed.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.18;\n\nimport \"../Dependencies/LiquityMath.sol\";\nimport \"./MainnetPriceFeedBase.sol\";\nimport \"../Interfaces/ICompositePriceFeed.sol\";\n\n// import \"forge-std/console2.sol\";\n\n// Composite PriceFeed: outputs an LST-USD price derived from two external price Oracles: LST-ETH, and ETH-USD.\n// Used where the LST token is non-rebasing (as per rETH, osETH, ETHx, etc).\ncontract CompositePriceFeed is MainnetPriceFeedBase, ICompositePriceFeed {\n    Oracle public lstEthOracle;\n    Oracle public ethUsdOracle;\n\n    address public rateProviderAddress;\n\n    constructor(\n        address _owner,\n        address _ethUsdOracleAddress,\n        address _lstEthOracleAddress,\n        address _rateProviderAddress,\n        uint256 _ethUsdStalenessThreshold,\n        uint256 _lstEthStalenessThreshold\n    ) MainnetPriceFeedBase(_owner) {\n        // Store ETH-USD oracle\n        ethUsdOracle.aggregator = AggregatorV3Interface(_ethUsdOracleAddress);\n        ethUsdOracle.stalenessThreshold = _ethUsdStalenessThreshold;\n        ethUsdOracle.decimals = ethUsdOracle.aggregator.decimals();\n        assert(ethUsdOracle.decimals == 8);\n\n        // Store LST-ETH oracle\n        lstEthOracle.aggregator = AggregatorV3Interface(_lstEthOracleAddress);\n        lstEthOracle.stalenessThreshold = _lstEthStalenessThreshold;\n        lstEthOracle.decimals = lstEthOracle.aggregator.decimals();\n\n        // Store rate provider\n        rateProviderAddress = _rateProviderAddress;\n\n        _fetchPrice();\n\n        // Check an oracle didn't already fail\n        assert(priceFeedDisabled == false);\n    }\n\n    function _fetchPrice() internal override returns (uint256, bool) {\n        (uint256 ethUsdPrice, bool ethUsdOracleDown) = _getOracleAnswer(ethUsdOracle);\n        (uint256 lstEthPrice, bool lstEthOracleDown) = _getOracleAnswer(lstEthOracle);\n\n        // If one of Chainlink's responses was invalid in this transaction, disable this PriceFeed and\n        // return the last good LST-USD price calculated\n        if (ethUsdOracleDown) {return (_disableFeedAndShutDown(address(ethUsdOracle.aggregator)), true);}\n        if (lstEthOracleDown) {return (_disableFeedAndShutDown(address(lstEthOracle.aggregator)), true);}\n\n        // Calculate the market LST-USD price: USD_per_LST = USD_per_ETH * ETH_per_LST\n        uint256 lstUsdMarketPrice = ethUsdPrice * lstEthPrice / 1e18;\n\n        // Get the ETH_per_LST canonical rate directly from the LST contract\n        // TODO: Should we also shutdown if the call to the canonical rate reverts, or returns 0?\n        uint256 lstEthRate = _getCanonicalRate();\n\n        // Calculate the canonical LST-USD price: USD_per_LST = USD_per_ETH * ETH_per_LST\n        uint256 lstUsdCanonicalPrice = ethUsdPrice * lstEthRate / 1e18;\n\n        // Take the minimum of (market, canonical) in order to mitigate against upward market price manipulation\n        uint256 lstUsdPrice = LiquityMath._min(lstUsdMarketPrice, lstUsdCanonicalPrice);\n\n        lastGoodPrice = lstUsdPrice;\n\n        return (lstUsdPrice, false);\n    }\n\n    // Returns the ETH_per_LST as from the LST smart contract. Implementation depends on the specific LST.\n    function _getCanonicalRate() internal view virtual returns (uint256) {}\n}\n"
+        "SetCoreGovernorQuorumAction.sol": "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.16;\n\nimport \"../address-registries/L2AddressRegistry.sol\";\nimport\n    \"@openzeppelin/contracts-upgradeable/governance/extensions/GovernorVotesQuorumFractionUpgradeable.sol\";\n\n/// @notice Governance action for setting the quorum numerator for the core governor\ncontract SetCoreGovernorQuorumAction {\n    ICoreGovGetter public immutable govAddressRegisry;\n    uint256 public immutable newQuorumNumerator;\n\n    constructor(ICoreGovGetter _govAddressRegisry, uint256 _newQuorumNumerator) {\n        govAddressRegisry = _govAddressRegisry;\n        newQuorumNumerator = _newQuorumNumerator;\n    }\n\n    function perform() external {\n        IL2ArbitrumGoverner coreGov = govAddressRegisry.coreGov();\n        coreGov.relay(\n            address(coreGov),\n            0,\n            abi.encodeCall(\n                GovernorVotesQuorumFractionUpgradeable.updateQuorumNumerator, newQuorumNumerator\n            )\n        );\n    }\n}\n"
     }
 }

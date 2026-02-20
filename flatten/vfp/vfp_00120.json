@@ -1,31 +1,42 @@
 {
     "vfp_id": "vfp_00120",
-    "project_name": "cantina_coinbase_nov2025.pdf",
+    "project_name": "cantina_steakhouse_march2025.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-221"
-                ],
-                "3": [
-                    "CWE-223"
-                ],
-                "4": [
-                    "CWE-778"
+                    "CWE-754"
                 ]
             },
-            "title": "Missing event for signer rotations",
-            "description": "1. **Description:** The `setSigner` function in `SignatureDiscountValidator.sol` updates the signer address without emitting an event, and the constructor also initializes the signer silently. This omission prevents off-chain systems from being notified of signer changes.\n2. **Cause:** The lack of an event emission when the signer state is modified means there is no log-based mechanism for external systems to detect changes.\n3. **Exploitation:** An attacker or misconfigured service relying on stale signer data could accept signatures from a deprecated signer if revocation is delayed due to polling inefficiencies.\n4. **Impact:** This increases operational risk and delays in revocation detection for off-chain services such as discount portals, caching layers, and monitoring tools, potentially leading to misuse of outdated trust assumptions.\n",
-            "severity": "Informational",
+            "title": "Unsafe type casting from uint256 to int256",
+            "description": "1.  **Description:** The price value returned by the getPrice() function is cast from uint256 to int256 to comply with Chainlink's latestRoundData() interface. However, this cast can result in an unintended negative value if the price is greater than or equal to 2^255.\n2.  **Cause:** The vulnerability arises from an unchecked cast from an unsigned 256-bit integer to a signed 256-bit integer, which does not validate whether the value fits within the range of int256.\n3.  **Exploitation:** An attacker could potentially manipulate or influence the price to an extremely high value (>= 2^255), causing the cast to produce a negative result, which may lead to incorrect behavior in systems relying on non-negative prices.\n4.  **Impact:** Systems consuming this value (e.g., lending protocols) might misinterpret the price as negative, potentially leading to incorrect accounting, miscalculated collateral values, or system-level disruptions.\n",
+            "severity": "Low",
             "location": [
-                "SignatureDiscountValidator.sol#L35-L39"
+                "ERC4626Feed.sol#L98-L100"
             ],
             "files": [
-                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
+                "5f248a3e1a5e72485c90be267e8b6d24fb32f9d6/steakhouse-oracles/src/ERC4626Feed.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Improving test coverage",
+            "description": "1.  **Description:** The conditional branch in the code at lines 66–69 of ERC4626Feed.sol is not covered by any unit tests, indicating a gap in test coverage.\n2.  **Cause:** The test suite lacks a specific test case or fuzz test variation that triggers this branch, possibly due to insufficient input ranges or missing edge-case testing.\n3.  **Exploitation:** While not directly exploitable, untested code increases the risk of undetected bugs or regressions during future modifications.\n4.  **Impact:** Reduced confidence in code correctness and increased likelihood of undetected vulnerabilities in untested code paths.\n",
+            "severity": "Informational",
+            "location": [
+                "ERC4626Feed.sol#L66-L69"
+            ],
+            "files": [
+                "5f248a3e1a5e72485c90be267e8b6d24fb32f9d6/steakhouse-oracles/src/ERC4626Feed.sol"
             ]
         },
         {
@@ -35,24 +46,19 @@
                     "CWE-693"
                 ],
                 "2": [
-                    "CWE-345"
-                ],
-                "3": [
-                    "CWE-347"
+                    "CWE-807"
                 ]
             },
-            "title": "Discount signatures scoped per validator instance",
-            "description": "1. **Description:** The `isValidDiscountRegistration` function validates signatures based only on (claimer, expires, signature) and does not include the `discountKey` in the verification payload. This design could allow replay of a valid signature across different discount tiers if multiple keys were associated with the same validator.\n2. **Cause:** The signed message payload omits the `discountKey`, creating a potential for signature replay across tiers if the same validator serves multiple keys.\n3. **Exploitation:** If the deployment ever allowed multiple discount keys per validator, an attacker could reuse a valid signature intended for one tier to claim a different discount.\n4. **Impact:** While currently not exploitable due to the operational constraint of one key per validator, this represents a latent risk that could become active if the architecture evolves without corresponding code changes, leading to unauthorized discount claims.\n",
+            "title": "Security considerations of the oracle design",
+            "description": "1.  **Description:** The ERC4626Feed contract acts as an oracle by returning the exchange rate between a vault token and its underlying asset via the convertToAssets() function. This design relies on the assumption that the vault's convertToAssets function is trustworthy and accurately reflects the asset value.\n2.  **Cause:** The root concern likely involves the trust assumptions in the underlying vault, potential manipulation vectors, or lack of price validation.\n3.  **Exploitation:** Potential exploitation could involve manipulating the vault's exchange rate or integrating with malicious or compromised vaults.\n4.  **Impact:** Could lead to incorrect price reporting, affecting any system relying on this oracle for valuation, collateralization, or liquidation.\n",
             "severity": "Informational",
-            "location": [
-                "SignatureDiscountValidator.sol#L48-L51"
-            ],
+            "location": [],
             "files": [
-                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
+                "5f248a3e1a5e72485c90be267e8b6d24fb32f9d6/steakhouse-oracles/src/ERC4626Feed.sol"
             ]
         }
     ],
     "affected_files": {
-        "SignatureDiscountValidator.sol": "//SPDX-License-Identifier: MIT\npragma solidity ^0.8.23;\n\nimport {Ownable} from \"solady/auth/Ownable.sol\";\n\nimport {IDiscountValidator} from \"src/L2/interface/IDiscountValidator.sol\";\nimport {SybilResistanceVerifier} from \"src/lib/SybilResistanceVerifier.sol\";\n\n/// @title Discount Validator for: Signature Discount Validator\n///\n/// @notice Implements a simple signature validation schema which performs signature verification to validate\n///         signatures were generated from the Base Signer Service.\n///\n/// @author Coinbase (https://github.com/base-org/basenames)\ncontract SignatureDiscountValidator is Ownable, IDiscountValidator {\n    /// @dev The Base Signer Service signer address.\n    address signer;\n\n    /// @dev Thrown when setting the zero address as `owner` or `signer`.\n    error NoZeroAddress();\n\n    /// @notice constructor\n    ///\n    /// @param owner_ The permissioned `owner` in the `Ownable` context.\n    /// @param signer_ The off-chain signer of the Base Signer Service.\n    constructor(address owner_, address signer_) {\n        if (owner_ == address(0)) revert NoZeroAddress();\n        if (signer_ == address(0)) revert NoZeroAddress();\n        _initializeOwner(owner_);\n        signer = signer_;\n    }\n\n    /// @notice Allows the owner to update the expected signer.\n    ///\n    /// @param signer_ The address of the new signer.\n    function setSigner(address signer_) external onlyOwner {\n        if (signer_ == address(0)) revert NoZeroAddress();\n        signer = signer_;\n    }\n\n    /// @notice Required implementation for compatibility with IDiscountValidator.\n    ///\n    /// @dev The data must be encoded as `abi.encode(discountClaimerAddress, expiry, signature_bytes)`.\n    ///\n    /// @param claimer the discount claimer's address.\n    /// @param validationData opaque bytes for performing the validation.\n    ///\n    /// @return `true` if the validation data provided is determined to be valid for the specified claimer, else `false`.\n    function isValidDiscountRegistration(address claimer, bytes calldata validationData) external view returns (bool) {\n        return SybilResistanceVerifier.verifySignature(signer, claimer, validationData);\n    }\n}\n"
+        "ERC4626Feed.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.20;\n\nimport {IERC4626} from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport {IERC20Metadata} from \"@openzeppelin/contracts/interfaces/IERC20Metadata.sol\";\nimport {AggregatorV3Interface} from \"@morpho-blue-oracles/morpho-chainlink/interfaces/AggregatorV3Interface.sol\";\nimport {Math} from \"@openzeppelin/contracts/utils/math/Math.sol\";\n\n/**\n * @title ERC4626Feed\n * @notice Chainlink price feed compatible oracle for ERC4626 vaults\n * @dev Implements AggregatorV3Interface to provide the price of a vault share\n *      in terms of the underlying asset\n */\ncontract ERC4626Feed is AggregatorV3Interface {\n    using Math for uint256;\n\n    /// @notice Version of the price feed implementation\n    uint256 public constant version = 1;\n    \n    /// @notice The ERC4626 vault for which this oracle provides prices\n    IERC4626 public immutable vault;\n    \n    /// @notice The underlying token of the vault\n    IERC20Metadata public immutable token;\n    \n    /// @notice The number of decimals in the returned price\n    uint8 public immutable decimals;\n    \n    /// @notice Human-readable description of the price feed (e.g., \"sUSDS / USDS\")\n    string public description;\n\n    /// @notice One unit of vault shares (e.g., 1e18 for 18 decimals)\n    uint256 public immutable ONE_SHARE;\n    \n    /// @notice One unit of the underlying asset (e.g., 1e18 for 18 decimals)\n    uint256 public immutable ONE_ASSET;\n    \n    /// @notice Scaling factor numerator used to adjust price to the desired decimals\n    uint256 public immutable SCALING_NUMERATOR;\n    \n    /// @notice Scaling factor denominator used to adjust price to the desired decimals\n    uint256 public immutable SCALING_DENOMINATOR;\n\n    /**\n     * @notice Constructs a new ERC4626Feed oracle\n     * @param _vault The ERC4626 vault for which to provide a price feed\n     * @param _decimals The number of decimals for the oracle output (0 to use the token's decimals)\n     */\n    constructor(IERC4626 _vault, uint8 _decimals) {\n        vault = _vault;\n        token = IERC20Metadata(_vault.asset());\n        ONE_SHARE = 10 ** vault.decimals();\n        ONE_ASSET = 10 ** token.decimals();\n        \n        // If decimals is 0, use the token's decimals\n        if (_decimals == 0) {\n            decimals = token.decimals();\n        } else {\n            decimals = _decimals;\n        }\n        \n        // Calculate scaling factors to adjust between token decimals and oracle decimals\n        uint256 token_decimals = token.decimals();\n        if (decimals > token_decimals) {\n            SCALING_NUMERATOR = 10 ** (decimals - token_decimals);\n            SCALING_DENOMINATOR = 1;\n        } else {\n            SCALING_NUMERATOR = 1;\n            SCALING_DENOMINATOR = 10 ** (token_decimals - decimals);\n        }\n        \n        // Set description to \"VaultSymbol / TokenSymbol\" format\n        description = string.concat(vault.symbol(), \" / \", token.symbol());\n    }\n\n    /**\n     * @notice Get the current price of one vault share in terms of the underlying asset\n     * @dev Price is scaled to match the specified decimals\n     * @return The current price with appropriate decimal scaling\n     */\n    function getPrice() public view returns (uint256) {\n        uint256 price = vault.convertToAssets(ONE_SHARE);\n        return SCALING_NUMERATOR.mulDiv(price, SCALING_DENOMINATOR);\n    }\n\n    /**\n     * @notice Internal function to get the latest round data\n     * @dev Used by both latestRoundData and getRoundData\n     * @return roundId The round ID (always 1)\n     * @return answer The price of one vault share in terms of the underlying asset\n     * @return startedAt The timestamp when the round started (current block timestamp)\n     * @return updatedAt The timestamp when the round was updated (current block timestamp)\n     * @return answeredInRound The round ID in which the answer was computed (always 1)\n     */\n    function _latestRoundData() internal view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) {\n        uint256 price = getPrice();\n        uint256 timestamp = block.timestamp;\n        return (1, int256(price), timestamp, timestamp, 1);\n    }\n\n    /**\n     * @notice Get the latest round data (implements AggregatorV3Interface)\n     * @return roundId The round ID (always 1)\n     * @return answer The price of one vault share in terms of the underlying asset\n     * @return startedAt The timestamp when the round started (current block timestamp)\n     * @return updatedAt The timestamp when the round was updated (current block timestamp)\n     * @return answeredInRound The round ID in which the answer was computed (always 1)\n     */\n    function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) {\n        return _latestRoundData();\n    }\n\n    /**\n     * @notice Get data from a specific round (implements AggregatorV3Interface)\n     * @dev This contract does not maintain historical data, so it always returns the latest data\n     * @param _roundId The round ID (ignored)\n     * @return roundId The round ID (always 1)\n     * @return answer The price of one vault share in terms of the underlying asset\n     * @return startedAt The timestamp when the round started (current block timestamp)\n     * @return updatedAt The timestamp when the round was updated (current block timestamp)\n     * @return answeredInRound The round ID in which the answer was computed (always 1)\n     */\n    function getRoundData(uint80 _roundId) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) {\n        return _latestRoundData();\n    }\n}\n"
     }
 }

@@ -1,54 +1,75 @@
 {
     "vfp_id": "vfp_00046",
-    "project_name": "Uniswap Labs UNIfication Fees Audit.md",
+    "project_name": "Mina Token Bridge EVM - Zellic Audit Report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-282"
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
                 ]
             },
-            "title": "Factory Ownership is Permanently Locked",
-            "description": "The V3FeeController contract is designed to act as the owner of the Uniswap V3 Factory to manage fee-related parameters such as enabling new fee tiers. However, it does not implement a function to call the setOwner method of the Uniswap V3 Factory contract. As a result, once ownership is transferred to the V3FeeController, there is no mechanism to transfer it to another address, permanently locking the ownership.\n\nThe root cause is the absence of an owner-restricted function in the V3FeeController that would allow it to invoke the setOwner method on the factory. This design decision removes the possibility of upgrading the controller or recovering from a critical issue by reassigning ownership.\n\nAn attacker or malicious actor cannot directly exploit this issue, but it represents a critical operational risk. If the V3FeeController contract is compromised or contains undiscovered bugs, there would be no way to transfer ownership to a new, secure controller.\n\nThe impact is a permanent loss of administrative flexibility and upgradeability for the Uniswap V3 Factory, which could lead to irreversible consequences in the event of a security incident or the need for protocol upgrades.\n",
-            "severity": "High",
+            "title": "Return value of transferFrom is not checked",
+            "description": "The lock function in Bridge.sol calls transferFrom on an ERC-20 token but does not check its return value. Some ERC-20 tokens return false on failure instead of reverting, which can lead to the bridge assuming a successful transfer when no tokens were actually transferred. This is caused by relying on the transferFrom return value without proper validation. An attacker could exploit this by using a non-reverting failing token to trigger a Lock event without actually depositing funds. This could allow the attacker to mint tokens on the Mina side without backing, leading to a complete loss of funds from the bridge.\n",
+            "severity": "Critical",
             "location": [
-                "V3FeeController.sol::setOwner#missing",
-                "UniswapV3Factory.sol#62"
+                "Bridge.sol::lock"
             ],
             "files": [
-                "phoenix-fees/src/feeControllers/V3FeeController.sol"
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
             ]
         },
         {
-            "id": 1,
+            "id": 4,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-284"
                 ],
                 "2": [
-                    "CWE-436"
+                    "CWE-269"
                 ],
                 "3": [
-                    "CWE-115"
+                    "CWE-266"
                 ]
             },
-            "title": "Incorrect Leaf Hashing for the `MerkleProof` Library",
-            "description": "The V3FeeController contract uses OpenZeppelin's MerkleProof library to verify Merkle proofs on-chain for enabling protocol fee updates on specific pools. However, the contract hashes each leaf only once using keccak256(abi.encode(pool)), while the off-chain merkle-tree JS library used to generate the proofs applies a double hash (hash(hash(leaf))). This mismatch means that valid proofs generated off-chain will fail verification on-chain.\n\nThe cause is an inconsistency between the on-chain leaf hashing method and the expected format of the off-chain Merkle tree implementation. Specifically, the triggerFeeUpdate and batchTriggerFeeUpdate functions in V3FeeController use single hashing, which is incompatible with the OpenZeppelin merkle-tree library.\n\nAn attacker could not directly exploit this for financial gain, but a legitimate user attempting to trigger a fee update with a valid proof would fail, leading to a denial of service for the fee update mechanism.\n\nThe impact is functional disruption of the fee update system, preventing authorized fee changes even when correct proofs are provided, undermining the decentralization and automation goals of the system.\n",
-            "severity": "Medium",
+            "title": "The protocol owner can withdraw all funds from the bridge",
+            "description": "The withdrawETH function in Bridge.sol allows the owner to withdraw any amount of ETH from the contract without restriction. While fees from Mina-to-Ethereum transfers are intended to be collected, the accumulated amounts are tracked off-chain in the backend, not on-chain. This design allows the owner to withdraw more than just fees, including user deposits. The cause is the lack of on-chain accounting and withdrawal limits. An attacker who compromises the owner key, or a malicious owner, could drain all ETH from the bridge. This introduces significant centralization risk and undermines user trust in the protocol's security.\n",
+            "severity": "High",
             "location": [
-                "V3FeeController.sol::triggerFeeUpdate#82-83",
-                "V3FeeController.sol::batchTriggerFeeUpdate#103"
+                "Bridge.sol::withdrawETH"
             ],
             "files": [
-                "phoenix-fees/src/feeControllers/V3FeeController.sol"
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ]
+            },
+            "title": "Validators cannot be removed",
+            "description": "The Bridge.sol contract allows adding validators via _addListValidator but provides no mechanism to remove them. This is caused by the absence of a corresponding remove function. If a validator becomes compromised or untrustworthy, the owner cannot revoke its privileges. This creates a permanent security liability, as any added validator remains authorized indefinitely. The impact is a reduced ability to respond to security incidents and long-term operational inflexibility, posing a medium-level protocol risk.\n",
+            "severity": "Medium",
+            "location": [
+                "Bridge.sol::_addListValidator"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
             ]
         }
     ],
     "affected_files": {
-        "V3FeeController.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {Owned} from \"solmate/src/auth/Owned.sol\";\nimport {IUniswapV3Pool} from \"v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {IUniswapV3Factory} from \"v3-core/contracts/interfaces/IUniswapV3Factory.sol\";\nimport {IUniswapV3PoolOwnerActions} from\n  \"v3-core/contracts/interfaces/pool/IUniswapV3PoolOwnerActions.sol\";\nimport {MerkleProof} from \"openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol\";\nimport {IV3FeeController} from \"../interfaces/IV3FeeController.sol\";\n\n/// @title V3FeeController\n/// @notice A contract that allows the setting and collecting of protocol fees per pool, and adding\n/// new fee tiers to the Uniswap V3 Factory.\n/// @dev This contract is ownable. The owner can set the merkle root for proving protocol fee\n/// amounts per pool, set new fee tiers on Uniswap V3, and change the owner of this contract.\n/// Note that this contract will be the set owner on the Uniswap V3 Factory.\ncontract V3FeeController is IV3FeeController, Owned {\n  /// @inheritdoc IV3FeeController\n  IUniswapV3Factory public immutable FACTORY;\n  /// @inheritdoc IV3FeeController\n  address public immutable ASSET_SINK;\n\n  /// @inheritdoc IV3FeeController\n  bytes32 public merkleRoot;\n\n  /// @inheritdoc IV3FeeController\n  address public feeSetter;\n\n  /// @inheritdoc IV3FeeController\n  mapping(uint24 feeTier => uint8 defaultFeeValue) public defaultFees;\n\n  /// @notice Ensures only the fee setter can call the setMerkleRoot and setDefaultFeeByFeeTier\n  /// functions\n  modifier onlyFeeSetter() {\n    if (msg.sender != feeSetter) revert Unauthorized();\n    _;\n  }\n\n  /// @dev At construction, the fee setter defaults to 0 and its on the owner to set.\n  constructor(address _factory, address _assetSink) Owned(msg.sender) {\n    FACTORY = IUniswapV3Factory(_factory);\n    ASSET_SINK = _assetSink;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function enableFeeAmount(uint24 fee, int24 tickSpacing) external onlyOwner {\n    FACTORY.enableFeeAmount(fee, tickSpacing);\n  }\n\n  /// @inheritdoc IV3FeeController\n  function collect(CollectParams[] calldata collectParams)\n    external\n    returns (Collected[] memory amountsCollected)\n  {\n    amountsCollected = new Collected[](collectParams.length);\n    for (uint256 i = 0; i < collectParams.length; i++) {\n      CollectParams calldata params = collectParams[i];\n      (uint256 amount0Collected, uint256 amount1Collected) = IUniswapV3PoolOwnerActions(params.pool)\n        .collectProtocol(ASSET_SINK, params.amount0Requested, params.amount1Requested);\n\n      amountsCollected[i] = Collected({\n        amount0Collected: uint128(amount0Collected),\n        amount1Collected: uint128(amount1Collected)\n      });\n    }\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setMerkleRoot(bytes32 _merkleRoot) external onlyFeeSetter {\n    merkleRoot = _merkleRoot;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setDefaultFeeByFeeTier(uint24 feeTier, uint8 defaultFeeValue) external onlyFeeSetter {\n    if (FACTORY.feeAmountTickSpacing(feeTier) == 0) revert InvalidFeeTier();\n    defaultFees[feeTier] = defaultFeeValue;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function triggerFeeUpdate(address pool, bytes32[] calldata proof) external {\n    bytes32 node = keccak256(abi.encode(pool));\n    if (!MerkleProof.verify(proof, merkleRoot, node)) revert InvalidProof();\n\n    _setProtocolFee(pool);\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setFeeSetter(address newFeeSetter) external onlyOwner {\n    feeSetter = newFeeSetter;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function batchTriggerFeeUpdate(\n    address[] calldata pools,\n    bytes32[] calldata proof,\n    bool[] calldata proofFlags\n  ) external {\n    bytes32[] memory leaves = new bytes32[](pools.length);\n    address pool;\n    for (uint256 i; i < pools.length; i++) {\n      pool = pools[i];\n      leaves[i] = _hash(pool);\n      _setProtocolFee(pool);\n    }\n    if (!MerkleProof.multiProofVerify(proof, proofFlags, merkleRoot, leaves)) revert InvalidProof();\n  }\n\n  function _setProtocolFee(address pool) internal {\n    uint8 feeValue = defaultFees[IUniswapV3Pool(pool).fee()];\n    IUniswapV3PoolOwnerActions(pool).setFeeProtocol(feeValue % 16, feeValue >> 4);\n  }\n\n  function _hash(address pool) internal pure returns (bytes32 poolHash) {\n    assembly (\"memory-safe\") {\n      mstore(0, and(pool, 0xffffffffffffffffffffffffffffffffffffffff))\n      poolHash := keccak256(0, 0x20)\n    }\n  }\n}\n"
+        "Bridge.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.15;\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/cryptography/draft-EIP712Upgradeable.sol\";\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ncontract Bridge is OwnableUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {\n\n    bytes32 public constant UNLOCK_HASH = keccak256(\n        \"UNLOCK(address token,uint256 amount,address user,string hash,uint256 fee)\"\n    );\n\n    address public minter;\n    mapping(address => bool) public whitelistTokens;\n    mapping(string => bool) public unlockHash;\n    uint256 public maxAmount;\n    uint256 public minAmount;\n    uint256 public threshold;\n    mapping(address => bool) public validators;\n\n    event Lock(address locker, string receipt, address token, uint256 amount, string tokenName);\n    event Unlock(address user, address token, uint256 amount, string hash, uint256 fee);\n    event ChangeMinter(address minter);\n    event ChangeMinAmount(uint256 minAmount);\n    event ChangeThreshold(uint256 newThreshold);\n    event ChangeMaxAmount(uint256 maxAmount);\n    event SetWhitelistToken(address token, bool whitelist);\n\n    modifier onlyMinter() {\n        require(minter == msg.sender, \"Bridge: Only Minter\");\n        _;\n    }\n\n    function initialize(\n        address _minter,\n        uint256 _minAmount,\n        uint256 _maxAmount,\n        address[] memory _validators,\n        uint256 _threshold\n    ) public initializer {\n        __Ownable_init();\n        __ReentrancyGuard_init();\n        __EIP712_init(\"MinaBridge\", \"1.0.0\");\n        minter = _minter;\n        minAmount = _minAmount;\n        maxAmount = _maxAmount;\n        for (uint256 i = 0; i < _validators.length; ++i) {\n            validators[_validators[i]] = true;\n        }\n        threshold = _threshold;\n        whitelistTokens[address(0)] = true;\n        emit ChangeMinter(minter);\n    }\n\n    function isValidThreshold(uint256 totalSig) public view returns (bool) {\n        if (totalSig  >= threshold) {\n            return true;\n        }\n        return false;\n    }\n\n    function _getSigner(bytes32 _digest, bytes memory _signature) public view returns (address) {\n        return ECDSA.recover(_digest, _signature);\n    }\n\n    function getUnlockHash(\n        address token,\n        uint256 amount,\n        address user,\n        string memory hash,\n        uint256 fee\n    ) public view returns (bytes32 _unlockHash) {\n        _unlockHash = _hashTypedDataV4(keccak256(abi.encode(UNLOCK_HASH, token, amount, user, keccak256(abi.encodePacked(hash)), fee)));\n    }\n\n    function _addListValidator(address[] memory _validators) internal {\n        require(_validators.length > 0, \"Invalid length\");\n        for (uint256 i = 0; i < _validators.length; i++) {\n            validators[_validators[i]] = true;\n        }\n    }\n\n    function lock(address token, string memory receipt, uint256 amount) public payable {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(amount <= maxAmount && amount >= minAmount, \"Bridge: invalid amount\");\n        string memory name = \"ETH\";\n        if (token == address(0)) {\n            require(msg.value == amount, \"Bridge: invalid amount\");\n        } else {\n            IERC20(token).transferFrom(msg.sender, address(this), amount);\n            name = IERC20(token).name();\n        }\n        emit Lock(msg.sender, receipt, token, amount, name);\n    }\n\n\n    function unlock(address token, uint256 amount, address user, string memory hash, uint256 fee, bytes[] memory _signatures) public onlyMinter nonReentrant {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(!unlockHash[hash], \"Bridge: Unlocked before\");\n        require(isValidThreshold(_signatures.length), \"Signature: Invalid Length\");\n\n        bytes32 _unlockHash = getUnlockHash(token, amount, user, hash, fee);\n\n        address[1000] memory listValidatorsSigned;\n        for (uint256 i = 0; i < _signatures.length; i++) {\n            bytes memory _signature = _signatures[i];\n            address signer = _getSigner(_unlockHash, _signature);\n            require(validators[signer], \"Invalid signature\");\n            for (uint256 j = 0; j < listValidatorsSigned.length; j++) {\n                if (listValidatorsSigned[j] == signer) {\n                    require(false, \"Invalid Signature Length\");\n                }\n            }\n            listValidatorsSigned[i] = signer;\n        }\n\n        unlockHash[hash] = true;\n        if (token == address(0)) {\n            require(address(this).balance >= amount, \"Bridge: invalid amount\");\n            payable(user).transfer(amount - fee);\n            payable(owner()).transfer(fee);\n\n        } else {\n            require(IERC20(token).balanceOf(address(this)) >= amount, \"Bridge: Invalid amount\");\n            IERC20(token).transfer(user, amount - fee);\n            IERC20(token).transfer(owner(), fee);\n\n        }\n        emit Unlock(user, token, amount - fee, hash, fee);\n    }\n\n//    ------------ADMIN FUNCTIONS--------------------------------\n    function changeMinter(address _minter) public onlyOwner {\n        minter = _minter;\n        emit ChangeMinter(minter);\n    }\n\n    function setWhitelistToken(address token, bool whitelist) public onlyOwner {\n        whitelistTokens[token] = whitelist;\n        emit SetWhitelistToken(token, whitelist);\n    }\n\n    function setMinAmount(uint256 min) public onlyOwner {\n        require(min <= maxAmount, \"Invalid minAmount\");\n        minAmount = min;\n        emit ChangeMinAmount(minAmount);\n    }\n\n    function setMaxAmount(uint256 max) public onlyOwner {\n        require(max >= minAmount, \"Invalid minAmount\");\n        maxAmount = max;\n        emit ChangeMaxAmount(maxAmount);\n    }\n\n    function setMinMaxAmount(uint256 min, uint256 max) public onlyOwner {\n        require(max >= min, \"Invalid minAmount\");\n        maxAmount = max;\n        minAmount = min;\n    }\n\n    function withdrawETH(uint256 amount) public onlyOwner {\n        require(address(this).balance >= amount, \"Bridge: insufficient balance\");\n        payable(msg.sender).transfer(amount);\n    }\n\n    function changeThreshold(uint256 _newThreshold) external onlyOwner() {\n        threshold = _newThreshold;\n        emit ChangeThreshold(_newThreshold);\n    }\n\n    function addListValidator(address[] memory _validators) external onlyOwner {\n        _addListValidator(_validators);\n    }\n}\n"
     }
 }

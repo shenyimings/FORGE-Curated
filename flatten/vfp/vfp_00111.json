@@ -1,35 +1,54 @@
 {
     "vfp_id": "vfp_00111",
-    "project_name": "cantina_coinbase_bridge_aug2025.pdf",
+    "project_name": "Uniswap Labs UNIfication Fees Audit.md",
     "findings": [
         {
-            "id": 7,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-284"
                 ],
                 "2": [
-                    "CWE-1164"
-                ],
-                "3": [
-                    "CWE-561"
+                    "CWE-282"
                 ]
             },
-            "title": "Remove unused struct, constants and functions",
-            "description": "Several structs, constants, and functions are defined but never used in the codebase. The cause is code remnants from development or refactoring. Not a direct security risk, but increases code complexity and maintenance burden. The impact is reduced code clarity and increased risk of confusion during future audits or updates.\n",
-            "severity": "Informational",
+            "title": "Factory Ownership is Permanently Locked",
+            "description": "The V3FeeController contract is designed to act as the owner of the Uniswap V3 Factory to manage fee-related parameters such as enabling new fee tiers. However, it does not implement a function to call the setOwner method of the Uniswap V3 Factory contract. As a result, once ownership is transferred to the V3FeeController, there is no mechanism to transfer it to another address, permanently locking the ownership.\n\nThe root cause is the absence of an owner-restricted function in the V3FeeController that would allow it to invoke the setOwner method on the factory. This design decision removes the possibility of upgrading the controller or recovering from a critical issue by reassigning ownership.\n\nAn attacker or malicious actor cannot directly exploit this issue, but it represents a critical operational risk. If the V3FeeController contract is compromised or contains undiscovered bugs, there would be no way to transfer ownership to a new, secure controller.\n\nThe impact is a permanent loss of administrative flexibility and upgradeability for the Uniswap V3 Factory, which could lead to irreversible consequences in the event of a security incident or the need for protocol upgrades.\n",
+            "severity": "High",
             "location": [
-                "SVMBridgeLib.sol#L8-L22",
-                "SVMLib.sol#L76",
-                "SVMLib.sol#L99",
-                "mod.rs#L23-L29"
+                "V3FeeController.sol::setOwner#missing",
+                "UniswapV3Factory.sol#62"
             ],
             "files": [
-                "bridge/base/src/libraries/SVMBridgeLib.sol"
+                "phoenix-fees/src/feeControllers/V3FeeController.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-115"
+                ]
+            },
+            "title": "Incorrect Leaf Hashing for the `MerkleProof` Library",
+            "description": "The V3FeeController contract uses OpenZeppelin's MerkleProof library to verify Merkle proofs on-chain for enabling protocol fee updates on specific pools. However, the contract hashes each leaf only once using keccak256(abi.encode(pool)), while the off-chain merkle-tree JS library used to generate the proofs applies a double hash (hash(hash(leaf))). This mismatch means that valid proofs generated off-chain will fail verification on-chain.\n\nThe cause is an inconsistency between the on-chain leaf hashing method and the expected format of the off-chain Merkle tree implementation. Specifically, the triggerFeeUpdate and batchTriggerFeeUpdate functions in V3FeeController use single hashing, which is incompatible with the OpenZeppelin merkle-tree library.\n\nAn attacker could not directly exploit this for financial gain, but a legitimate user attempting to trigger a fee update with a valid proof would fail, leading to a denial of service for the fee update mechanism.\n\nThe impact is functional disruption of the fee update system, preventing authorized fee changes even when correct proofs are provided, undermining the decentralization and automation goals of the system.\n",
+            "severity": "Medium",
+            "location": [
+                "V3FeeController.sol::triggerFeeUpdate#82-83",
+                "V3FeeController.sol::batchTriggerFeeUpdate#103"
+            ],
+            "files": [
+                "phoenix-fees/src/feeControllers/V3FeeController.sol"
             ]
         }
     ],
     "affected_files": {
-        "SVMBridgeLib.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\nimport {Ix, Pubkey, SVMLib} from \"./SVMLib.sol\";\nimport {SolanaTokenType, Transfer} from \"./TokenLib.sol\";\n\nlibrary SVMBridgeLib {\n    //////////////////////////////////////////////////////////////\n    ///                       Constants                        ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice The TokenProgram ID on Solana (TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA).\n    Pubkey private constant _TOKEN_PROGRAM_ID =\n        Pubkey.wrap(0x06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9);\n\n    /// @notice The TokenProgram 2022 ID on Solana (TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb).\n    Pubkey private constant _TOKEN_PROGRAM_2022_ID =\n        Pubkey.wrap(0x06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfc);\n\n    /// @notice The SystemProgram ID on Solana.\n    Pubkey private constant _SYSTEM_PROGRAM_ID =\n        Pubkey.wrap(0x0000000000000000000000000000000000000000000000000000000000000000);\n\n    //////////////////////////////////////////////////////////////\n    ///                     Internal Functions                 ///\n    //////////////////////////////////////////////////////////////\n\n    /// @notice Serializes a Message::Call variant to Borsh-compatible bytes.\n    ///\n    /// @param ixs The Solana instructions.\n    ///\n    /// @return Serialized Message::Call bytes ready for Solana deserialization\n    function serializeCall(Ix[] memory ixs) internal pure returns (bytes memory) {\n        return abi.encodePacked(uint8(0), SVMLib.serializeIxs(ixs));\n    }\n\n    /// @notice Serializes a Message::Transfer variant to Borsh-compatible bytes.\n    ///\n    /// @param transfer The token transfer to serialize.\n    /// @param tokenType The Solana token type.\n    /// @param ixs The optional Solana instructions.\n    ///\n    /// @return Serialized Message::Transfer bytes ready for Solana deserialization\n    function serializeTransfer(Transfer memory transfer, SolanaTokenType tokenType, Ix[] memory ixs)\n        internal\n        pure\n        returns (bytes memory)\n    {\n        // Variant discriminator for Transfer (1)\n        bytes memory result = abi.encodePacked(uint8(1));\n\n        if (tokenType == SolanaTokenType.Sol) {\n            result = abi.encodePacked(\n                result,\n                uint8(0), // Sol\n                transfer.localToken, // remote_token\n                transfer.to, // to\n                SVMLib.toU64LittleEndian(transfer.remoteAmount) // amount\n            );\n        } else if (tokenType == SolanaTokenType.Spl) {\n            result = abi.encodePacked(\n                result,\n                uint8(1), // Spl\n                transfer.localToken, // remote_token\n                transfer.remoteToken, // local_token\n                transfer.to, // to\n                SVMLib.toU64LittleEndian(transfer.remoteAmount) // amount\n            );\n        } else if (tokenType == SolanaTokenType.WrappedToken) {\n            result = abi.encodePacked(\n                result,\n                uint8(2), // WrappedToken\n                transfer.remoteToken, // local_token\n                transfer.to, // to\n                SVMLib.toU64LittleEndian(transfer.remoteAmount) // amount\n            );\n        }\n\n        // Serialize the instructions array\n        result = abi.encodePacked(result, SVMLib.serializeIxs(ixs));\n\n        return result;\n    }\n}\n"
+        "V3FeeController.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {Owned} from \"solmate/src/auth/Owned.sol\";\nimport {IUniswapV3Pool} from \"v3-core/contracts/interfaces/IUniswapV3Pool.sol\";\nimport {IUniswapV3Factory} from \"v3-core/contracts/interfaces/IUniswapV3Factory.sol\";\nimport {IUniswapV3PoolOwnerActions} from\n  \"v3-core/contracts/interfaces/pool/IUniswapV3PoolOwnerActions.sol\";\nimport {MerkleProof} from \"openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol\";\nimport {IV3FeeController} from \"../interfaces/IV3FeeController.sol\";\n\n/// @title V3FeeController\n/// @notice A contract that allows the setting and collecting of protocol fees per pool, and adding\n/// new fee tiers to the Uniswap V3 Factory.\n/// @dev This contract is ownable. The owner can set the merkle root for proving protocol fee\n/// amounts per pool, set new fee tiers on Uniswap V3, and change the owner of this contract.\n/// Note that this contract will be the set owner on the Uniswap V3 Factory.\ncontract V3FeeController is IV3FeeController, Owned {\n  /// @inheritdoc IV3FeeController\n  IUniswapV3Factory public immutable FACTORY;\n  /// @inheritdoc IV3FeeController\n  address public immutable ASSET_SINK;\n\n  /// @inheritdoc IV3FeeController\n  bytes32 public merkleRoot;\n\n  /// @inheritdoc IV3FeeController\n  address public feeSetter;\n\n  /// @inheritdoc IV3FeeController\n  mapping(uint24 feeTier => uint8 defaultFeeValue) public defaultFees;\n\n  /// @notice Ensures only the fee setter can call the setMerkleRoot and setDefaultFeeByFeeTier\n  /// functions\n  modifier onlyFeeSetter() {\n    if (msg.sender != feeSetter) revert Unauthorized();\n    _;\n  }\n\n  /// @dev At construction, the fee setter defaults to 0 and its on the owner to set.\n  constructor(address _factory, address _assetSink) Owned(msg.sender) {\n    FACTORY = IUniswapV3Factory(_factory);\n    ASSET_SINK = _assetSink;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function enableFeeAmount(uint24 fee, int24 tickSpacing) external onlyOwner {\n    FACTORY.enableFeeAmount(fee, tickSpacing);\n  }\n\n  /// @inheritdoc IV3FeeController\n  function collect(CollectParams[] calldata collectParams)\n    external\n    returns (Collected[] memory amountsCollected)\n  {\n    amountsCollected = new Collected[](collectParams.length);\n    for (uint256 i = 0; i < collectParams.length; i++) {\n      CollectParams calldata params = collectParams[i];\n      (uint256 amount0Collected, uint256 amount1Collected) = IUniswapV3PoolOwnerActions(params.pool)\n        .collectProtocol(ASSET_SINK, params.amount0Requested, params.amount1Requested);\n\n      amountsCollected[i] = Collected({\n        amount0Collected: uint128(amount0Collected),\n        amount1Collected: uint128(amount1Collected)\n      });\n    }\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setMerkleRoot(bytes32 _merkleRoot) external onlyFeeSetter {\n    merkleRoot = _merkleRoot;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setDefaultFeeByFeeTier(uint24 feeTier, uint8 defaultFeeValue) external onlyFeeSetter {\n    if (FACTORY.feeAmountTickSpacing(feeTier) == 0) revert InvalidFeeTier();\n    defaultFees[feeTier] = defaultFeeValue;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function triggerFeeUpdate(address pool, bytes32[] calldata proof) external {\n    bytes32 node = keccak256(abi.encode(pool));\n    if (!MerkleProof.verify(proof, merkleRoot, node)) revert InvalidProof();\n\n    _setProtocolFee(pool);\n  }\n\n  /// @inheritdoc IV3FeeController\n  function setFeeSetter(address newFeeSetter) external onlyOwner {\n    feeSetter = newFeeSetter;\n  }\n\n  /// @inheritdoc IV3FeeController\n  function batchTriggerFeeUpdate(\n    address[] calldata pools,\n    bytes32[] calldata proof,\n    bool[] calldata proofFlags\n  ) external {\n    bytes32[] memory leaves = new bytes32[](pools.length);\n    address pool;\n    for (uint256 i; i < pools.length; i++) {\n      pool = pools[i];\n      leaves[i] = _hash(pool);\n      _setProtocolFee(pool);\n    }\n    if (!MerkleProof.multiProofVerify(proof, proofFlags, merkleRoot, leaves)) revert InvalidProof();\n  }\n\n  function _setProtocolFee(address pool) internal {\n    uint8 feeValue = defaultFees[IUniswapV3Pool(pool).fee()];\n    IUniswapV3PoolOwnerActions(pool).setFeeProtocol(feeValue % 16, feeValue >> 4);\n  }\n\n  function _hash(address pool) internal pure returns (bytes32 poolHash) {\n    assembly (\"memory-safe\") {\n      mstore(0, and(pool, 0xffffffffffffffffffffffffffffffffffffffff))\n      poolHash := keccak256(0, 0x20)\n    }\n  }\n}\n"
     }
 }

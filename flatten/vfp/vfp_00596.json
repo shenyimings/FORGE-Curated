@@ -1,56 +1,137 @@
 {
     "vfp_id": "vfp_00596",
-    "project_name": "f(x) v2 Audit.md",
+    "project_name": "Metamask Delegation Framework April 2025 _ Consensys Diligence.md",
     "findings": [
         {
-            "id": 34,
+            "id": 2,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1164"
+                    "CWE-358"
                 ]
             },
-            "title": "Unused Named Return Variables",
-            "description": "Functions declare named return variables that are never assigned or used, which can mislead developers into thinking they are part of the return logic. The cause is leftover variable declarations from prior implementations. This harms code clarity and may lead to bugs if developers assume the variables are used. The impact is reduced readability and potential for logic errors.\n",
-            "severity": null,
+            "title": "Missing Slippage Protection in Token Swap Execution",
+            "description": "The `swapTokens` function in the `DelegationMetaSwapAdapter` contract performs token swaps via the MetaSwap API but does not enforce a minimum output amount (slippage protection). This is due to the absence of a `_minAmountOut` parameter and corresponding validation after the swap. An attacker or market fluctuation could exploit this by executing swaps when prices are unfavorable, causing the user to receive significantly fewer tokens than expected. Additionally, in the case of deflationary tokens, the extra transfer step from MetaSwap to the adapter could consume more tokens than anticipated. The impact includes potential financial loss for users, reduced trust in the system, and increased vulnerability to front-running or manipulation, especially if the MetaSwap API data is delayed or manipulated.\n",
+            "severity": "Medium",
             "location": [
-                "AaveFundingPool.sol::getOpenRatio#135",
-                "PositionLogic.sol::getPositionDebtRatio#46"
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapTokens#280-317",
+                "src/helpers/DelegationMetaSwapAdapter.sol#481-499",
+                "metaSwap::swap"
             ],
             "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
             ]
         },
         {
-            "id": 37,
+            "id": 3,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-691"
                 ],
                 "2": [
-                    "CWE-1164"
+                    "CWE-1265"
+                ]
+            },
+            "title": "Re-Entrancy Risk in swapTokens()",
+            "description": "The `swapTokens()` function in the `DelegationMetaSwapAdapter` contract is susceptible to re-entrancy attacks due to an external call made during the token transfer process. Specifically, when handling native tokens (e.g., ETH), the `_sendTokens()` function uses a low-level `.call()` to transfer funds to the recipient, which could allow a malicious contract to re-enter the `swapTokens()` function before the current execution is complete.\n\nThe root cause of this vulnerability lies in the absence of a re-entrancy guard during a critical state-changing operation that involves external calls. Although the function is restricted to `onlySelf`, the recipient address could still be a contract controlled by the root delegator, enabling a re-entrant call.\n\nAn attacker could exploit this by registering a malicious contract as the recipient, which would re-enter the `swapTokens()` function during the `.call()` execution. This could lead to unintended behavior such as multiple swaps being executed using the same initial balance, potentially manipulating state or draining funds if combined with other vulnerabilities.\n\nWhile the audit team acknowledges that the risk is limited—since re-entrancy would originate from the root delegator and no major attack vector was identified—the potential for unexpected re-entrant behavior remains. Without a re-entrancy guard, the contract deviates from secure coding best practices and introduces unnecessary risk.\n",
+            "severity": "Medium",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapTokens#280-297",
+                "src/helpers/DelegationMetaSwapAdapter.sol::_sendTokens#421-431"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
                 ],
                 "3": [
-                    "CWE-561"
+                    "CWE-347"
                 ]
             },
-            "title": "Unused Constants",
-            "description": "Constants are defined but never used in the code, adding unnecessary complexity. The cause is leftover definitions from prior development. This reduces code clarity and may mislead developers about their purpose. The impact is reduced readability and maintainability.\n",
-            "severity": null,
+            "title": "Metamask Aggregator Signature for Swap API Data Can Be Re-Used",
+            "description": "The `_validateSignature` function in the `DelegationMetaSwapAdapter` contract verifies the authenticity and expiration of swap data signatures but does not prevent replay of the same signature. This is caused by the lack of a nonce or a used-signature mapping to track and block repeated use. An attacker could reuse a valid signature to replay a previously executed swap, potentially draining funds if the delegation allows multiple executions. Although the expiration check limits the window, reuse within the same block or across different contexts could still occur. The impact includes potential duplication of swaps, unexpected token movements, and increased risk of fund loss, especially in high-frequency or automated scenarios.\n",
+            "severity": "Medium",
             "location": [
-                "AaveFundingPool.sol::INTEREST_RATE_OFFSET#33",
-                "AaveFundingPool.sol::TIMESTAMP_OFFSET#36",
-                "PoolConstant.sol::X60#31",
-                "PoolConstant.sol::X96#32"
+                "src/helpers/DelegationMetaSwapAdapter.sol::swapByDelegation#215-222",
+                "src/helpers/DelegationMetaSwapAdapter.sol::_validateSignature#522-534"
             ],
             "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
             ]
         },
         {
-            "id": 38,
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Avoid abi.encodePacked() With Dynamic Types for Hashing",
+            "description": "The `_validateSignature` function uses `abi.encodePacked()` to hash `_signatureData.apiData` and `_signatureData.expiration`, which is unsafe when dealing with dynamic types due to potential hash collisions. This is because `abi.encodePacked()` does not include length prefixes, allowing different inputs to produce the same encoded output. Although no immediate exploit is known, this could allow an attacker to craft malicious data that hashes to the same value as legitimate data, bypassing signature verification. The impact could be severe, including unauthorized swaps or execution of malicious calldata, if a collision is found. This undermines the integrity of the entire signature validation mechanism.\n",
+            "severity": "Low",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::_validateSignature#526-534"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Missing Input Validation in constructor and Setter Function",
+            "description": "The constructor of `DelegationMetaSwapAdapter` and the `setSwapApiSigner` function do not validate that the provided addresses are non-zero. This is caused by the absence of require checks before assignment. An attacker or mistaken deployment could initialize the contract with a zero address for critical dependencies like `swapApiSigner` or `metaSwap`, rendering the contract inoperable or allowing privilege escalation if the signer is set to address(0). The impact includes potential denial of service, broken functionality, or complete loss of control over critical contract operations, especially if the owner accidentally sets a zero address.\n",
+            "severity": "Low",
+            "location": [
+                "src/helpers/DelegationMetaSwapAdapter.sol::constructor#178-190",
+                "src/helpers/DelegationMetaSwapAdapter.sol::setSwapApiSigner#323-326"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ]
+            },
+            "title": "Replace abi.encodeWithSignature and abi.encodeWithSelector With abi.encodeCall for Type and Typo Safety",
+            "description": "The contract uses `abi.encodeWithSelector` to construct calldata for low-level calls, which lacks compile-time type and function name checking. This is error-prone and could lead to silent failures if there is a typo in the function name or a mismatch in parameter types. The recommended `abi.encodeCall` provides full type safety and ensures that the function exists and parameters match. The impact of not fixing this includes potential runtime failures, incorrect function calls, and security vulnerabilities due to undetected coding errors, especially during upgrades or refactors.\n",
+            "severity": "Low",
+            "location": [
+                "DelegationMetaSwapAdapter.sol"
+            ],
+            "files": [
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
+            ]
+        },
+        {
+            "id": 11,
             "category": {
                 "1": [
                     "CWE-710"
@@ -62,173 +143,21 @@
                     "CWE-1078"
                 ],
                 "4": [
-                    "CWE-547"
+                    "CWE-1099"
                 ]
             },
-            "title": "Literal Number Safety",
-            "description": "Large literal numbers are used directly in the code without suffixes or scientific notation, making them hard to read and prone to errors. The cause is the use of raw numbers instead of Ether or time units. This can lead to mistakes in value interpretation (e.g., mistaking wei for ether). The impact is reduced readability and potential for incorrect value usage.\n",
-            "severity": null,
+            "title": "Typos in Codebase",
+            "description": "The custom errors `TokenFromMismath` and `AmountFromMismath` contain a spelling error; \"Mismath\" should be \"Mismatch\". This is purely a readability and maintainability issue. While it does not affect functionality, it can confuse developers and reduce code quality. The impact is low, but correcting the spelling improves clarity and professionalism in the codebase, reducing the chance of confusion during audits or development.\n",
+            "severity": "Low",
             "location": [
-                "AaveFundingPool.sol#120",
-                "BasePool.sol#64",
-                "PegKeeper.sol#105"
+                "src/helpers/DelegationMetaSwapAdapter.sol#134-138"
             ],
             "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
-            ]
-        },
-        {
-            "id": 39,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
-                ],
-                "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1106"
-                ]
-            },
-            "title": "Magic Numbers",
-            "description": "The `initialize` function in `AaveFundingPool` uses a literal value `1e9` without explanation, making its purpose unclear. The cause is the absence of a named constant to document the value's meaning. This reduces code readability and makes future maintenance harder. The impact is potential confusion and errors during updates or audits.\n",
-            "severity": null,
-            "location": [
-                "AaveFundingPool.sol#125"
-            ],
-            "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
-            ]
-        },
-        {
-            "id": 20,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1059"
-                ]
-            },
-            "title": "Missing Docstrings",
-            "description": "Numerous contracts, functions, and state variables lack NatSpec documentation, including critical initialization functions and public interfaces. The cause is insufficient code documentation practices. This reduces code readability, maintainability, and auditability, making it harder for developers and auditors to understand the intended behavior. While there is no direct security exploit, the lack of documentation increases the risk of incorrect usage, integration errors, and missed vulnerabilities during audits. Off-chain tools relying on NatSpec for UI generation or analysis will also be impaired.\n",
-            "severity": null,
-            "location": [
-                "AaveFundingPool.sol#13",
-                "AaveFundingPool.sol::initialize#101-126",
-                "AaveV3Strategy.sol::POOL#16",
-                "AaveV3Strategy.sol::INCENTIVE#18",
-                "AaveV3Strategy.sol::ASSET#20",
-                "AaveV3Strategy.sol::ATOKEN#22",
-                "AaveV3Strategy.sol::principal#24",
-                "AaveV3Strategy.sol::totalSupply#42-44",
-                "AaveV3Strategy.sol::deposit#46-51",
-                "AaveV3Strategy.sol::withdraw#53-60",
-                "AaveV3Strategy.sol::kill#62-67",
-                "AssetManagement.sol::ASSET_MANAGER_ROLE#15",
-                "AssetManagement.sol::allocations#22",
-                "AssetManagement.sol::kill#30-38",
-                "AssetManagement.sol::alloc#40-44",
-                "AssetManagement.sol::manage#46-52",
-                "FxUSDBasePool.sol::initialize#196-219",
-                "FxUSDBasePool.sol::updateInstantRedeemFeeRatio#535-537",
-                "FxUSDRegeneracy.sol::initialize#150-158",
-                "FxUSDRegeneracy.sol::initializeV2#160-163",
-                "IStrategy.sol::totalSupply#6",
-                "IStrategy.sol::deposit#8",
-                "IStrategy.sol::withdraw#10",
-                "IStrategy.sol::kill#12",
-                "IStrategy.sol::harvest#14",
-                "PegKeeper.sol::initialize#96-108",
-                "PoolManager.sol::initialize#184-204",
-                "PoolManager.sol::initializeV2#206-219",
-                "ReservePool.sol::receive#69",
-                "SavingFxUSD.sol::execute#34-48",
-                "SavingFxUSD.sol::initialize#125-142",
-                "StrategyBase.sol::HARVESTER_ROLE#8",
-                "StrategyBase.sol::operator#10",
-                "StrategyBase.sol::harvest#29-31",
-                "StrategyBase.sol::execute#33-39"
-            ],
-            "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
-            ]
-        },
-        {
-            "id": 27,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ]
-            },
-            "title": "Use `calldata` Instead of `memory`",
-            "description": "Using `memory` for external function parameters results in higher gas costs compared to `calldata`, which is a read-only and cheaper memory region for function arguments. The cause is the unnecessary copying of data from calldata to memory in external functions. An attacker cannot directly exploit this, but users will pay higher gas fees for transactions. The impact is increased transaction costs and reduced efficiency, though there is no direct security risk.\n",
-            "severity": null,
-            "location": [
-                "AaveFundingPool.sol::name_#103",
-                "AaveFundingPool.sol::symbol_#104",
-                "BTCDerivativeOracleBase.sol::encodings#108",
-                "ETHPriceOracle.sol::encodings#99",
-                "FxUSDBasePool.sol::_name#198",
-                "FxUSDBasePool.sol::_symbol#199",
-                "FxUSDRegeneracy.sol::_name#150",
-                "FxUSDRegeneracy.sol::_symbol#150",
-                "FxUSDRegeneracy.sol::_minOuts#324",
-                "LSDPriceOracleBase.sol::encodings#125",
-                "ProtocolFees.sol::pools#197",
-                "SavingFxUSD.sol::params#125"
-            ],
-            "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
-            ]
-        },
-        {
-            "id": 30,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
-                ],
-                "3": [
-                    "CWE-1078"
-                ]
-            },
-            "title": "Inconsistent Order Within Contracts",
-            "description": "The ordering of functions within multiple contracts does not follow a consistent pattern, reducing code readability and maintainability. The cause is the lack of adherence to the Solidity Style Guide's recommended function ordering. This is not a security issue, but inconsistent structure can lead to confusion and increase the risk of missing logic during audits or updates. The impact is reduced code clarity and potential for human error during development.\n",
-            "severity": null,
-            "location": [
-                "AaveFundingPool.sol",
-                "AaveV3Strategy.sol",
-                "AssetManagement.sol",
-                "BTCDerivativeOracleBase.sol",
-                "BasePool.sol",
-                "ETHPriceOracle.sol",
-                "FlashLoans.sol",
-                "FxUSDBasePool.sol",
-                "FxUSDRegeneracy.sol",
-                "LSDPriceOracleBase.sol",
-                "PegKeeper.sol",
-                "PoolManager.sol",
-                "PoolStorage.sol",
-                "PositionLogic.sol",
-                "ProtocolFees.sol",
-                "ReservePool.sol",
-                "SavingFxUSD.sol",
-                "SpotPriceOracleBase.sol",
-                "StrategyBase.sol",
-                "WBTCPriceOracle.sol"
-            ],
-            "files": [
-                "fx-protocol-contracts/contracts/core/pool/AaveFundingPool.sol"
+                "delegation-framework/src/helpers/DelegationMetaSwapAdapter.sol"
             ]
         }
     ],
     "affected_files": {
-        "AaveFundingPool.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.26;\n\nimport { IAaveV3Pool } from \"../../interfaces/Aave/IAaveV3Pool.sol\";\nimport { IAaveFundingPool } from \"../../interfaces/IAaveFundingPool.sol\";\nimport { IPegKeeper } from \"../../interfaces/IPegKeeper.sol\";\n\nimport { WordCodec } from \"../../common/codec/WordCodec.sol\";\nimport { Math } from \"../../libraries/Math.sol\";\nimport { BasePool } from \"./BasePool.sol\";\n\ncontract AaveFundingPool is BasePool, IAaveFundingPool {\n  using WordCodec for bytes32;\n\n  /*************\n   * Constants *\n   *************/\n\n  /// @dev The offset of *open ratio* in `fundingMiscData`.\n  uint256 private constant OPEN_RATIO_OFFSET = 0;\n\n  /// @dev The offset of *open ratio step* in `fundingMiscData`.\n  uint256 private constant OPEN_RATIO_STEP_OFFSET = 30;\n\n  /// @dev The offset of *close fee ratio* in `fundingMiscData`.\n  uint256 private constant CLOSE_FEE_RATIO_OFFSET = 90;\n\n  /// @dev The offset of *funding ratio* in `fundingMiscData`.\n  uint256 private constant FUNDING_RATIO_OFFSET = 120;\n\n  /// @dev The offset of *interest rate* in `fundingMiscData`.\n  uint256 private constant INTEREST_RATE_OFFSET = 152;\n\n  /// @dev The offset of *timestamp* in `fundingMiscData`.\n  uint256 private constant TIMESTAMP_OFFSET = 220;\n\n  /// @dev The maximum value of *funding ratio*.\n  uint256 private constant MAX_FUNDING_RATIO = 4294967295;\n\n  /// @dev The minimum Aave borrow index snapshot delay.\n  uint256 private constant MIN_SNAPSHOT_DELAY = 30 minutes;\n\n  /***********************\n   * Immutable Variables *\n   ***********************/\n\n  /// @dev The address of Aave V3 `LendingPool` contract.\n  address private immutable lendingPool;\n\n  /// @dev The address of asset used for interest calculation.\n  address private immutable baseAsset;\n\n  /***********\n   * Structs *\n   ***********/\n\n  /// @dev The struct for AAVE borrow rate snapshot.\n  /// @param borrowIndex The current borrow index of AAVE, multiplied by 1e27.\n  /// @param lastInterestRate The last recorded interest rate, multiplied by 1e18.\n  /// @param timestamp The timestamp when the snapshot is taken.\n  struct BorrowRateSnapshot {\n    // The initial value of `borrowIndex` is `10^27`, it is very unlikely this value will exceed `2^128`.\n    uint128 borrowIndex;\n    uint80 lastInterestRate;\n    uint48 timestamp;\n  }\n\n  /*********************\n   * Storage Variables *\n   *********************/\n\n  /// @dev `fundingMiscData` is a storage slot that can be used to store unrelated pieces of information.\n  ///\n  /// - The *open ratio* is the fee ratio for opening position, multiplied by 1e9.\n  /// - The *open ratio step* is the fee ratio step for opening position, multiplied by 1e18.\n  /// - The *close fee ratio* is the fee ratio for closing position, multiplied by 1e9.\n  /// - The *funding ratio* is the scalar for funding rate, multiplied by 1e9.\n  ///   The maximum value is `4.294967296`.\n  ///\n  /// [ open ratio | open ratio step | close fee ratio | funding ratio | reserved ]\n  /// [  30  bits  |     60 bits     |     30 bits     |    32 bits    | 104 bits ]\n  /// [ MSB                                                                   LSB ]\n  bytes32 private fundingMiscData;\n\n  /// @notice The snapshot for AAVE borrow rate.\n  BorrowRateSnapshot public borrowRateSnapshot;\n\n  /***************\n   * Constructor *\n   ***************/\n\n  constructor(address _poolManager, address _lendingPool, address _baseAsset) BasePool(_poolManager) {\n    _checkAddressNotZero(_lendingPool);\n    _checkAddressNotZero(_baseAsset);\n\n    lendingPool = _lendingPool;\n    baseAsset = _baseAsset;\n  }\n\n  function initialize(\n    address admin,\n    string memory name_,\n    string memory symbol_,\n    address _collateralToken,\n    address _priceOracle\n  ) external initializer {\n    __Context_init();\n    __ERC165_init();\n    __ERC721_init(name_, symbol_);\n    __AccessControl_init();\n\n    __PoolStorage_init(_collateralToken, _priceOracle);\n    __TickLogic_init();\n    __PositionLogic_init();\n    __BasePool_init();\n\n    _grantRole(DEFAULT_ADMIN_ROLE, admin);\n\n    _updateOpenRatio(1000000, 50000000000000000); // 0.1% and 5%\n    _updateCloseFeeRatio(1000000); // 0.1%\n\n    uint256 borrowIndex = IAaveV3Pool(lendingPool).getReserveNormalizedVariableDebt(baseAsset);\n    IAaveV3Pool.ReserveDataLegacy memory reserveData = IAaveV3Pool(lendingPool).getReserveData(baseAsset);\n    _updateInterestRate(borrowIndex, reserveData.currentVariableBorrowRate / 1e9);\n  }\n\n  /*************************\n   * Public View Functions *\n   *************************/\n\n  /// @notice Get open fee ratio related parameters.\n  /// @return ratio The value of open ratio, multiplied by 1e9.\n  /// @return step The value of open ratio step, multiplied by 1e18.\n  function getOpenRatio() external view returns (uint256 ratio, uint256 step) {\n    return _getOpenRatio();\n  }\n\n  /// @notice Return the value of funding ratio, multiplied by 1e9.\n  function getFundingRatio() external view returns (uint256) {\n    return _getFundingRatio();\n  }\n\n  /// @notice Return the fee ratio for opening position, multiplied by 1e9.\n  function getOpenFeeRatio() public view returns (uint256) {\n    (uint256 openRatio, uint256 openRatioStep) = _getOpenRatio();\n    (, uint256 rate) = _getAverageInterestRate(borrowRateSnapshot);\n    unchecked {\n      uint256 aaveRatio = rate <= openRatioStep ? 1 : (rate - 1) / openRatioStep;\n      return aaveRatio * openRatio;\n    }\n  }\n\n  /// @notice Return the fee ratio for closing position, multiplied by 1e9.\n  function getCloseFeeRatio() external view returns (uint256) {\n    return _getCloseFeeRatio();\n  }\n\n  /************************\n   * Restricted Functions *\n   ************************/\n\n  /// @notice Update the fee ratio for opening position.\n  /// @param ratio The open ratio value, multiplied by 1e9.\n  /// @param step The open ratio step value, multiplied by 1e18.\n  function updateOpenRatio(uint256 ratio, uint256 step) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    _updateOpenRatio(ratio, step);\n  }\n\n  /// @notice Update the fee ratio for closing position.\n  /// @param ratio The close ratio value, multiplied by 1e9.\n  function updateCloseFeeRatio(uint256 ratio) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    _updateCloseFeeRatio(ratio);\n  }\n\n  /// @notice Update the funding ratio.\n  /// @param ratio The funding ratio value, multiplied by 1e9.\n  function updateFundingRatio(uint256 ratio) external onlyRole(DEFAULT_ADMIN_ROLE) {\n    _updateFundingRatio(ratio);\n  }\n\n  /**********************\n   * Internal Functions *\n   **********************/\n\n  /// @dev Internal function to get open ratio and open ratio step.\n  /// @return ratio The value of open ratio, multiplied by 1e9.\n  /// @return step The value of open ratio step, multiplied by 1e18.\n  function _getOpenRatio() internal view returns (uint256 ratio, uint256 step) {\n    bytes32 data = fundingMiscData;\n    ratio = data.decodeUint(OPEN_RATIO_OFFSET, 30);\n    step = data.decodeUint(OPEN_RATIO_STEP_OFFSET, 60);\n  }\n\n  /// @dev Internal function to update the fee ratio for opening position.\n  /// @param ratio The open ratio value, multiplied by 1e9.\n  /// @param step The open ratio step value, multiplied by 1e18.\n  function _updateOpenRatio(uint256 ratio, uint256 step) internal {\n    _checkValueTooLarge(ratio, FEE_PRECISION);\n    _checkValueTooLarge(step, PRECISION);\n\n    bytes32 data = fundingMiscData;\n    data = data.insertUint(ratio, OPEN_RATIO_OFFSET, 30);\n    fundingMiscData = data.insertUint(step, OPEN_RATIO_STEP_OFFSET, 60);\n\n    emit UpdateOpenRatio(ratio, step);\n  }\n\n  /// @dev Internal function to get the value of close ratio, multiplied by 1e9.\n  function _getCloseFeeRatio() internal view returns (uint256) {\n    return fundingMiscData.decodeUint(CLOSE_FEE_RATIO_OFFSET, 30);\n  }\n\n  /// @dev Internal function to update the fee ratio for closing position.\n  /// @param newRatio The close fee ratio value, multiplied by 1e9.\n  function _updateCloseFeeRatio(uint256 newRatio) internal {\n    _checkValueTooLarge(newRatio, FEE_PRECISION);\n\n    bytes32 data = fundingMiscData;\n    uint256 oldRatio = data.decodeUint(CLOSE_FEE_RATIO_OFFSET, 30);\n    fundingMiscData = data.insertUint(newRatio, CLOSE_FEE_RATIO_OFFSET, 30);\n\n    emit UpdateCloseFeeRatio(oldRatio, newRatio);\n  }\n\n  /// @dev Internal function to get the value of funding ratio, multiplied by 1e9.\n  function _getFundingRatio() internal view returns (uint256) {\n    return fundingMiscData.decodeUint(FUNDING_RATIO_OFFSET, 32);\n  }\n\n  /// @dev Internal function to update the funding ratio.\n  /// @param newRatio The funding ratio value, multiplied by 1e9.\n  function _updateFundingRatio(uint256 newRatio) internal {\n    _checkValueTooLarge(newRatio, MAX_FUNDING_RATIO);\n\n    bytes32 data = fundingMiscData;\n    uint256 oldRatio = data.decodeUint(FUNDING_RATIO_OFFSET, 32);\n    fundingMiscData = data.insertUint(newRatio, FUNDING_RATIO_OFFSET, 32);\n\n    emit UpdateFundingRatio(oldRatio, newRatio);\n  }\n\n  /// @dev Internal function to return interest rate snapshot.\n  /// @param snapshot The previous borrow index snapshot.\n  /// @return newBorrowIndex The current borrow index, multiplied by 1e27.\n  /// @return rate The annual interest rate, multiplied by 1e18.\n  function _getAverageInterestRate(\n    BorrowRateSnapshot memory snapshot\n  ) internal view returns (uint256 newBorrowIndex, uint256 rate) {\n    uint256 prevBorrowIndex = snapshot.borrowIndex;\n    newBorrowIndex = IAaveV3Pool(lendingPool).getReserveNormalizedVariableDebt(baseAsset);\n    // absolute rate change is (new - prev) / prev\n    // annual interest rate is (new - prev) / prev / duration * 365 days\n    uint256 duration = block.timestamp - snapshot.timestamp;\n    // @note Users can trigger this every `MIN_SNAPSHOT_DELAY` seconds and make the interest rate never change.\n    // We allow users to do so, since the risk is not very high. And if we remove this if, the computed interest\n    // rate may not correct due to small `duration`.\n    if (duration < MIN_SNAPSHOT_DELAY) {\n      rate = snapshot.lastInterestRate;\n    } else {\n      rate = ((newBorrowIndex - prevBorrowIndex) * 365 days * PRECISION) / (prevBorrowIndex * duration);\n      if (rate == 0) rate = snapshot.lastInterestRate;\n    }\n  }\n\n  /// @dev Internal function to update interest rate snapshot.\n  function _updateInterestRate(uint256 newBorrowIndex, uint256 lastInterestRate) internal {\n    BorrowRateSnapshot memory snapshot = borrowRateSnapshot;\n    snapshot.borrowIndex = uint128(newBorrowIndex);\n    snapshot.lastInterestRate = uint80(lastInterestRate);\n    snapshot.timestamp = uint48(block.timestamp);\n    borrowRateSnapshot = snapshot;\n\n    emit SnapshotAaveBorrowIndex(newBorrowIndex, block.timestamp);\n  }\n\n  /// @inheritdoc BasePool\n  function _updateCollAndDebtIndex() internal virtual override returns (uint256 newCollIndex, uint256 newDebtIndex) {\n    (newDebtIndex, newCollIndex) = _getDebtAndCollateralIndex();\n\n    BorrowRateSnapshot memory snapshot = borrowRateSnapshot;\n    uint256 duration = block.timestamp - snapshot.timestamp;\n    if (duration > 0) {\n      (uint256 borrowIndex, uint256 interestRate) = _getAverageInterestRate(snapshot);\n      if (IPegKeeper(pegKeeper).isFundingEnabled()) {\n        (, uint256 totalColls) = _getDebtAndCollateralShares();\n        uint256 totalRawColls = _convertToRawColl(totalColls, newCollIndex, Math.Rounding.Down);\n        uint256 funding = (totalRawColls * interestRate * duration) / (365 days * PRECISION);\n        funding = ((funding * _getFundingRatio()) / FEE_PRECISION);\n\n        // update collateral index with funding costs\n        newCollIndex = (newCollIndex * totalRawColls) / (totalRawColls - funding);\n        _updateCollateralIndex(newCollIndex);\n      }\n\n      // update interest snapshot\n      _updateInterestRate(borrowIndex, interestRate);\n    }\n  }\n\n  /// @inheritdoc BasePool\n  function _deductProtocolFees(int256 rawColl) internal view virtual override returns (uint256) {\n    if (rawColl > 0) {\n      // open position or add collateral\n      uint256 feeRatio = getOpenFeeRatio();\n      if (feeRatio > FEE_PRECISION) feeRatio = FEE_PRECISION;\n      return (uint256(rawColl) * feeRatio) / FEE_PRECISION;\n    } else {\n      // close position or remove collateral\n      return (uint256(-rawColl) * _getCloseFeeRatio()) / FEE_PRECISION;\n    }\n  }\n}\n"
+        "DelegationMetaSwapAdapter.sol": "// SPDX-License-Identifier: MIT AND Apache-2.0\npragma solidity 0.8.23;\n\nimport { ECDSA } from \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\nimport { MessageHashUtils } from \"@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol\";\nimport { IERC20 } from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport { SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport { Ownable2Step, Ownable } from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\nimport { ModeLib } from \"@erc7579/lib/ModeLib.sol\";\nimport { ExecutionLib } from \"@erc7579/lib/ExecutionLib.sol\";\nimport { ExecutionHelper } from \"@erc7579/core/ExecutionHelper.sol\";\n\nimport { IMetaSwap } from \"./interfaces/IMetaSwap.sol\";\nimport { IDelegationManager } from \"../interfaces/IDelegationManager.sol\";\nimport { CallType, ExecType, Delegation, ModeCode } from \"../utils/Types.sol\";\nimport { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from \"../utils/Constants.sol\";\n\n/**\n * @title DelegationMetaSwapAdapter\n * @notice Acts as a middleman to orchestrate token swaps using delegations and an aggregator (MetaSwap).\n * @dev This contract depends on an ArgsEqualityCheckEnforcer. The root delegation must include a caveat\n *      with this enforcer as its first element. Its arguments indicate whether the swap should enforce the token\n *      whitelist (\"Token-Whitelist-Enforced\") or not (\"Token-Whitelist-Not-Enforced\"). The root delegator is\n *      responsible for including this enforcer to signal the desired behavior.\n *\n * @dev This adapter is intended to be used with the Swaps API. Accordingly, all API requests must include a valid\n *      signature that incorporates an expiration timestamp. The signature is verified during swap execution to ensure\n *      that it is still valid.\n */\ncontract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {\n    using ModeLib for ModeCode;\n    using ExecutionLib for bytes;\n    using SafeERC20 for IERC20;\n\n    struct SignatureData {\n        bytes apiData;\n        uint256 expiration;\n        bytes signature;\n    }\n\n    ////////////////////////////// State //////////////////////////////\n\n    /// @dev Constant value used to enforce the token whitelist\n    string public constant WHITELIST_ENFORCED = \"Token-Whitelist-Enforced\";\n\n    /// @dev Constant value used to avoid enforcing the token whitelist\n    string public constant WHITELIST_NOT_ENFORCED = \"Token-Whitelist-Not-Enforced\";\n\n    /// @dev The DelegationManager contract that has root access to this contract\n    IDelegationManager public immutable delegationManager;\n\n    /// @dev The MetaSwap contract used to swap tokens\n    IMetaSwap public immutable metaSwap;\n\n    /// @dev The enforcer used to compare args and terms\n    address public immutable argsEqualityCheckEnforcer;\n\n    /// @dev Address of the API signer account.\n    address public swapApiSigner;\n\n    /// @dev Indicates if a token is allowed to be used in the swaps\n    mapping(IERC20 token => bool allowed) public isTokenAllowed;\n\n    /// @dev A mapping indicating if an aggregator ID hash is allowed.\n    mapping(bytes32 aggregatorIdHash => bool allowed) public isAggregatorAllowed;\n\n    ////////////////////////////// Events //////////////////////////////\n\n    /// @dev Emitted when the DelegationManager contract address is set.\n    event SetDelegationManager(IDelegationManager indexed newDelegationManager);\n\n    /// @dev Emitted when the MetaSwap contract address is set.\n    event SetMetaSwap(IMetaSwap indexed newMetaSwap);\n\n    /// @dev Emitted when the Args Equality Check Enforcer contract address is set.\n    event SetArgsEqualityCheckEnforcer(address indexed newArgsEqualityCheckEnforcer);\n\n    /// @dev Emitted when the contract sends tokens (or native tokens) to a recipient.\n    event SentTokens(IERC20 indexed token, address indexed recipient, uint256 amount);\n\n    /// @dev Emitted when the allowed token status changes for a token.\n    event ChangedTokenStatus(IERC20 token, bool status);\n\n    /// @dev Emitted when the allowed aggregator ID status changes.\n    event ChangedAggregatorIdStatus(bytes32 indexed aggregatorIdHash, string aggregatorId, bool status);\n\n    /// @dev Emitted when the Signer API is updated.\n    event SwapApiSignerUpdated(address indexed newSigner);\n\n    ////////////////////////////// Errors //////////////////////////////\n\n    /// @dev Error thrown when the caller is not the delegation manager\n    error NotDelegationManager();\n\n    /// @dev Error thrown when the call is not made by this contract itself.\n    error NotSelf();\n\n    /// @dev Error thrown when msg.sender is not the leaf delegator.\n    error NotLeafDelegator();\n\n    /// @dev Error thrown when an execution with an unsupported CallType is made.\n    error UnsupportedCallType(CallType callType);\n\n    /// @dev Error thrown when an execution with an unsupported ExecType is made.\n    error UnsupportedExecType(ExecType execType);\n\n    /// @dev Error thrown when the input and output tokens are the same.\n    error InvalidIdenticalTokens();\n\n    /// @dev Error thrown when delegations input is an empty array.\n    error InvalidEmptyDelegations();\n\n    /// @dev Error while transferring the native token to the recipient.\n    error FailedNativeTokenTransfer(address recipient);\n\n    /// @dev Error when the tokenFrom is not in the allow list.\n    error TokenFromIsNotAllowed(IERC20 token);\n\n    /// @dev Error when the tokenTo is not in the allow list.\n    error TokenToIsNotAllowed(IERC20 token);\n\n    /// @dev Error when the aggregator ID is not in the allow list.\n    error AggregatorIdIsNotAllowed(string aggregatorId);\n\n    /// @dev Error when the input arrays of a function have different lengths.\n    error InputLengthsMismatch();\n\n    /// @dev Error when the contract did not receive enough tokens to perform the swap.\n    error InsufficientTokens();\n\n    /// @dev Error when the api data comes with an invalid swap function selector.\n    error InvalidSwapFunctionSelector();\n\n    /// @dev Error when the tokenFrom in the api data and swap data do not match.\n    error TokenFromMismath();\n\n    /// @dev Error when the amountFrom in the api data and swap data do not match.\n    error AmountFromMismath();\n\n    /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer\n    error MissingArgsEqualityCheckEnforcer();\n\n    /// @dev Error thrown when API signature is invalid.\n    error InvalidApiSignature();\n\n    /// @dev Error thrown when the signature expiration has passed.\n    error SignatureExpired();\n\n    ////////////////////////////// Modifiers //////////////////////////////\n\n    /**\n     * @notice Require the function call to come from the DelegationManager.\n     */\n    modifier onlyDelegationManager() {\n        if (msg.sender != address(delegationManager)) revert NotDelegationManager();\n        _;\n    }\n\n    /**\n     * @notice Require the function call to come from the this contract itself.\n     */\n    modifier onlySelf() {\n        if (msg.sender != address(this)) revert NotSelf();\n        _;\n    }\n\n    ////////////////////////////// Constructor //////////////////////////////\n\n    /**\n     * @notice Initializes the DelegationMetaSwapAdapter contract.\n     * @param _owner The initial owner of the contract.\n     * @param _swapApiSigner The initial swap API signer.\n     * @param _delegationManager The address of the trusted DelegationManager contract has privileged access to call\n     *        executeByExecutor based on a given delegation.\n     * @param _metaSwap The address of the trusted MetaSwap contract.\n     * @param _argsEqualityCheckEnforcer The address of the ArgsEqualityCheckEnforcer contract.\n     */\n    constructor(\n        address _owner,\n        address _swapApiSigner,\n        IDelegationManager _delegationManager,\n        IMetaSwap _metaSwap,\n        address _argsEqualityCheckEnforcer\n    )\n        Ownable(_owner)\n    {\n        swapApiSigner = _swapApiSigner;\n        delegationManager = _delegationManager;\n        metaSwap = _metaSwap;\n        argsEqualityCheckEnforcer = _argsEqualityCheckEnforcer;\n        emit SwapApiSignerUpdated(_swapApiSigner);\n        emit SetDelegationManager(_delegationManager);\n        emit SetMetaSwap(_metaSwap);\n        emit SetArgsEqualityCheckEnforcer(_argsEqualityCheckEnforcer);\n    }\n\n    ////////////////////////////// External Methods //////////////////////////////\n\n    /**\n     * @notice Allows this contract to receive the chain's native token.\n     */\n    receive() external payable { }\n\n    /**\n     * @notice Executes a token swap using a delegation and transfers the swapped tokens to the root delegator, after validating\n     * signature and expiration.\n     * @dev The msg.sender must be the leaf delegator\n     * @param _signatureData Includes:\n     * - apiData Encoded swap parameters, used by the aggregator.\n     * - expiration Timestamp after which the signature is invalid.\n     * - signature Signature validating the provided apiData.\n     * @param _delegations Array of Delegation objects containing delegation-specific data, sorted leaf to root.\n     * @param _useTokenWhitelist Indicates whether the tokens must be validated or not.\n     */\n    function swapByDelegation(\n        SignatureData calldata _signatureData,\n        Delegation[] memory _delegations,\n        bool _useTokenWhitelist\n    )\n        external\n    {\n        _validateSignature(_signatureData);\n\n        (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =\n            _decodeApiData(_signatureData.apiData);\n        uint256 delegationsLength_ = _delegations.length;\n\n        if (delegationsLength_ == 0) revert InvalidEmptyDelegations();\n        if (tokenFrom_ == tokenTo_) revert InvalidIdenticalTokens();\n\n        _validateTokens(tokenFrom_, tokenTo_, _delegations, _useTokenWhitelist);\n\n        if (!isAggregatorAllowed[keccak256(abi.encode(aggregatorId_))]) revert AggregatorIdIsNotAllowed(aggregatorId_);\n        if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();\n\n        // Prepare the call that will be executed internally via onlySelf\n        bytes memory encodedSwap_ = abi.encodeWithSelector(\n            this.swapTokens.selector,\n            aggregatorId_,\n            tokenFrom_,\n            tokenTo_,\n            _delegations[delegationsLength_ - 1].delegator,\n            amountFrom_,\n            _getSelfBalance(tokenFrom_),\n            swapData_\n        );\n\n        bytes[] memory permissionContexts_ = new bytes[](2);\n        permissionContexts_[0] = abi.encode(_delegations);\n        permissionContexts_[1] = abi.encode(new Delegation[](0));\n\n        ModeCode[] memory encodedModes_ = new ModeCode[](2);\n        encodedModes_[0] = ModeLib.encodeSimpleSingle();\n        encodedModes_[1] = ModeLib.encodeSimpleSingle();\n\n        bytes[] memory executionCallDatas_ = new bytes[](2);\n\n        if (address(tokenFrom_) == address(0)) {\n            executionCallDatas_[0] = ExecutionLib.encodeSingle(address(this), amountFrom_, hex\"\");\n        } else {\n            bytes memory encodedTransfer_ = abi.encodeWithSelector(IERC20.transfer.selector, address(this), amountFrom_);\n            executionCallDatas_[0] = ExecutionLib.encodeSingle(address(tokenFrom_), 0, encodedTransfer_);\n        }\n        executionCallDatas_[1] = ExecutionLib.encodeSingle(address(this), 0, encodedSwap_);\n\n        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);\n    }\n\n    /**\n     * @notice Executes the actual token swap via the MetaSwap contract and transfer the output tokens to the recipient.\n     * @dev This function can only be called internally by this contract (`onlySelf`).\n     * @param _aggregatorId The identifier for the swap aggregator/DEX aggregator.\n     * @param _tokenFrom The input token of the swap.\n     * @param _tokenTo The output token of the swap.\n     * @param _recipient The address that will receive the swapped tokens.\n     * @param _amountFrom The amount of tokens to be swapped.\n     * @param _balanceFromBefore The contract’s balance of _tokenFrom before the incoming token transfer is credited.\n     * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).\n     */\n    function swapTokens(\n        string calldata _aggregatorId,\n        IERC20 _tokenFrom,\n        IERC20 _tokenTo,\n        address _recipient,\n        uint256 _amountFrom,\n        uint256 _balanceFromBefore,\n        bytes calldata _swapData\n    )\n        external\n        onlySelf\n    {\n        uint256 tokenFromObtained_ = _getSelfBalance(_tokenFrom) - _balanceFromBefore;\n        if (tokenFromObtained_ < _amountFrom) revert InsufficientTokens();\n\n        if (tokenFromObtained_ > _amountFrom) {\n            _sendTokens(_tokenFrom, tokenFromObtained_ - _amountFrom, _recipient);\n        }\n\n        uint256 balanceToBefore_ = _getSelfBalance(_tokenTo);\n\n        uint256 value_ = 0;\n\n        if (address(_tokenFrom) == address(0)) {\n            value_ = _amountFrom;\n        } else {\n            uint256 allowance_ = _tokenFrom.allowance(address(this), address(metaSwap));\n            if (allowance_ < _amountFrom) {\n                _tokenFrom.safeIncreaseAllowance(address(metaSwap), type(uint256).max);\n            }\n        }\n\n        metaSwap.swap{ value: value_ }(_aggregatorId, _tokenFrom, _amountFrom, _swapData);\n\n        uint256 obtainedAmount_ = _getSelfBalance(_tokenTo) - balanceToBefore_;\n\n        _sendTokens(_tokenTo, obtainedAmount_, _recipient);\n    }\n\n    /**\n     * @notice Updates the address authorized to sign API requests.\n     * @param _newSigner The new authorized signer address.\n     */\n    function setSwapApiSigner(address _newSigner) external onlyOwner {\n        swapApiSigner = _newSigner;\n        emit SwapApiSignerUpdated(_newSigner);\n    }\n\n    /**\n     * @notice Executes one calls on behalf of this contract,\n     *         authorized by the DelegationManager.\n     * @dev Only callable by the DelegationManager. Supports single-call execution,\n     *         and handles the revert logic via ExecType.\n     * @dev Related: @erc7579/MSAAdvanced.sol\n     * @param _mode The encoded execution mode of the transaction (CallType, ExecType, etc.).\n     * @param _executionCalldata The encoded call data (single) to be executed.\n     * @return returnData_ An array of returned data from each executed call.\n     */\n    function executeFromExecutor(\n        ModeCode _mode,\n        bytes calldata _executionCalldata\n    )\n        external\n        payable\n        onlyDelegationManager\n        returns (bytes[] memory returnData_)\n    {\n        (CallType callType_, ExecType execType_,,) = _mode.decode();\n\n        // Only support single call type with default execution\n        if (CallType.unwrap(CALLTYPE_SINGLE) != CallType.unwrap(callType_)) revert UnsupportedCallType(callType_);\n        if (ExecType.unwrap(EXECTYPE_DEFAULT) != ExecType.unwrap(execType_)) revert UnsupportedExecType(execType_);\n        // Process single execution directly without additional checks\n        (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();\n        returnData_ = new bytes[](1);\n        returnData_[0] = _execute(target_, value_, callData_);\n        return returnData_;\n    }\n\n    /**\n     * @notice Withdraws a specified token from the contract to a recipient.\n     * @dev Only callable by the contract owner.\n     * @param _token The token to be withdrawn (use address(0) for native token).\n     * @param _amount The amount of tokens (or native) to withdraw.\n     * @param _recipient The address to receive the withdrawn tokens.\n     */\n    function withdraw(IERC20 _token, uint256 _amount, address _recipient) external onlyOwner {\n        _sendTokens(_token, _amount, _recipient);\n    }\n\n    /**\n     * @notice Updates the allowed (whitelist) status of multiple tokens in a single call.\n     * @dev Only callable by the contract owner.\n     * @param _tokens Array of tokens to modify.\n     * @param _statuses Corresponding array of booleans to set each token's allowed status.\n     */\n    function updateAllowedTokens(IERC20[] calldata _tokens, bool[] calldata _statuses) external onlyOwner {\n        uint256 tokensLength_ = _tokens.length;\n        if (tokensLength_ != _statuses.length) revert InputLengthsMismatch();\n\n        for (uint256 i = 0; i < tokensLength_; ++i) {\n            IERC20 token = _tokens[i];\n            bool status_ = _statuses[i];\n            if (isTokenAllowed[token] != status_) {\n                isTokenAllowed[token] = status_;\n\n                emit ChangedTokenStatus(token, status_);\n            }\n        }\n    }\n\n    /**\n     * @notice Updates the allowed (whitelist) status of multiple aggregator IDs in a single call.\n     * @dev Only callable by the contract owner.\n     * @param _aggregatorIds Array of aggregator ID strings.\n     * @param _statuses Corresponding array of booleans (true = allowed, false = disallowed).\n     */\n    function updateAllowedAggregatorIds(string[] calldata _aggregatorIds, bool[] calldata _statuses) external onlyOwner {\n        uint256 aggregatorsLength_ = _aggregatorIds.length;\n        if (aggregatorsLength_ != _statuses.length) revert InputLengthsMismatch();\n\n        for (uint256 i = 0; i < aggregatorsLength_; ++i) {\n            bytes32 aggregatorIdHash_ = keccak256(abi.encode(_aggregatorIds[i]));\n            bool status_ = _statuses[i];\n            if (isAggregatorAllowed[aggregatorIdHash_] != status_) {\n                isAggregatorAllowed[aggregatorIdHash_] = status_;\n\n                emit ChangedAggregatorIdStatus(aggregatorIdHash_, _aggregatorIds[i], status_);\n            }\n        }\n    }\n\n    ////////////////////////////// Private/Internal Methods //////////////////////////////\n\n    /**\n     * @notice Sends tokens or native token to a specified recipient.\n     * @param _token ERC20 token to send or address(0) for native token.\n     * @param _amount Amount of tokens or native token to send.\n     * @param _recipient Address to receive the funds.\n     * @dev Reverts if native token transfer fails.\n     */\n    function _sendTokens(IERC20 _token, uint256 _amount, address _recipient) private {\n        if (address(_token) == address(0)) {\n            (bool success_,) = _recipient.call{ value: _amount }(\"\");\n\n            if (!success_) revert FailedNativeTokenTransfer(_recipient);\n        } else {\n            IERC20(_token).safeTransfer(_recipient, _amount);\n        }\n\n        emit SentTokens(_token, _recipient, _amount);\n    }\n\n    /**\n     * @dev Validates that the tokens are whitelisted or not based on the _useTokenWhitelist flag.\n     * @dev Adds the argsCheckEnforcer args to later validate if the token whitelist must be have been used or not.\n     * @param _tokenFrom The input token of the swap.\n     * @param _tokenTo The output token of the swap.\n     * @param _delegations The delegation chain; the last delegation must include the ArgsEqualityCheckEnforcer.\n     * @param _useTokenWhitelist Flag indicating whether token whitelist checks should be enforced.\n     */\n    function _validateTokens(\n        IERC20 _tokenFrom,\n        IERC20 _tokenTo,\n        Delegation[] memory _delegations,\n        bool _useTokenWhitelist\n    )\n        private\n        view\n    {\n        // The Args Enforcer must be the first caveat in the root delegation\n        uint256 lastIndex_ = _delegations.length - 1;\n        if (\n            _delegations[lastIndex_].caveats.length == 0\n                || _delegations[lastIndex_].caveats[0].enforcer != argsEqualityCheckEnforcer\n        ) {\n            revert MissingArgsEqualityCheckEnforcer();\n        }\n\n        // The args are set by this contract depending on the useTokenWhitelist flag\n        if (_useTokenWhitelist) {\n            if (!isTokenAllowed[_tokenFrom]) revert TokenFromIsNotAllowed(_tokenFrom);\n            if (!isTokenAllowed[_tokenTo]) revert TokenToIsNotAllowed(_tokenTo);\n            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_ENFORCED);\n        } else {\n            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_NOT_ENFORCED);\n        }\n    }\n\n    /**\n     * @dev Internal helper to decode aggregator data from `apiData`.\n     * @param _apiData Bytes that includes aggregatorId, tokenFrom, amountFrom, and the aggregator swap data.\n     */\n    function _decodeApiData(bytes calldata _apiData)\n        private\n        pure\n        returns (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_)\n    {\n        bytes4 functionSelector_ = bytes4(_apiData[:4]);\n        if (functionSelector_ != IMetaSwap.swap.selector) revert InvalidSwapFunctionSelector();\n\n        // Excluding the function selector\n        bytes memory paramTerms_ = _apiData[4:];\n        (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = abi.decode(paramTerms_, (string, IERC20, uint256, bytes));\n\n        // Note: Prepend address(0) to format the data correctly because of the Swaps API. See internal docs.\n        (\n            , // address(0)\n            IERC20 swapTokenFrom_,\n            IERC20 swapTokenTo_,\n            uint256 swapAmountFrom_,\n            , // AmountTo\n            , // Metadata\n            uint256 feeAmount_,\n            , // FeeWallet\n            bool feeTo_\n        ) = abi.decode(\n            abi.encodePacked(abi.encode(address(0)), swapData_),\n            (address, IERC20, IERC20, uint256, uint256, bytes, uint256, address, bool)\n        );\n\n        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismath();\n\n        // When the fee is deducted from the tokenFrom the (feeAmount) plus the amount actually swapped (swapAmountFrom)\n        // must equal the total provided (amountFrom); otherwise, the input is inconsistent.\n        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismath();\n\n        tokenTo_ = swapTokenTo_;\n    }\n\n    /**\n     * @dev Returns this contract's balance of the specified ERC20 token.\n     *      If `_token` is address(0), it returns the native token balance.\n     * @param _token The token to check balance for.\n     * @return balance_ The balance of the specified token.\n     */\n    function _getSelfBalance(IERC20 _token) private view returns (uint256 balance_) {\n        if (address(_token) == address(0)) return address(this).balance;\n\n        return _token.balanceOf(address(this));\n    }\n\n    /**\n     * @dev Validates the expiration and signature of the provided apiData.\n     * @param _signatureData Contains the apiData, the expiration and signature.\n     */\n    function _validateSignature(SignatureData memory _signatureData) private view {\n        if (block.timestamp > _signatureData.expiration) revert SignatureExpired();\n\n        bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));\n        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);\n\n        address recoveredSigner_ = ECDSA.recover(ethSignedMessageHash_, _signatureData.signature);\n        if (recoveredSigner_ != swapApiSigner) revert InvalidApiSignature();\n    }\n}\n"
     }
 }

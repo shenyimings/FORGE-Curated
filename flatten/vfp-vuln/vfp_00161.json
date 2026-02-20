@@ -1,32 +1,55 @@
 {
     "vfp_id": "vfp_00161",
-    "project_name": "Sponsored Periphery Audit.md",
+    "project_name": "Jovay Sequencer System Contracts Audit.md",
     "findings": [
         {
-            "id": 7,
+            "id": 30,
             "category": {
                 "1": [
-                    "CWE-693"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-778"
+                    "CWE-1076"
                 ]
             },
-            "title": "Misleading and Non-Authoritative Whitelist Events in `PermissionedMulticallHandler`",
-            "description": "The `PermissionedMulticallHandler` contract emits custom events `CallerWhitelisted` and `CallerRemovedFromWhitelist` via wrapper functions `whitelistCaller` and `removeCallerFromWhitelist`. However, these events are emitted unconditionally, regardless of whether the underlying role state actually changed, leading to false positives. Additionally, direct calls to `grantRole` and `revokeRole` bypass these custom events entirely, resulting in false negatives. \nThe root cause is the lack of state checks before emitting events and the existence of alternative paths to modify roles without triggering the custom events. \nAn attacker or misconfigured off-chain system could exploit this by relying on these events for state synchronization, leading to an incorrect view of the whitelist. \nThe impact is that off-chain monitoring tools may maintain an inaccurate state of authorized callers, potentially leading to incorrect access decisions or missed security alerts.\n",
+            "title": "Function Visibility Overly Permissive",
+            "description": "Several functions across multiple contracts are declared with more permissive visibility than necessary, which could potentially allow unintended access from derived contracts or external callers. The root cause is the use of `internal` or `public` visibility when `private` or `external` would be sufficient based on the function's intended use. For instance, utility functions like `_fromHexChar` and `sliceBytes` are marked `internal` but are only used within their defining contract, making them candidates for `private`. Similarly, getter functions like `getSuperAdmin` are `public` but could be `external` to save gas. While this does not directly lead to fund loss, it increases the attack surface and reduces code clarity. An attacker could potentially exploit overly public functions if future code changes introduce vulnerabilities in those entry points. The impact is primarily on code maintainability, gas efficiency, and security hygiene.\n",
             "severity": "Medium",
             "location": [
-                "PermissionedMulticallHandler.sol::whitelistCaller#60-63",
-                "PermissionedMulticallHandler.sol::removeCallerFromWhitelist#69-72",
-                "PermissionedMulticallHandler.sol::CallerWhitelisted#18",
-                "PermissionedMulticallHandler.sol::CallerRemovedFromWhitelist#21"
+                "permission_control.sol::checkSuperPermission#14-20",
+                "permission_control.sol::checkAdminPermission#22-28",
+                "permission_control.sol::checkGrantPermission#30-38",
+                "permission_control.sol::getSuperAdmin#54-56",
+                "permission_control.sol::getGranteeAdmin#59-61",
+                "rule_mng.sol::addRule#128-144",
+                "rule_mng.sol::updateRule#158-190",
+                "rule_mng.sol::delRule#196-242",
+                "rule_mng.sol::getAllRules#245-259",
+                "rule_mng.sol::getNextId#262-264",
+                "rule_mng.sol::getContractRules#267-275",
+                "rule_mng.sol::updateProvingResult#283-310",
+                "rule_mng.sol::getSuperAdmin#372-374",
+                "rule_mng.sol::getGranteeAdmin#377-379",
+                "sys_chaincfg.sol::changeSys#33-38",
+                "sys_chaincfg.sol::get_config#40-50",
+                "sys_chaincfg.sol::get_configs#52-58",
+                "sys_staking.sol::hexStringToBytes#2442-2465",
+                "sys_staking.sol::sliceBytes#2467-2477",
+                "sys_staking.sol::_fromHexChar#2479-2490",
+                "sys_staking.sol::isArrayContains#2492-2502",
+                "sys_staking.sol::isValidatorPendingExit#2512-2516",
+                "sys_staking.sol::_transferTo#2518-2552",
+                "sys_staking.sol::advanceEpoch#2579-2583",
+                "sys_staking.sol::setChainEpochBlock#2606-2622",
+                "sys_staking.sol::getWithdrawEffectiveWindow#2644-2648",
+                "sys_staking.sol::getChainCfg#2650-2655"
             ],
             "files": [
-                "contracts/contracts/handlers/PermissionedMulticallHandler.sol"
+                "jovay-contracts/sequencer_contracts/sys_contract/artifact_src/solidity/permission_control.sol"
             ]
         }
     ],
     "affected_files": {
-        "PermissionedMulticallHandler.sol": "// SPDX-License-Identifier: GPL-3.0-only\npragma solidity ^0.8.0;\n\nimport { MulticallHandler } from \"./MulticallHandler.sol\";\nimport { AccessControl } from \"@openzeppelin/contracts/access/AccessControl.sol\";\n\n/**\n * @title PermissionedMulticallHandler\n * @notice Extension of MulticallHandler that restricts access to whitelisted callers\n * @dev Uses OpenZeppelin's AccessControl for caller permission management.\n * Only addresses with the WHITELISTED_CALLER_ROLE can call handleV3AcrossMessage.\n */\ncontract PermissionedMulticallHandler is MulticallHandler, AccessControl {\n    /// @notice Role identifier for whitelisted callers\n    bytes32 public constant WHITELISTED_CALLER_ROLE = keccak256(\"WHITELISTED_CALLER_ROLE\");\n\n    /// @notice Emitted when a caller is whitelisted\n    event CallerWhitelisted(address indexed caller);\n\n    /// @notice Emitted when a caller is removed from whitelist\n    event CallerRemovedFromWhitelist(address indexed caller);\n\n    /// @notice Error thrown when caller is not whitelisted\n    error CallerNotWhitelisted(address caller);\n\n    /**\n     * @notice Constructor that sets up the initial admin\n     * @param admin Address that will have DEFAULT_ADMIN_ROLE\n     */\n    constructor(address admin) {\n        _grantRole(DEFAULT_ADMIN_ROLE, admin);\n    }\n\n    /**\n     * @notice Overrides handleV3AcrossMessage to add caller whitelist check\n     * @dev Only addresses with WHITELISTED_CALLER_ROLE can call this function\n     * @param token The token being transferred\n     * @param amount The amount of tokens\n     * @param relayer The relayer address\n     * @param message The encoded Instructions struct\n     */\n    function handleV3AcrossMessage(\n        address token,\n        uint256 amount,\n        address relayer,\n        bytes memory message\n    ) public override {\n        if (!hasRole(WHITELISTED_CALLER_ROLE, msg.sender)) {\n            revert CallerNotWhitelisted(msg.sender);\n        }\n\n        // Call parent implementation\n        super.handleV3AcrossMessage(token, amount, relayer, message);\n    }\n\n    /**\n     * @notice Add a caller to the whitelist\n     * @param caller Address to whitelist\n     */\n    function whitelistCaller(address caller) external onlyRole(DEFAULT_ADMIN_ROLE) {\n        grantRole(WHITELISTED_CALLER_ROLE, caller);\n        emit CallerWhitelisted(caller);\n    }\n\n    /**\n     * @notice Remove a caller from the whitelist\n     * @param caller Address to remove from whitelist\n     */\n    function removeCallerFromWhitelist(address caller) external onlyRole(DEFAULT_ADMIN_ROLE) {\n        revokeRole(WHITELISTED_CALLER_ROLE, caller);\n        emit CallerRemovedFromWhitelist(caller);\n    }\n}\n"
+        "permission_control.sol": "// SPDX-License-Identifier: GPL-3.0\n\npragma solidity ^0.8.20;\n\ncontract PermissionControl {\n    address private administrator_;\n    // todo add grants admin\n    address [] private grantees_;\n\n    constructor() {\n        administrator_ = msg.sender;\n    }\n\n    function checkSuperPermission(address _addr) internal view returns(bool) {\n        if (_addr == administrator_ || _addr == address(0)) {\n            return true;\n        }\n\n        return false;\n    }\n\n    function checkAdminPermission(address _addr) internal view returns(bool) {\n        if (checkSuperPermission(_addr) || checkGrantPermission(_addr)) {\n            return true;\n        }\n\n        return false;\n    }\n\n    function checkGrantPermission(address _addr) internal view returns(bool) {\n        for (uint256 i = 0; i < grantees_.length; i++) {\n            if (grantees_[i] == _addr) {\n                return true;\n            }\n        }\n\n        return false;\n    }\n\n    event SuperTransferred(\n        address old_administrator_,\n        address new_administrator_\n    );\n    function tranferSuperAdmin(address _new_admin) external {\n        require(checkSuperPermission(msg.sender), \"Permission denied\");\n        require(administrator_ != _new_admin, \"Permission denied, same address\");\n\n        address old_admin = administrator_;\n        administrator_ = _new_admin;\n        emit SuperTransferred(old_admin, _new_admin);\n    }\n\n    // return administrator_\n    function getSuperAdmin() public view returns (address) {\n        return administrator_;\n    }\n\n    // return administrator_\n    function getGranteeAdmin() public view returns ( address[] memory) {\n        return grantees_;\n    }\n\n    event AdminGranted(\n        address grantee\n    );\n    function grantAdmin(address _addr) external {\n        require(checkSuperPermission(msg.sender), \"Permission denied\");\n        require(!checkGrantPermission(_addr), \"Address already exist in grantees\");\n\n        grantees_.push(_addr);\n        emit AdminGranted(_addr);\n    }\n    event AdminRevoked(\n        address revoker\n    );\n    function revokeAdmin(address _addr) external {\n        require(checkSuperPermission(msg.sender), \"Permission denied\");\n        require(checkGrantPermission(_addr), \"Address not exist in grantees\");\n\n        for (uint256 i = 0; i < grantees_.length; i++) {\n            if (grantees_[i] == _addr) {\n                grantees_[i] = grantees_[grantees_.length - 1];\n                grantees_.pop();\n                break;\n            }\n        }\n\n        emit AdminRevoked(_addr);\n    }\n}"
     }
 }

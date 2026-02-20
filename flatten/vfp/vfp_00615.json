@@ -1,29 +1,32 @@
 {
     "vfp_id": "vfp_00615",
-    "project_name": "cantina_tadle_oct2025.pdf",
+    "project_name": "ackee-blockchain-fluidkey-earn-module-report.pdf",
     "findings": [
         {
-            "id": 9,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1076"
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
                 ]
             },
-            "title": "Missing storage gap in upgradeable base",
-            "description": "The Setup contract, used as a base for upgradeable contracts, does not include a storage gap (__gap), making future upgrades unsafe. Without a gap, adding new state variables can shift existing storage slots, corrupting data. The root cause is omission of a best practice for upgradeable contracts. Future upgrades that add variables may inadvertently overwrite existing state. The impact is potential data corruption and breaking of contract functionality during upgrades.\n",
-            "severity": "Low",
+            "title": "Cross-chain replay attack vulnerability",
+            "description": "The autoEarn function generates a signature verification hash without including the chain ID in its calculation. This omission allows the same signature to be valid across multiple blockchain networks where the module is deployed.\nThe root cause is the failure to bind the signature to a specific chain, making it possible for an attacker to replay a valid signature from one chain on another.\nAn attacker can observe a valid transaction and signature on one chain (e.g., Chain A), then replay that signature on a different chain (e.g., Chain B) where the same module is deployed. Since the chain ID is not part of the hash, the signature verification will succeed on the target chain.\nThis leads to unauthorized execution of operations, such as unauthorized asset movements, effectively allowing an attacker to perform actions on behalf of the original signer on a different chain.\n",
+            "severity": "High",
             "location": [
-                "Implementations.sol::Setup#19-35"
+                "FluidkeyEarnModule.sol::autoEarn#291"
             ],
             "files": [
-                "v3-sandbox-audit_1/src/core/Implementations.sol"
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
             ]
         },
         {
-            "id": 6,
+            "id": 1,
             "category": {
                 "1": [
                     "CWE-707"
@@ -32,39 +35,173 @@
                     "CWE-20"
                 ],
                 "3": [
-                    "CWE-1287"
+                    "CWE-1284"
                 ]
             },
-            "title": "Missing contract code check in TadleImplementations",
-            "description": "The TadleImplementations contract allows setting default and additional implementations without verifying that the provided addresses contain contract code. This could result in routing to EOAs or destroyed contracts, causing reverts or malfunctioning proxies. The root cause is the absence of a code presence check like Address.isContract. While addImplementation was fixed to include a check, setDefaultImplementation still only rejects the zero address. An admin could accidentally or maliciously set a non-contract address as the default, breaking all routing. The impact is denial of service and disruption of dependent systems relying on correct implementation resolution.\n",
+            "title": "MAX_TOKENS limit bypass via setConfig leading to unintended module persistence",
+            "description": "The module enforces a MAX_TOKENS limit during installation via the onInstall function, but this validation is missing in the setConfig function. As a result, users can add more configurations after installation, bypassing the intended cap.\nThe cause is inconsistent validation logic—while onInstall checks the number of configurations against MAX_TOKENS, setConfig does not, creating an attack vector to exceed the limit.\nAn attacker (or authorized user) can install the module with up to 100 configurations, then use setConfig to add more. Upon uninstallation, only the first 100 configurations are cleaned up, leaving excess configurations active.\nThese leftover configurations remain functional even after the module is uninstalled, allowing continued calls to autoEarn and unauthorized token movements, undermining the module's lifecycle integrity.\n",
             "severity": "Medium",
             "location": [
-                "Implementations.sol::setDefaultImplementation#",
-                "Implementations.sol::addImplementation#83-97"
+                "FluidkeyEarnModule.sol::setConfig",
+                "FluidkeyEarnModule.sol::onUninstall"
             ],
             "files": [
-                "v3-sandbox-audit_1/src/core/Implementations.sol"
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
             ]
         },
         {
-            "id": 17,
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
+                ]
+            },
+            "title": "Unchecked return value",
+            "description": "The execTransactionFromModule function returns a boolean indicating success or failure, but its return value is not checked in the calling code, particularly when depositing wrapped native tokens.\nThe root cause is the lack of proper error handling after an external call, which violates secure coding practices for handling critical operations.\nIf the external call to deposit fails (e.g., due to a reentrancy guard or contract-specific restrictions), the transaction will continue as if it succeeded, leading to incorrect state updates and potential loss of funds.\nThe impact includes silent failures in token wrapping operations, which could result in incorrect accounting and user funds being stuck or lost without clear indication.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::execTransactionFromModule#351-357"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Module installation allows empty configuration",
+            "description": "The onInstall function does not validate whether the _configs array is empty before proceeding with initialization. This allows a user to install the module with no actual configurations.\nThe cause is missing input validation, which allows edge-case inputs to trigger unintended behavior.\nAn attacker or user could call onInstall with an empty array, causing the module to emit ModuleInitialized without setting up any valid configurations, potentially misleading other systems that rely on the event.\nWhile not directly exploitable for fund loss, it leads to inconsistent system state and could interfere with dependent logic or monitoring tools expecting valid configurations after initialization.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::onInstall"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 4,
             "category": {
                 "1": [
                     "CWE-710"
+                ],
+                "2": [
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
                 ]
             },
-            "title": "TadleImplementations does not inherit AccountImplementations interface",
-            "description": "TadleImplementations implements the getImplementation function but does not explicitly inherit the AccountImplementations interface. This weakens type safety and prevents compile-time checks for interface conformance. The root cause is missing interface inheritance in the contract declaration. While functionally correct, this reduces integration safety and clarity for external callers. The impact is reduced code maintainability and potential integration errors.\n",
+            "title": "Misleading event in deleteConfig",
+            "description": "The deleteConfig function emits the ConfigSet event, which is also used by the setConfig function, leading to ambiguous and misleading event logs.\nThe root cause is the reuse of an event for two different operations, which violates the principle of clear and unambiguous logging.\nAn external observer or indexing service cannot distinguish between a configuration being set versus deleted based on events alone, leading to incorrect state reconstruction.\nThis can result in frontends, bots, or analytics tools misinterpreting the actual state changes, potentially leading to incorrect user actions or system decisions.\n",
             "severity": "Informational",
             "location": [
-                "Implementations.sol::TadleImplementations#123"
+                "FluidkeyEarnModule.sol::deleteConfig"
             ],
             "files": [
-                "v3-sandbox-audit_1/src/core/Implementations.sol"
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Variable can be immutable",
+            "description": "The wrappedNative address is set once in the constructor and never modified, yet it is declared as a regular public state variable instead of immutable.\nThe cause is suboptimal code design that misses an opportunity for gas savings.\nWhile this does not introduce a direct security risk, it increases the cost of reading the variable during runtime, as regular state variables are more expensive to access than immutable ones.\nThe impact is increased gas consumption for all calls that read wrappedNative, leading to higher transaction costs for users over time.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::wrappedNative#57",
+                "FluidkeyEarnModule.sol::constructor#59-63"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Incorrect usage of immutable instead of constant",
+            "description": "The ETH address is declared as immutable but holds a fixed, compile-time known value (the zero address for native ETH). It should be declared as constant instead.\nThe cause is misuse of language features—immutable is intended for values set at construction time, while constant is for compile-time constants.\nThis leads to unnecessary storage allocation and higher deployment gas costs, as immutable variables are stored in code rather than being inlined.\nThe impact is inefficient bytecode and slightly higher deployment cost, though runtime gas is unaffected.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::ETH#56"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1059"
+                ],
+                "3": [
+                    "CWE-1110"
+                ]
+            },
+            "title": "Misleading documentation",
+            "description": "The documentation for the prevToken parameter in deleteConfig does not clarify that it is part of a linked list structure, only stating it is the \"token stored before\" without explaining its role in pointer-based deletion.\nThe cause is incomplete or ambiguous inline documentation.\nDevelopers or auditors may misunderstand the internal data structure, leading to incorrect assumptions about how deletions work, especially in edge cases like head or tail removal.\nThis increases the risk of introducing bugs during future maintenance or integration, as the actual implementation logic (linked list) is not clearly reflected in the comments.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::deleteConfig"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ]
+            },
+            "title": "Unnecessary external call",
+            "description": "The getAllConfigs function calls this.getTokens() externally instead of accessing the internal tokens mapping directly, forcing an internal transaction.\nThe cause is inefficient design—using an external call to the same contract when direct state access is possible and cheaper.\nThis pattern results in higher gas consumption due to the overhead of external function calls, including ABI encoding and EVM call frame setup.\nThe impact is increased transaction costs for users calling getAllConfigs, with no functional benefit over direct internal access.\n",
+            "severity": "Informational",
+            "location": [
+                "FluidkeyEarnModule.sol::getAllConfigs",
+                "FluidkeyEarnModule.sol::getTokens"
+            ],
+            "files": [
+                "fluidkey-earn-module/src/FluidkeyEarnModule.sol"
             ]
         }
     ],
     "affected_files": {
-        "Implementations.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\n\n/**\n * @title IAuth\n * @dev Interface for authentication contract\n */\ninterface IAuth {\n    function isAdmin(address account) external view returns (bool);\n}\n\n/**\n * @title Setup\n * @dev Base contract for implementation management\n * Stores mappings between function signatures and their implementation addresses\n */\nabstract contract Setup {\n    /// @dev Initialization flag to prevent multiple initialization calls\n    bool internal _initialized;\n\n    /// @dev Auth contract instance for access control\n    IAuth public auth;\n\n    /// @dev Default implementation address for fallback when signature not found\n    address public defaultImplementation;\n\n    /// @dev Mapping of function signatures to their implementation addresses\n    mapping(bytes4 => address) internal sigImplementations;\n\n    /// @dev Mapping of implementation addresses to their function signatures\n    /// @notice This allows efficient removal of all signatures for an implementation\n    mapping(address => bytes4[]) internal implementationSigs;\n}\n\n/**\n * @title Implementations\n * @dev Contract for managing implementation addresses and their function signatures\n */\nabstract contract Implementations is Setup {\n    // Events for implementation management\n    event LogSetDefaultImplementation(address indexed oldImplementation, address indexed newImplementation);\n    event LogAddImplementation(address indexed implementation, bytes4[] sigs);\n    event LogRemoveImplementation(address indexed implementation, bytes4[] sigs);\n\n    /**\n     * @dev Modifier to restrict function access to admin users only\n     * @notice Reverts if caller is not an admin in the auth contract\n     */\n    modifier isAdmin() {\n        require(auth.isAdmin(msg.sender), \"Implementations: not admin\");\n        _;\n    }\n\n    /**\n     * @dev Modifier to ensure contract is only initialized once\n     * @notice Prevents multiple initialization calls that could reset contract state\n     */\n    modifier initializer() {\n        require(!_initialized, \"Implementations: already initialized\");\n        _;\n        _initialized = true;\n    }\n\n    /**\n     * @dev Sets the default implementation address used when no specific implementation is found\n     * @param _defaultImplementation Address of the new default implementation\n     */\n    function setDefaultImplementation(address _defaultImplementation) external isAdmin {\n        require(_defaultImplementation != address(0), \"Implementations: invalid default implementation address\");\n        require(_defaultImplementation != defaultImplementation, \"Implementations: new implementation same as current\");\n\n        emit LogSetDefaultImplementation(defaultImplementation, _defaultImplementation);\n        defaultImplementation = _defaultImplementation;\n    }\n\n    /**\n     * @dev Add new implementation with its function signatures\n     * @param _implementation Address of the implementation contract\n     * @param _sigs Array of function signatures supported by the implementation\n     */\n    function addImplementation(address _implementation, bytes4[] calldata _sigs) external isAdmin {\n        require(_implementation != address(0), \"Implementations: invalid implementation address\");\n        require(implementationSigs[_implementation].length == 0, \"Implementations: implementation already registered\");\n        require(_sigs.length > 0, \"Implementations: empty signatures array\");\n\n        for (uint256 i = 0; i < _sigs.length; i++) {\n            bytes4 _sig = _sigs[i];\n            require(_sig != bytes4(0), \"Implementations: invalid function signature\");\n            require(sigImplementations[_sig] == address(0), \"Implementations: signature already registered\");\n            sigImplementations[_sig] = _implementation;\n        }\n\n        implementationSigs[_implementation] = _sigs;\n        emit LogAddImplementation(_implementation, _sigs);\n    }\n\n    /**\n     * @dev Remove an implementation and its associated function signatures\n     * @param _implementation Address of the implementation to remove\n     */\n    function removeImplementation(address _implementation) external isAdmin {\n        require(_implementation != address(0), \"Implementations: invalid implementation address\");\n        require(implementationSigs[_implementation].length != 0, \"Implementations: implementation not found\");\n        require(_implementation != defaultImplementation, \"Implementations: cannot remove default implementation\");\n\n        bytes4[] memory sigs = implementationSigs[_implementation];\n        for (uint256 i = 0; i < sigs.length; i++) {\n            bytes4 sig = sigs[i];\n            delete sigImplementations[sig];\n        }\n\n        delete implementationSigs[_implementation];\n        emit LogRemoveImplementation(_implementation, sigs);\n    }\n}\n\n/**\n * @title TadleImplementations\n * @dev Implementation registry contract with getter functions\n */\ncontract TadleImplementations is Ownable2Step, Implementations {\n    constructor() Ownable(msg.sender) {}\n\n    /**\n     * @dev Initialize the contract with auth contract address\n     * @param _auth Address of the auth contract for access control\n     */\n    function initialize(address _auth) external onlyOwner initializer {\n        require(_auth != address(0), \"TadleImplementations: invalid auth address\");\n        auth = IAuth(_auth);\n    }\n\n    /**\n     * @dev Get implementation address for a function signature\n     * @param _sig Function signature to lookup\n     * @return Implementation address or default implementation if not found\n     */\n    function getImplementation(bytes4 _sig) external view returns (address) {\n        address _implementation = sigImplementations[_sig];\n        return _implementation == address(0) ? defaultImplementation : _implementation;\n    }\n\n    /**\n     * @dev Get all function signatures for an implementation\n     * @param _impl Implementation address to lookup\n     * @return Array of function signatures\n     */\n    function getImplementationSigs(address _impl) external view returns (bytes4[] memory) {\n        return implementationSigs[_impl];\n    }\n\n    /**\n     * @dev Get specific implementation for a function signature\n     * @param _sig Function signature to lookup\n     * @return Implementation address (returns zero address if not found)\n     */\n    function getSigImplementation(bytes4 _sig) external view returns (address) {\n        return sigImplementations[_sig];\n    }\n}\n"
+        "FluidkeyEarnModule.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.23;\n\nimport { IERC20 } from \"forge-std/interfaces/IERC20.sol\";\nimport { IERC4626 } from \"forge-std/interfaces/IERC4626.sol\";\nimport { SentinelListLib, SENTINEL } from \"sentinellist/SentinelList.sol\";\nimport { Ownable } from \"openzeppelin-contracts/contracts/access/Ownable.sol\";\nimport { ECDSA } from \"openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol\";\nimport { MessageHashUtils } from\n    \"openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol\";\n\n/**\n * @title FluidkeyEarnModule\n * This module allows Fluidkey to automatically deposit funds into an ERC-4626 vault on behalf of\n * users.\n * @dev This contract is based on a contract originally authored by Rhinestone.\n * The original contract can be found at\n * https://github.com/rhinestonewtf/core-modules/blob/main/src/AutoSavings/AutoSavings.sol (commit\n * 18b057).\n */\ninterface Safe {\n    /// @dev Allows a Module to execute a Safe transaction without any further confirmations.\n    /// @param to Destination address of module transaction.\n    /// @param value Ether value of module transaction.\n    /// @param data Data payload of module transaction.\n    /// @param operation Operation type of module transaction.\n    function execTransactionFromModule(\n        address to,\n        uint256 value,\n        bytes calldata data,\n        uint8 operation\n    )\n        external\n        returns (bool success);\n}\n\ninterface IWrappedNative {\n    function deposit() external payable;\n}\n\ncontract FluidkeyEarnModule is Ownable {\n    using SentinelListLib for SentinelListLib.SentinelList;\n\n    /*//////////////////////////////////////////////////////////////////////////\n                            CONSTANTS & STORAGE\n    //////////////////////////////////////////////////////////////////////////*/\n\n    error TooManyTokens();\n    error ModuleNotInitialized(address account);\n    error NotAuthorized(address relayer);\n    error ConfigNotFound(address token);\n    error CannotRemoveSelf();\n    error SignatureAlreadyUsed();\n\n    uint256 internal constant MAX_TOKENS = 100;\n    address public immutable ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;\n    address public wrappedNative;\n\n    constructor(address _authorizedRelayer, address _wrappedNative) Ownable(msg.sender) {\n        authorizedRelayers[_authorizedRelayer] = true;\n        emit AddAuthorizedRelayer(_authorizedRelayer);\n        wrappedNative = _wrappedNative;\n    }\n\n    struct ConfigWithToken {\n        address token; // address of the token\n        address vault; // address of the vault\n    }\n\n    // authorizedRelayer -> bool\n    mapping(address authorizedRelayer => bool) public authorizedRelayers;\n\n    // account => token => Config\n    mapping(address account => mapping(address token => address vault)) public config;\n\n    // account => tokens\n    mapping(address account => SentinelListLib.SentinelList) tokens;\n\n    // hash => executed (avoid replay attacks)\n    mapping(bytes32 => bool) public executedHashes;\n\n    event AddAuthorizedRelayer(address indexed relayer);\n    event RemoveAuthorizedRelayer(address indexed relayer);\n    event ModuleInitialized(address indexed account);\n    event ModuleUninitialized(address indexed account);\n    event ConfigSet(address indexed account, address indexed token);\n    event AutoEarnExecuted(address indexed smartAccount, address indexed token, uint256 amountIn);\n\n    /*//////////////////////////////////////////////////////////////////////////\n                                     CONFIG\n    //////////////////////////////////////////////////////////////////////////*/\n\n    /**\n     * Modifier to check if the caller is an authorized relayer or the owner\n     */\n    modifier onlyAuthorizedRelayer() {\n        if (!authorizedRelayers[msg.sender] && msg.sender != owner()) {\n            revert NotAuthorized(msg.sender);\n        }\n        _;\n    }\n\n    /**\n     * Adds a new authorized relayer\n     * @dev the function will revert if the caller is not an authorized relayer or the owner\n     *\n     * @param newRelayer address of the new relayer\n     */\n    function addAuthorizedRelayer(address newRelayer) external onlyAuthorizedRelayer {\n        authorizedRelayers[newRelayer] = true;\n        emit AddAuthorizedRelayer(newRelayer);\n    }\n\n    /**\n     * Removes an authorized relayer\n     * @dev the function will revert if the caller is not an authorized relayer or the owner\n     *\n     * @param relayer address of the relayer to be removed\n     */\n    function removeAuthorizedRelayer(address relayer) external onlyAuthorizedRelayer {\n        if (relayer == msg.sender) revert CannotRemoveSelf();\n        delete authorizedRelayers[relayer];\n        emit RemoveAuthorizedRelayer(relayer);\n    }\n\n    /**\n     * Initializes the module with the tokens and their configurations\n     * @dev data is encoded as follows: abi.encode(ConfigWithToken[])\n     *\n     * @param data encoded data containing the tokens and their configurations\n     */\n    function onInstall(bytes calldata data) external {\n        // cache the account address\n        address account = msg.sender;\n\n        // decode the data to get the tokens and their configurations\n        (ConfigWithToken[] memory _configs) = abi.decode(data, (ConfigWithToken[]));\n\n        // initialize the sentinel list\n        tokens[account].init();\n\n        // get the length of the tokens\n        uint256 length = _configs.length;\n\n        // check that the length of tokens is less than max\n        if (length > MAX_TOKENS) revert TooManyTokens();\n\n        // loop through the tokens, add them to the list and set their configurations\n        for (uint256 i; i < length; i++) {\n            address _token = _configs[i].token;\n            address _vault = _configs[i].vault;\n            config[account][_token] = _vault;\n            tokens[account].push(_token);\n        }\n\n        emit ModuleInitialized(account);\n    }\n\n    /**\n     * Handles the uninstallation of the module and clears the tokens and configurations\n     * @dev the data parameter is not used\n     */\n    function onUninstall() external {\n        // cache the account address\n        address account = msg.sender;\n\n        // clear the configurations\n        (address[] memory tokensArray,) = tokens[account].getEntriesPaginated(SENTINEL, MAX_TOKENS);\n        uint256 tokenLength = tokensArray.length;\n        for (uint256 i; i < tokenLength; i++) {\n            delete config[account][tokensArray[i]];\n        }\n\n        // clear the tokens\n        tokens[account].popAll();\n\n        emit ModuleUninitialized(account);\n    }\n\n    /**\n     * Checks if the module is initialized\n     *\n     * @param smartAccount address of the smart account\n     * @return true if the module is initialized, false otherwise\n     */\n    function isInitialized(address smartAccount) public view returns (bool) {\n        // check if the linked list is initialized for the smart account\n        return tokens[smartAccount].alreadyInitialized();\n    }\n\n    /**\n     * Sets the configuration for a token\n     * @dev the function will revert if the module is not initialized\n     * @dev this function can be used to set a new configuration or update an existing one\n     *\n     * @param token address of the token\n     * @param vault address of the vault\n     */\n    function setConfig(address token, address vault) public {\n        // cache the account address\n        address account = msg.sender;\n        // check if the module is not initialized and revert if it is not\n        if (!isInitialized(account)) revert ModuleNotInitialized(account);\n\n        // set the configuration for the token\n        config[account][token] = vault;\n\n        // add the token to the list if it is not already there\n        if (!tokens[account].contains(token)) {\n            tokens[account].push(token);\n        }\n\n        emit ConfigSet(account, token);\n    }\n\n    /**\n     * Deletes the configuration for a token\n     * @dev the function will revert if the module is not initialized\n     *\n     * @param prevToken address of the token stored before the token to be deleted\n     * @param token address of the token to be deleted\n     */\n    function deleteConfig(address prevToken, address token) public {\n        // cache the account address\n        address account = msg.sender;\n\n        // delete the configuration for the token\n        delete config[account][token];\n\n        // remove the token from the list\n        tokens[account].pop(prevToken, token);\n\n        emit ConfigSet(account, token);\n    }\n\n    /**\n     * Gets a list of all tokens\n     * @dev the function will revert if the module is not initialized\n     *\n     * @param account address of the account\n     */\n    function getTokens(address account) external view returns (address[] memory tokensArray) {\n        // return the tokens from the list\n        (tokensArray,) = tokens[account].getEntriesPaginated(SENTINEL, MAX_TOKENS);\n    }\n\n    /**\n     * Gets all configurations for an account\n     * @dev the function will revert if the module is not initialized\n     *\n     * @param account address of the account\n     */\n    function getAllConfigs(address account) external view returns (ConfigWithToken[] memory) {\n        address[] memory tokensArray = this.getTokens(account);\n        ConfigWithToken[] memory configsArray = new ConfigWithToken[](tokensArray.length);\n\n        for (uint256 i; i < tokensArray.length; i++) {\n            address tokenAddr = tokensArray[i];\n            configsArray[i] =\n                ConfigWithToken({ token: tokenAddr, vault: config[account][tokenAddr] });\n        }\n\n        return configsArray;\n    }\n\n    /*//////////////////////////////////////////////////////////////////////////\n                                     MODULE LOGIC\n    //////////////////////////////////////////////////////////////////////////*/\n\n    /**\n     * Initiates the auto-earn process for the specified token and amount.\n     * This overload checks the relayer's authorization and verifies the signature.\n     *\n     * @param token The address of the token to be saved.\n     * @param amountToSave The amount of tokens to deposit into the vault.\n     * @param safe The address of the Safe from which the transaction is executed.\n     * @param nonce A unique identifier for the transaction, so that 2 txs for same token, safe and\n     * amount can be distinguished.\n     * @param signature A signature from the relayer verifying the transaction details.\n     */\n    function autoEarn(\n        address token,\n        uint256 amountToSave,\n        address safe,\n        uint256 nonce,\n        bytes memory signature\n    )\n        external\n    {\n        // Ensure the relayer is an authorized one and the signature not already used\n        bytes32 hash = keccak256(abi.encodePacked(token, amountToSave, safe, nonce));\n        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(hash);\n        if (executedHashes[ethSignedHash]) {\n            revert SignatureAlreadyUsed();\n        }\n        address relayer = ECDSA.recover(ethSignedHash, signature);\n        if (!authorizedRelayers[relayer]) {\n            revert NotAuthorized(relayer);\n        }\n        executedHashes[ethSignedHash] = true;\n\n        // Execute the auto-earn process\n        _autoEarn(token, amountToSave, safe);\n    }\n\n    /**\n     * Initiates the auto-earn process for the specified token and amount.\n     * This overload assumes the caller is already an authorized relayer.\n     *\n     * @param token The address of the token to be saved.\n     * @param amountToSave The amount of tokens to deposit into the vault.\n     * @param safe The address of the Safe from which the transaction is executed.\n     */\n    function autoEarn(\n        address token,\n        uint256 amountToSave,\n        address safe\n    )\n        external\n        onlyAuthorizedRelayer\n    {\n        _autoEarn(token, amountToSave, safe);\n    }\n\n    /**\n     * Executes the auto earn logic\n     * @dev the function acts on behalf of the safe's own context\n     *\n     * @param token address of the token received\n     * @param amountToSave amount received by the user\n     * @param safe address of the user's safe to execute the transaction on\n     */\n    function _autoEarn(address token, uint256 amountToSave, address safe) private {\n        // initialize the safe instance\n        Safe safeInstance = Safe(safe);\n\n        // get the configuration for the token\n        address vaultAddress = config[safe][token];\n\n        // get the vault\n        IERC4626 vault = IERC4626(vaultAddress);\n\n        // check if the config exists and revert if not\n        if (address(vault) == address(0)) {\n            revert ConfigNotFound(token);\n        }\n\n        IERC20 tokenToSave;\n\n        // if token is ETH, wrap it\n        if (token == address(ETH)) {\n            safeInstance.execTransactionFromModule(\n                address(wrappedNative),\n                amountToSave,\n                abi.encodeWithSelector(IWrappedNative.deposit.selector),\n                0\n            );\n            tokenToSave = IERC20(wrappedNative);\n        } else {\n            tokenToSave = IERC20(token);\n        }\n\n        // approve the vault to spend the token\n        bool approvalSuccess = safeInstance.execTransactionFromModule(\n            address(tokenToSave),\n            0,\n            abi.encodeWithSelector(IERC20.approve.selector, address(vault), amountToSave),\n            0\n        );\n        if (!approvalSuccess) {\n            revert(\"Failed to approve vault to spend tokens\");\n        }\n\n        // deposit to vault\n        bool depositSuccess = safeInstance.execTransactionFromModule(\n            address(vault),\n            0,\n            abi.encodeWithSelector(IERC4626.deposit.selector, amountToSave, safe),\n            0\n        );\n        if (!depositSuccess) {\n            revert(\"Failed to deposit tokens into the vault\");\n        }\n\n        // emit event\n        emit AutoEarnExecuted(safe, token, amountToSave);\n    }\n}\n"
     }
 }

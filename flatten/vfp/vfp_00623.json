@@ -1,32 +1,133 @@
 {
     "vfp_id": "vfp_00623",
-    "project_name": "2026-1-offchain-arbitrum-quorum-changes-securityreview.pdf",
+    "project_name": "cantina_byzantine_dec2025.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-691"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
+                    "CWE-431"
                 ]
             },
-            "title": "adjustTotalDelegation allows the new value to be zero",
-            "description": "The adjustTotalDelegation function in L2ArbitrumToken.sol allows the DAO to set the total delegation value to zero via an adjustment. This occurs because while the function checks that the new value is non-negative, it does not prevent it from being exactly zero. The root cause is the lack of an explicit validation check to ensure the new value is greater than zero. An attacker with ownership privileges could set the total delegation to zero, which would cause the quorum calculation to fall back to using getPastCirculatingSupply, potentially altering quorum expectations for existing proposals. However, since the function is protected by the onlyOwner modifier, only the DAO can invoke it, limiting the risk. The impact is limited to a change in quorum calculation logic, which could affect governance outcomes if misused, but does not lead to fund loss or direct exploitation by unauthorized actors.\n",
-            "severity": "Informational",
+            "title": "Missing receive / fallback, ERC721 & ERC1155 token accepting hooks",
+            "description": "The Atlas.sol contract lacks a receive or fallback function, which prevents it from accepting Ether during execution of calls or batch operations. This causes transactions sending Ether to the delegated address to revert. Additionally, the contract does not implement the onERC721Received or onERC1155Received / onERC1155BatchReceived hooks, making it unable to receive ERC721 and ERC1155 tokens. The root cause is the absence of required functions to handle incoming Ether and token transfers. An attacker cannot directly exploit this for financial gain, but users lose functionality and may experience failed transactions when attempting to send Ether or tokens to the delegation. The impact is a degradation of contract functionality and reduced interoperability with other protocols expecting standard receiving capabilities.\n",
+            "severity": "High",
             "location": [
-                "governance/src/L2ArbitrumToken.sol::adjustTotalDelegation"
+                "Atlas.sol::#L142"
             ],
             "files": [
-                "governance/src/L2ArbitrumToken.sol"
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Signature replay due to shared storage in EIP-7702 context",
+            "description": "The usedNonces mapping in Atlas.sol uses standard storage slots that reside on the delegating EOA in an EIP-7702 context. When a user switches delegations (e.g., Atlas → OtherImpl → Atlas), the intermediate contract may overwrite the storage slots used by Atlas, resetting nonce values to false. This allows previously consumed signatures to be replayed if they are still within their validity period. The root cause is the use of non-namespaced storage, which is vulnerable to collision when multiple delegation targets share the same EOA storage. An attacker could replay a valid signature after a delegation switch, leading to unauthorized execution of a previously used call. The impact includes potential loss of funds or unauthorized state changes due to signature replay.\n",
+            "severity": "Medium",
+            "location": [
+                "Atlas.sol::#L44"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-358"
+                ]
+            },
+            "title": "Atlas delegation does not implement EIP-1271 isValidSignature",
+            "description": "The Atlas contract, while designed as an EIP-7702 delegation target, does not implement the EIP-1271 isValidSignature function. As a result, when protocols check whether an address is a contract (via code.length > 0) and attempt to validate signatures using isValidSignature, the call will revert because the function is not present. The root cause is the omission of a standard interface required for contract-based signature validation. This leads to incompatibility with protocols that rely on EIP-1271 for signature verification, potentially blocking user interactions or causing transaction failures. The impact is reduced interoperability and usability, especially in wallet and dApp ecosystems that expect EIP-1271 compliance.\n",
+            "severity": "Low",
+            "location": [
+                "Atlas.sol::#L32"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-571"
+                ]
+            },
+            "title": "Unnecessary zero-address check on recovered address",
+            "description": "The contract performs a redundant check `recoveredAddress != address(0)` before verifying `recoveredAddress == address(this)`. Since the ECDSA recover function (e.g., from OpenZeppelin) reverts if the recovered address is zero, this check is unnecessary and wastes gas. The root cause is inefficient code logic that adds an extra opcode without providing additional security. While the vulnerability does not lead to security breaches, it increases the gas cost of each signature verification. The impact is higher transaction costs for users, which affects the economic efficiency of the contract but does not compromise security.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L67",
+                "Atlas.sol::#L99"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Uninformative logging and no logging of return data",
+            "description": "The contract emits a CallExecuted event that logs the input calldata, which is already available in transaction data and thus redundant. At the same time, it discards the return data from external calls, which is often more relevant for off-chain observers. The root cause is suboptimal event design that prioritizes less useful data. This leads to increased gas costs due to logging large calldata and makes it harder for external systems to monitor or react to actual execution results. The impact includes higher operational costs and reduced observability, making debugging and integration more difficult for third-party services.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L129-L131"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-573"
+                ]
+            },
+            "title": "Missing fields in EIP712 domain",
+            "description": "The EIP712 domain in Atlas.sol does not include the name and version fields in the DOMAIN_TYPEHASH, which can cause certain wallets to display the signing request opaquely or even reject it due to non-compliance with expected standards. The root cause is an incomplete EIP712 domain separator configuration. This can lead to poor user experience during signature operations, as users may not clearly understand what they are signing. The impact is reduced usability and potential rejection of valid transactions by wallet software, although it does not directly affect security.\n",
+            "severity": "Informational",
+            "location": [
+                "Atlas.sol::#L37"
+            ],
+            "files": [
+                "batch-call-and-sponsor/src/Atlas.sol"
             ]
         }
     ],
     "affected_files": {
-        "L2ArbitrumToken.sol": "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.16;\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/draft-ERC20PermitUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport \"./TransferAndCallToken.sol\";\nimport \"@openzeppelin/contracts/utils/Checkpoints.sol\";\n\n/// @title  L2 Arbitrum Token\n/// @notice The L2 counterparty of the Arbitrum token.\n/// @dev    ERC20 with additional functionality:\n///         * Permit - single step transfers via sig\n///         * Votes - delegation and voting compatible with OZ governance\n///         * Burnable - user's can burn their own tokens. Can be used by the airdrop distributor\n///             after the claim period ends\n///         * Mint - allows the owner to mint a maximum of 2% per year\n///         * TransferAndCall - allows users to call a contract after doing a transfer\ncontract L2ArbitrumToken is\n    Initializable,\n    ERC20Upgradeable,\n    ERC20BurnableUpgradeable,\n    ERC20PermitUpgradeable,\n    ERC20VotesUpgradeable,\n    OwnableUpgradeable,\n    TransferAndCallToken\n{\n    using Checkpoints for Checkpoints.History;\n\n    string private constant NAME = \"Arbitrum\";\n    string private constant SYMBOL = \"ARB\";\n    /// @notice The minimum amount of time that must elapse before a mint is allowed\n    uint256 public constant MIN_MINT_INTERVAL = 365 days;\n    /// @notice The maximum amount that can be can be minted - numerator\n    uint256 public constant MINT_CAP_NUMERATOR = 200;\n    /// @notice The maximum amount that can be can be minted - denominator\n    uint256 public constant MINT_CAP_DENOMINATOR = 10_000;\n\n    /// @notice The address of the L1 counterparty of this token\n    address public l1Address;\n    /// @notice The time at which the next mint is allowed - timestamp\n    uint256 public nextMint;\n\n    /// @dev History of the total amount of delegated tokens\n    ///      The initial value is an estimate of the total delegation at the time of upgrade proposal creation.\n    ///      Another proposal can be made later to update this value if needed.\n    Checkpoints.History private _totalDelegationHistory;\n\n    event TotalDelegationAdjusted(uint256 previousTotalDelegation, uint256 newTotalDelegation);\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialise the L2 token\n    /// @param _l1TokenAddress The address of the counterparty L1 token\n    /// @param _initialSupply The amount of initial supply to mint\n    /// @param _owner The owner of this contract - controls minting, not upgradeability\n    function initialize(address _l1TokenAddress, uint256 _initialSupply, address _owner)\n        public\n        initializer\n    {\n        require(_l1TokenAddress != address(0), \"ARB: ZERO_L1TOKEN_ADDRESS\");\n        require(_initialSupply != 0, \"ARB: ZERO_INITIAL_SUPPLY\");\n        require(_owner != address(0), \"ARB: ZERO_OWNER\");\n\n        __ERC20_init(NAME, SYMBOL);\n        __ERC20Burnable_init();\n        __ERC20Permit_init(NAME);\n        __ERC20Votes_init();\n        __Ownable_init();\n\n        _mint(_owner, _initialSupply);\n        nextMint = block.timestamp + MIN_MINT_INTERVAL;\n        l1Address = _l1TokenAddress;\n        _transferOwnership(_owner);\n    }\n\n    /// @notice Called after upgrade to set the initial total delegation estimate\n    ///         The initial estimate may be manipulable with artificial delegation/undelegation prior to the upgrade.\n    ///         Since this value is only used for quorum calculation, and the quroum is clamped by the governors to an acceptable range,\n    ///         the risk/impact of manipulation is low.\n    /// @param  initialTotalDelegation The initial total delegation at the time of upgrade proposal creation.\n    ///         This is an estimate since it is chosen at proposal creation time and not effective until the proposal is executed.\n    function postUpgradeInit(uint256 initialTotalDelegation) external onlyOwner {\n        require(\n            _totalDelegationHistory._checkpoints.length == 0,\n            \"ARB: POST_UPGRADE_INIT_ALREADY_CALLED\"\n        );\n        _totalDelegationHistory.push(initialTotalDelegation);\n    }\n\n    /// @notice Adjusts total delegation value by the given amount\n    /// @param  adjustment The amount that the total delegation is off by, negated. This is added to the current total delegation.\n    function adjustTotalDelegation(int256 adjustment)\n        external\n        onlyOwner\n    {\n        uint256 latest = _totalDelegationHistory.latest();\n        int256 newValue = int256(latest) + adjustment;\n\n        // negative newValue should be impossible\n        // since the adjustment should bring the value to true total delegation\n        // which is at minimum zero\n        require(newValue >= 0, \"ARB: NEGATIVE_TOTAL_DELEGATION\");\n        _totalDelegationHistory.push(uint256(newValue));\n\n        emit TotalDelegationAdjusted(latest, uint256(newValue));\n    }\n\n    /// @notice Allows the owner to mint new tokens\n    /// @dev    Only allows minting below an inflation cap.\n    ///         Set to once per year, and a maximum of 2%.\n    function mint(address recipient, uint256 amount) external onlyOwner {\n        // function inspired by: https://github.com/ensdomains/governance/blob/548f3f3607c83717427d9ae3fc1f3a9e66fc7642/contracts/ENSToken.sol#L105\n        require(\n            amount <= (totalSupply() * MINT_CAP_NUMERATOR) / MINT_CAP_DENOMINATOR,\n            \"ARB: MINT_TOO_MUCH\"\n        );\n        require(block.timestamp >= nextMint, \"ARB: MINT_TOO_EARLY\");\n\n        nextMint = block.timestamp + MIN_MINT_INTERVAL;\n        _mint(recipient, amount);\n    }\n\n    /// @notice Get the current total delegation\n    /// @return The current total delegation\n    function getTotalDelegation() external view returns (uint256) {\n        return _totalDelegationHistory.latest();\n    }\n\n    /// @notice Get the total delegation at a specific block number\n    ///         If the blockNumber is prior to the first checkpoint, returns 0\n    /// @param blockNumber The block number to get the total delegation at\n    /// @return The total delegation at the given block number\n    function getTotalDelegationAt(uint256 blockNumber) external view returns (uint256) {\n        return _totalDelegationHistory.getAtBlock(blockNumber);\n    }\n\n    /// @dev Checks if total delegation needs to be updated, and updates it if so\n    ///      by adding a new checkpoint.\n    /// @param fromDelegate The address of the delegate the tokens are being moved from\n    /// @param toDelegate The address of the delegate the tokens are being moved to\n    /// @param amount The amount of tokens being moved\n    function _updateDelegationHistory(address fromDelegate, address toDelegate, uint256 amount)\n        internal\n    {\n        if (fromDelegate != toDelegate) {\n            int256 delta = 0;\n            if (fromDelegate != address(0)) {\n                delta -= int256(amount);\n            }\n            if (toDelegate != address(0)) {\n                delta += int256(amount);\n            }\n            if (delta != 0) {\n                // if the initial estimate is too low, and a large amount of tokens are undelegated\n                // it is technically possible that the newValue is negative\n                // if this happens, we clamp it to zero to avoid underflow\n                int256 newValue = int256(_totalDelegationHistory.latest()) + delta;\n                _totalDelegationHistory.push(uint256(newValue < 0 ? int256(0) : newValue));\n            }\n        }\n    }\n\n    /// @dev Override ERC20VotesUpgradeable to update total delegation history when delegation changes\n    function _delegate(address delegator, address delegatee) internal virtual override {\n        _updateDelegationHistory(delegates(delegator), delegatee, balanceOf(delegator));\n        super._delegate(delegator, delegatee);\n    }\n\n    function _afterTokenTransfer(address from, address to, uint256 amount)\n        internal\n        override(ERC20Upgradeable, ERC20VotesUpgradeable)\n    {\n        super._afterTokenTransfer(from, to, amount);\n        _updateDelegationHistory(delegates(from), delegates(to), amount);\n    }\n\n    function _mint(address to, uint256 amount)\n        internal\n        override(ERC20Upgradeable, ERC20VotesUpgradeable)\n    {\n        super._mint(to, amount);\n    }\n\n    function _burn(address account, uint256 amount)\n        internal\n        override(ERC20Upgradeable, ERC20VotesUpgradeable)\n    {\n        super._burn(account, amount);\n    }\n}\n"
+        "Atlas.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.30;\n\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ninterface IAtlas {\n    event CallExecuted(address indexed sender, address indexed to, uint256 value, bytes data);\n\n    error InvalidSigner();\n    error ExpiredSignature();\n    error Unauthorized();\n    error NonceAlreadyUsed();\n    error CallReverted();\n\n    /// @notice Represents a single call within a batch.\n    struct Call {\n        address to;\n        uint256 value;\n        bytes data;\n    }\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable;\n    function executeCall(Call calldata call) external payable;\n    function executeCalls(Call[] calldata calls) external payable;\n}\n\ncontract Atlas is IAtlas {\n    /*\n        Storage\n    */\n\n    bytes32 constant DOMAIN_TYPEHASH = keccak256(\"EIP712Domain(uint256 chainId,address verifyingContract)\");\n    bytes32 constant CALL_TYPEHASH = keccak256(\"Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALLS_TYPEHASH =\n        keccak256(\"ExecuteCalls(Call[] calls,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n    bytes32 constant EXECUTE_CALL_TYPEHASH =\n        keccak256(\"ExecuteCall(Call call,uint256 deadline,uint256 nonce)Call(address to,uint256 value,bytes data)\");\n\n    mapping(uint256 => bool) public usedNonces;\n\n    /*\n        External functions\n    */\n\n    function executeCall(Call calldata call, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encode(CALL_TYPEHASH, call.to, call.value, keccak256(call.data)));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALL_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls, uint256 deadline, uint256 nonce, uint8 v, bytes32 r, bytes32 s)\n        external\n        payable\n    {\n        // Verify deadline\n        require(block.timestamp <= deadline, ExpiredSignature());\n\n        // Verify nonce\n        require(!usedNonces[nonce], NonceAlreadyUsed());\n\n        // Hash each call individually\n        bytes32[] memory callStructHashes = new bytes32[](calls.length);\n        for (uint256 i; i < calls.length; ++i) {\n            callStructHashes[i] =\n                keccak256(abi.encode(CALL_TYPEHASH, calls[i].to, calls[i].value, keccak256(calls[i].data)));\n        }\n\n        // Retrieve eip-712 digest\n        bytes32 encodeData = keccak256(abi.encodePacked(callStructHashes));\n        bytes32 hashStruct = keccak256(abi.encode(EXECUTE_CALLS_TYPEHASH, encodeData, deadline, nonce));\n        bytes32 digest = keccak256(abi.encodePacked(hex\"1901\", DOMAIN_SEPARATOR(), hashStruct));\n\n        // Recover the signer\n        address recoveredAddress = ECDSA.recover(digest, v, r, s);\n        require(recoveredAddress != address(0) && recoveredAddress == address(this), InvalidSigner());\n\n        // Mark the nonce as used\n        usedNonces[nonce] = true;\n\n        _executeBatch(calls);\n    }\n\n    function executeCall(Call calldata call) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeCall(call);\n    }\n\n    function executeCalls(Call[] calldata calls) external payable {\n        require(msg.sender == address(this), Unauthorized());\n        _executeBatch(calls);\n    }\n\n    /*\n        Private functions\n    */\n\n    function _executeBatch(Call[] calldata calls) private {\n        for (uint256 i; i < calls.length; ++i) {\n            _executeCall(calls[i]);\n        }\n    }\n\n    function _executeCall(Call calldata callItem) private {\n        // address(this) in the contract equals the EOA address NOT the contract address\n        (bool success,) = callItem.to.call{value: callItem.value}(callItem.data);\n        require(success, CallReverted());\n        emit CallExecuted(msg.sender, callItem.to, callItem.value, callItem.data);\n    }\n\n    /*\n        Views\n    */\n\n    function DOMAIN_SEPARATOR() public view returns (bytes32) {\n        return keccak256(abi.encode(DOMAIN_TYPEHASH, block.chainid, address(this)));\n    }\n}\n"
     }
 }

@@ -3,183 +3,31 @@
     "project_name": "ChainSecurity_Liquity_Bold_Audit.pdf",
     "findings": [
         {
-            "id": 13,
+            "id": 37,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-682"
                 ],
                 "2": [
-                    "CWE-1076"
+                    "CWE-1339"
                 ]
             },
-            "title": "Missing Payable Modifier",
-            "description": "The function `WETHZapper.adjustZombieTroveWithRawETH` lacks the `payable` modifier despite being designed to receive Ether for conversion to WETH, causing transactions that send Ether to revert.\n\nThe cause is the `payable` modifier was omitted during implementation, making the function unable to accept Ether even though its internal logic expects it.\n\nAny attempt to call this function with Ether will fail, preventing the adjustment of zombie troves via the zapper. This disrupts a legitimate use case for trove recovery.\n\nUsers cannot use the zapper to fix zombie troves unless the function is redeployed with the `payable` modifier, limiting functionality and potentially leading to full redemption of affected troves.\n",
-            "severity": "Low",
-            "location": [
-                "WETHZapper.adjustZombieTroveWithRawETH"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/WETHZapper.sol"
-            ]
-        },
-        {
-            "id": 52,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-362"
-                ]
-            },
-            "title": "Possible Attacks Against Zapper Users",
-            "description": "Zapper users are vulnerable to two types of attacks if trove state changes between transaction submission and execution:\n1. **Extracting Redistribution Profits**: After a redistribution makes a trove redeemable, an attacker can redeem just enough to pass minExpectedCollateral and capture the profit via slippage.\n2. **Extracting Redemption Fees**: After a high-fee redemption, an attacker can donate collateral to pass minExpectedCollateral and extract the fee via slippage.\nThese attacks exploit the fact that zapper functions use slippage buffers that absorb newly accrued value.\n",
+            "title": "Price Deviation in Composite Price Feed",
+            "description": "The RETHPriceFeed computes RETH/USD as the product of RETH/ETH and ETH/USD prices. With Chainlink deviation thresholds of 2% and 0.5% respectively, the combined price can deviate up to ~2.5% before updating. During branch shutdowns triggered by TCR < SCR, the protocol offers a 1% bonus on oracle price, which may be insufficient to cover this deviation. Additionally, the canonical rate from Rocket Pool updates every 24 hours, potentially delaying urgent redemptions. This creates a window where users may receive less value than expected during critical events. Liquity acknowledges this as a known and accepted risk.\n",
             "severity": "Informational",
             "location": [
-                "WETHZapper.closeTroveFromCollateral",
-                "_flashLoanAmount"
+                "RETHPriceFeed",
+                "CompositePriceFeed._fetchPrice",
+                "TroveManager.urgentRedemption"
             ],
             "files": [
-                "bold/contracts/src/Zappers/WETHZapper.sol"
-            ]
-        },
-        {
-            "id": 53,
-            "category": {
-                "1": [
-                    "CWE-284"
-                ],
-                "2": [
-                    "CWE-285"
-                ],
-                "3": [
-                    "CWE-863"
-                ]
-            },
-            "title": "Sending NFTs Does Not Reset Delegation",
-            "description": "Troves are NFTs and can be transferred. However, delegation settings (e.g., removeManager, receiver) are not reset on transfer. A seller could set themselves as removeManager at the last moment and later remove collateral. Buyers should ensure delegation is reset during purchase. Additionally, zappers have their own delegation settings, which must also be reviewed.\n",
-            "severity": "Informational",
-            "location": [],
-            "files": [
-                "bold/contracts/src/TroveNFT.sol",
-                "bold/contracts/src/Zappers/BaseZapper.sol",
-                "bold/contracts/src/Zappers/WETHZapper.sol"
-            ]
-        },
-        {
-            "id": 20,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-404"
-                ],
-                "3": [
-                    "CWE-459"
-                ],
-                "4": [
-                    "CWE-226"
-                ]
-            },
-            "title": "Zapper Delegation Is Not Reset When a Trove Is Closed",
-            "description": "When a trove is closed, delegation settings in the zapper are not reset, allowing reuse of old delegations if a new trove with the same ID is created.\n\nThe cause is that the system allows trove ID reuse and does not clear zapper delegation upon trove closure.\n\nAn attacker could create and close a trove to set malicious delegations, which persist and affect future troves with the same ID, potentially leading to loss of control.\n\nUsers may unknowingly grant control to unauthorized addresses if they reuse trove IDs, leading to potential fund loss or unauthorized actions.\n",
-            "severity": "Low",
-            "location": [
-                "Zapper"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/WETHZapper.sol"
-            ]
-        },
-        {
-            "id": 24,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ]
-            },
-            "title": "CEI Pattern Violated in Adjust Trove",
-            "description": "The `WETHZapper._adjustTrovePost` function sends ETH before BOLD tokens, violating the Checks-Effects-Interactions (CEI) pattern and exposing the contract to reentrancy risks.\n\nThe cause is that the order of external calls is incorrect; ETH is sent first, allowing a malicious receiver to reenter the contract.\n\nA malicious contract receiving ETH could reenter the system before state changes are finalized, potentially manipulating logic.\n\nRisk of reentrancy attacks, though mitigated by the non-reentrant nature of the BOLD token.\n",
-            "severity": "Informational",
-            "location": [
-                "WETHZapper._adjustTrovePost"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/WETHZapper.sol"
-            ]
-        },
-        {
-            "id": 28,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ]
-            },
-            "title": "Inconsistent Input Validation by Zappers",
-            "description": "Zapper contracts have inconsistent input validation; for example, `WETHZapper` enforces non-zero debt increases while `GasCompZapper` does not.\n\nThe cause is lack of shared validation logic across zapper implementations.\n\nWhile harmless in practice, inconsistent checks reduce code reliability and maintainability.\n\nPotential for future bugs if validation logic diverges further.\n",
-            "severity": "Informational",
-            "location": [
-                "WETHZapper._adjustTrovePre",
-                "GasCompZapper._adjustTrovePre"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/WETHZapper.sol",
-                "bold/contracts/src/Zappers/GasCompZapper.sol"
-            ]
-        },
-        {
-            "id": 31,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-684"
-                ],
-                "3": [
-                    "CWE-440"
-                ]
-            },
-            "title": "Misleading Function Names in Zapper",
-            "description": "Functions in `GasCompZapper` use names like `adjustTroveWithRawETH` that imply ETH handling, but the contract does not operate with raw ETH.\n\nThe cause is inconsistent naming across zapper implementations.\n\nMisleading names could cause developers to misuse the functions or misunderstand their behavior.\n\nIncreased risk of integration errors and developer confusion.\n",
-            "severity": "Informational",
-            "location": [
-                "GasCompZapper.adjustTroveWithRawETH"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/GasCompZapper.sol"
-            ]
-        },
-        {
-            "id": 33,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-670"
-                ]
-            },
-            "title": "Unimplemented Function Can Be Called",
-            "description": "The contracts GasCompZapper and WETHZapper define functions `receiveFlashLoanOnOpenLeveragedTrove`, `receiveFlashLoanOnLeverUpTrove`, and `receiveFlashLoanOnLeverDownTrove` with empty function bodies. These functions are not marked as virtual or intended to be overridden in derived contracts, yet they can still be called externally. Since the functions perform no operations, calling them results in silent success without any side effects. This could mislead callers into believing the functions perform meaningful actions. If these functions are not meant to be called, they should revert to prevent misuse and clarify intent.\n",
-            "severity": "Informational",
-            "location": [
-                "GasCompZapper.sol",
-                "WETHZapper.sol"
-            ],
-            "files": [
-                "bold/contracts/src/Zappers/GasCompZapper.sol",
-                "bold/contracts/src/Zappers/WETHZapper.sol"
+                "bold/contracts/src/PriceFeeds/RETHPriceFeed.sol",
+                "bold/contracts/src/PriceFeeds/CompositePriceFeed.sol"
             ]
         }
     ],
     "affected_files": {
-        "TroveNFT.sol": "// SPDX-License-Identifier: BUSL-1.1\n\npragma solidity 0.8.18;\n\nimport \"openzeppelin-contracts/contracts/token/ERC721/ERC721.sol\";\nimport \"openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\nimport \"./Interfaces/ITroveNFT.sol\";\nimport \"./Interfaces/IAddressesRegistry.sol\";\n\nimport {IMetadataNFT} from \"./NFTMetadata/MetadataNFT.sol\";\nimport {ITroveManager} from \"./Interfaces/ITroveManager.sol\";\n\n// import \"forge-std/console2.sol\";\n\ncontract TroveNFT is ERC721, ITroveNFT {\n    ITroveManager public immutable troveManager;\n    IERC20Metadata internal immutable collToken;\n\n    IMetadataNFT public immutable metadataNFT;\n\n    constructor(IAddressesRegistry _addressesRegistry)\n        ERC721(\n            string.concat(\"Liquity v2 Trove - \", _addressesRegistry.collToken().name()),\n            string.concat(\"Lv2T_\", _addressesRegistry.collToken().symbol())\n        )\n    {\n        troveManager = _addressesRegistry.troveManager();\n        collToken = _addressesRegistry.collToken();\n        metadataNFT = _addressesRegistry.metadataNFT();\n    }\n\n    function tokenURI(uint256 _tokenId) public view override(ERC721, IERC721Metadata) returns (string memory) {\n        (uint256 debt, uint256 coll,, ITroveManager.Status status,,,, uint256 annualInterestRate,,) =\n            troveManager.Troves(_tokenId);\n\n        IMetadataNFT.TroveData memory troveData = IMetadataNFT.TroveData({\n            _tokenId: _tokenId,\n            _owner: ownerOf(_tokenId),\n            _collToken: address(collToken),\n            _collAmount: coll,\n            _debtAmount: debt,\n            _interestRate: annualInterestRate,\n            _status: status\n        });\n\n        return metadataNFT.uri(troveData);\n    }\n\n    function mint(address _owner, uint256 _troveId) external override {\n        _requireCallerIsTroveManager();\n        _mint(_owner, _troveId);\n    }\n\n    function burn(uint256 _troveId) external override {\n        _requireCallerIsTroveManager();\n        _burn(_troveId);\n    }\n\n    function _requireCallerIsTroveManager() internal view {\n        require(msg.sender == address(troveManager), \"TroveNFT: Caller is not the TroveManager contract\");\n    }\n}\n",
-        "WETHZapper.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.18;\n\nimport \"../Interfaces/IAddressesRegistry.sol\";\nimport \"../Interfaces/IBorrowerOperations.sol\";\nimport \"../Interfaces/ITroveManager.sol\";\nimport \"../Interfaces/ITroveNFT.sol\";\nimport \"../Interfaces/IWETH.sol\";\nimport \"../Dependencies/AddRemoveManagers.sol\";\nimport \"../Dependencies/Constants.sol\";\n\ncontract WETHZapper is AddRemoveManagers {\n    IBorrowerOperations public immutable borrowerOperations; // First branch (i.e., using WETH as collateral)\n    ITroveManager public immutable troveManager;\n    IWETH public immutable WETH;\n    IBoldToken public immutable boldToken;\n\n    constructor(IAddressesRegistry _addressesRegistry) AddRemoveManagers(_addressesRegistry) {\n        borrowerOperations = _addressesRegistry.borrowerOperations();\n        troveManager = _addressesRegistry.troveManager();\n        boldToken = _addressesRegistry.boldToken();\n        WETH = _addressesRegistry.WETH();\n        require(address(WETH) == address(_addressesRegistry.collToken()), \"WZ: Wrong coll branch\");\n    }\n\n    struct OpenTroveParams {\n        address owner;\n        uint256 ownerIndex;\n        uint256 boldAmount;\n        uint256 upperHint;\n        uint256 lowerHint;\n        uint256 annualInterestRate;\n        uint256 maxUpfrontFee;\n        address addManager;\n        address removeManager;\n        address receiver;\n    }\n\n    struct OpenTroveVars {\n        uint256 troveId;\n        IBorrowerOperations borrowerOperations;\n        IWETH WETH;\n    }\n\n    function openTroveWithRawETH(OpenTroveParams calldata _params) external payable returns (uint256) {\n        require(msg.value > ETH_GAS_COMPENSATION, \"WZ: Insufficient ETH\");\n\n        OpenTroveVars memory vars;\n        vars.borrowerOperations = borrowerOperations;\n        vars.WETH = WETH;\n\n        // Convert ETH to WETH\n        vars.WETH.deposit{value: msg.value}();\n\n        // Approve WETH to BorrowerOperations\n        vars.WETH.approve(address(vars.borrowerOperations), msg.value);\n\n        vars.troveId = vars.borrowerOperations.openTrove(\n            _params.owner,\n            _params.ownerIndex,\n            msg.value - ETH_GAS_COMPENSATION,\n            _params.boldAmount,\n            _params.upperHint,\n            _params.lowerHint,\n            _params.annualInterestRate,\n            _params.maxUpfrontFee,\n            // Add this contract as add/receive manager to be able to fully adjust trove,\n            // while keeping the same management functionality\n            address(this), // add manager\n            address(this), // remove manager\n            address(this) // receiver for remove manager\n        );\n\n        boldToken.transfer(msg.sender, _params.boldAmount);\n\n        // Set add/remove managers\n        _setAddManager(vars.troveId, _params.addManager);\n        _setRemoveManagerAndReceiver(vars.troveId, _params.removeManager, _params.receiver);\n\n        return vars.troveId;\n    }\n\n    // TODO: open trove and join batch\n\n    function addCollWithRawETH(uint256 _troveId) external payable {\n        address owner = troveNFT.ownerOf(_troveId);\n        _requireSenderIsOwnerOrAddManager(_troveId, owner);\n        // Convert ETH to WETH\n        WETH.deposit{value: msg.value}();\n\n        // Approve WETH to BorrowerOperations\n        IBorrowerOperations borrowerOperationsCached = borrowerOperations;\n        WETH.approve(address(borrowerOperationsCached), msg.value);\n\n        borrowerOperationsCached.addColl(_troveId, msg.value);\n    }\n\n    function withdrawCollToRawETH(uint256 _troveId, uint256 _amount) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address payable receiver = payable(_requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner));\n\n        borrowerOperations.withdrawColl(_troveId, _amount);\n\n        // Convert WETH to ETH\n        WETH.withdraw(_amount);\n        (bool success,) = receiver.call{value: _amount}(\"\");\n        require(success, \"WZ: Sending ETH failed\");\n    }\n\n    function withdrawBold(uint256 _troveId, uint256 _boldAmount, uint256 _maxUpfrontFee) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address receiver = _requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner);\n\n        borrowerOperations.withdrawBold(_troveId, _boldAmount, _maxUpfrontFee);\n\n        // Send Bold\n        boldToken.transfer(receiver, _boldAmount);\n    }\n\n    function repayBold(uint256 _troveId, uint256 _boldAmount) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        _requireSenderIsOwnerOrAddManager(_troveId, owner);\n\n        // Pull Bold\n        boldToken.transferFrom(msg.sender, address(this), _boldAmount);\n\n        borrowerOperations.repayBold(_troveId, _boldAmount);\n    }\n\n    function adjustTroveWithRawETH(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        uint256 _maxUpfrontFee\n    ) external payable {\n        address payable receiver = _adjustTrovePre(_troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease);\n        borrowerOperations.adjustTrove(\n            _troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease, _maxUpfrontFee\n        );\n        _adjustTrovePost(_collChange, _isCollIncrease, _boldChange, _isDebtIncrease, receiver);\n    }\n\n    function adjustUnredeemableTroveWithRawETH(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        uint256 _upperHint,\n        uint256 _lowerHint,\n        uint256 _maxUpfrontFee\n    ) external {\n        address payable receiver = _adjustTrovePre(_troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease);\n        borrowerOperations.adjustUnredeemableTrove(\n            _troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease, _upperHint, _lowerHint, _maxUpfrontFee\n        );\n        _adjustTrovePost(_collChange, _isCollIncrease, _boldChange, _isDebtIncrease, receiver);\n    }\n\n    function _adjustTrovePre(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease\n    ) internal returns (address payable) {\n        if (_isCollIncrease) {\n            require(_collChange == msg.value, \"WZ: Wrong coll amount\");\n        } else {\n            require(msg.value == 0, \"WZ: Withdrawing coll, no ETH should be received\");\n        }\n        require(!_isDebtIncrease || _boldChange > 0, \"WZ: Increase bold amount should not be zero\");\n\n        address owner = troveNFT.ownerOf(_troveId);\n        address payable receiver = payable(owner);\n\n        if (!_isCollIncrease || _isDebtIncrease) {\n            receiver = payable(_requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner));\n        }\n\n        if (_isCollIncrease || (!_isDebtIncrease && _boldChange > 0)) {\n            _requireSenderIsOwnerOrAddManager(_troveId, owner);\n        }\n\n        // ETH -> WETH\n        if (_isCollIncrease) {\n            IWETH WETHCached = WETH;\n            WETHCached.deposit{value: _collChange}();\n            WETHCached.approve(address(borrowerOperations), _collChange);\n        }\n\n        // TODO: version with Permit\n        // Pull Bold\n        if (!_isDebtIncrease) {\n            boldToken.transferFrom(msg.sender, address(this), _boldChange);\n        }\n\n        return receiver;\n    }\n\n    function _adjustTrovePost(\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        address payable _receiver\n    ) internal {\n        // WETH -> ETH\n        if (!_isCollIncrease) {\n            WETH.withdraw(_collChange);\n            (bool success,) = _receiver.call{value: _collChange}(\"\");\n            require(success, \"WZ: Sending ETH failed\");\n        }\n        // Send Bold\n        if (_isDebtIncrease) {\n            boldToken.transfer(_receiver, _boldChange);\n        }\n    }\n\n    function closeTroveToRawETH(uint256 _troveId) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address payable receiver = payable(_requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner));\n\n        // pull Bold for repayment\n        LatestTroveData memory trove = troveManager.getLatestTroveData(_troveId);\n        boldToken.transferFrom(msg.sender, address(this), trove.entireDebt);\n\n        borrowerOperations.closeTrove(_troveId);\n\n        WETH.withdraw(trove.entireColl + ETH_GAS_COMPENSATION);\n        (bool success,) = receiver.call{value: trove.entireColl + ETH_GAS_COMPENSATION}(\"\");\n        require(success, \"WZ: Sending ETH failed\");\n    }\n\n    receive() external payable {}\n}\n",
-        "GasCompZapper.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.18;\n\nimport \"openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nimport \"../Interfaces/IAddressesRegistry.sol\";\nimport \"../Interfaces/IBorrowerOperations.sol\";\nimport \"../Interfaces/IWETH.sol\";\nimport \"../Dependencies/AddRemoveManagers.sol\";\nimport \"../Dependencies/Constants.sol\";\n\n// import \"forge-std/console2.sol\";\n\ncontract GasCompZapper is AddRemoveManagers {\n    using SafeERC20 for IERC20;\n\n    IBorrowerOperations public immutable borrowerOperations; // LST branch (i.e., not WETH as collateral)\n    ITroveManager public immutable troveManager;\n    IWETH public immutable WETH;\n    IERC20 public immutable collToken;\n    IBoldToken public immutable boldToken;\n\n    constructor(IAddressesRegistry _addressesRegistry) AddRemoveManagers(_addressesRegistry) {\n        borrowerOperations = _addressesRegistry.borrowerOperations();\n        troveManager = _addressesRegistry.troveManager();\n        collToken = _addressesRegistry.collToken();\n        boldToken = _addressesRegistry.boldToken();\n        WETH = _addressesRegistry.WETH();\n        require(address(WETH) != address(collToken), \"GCZ: Wrong coll branch\");\n    }\n\n    struct OpenTroveParams {\n        address owner;\n        uint256 ownerIndex;\n        uint256 collAmount;\n        uint256 boldAmount;\n        uint256 upperHint;\n        uint256 lowerHint;\n        uint256 annualInterestRate;\n        uint256 maxUpfrontFee;\n        address addManager;\n        address removeManager;\n        address receiver;\n    }\n\n    struct OpenTroveVars {\n        uint256 troveId;\n        IBorrowerOperations borrowerOperations;\n        IWETH WETH;\n        IERC20 collToken;\n    }\n\n    function openTroveWithRawETH(OpenTroveParams calldata _params) external payable returns (uint256) {\n        require(msg.value == ETH_GAS_COMPENSATION, \"GCZ: Wrong ETH\");\n\n        OpenTroveVars memory vars;\n        vars.borrowerOperations = borrowerOperations;\n        vars.WETH = WETH;\n        vars.collToken = collToken;\n\n        // Convert ETH to WETH\n        vars.WETH.deposit{value: msg.value}();\n\n        // Approve WETH to BorrowerOperations\n        vars.WETH.approve(address(vars.borrowerOperations), msg.value);\n\n        // Pull and approve coll\n        vars.collToken.safeTransferFrom(msg.sender, address(this), _params.collAmount);\n        vars.collToken.approve(address(vars.borrowerOperations), _params.collAmount);\n\n        vars.troveId = vars.borrowerOperations.openTrove(\n            _params.owner,\n            _params.ownerIndex,\n            _params.collAmount,\n            _params.boldAmount,\n            _params.upperHint,\n            _params.lowerHint,\n            _params.annualInterestRate,\n            _params.maxUpfrontFee,\n            // Add this contract as add/receive manager to be able to fully adjust trove,\n            // while keeping the same management functionality\n            address(this), // add manager\n            address(this), // remove manager\n            address(this) // receiver for remove manager\n        );\n\n        boldToken.transfer(msg.sender, _params.boldAmount);\n\n        // Set add/remove managers\n        _setAddManager(vars.troveId, _params.addManager);\n        _setRemoveManagerAndReceiver(vars.troveId, _params.removeManager, _params.receiver);\n\n        return vars.troveId;\n    }\n\n    // TODO: open trove and join batch\n\n    function addColl(uint256 _troveId, uint256 _amount) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        _requireSenderIsOwnerOrAddManager(_troveId, owner);\n\n        IBorrowerOperations borrowerOperationsCached = borrowerOperations;\n\n        // Pull and approve coll\n        IERC20 collTokenCached = collToken;\n        collTokenCached.safeTransferFrom(msg.sender, address(this), _amount);\n        collTokenCached.approve(address(borrowerOperationsCached), _amount);\n\n        borrowerOperationsCached.addColl(_troveId, _amount);\n    }\n\n    function withdrawColl(uint256 _troveId, uint256 _amount) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address receiver = _requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner);\n\n        borrowerOperations.withdrawColl(_troveId, _amount);\n\n        // Send coll left\n        collToken.safeTransfer(receiver, _amount);\n    }\n\n    function withdrawBold(uint256 _troveId, uint256 _boldAmount, uint256 _maxUpfrontFee) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address receiver = _requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner);\n\n        borrowerOperations.withdrawBold(_troveId, _boldAmount, _maxUpfrontFee);\n\n        // Send Bold\n        boldToken.transfer(receiver, _boldAmount);\n    }\n\n    function repayBold(uint256 _troveId, uint256 _boldAmount) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        _requireSenderIsOwnerOrAddManager(_troveId, owner);\n\n        // Pull Bold\n        boldToken.transferFrom(msg.sender, address(this), _boldAmount);\n\n        borrowerOperations.repayBold(_troveId, _boldAmount);\n    }\n\n    function adjustTroveWithRawETH(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        uint256 _maxUpfrontFee\n    ) external {\n        address receiver = _adjustTrovePre(_troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease);\n        borrowerOperations.adjustTrove(\n            _troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease, _maxUpfrontFee\n        );\n        _adjustTrovePost(_collChange, _isCollIncrease, _boldChange, _isDebtIncrease, receiver);\n    }\n\n    function adjustUnredeemableTroveWithRawETH(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        uint256 _upperHint,\n        uint256 _lowerHint,\n        uint256 _maxUpfrontFee\n    ) external {\n        address receiver = _adjustTrovePre(_troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease);\n        borrowerOperations.adjustUnredeemableTrove(\n            _troveId, _collChange, _isCollIncrease, _boldChange, _isDebtIncrease, _upperHint, _lowerHint, _maxUpfrontFee\n        );\n        _adjustTrovePost(_collChange, _isCollIncrease, _boldChange, _isDebtIncrease, receiver);\n    }\n\n    function _adjustTrovePre(\n        uint256 _troveId,\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease\n    ) internal returns (address) {\n        address owner = troveNFT.ownerOf(_troveId);\n        address receiver = owner;\n\n        if (!_isCollIncrease || _isDebtIncrease) {\n            receiver = _requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner);\n        }\n\n        if (_isCollIncrease || (!_isDebtIncrease && _boldChange > 0)) {\n            _requireSenderIsOwnerOrAddManager(_troveId, owner);\n        }\n\n        // Pull and approve coll\n        if (_isCollIncrease) {\n            IERC20 collTokenCached = collToken;\n            collTokenCached.safeTransferFrom(msg.sender, address(this), _collChange);\n            collTokenCached.approve(address(borrowerOperations), _collChange);\n        }\n\n        // TODO: version with Permit\n        // Pull Bold\n        if (!_isDebtIncrease) {\n            boldToken.transferFrom(msg.sender, address(this), _boldChange);\n        }\n\n        return receiver;\n    }\n\n    function _adjustTrovePost(\n        uint256 _collChange,\n        bool _isCollIncrease,\n        uint256 _boldChange,\n        bool _isDebtIncrease,\n        address _receiver\n    ) internal {\n        // Send coll left\n        if (!_isCollIncrease) {\n            collToken.safeTransfer(_receiver, _collChange);\n        }\n\n        // Send Bold\n        if (_isDebtIncrease) {\n            boldToken.transfer(_receiver, _boldChange);\n        }\n    }\n\n    function closeTroveToRawETH(uint256 _troveId) external {\n        address owner = troveNFT.ownerOf(_troveId);\n        address payable receiver = payable(_requireSenderIsOwnerOrRemoveManagerAndGetReceiver(_troveId, owner));\n\n        // pull Bold for repayment\n        LatestTroveData memory trove = troveManager.getLatestTroveData(_troveId);\n        boldToken.transferFrom(msg.sender, address(this), trove.entireDebt);\n\n        borrowerOperations.closeTrove(_troveId);\n\n        // Send coll left\n        collToken.safeTransfer(receiver, trove.entireColl);\n\n        // Send gas compensation\n        WETH.withdraw(ETH_GAS_COMPENSATION);\n        (bool success,) = receiver.call{value: ETH_GAS_COMPENSATION}(\"\");\n        require(success, \"GCZ: Sending ETH failed\");\n    }\n\n    receive() external payable {}\n}\n"
+        "RETHPriceFeed.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.18;\n\nimport \"./CompositePriceFeed.sol\";\nimport \"../Dependencies/IRETHToken.sol\";\n\n// import \"forge-std/console2.sol\";\n\ncontract RETHPriceFeed is CompositePriceFeed {\n    constructor(\n        address _owner,\n        address _ethUsdOracleAddress,\n        address _lstEthOracleAddress,\n        address _rateProviderAddress,\n        uint256 _ethUsdStalenessThreshold,\n        uint256 _lstEthStalenessThreshold\n    )\n        CompositePriceFeed(\n            _owner,\n            _ethUsdOracleAddress,\n            _lstEthOracleAddress,\n            _rateProviderAddress,\n            _ethUsdStalenessThreshold,\n            _lstEthStalenessThreshold\n        )\n    {}\n\n    function _getCanonicalRate() internal view override returns (uint256) {\n        // RETHToken returns exchange rate with 18 digit decimal precision\n        return IRETHToken(rateProviderAddress).getExchangeRate();\n    }\n}\n",
+        "CompositePriceFeed.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity 0.8.18;\n\nimport \"../Dependencies/LiquityMath.sol\";\nimport \"./MainnetPriceFeedBase.sol\";\nimport \"../Interfaces/ICompositePriceFeed.sol\";\n\n// import \"forge-std/console2.sol\";\n\n// Composite PriceFeed: outputs an LST-USD price derived from two external price Oracles: LST-ETH, and ETH-USD.\n// Used where the LST token is non-rebasing (as per rETH, osETH, ETHx, etc).\ncontract CompositePriceFeed is MainnetPriceFeedBase, ICompositePriceFeed {\n    Oracle public lstEthOracle;\n    Oracle public ethUsdOracle;\n\n    address public rateProviderAddress;\n\n    constructor(\n        address _owner,\n        address _ethUsdOracleAddress,\n        address _lstEthOracleAddress,\n        address _rateProviderAddress,\n        uint256 _ethUsdStalenessThreshold,\n        uint256 _lstEthStalenessThreshold\n    ) MainnetPriceFeedBase(_owner) {\n        // Store ETH-USD oracle\n        ethUsdOracle.aggregator = AggregatorV3Interface(_ethUsdOracleAddress);\n        ethUsdOracle.stalenessThreshold = _ethUsdStalenessThreshold;\n        ethUsdOracle.decimals = ethUsdOracle.aggregator.decimals();\n        assert(ethUsdOracle.decimals == 8);\n\n        // Store LST-ETH oracle\n        lstEthOracle.aggregator = AggregatorV3Interface(_lstEthOracleAddress);\n        lstEthOracle.stalenessThreshold = _lstEthStalenessThreshold;\n        lstEthOracle.decimals = lstEthOracle.aggregator.decimals();\n\n        // Store rate provider\n        rateProviderAddress = _rateProviderAddress;\n\n        _fetchPrice();\n\n        // Check an oracle didn't already fail\n        assert(priceFeedDisabled == false);\n    }\n\n    function _fetchPrice() internal override returns (uint256, bool) {\n        (uint256 ethUsdPrice, bool ethUsdOracleDown) = _getOracleAnswer(ethUsdOracle);\n        (uint256 lstEthPrice, bool lstEthOracleDown) = _getOracleAnswer(lstEthOracle);\n\n        // If one of Chainlink's responses was invalid in this transaction, disable this PriceFeed and\n        // return the last good LST-USD price calculated\n        if (ethUsdOracleDown) {return (_disableFeedAndShutDown(address(ethUsdOracle.aggregator)), true);}\n        if (lstEthOracleDown) {return (_disableFeedAndShutDown(address(lstEthOracle.aggregator)), true);}\n\n        // Calculate the market LST-USD price: USD_per_LST = USD_per_ETH * ETH_per_LST\n        uint256 lstUsdMarketPrice = ethUsdPrice * lstEthPrice / 1e18;\n\n        // Get the ETH_per_LST canonical rate directly from the LST contract\n        // TODO: Should we also shutdown if the call to the canonical rate reverts, or returns 0?\n        uint256 lstEthRate = _getCanonicalRate();\n\n        // Calculate the canonical LST-USD price: USD_per_LST = USD_per_ETH * ETH_per_LST\n        uint256 lstUsdCanonicalPrice = ethUsdPrice * lstEthRate / 1e18;\n\n        // Take the minimum of (market, canonical) in order to mitigate against upward market price manipulation\n        uint256 lstUsdPrice = LiquityMath._min(lstUsdMarketPrice, lstUsdCanonicalPrice);\n\n        lastGoodPrice = lstUsdPrice;\n\n        return (lstUsdPrice, false);\n    }\n\n    // Returns the ETH_per_LST as from the LST smart contract. Implementation depends on the specific LST.\n    function _getCanonicalRate() internal view virtual returns (uint256) {}\n}\n"
     }
 }

@@ -1,171 +1,72 @@
 {
     "vfp_id": "vfp_00619",
-    "project_name": "ChainSecurity_K3Capital_SBOLD_Audit.pdf",
+    "project_name": "Sorella - Zenith Audit Report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-691"
                 ],
                 "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-437"
+                    "CWE-670"
                 ]
             },
-            "title": "Withdraw Fail Because Stability Pool Cannot Be Emptied",
-            "description": "The Liquity V2 Stability Pool enforces a minimum deposit of 1 BOLD, preventing the pool from being completely emptied. The sBOLD vault does not account for this constraint in its withdrawal logic, particularly in the maxRedeem() and maxWithdraw() functions. As a result, withdrawal attempts that would reduce a Stability Pool's BOLD balance below 1 will revert. The root cause is the lack of a pre-check in sBOLD to ensure withdrawals do not violate Liquity's minimum balance requirement. An attacker cannot directly exploit this for profit, but users may face failed transactions during large withdrawals. The impact is limited to transaction reverts and potential user inconvenience, with a workaround involving depositing 1 BOLD to restore functionality. The issue has been acknowledged by the client but not fixed, as it is considered unlikely to occur in practice.\n",
-            "severity": "Low",
+            "title": "zeroForOne current tick transition is incorrect",
+            "description": "The vulnerability occurs in the TickIteratorDown initialization during a swap where the current tick matches the upper tick of a liquidity position. Because the upper tick is exclusive, the liquidity should be added when the price moves down, but the reset() function in TickIteratorDown calls _advanceToNextDown(), which skips the current tick, failing to account for the pending liquidity. This causes an incorrect liquidity subtraction during a zeroForOne swap, potentially leading to an overflow when subtracting liquidity that was never added. An attacker could exploit this by creating a position at the current tick and triggering a downward swap, resulting in an invalid state and potential DoS or incorrect fee distribution. The impact includes miscalculated liquidity and potential reverts during swaps, disrupting pool operations.\n",
+            "severity": "High",
             "location": [
-                "sBold.sol::withdraw#",
-                "sBold.sol::redeem#",
-                "StabilityPool.sol::withdrawFromSP#"
+                "CompensationPriceFinder.sol#L67"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 1,
-            "category": {
-                "1": [
-                    "CWE-435"
-                ]
-            },
-            "title": "Profit Can Be Extracted Through Slippage Tolerance",
-            "description": "The swap() function allows unpermissioned callers to trigger swaps of accumulated collateral for BOLD, with a slippage tolerance (maxSlippage) that can be up to 10%. The caller receives a reward (rewardBps) and benefits from the slippage buffer, which is not clawed back. This design allows a malicious actor to extract value by generating self-liquidations (converting BOLD into collateral via undercollateralized troves) and then swapping the received collateral back into BOLD via sBOLD, capturing the slippage as profit. The cause is the combination of unpermissioned swaps, high slippage tolerance, and reward incentives. The exploitation relies on repeated cycles of liquidation and swap to drain value. The impact is potential long-term erosion of protocol assets, especially if maxSlippage is set above the liquidation bonus (5%). The issue was acknowledged and partially mitigated by changes in Liquity V2 that make self-liquidations less practical.\n",
-            "severity": "Low",
-            "location": [
-                "sBold.sol::swap#",
-                "SwapLogic.sol::_execute#"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/libraries/CompensationPriceFinder.sol"
             ]
         },
         {
             "id": 2,
             "category": {
                 "1": [
-                    "CWE-691"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1265"
+                    "CWE-424"
                 ]
             },
-            "title": "Reentrancies From Swap()",
-            "description": "The swap() function in sBOLD is vulnerable to reentrancy attacks because it calls an untrusted swapAdapter with user-provided data without applying reentrancy guards. The root cause is the lack of a mutex or lock during state-modifying operations. An attacker can exploit this by using a malicious token or router (e.g., 1inch) that contains a callback to reenter sBOLD functions during the swap. Two critical exploitation paths exist: (1) Reentering withdraw() or redeem() to artificially inflate the BOLD balance before the balance check in _execute(), causing the system to accept an invalid swap outcome; (2) Reentering view functions like calcFragments() or getSBoldRate() during a swap, where collateral has been sent but BOLD not yet received, leading to an underestimated share price. This allows depositing at a discount or manipulating oracle values for external systems (e.g., triggering false liquidations). The impact includes loss of funds and manipulation of financial state. The issue was resolved in Version 2 by adding reentrancy guards to state-modifying functions and in Version 3 for view functions.\n",
-            "severity": "Critical",
+            "title": "beforeInitialization() checks are bypassed due to noSelfCall modifier",
+            "description": "The beforeInitialize() hook is intended to enforce pool configuration constraints, such as requiring native currency and dynamic fees. However, the noSelfCall modifier prevents the hook from being executed when the contract itself initiates the call, which occurs during pool initialization. As a result, the validation checks in beforeInitialize() are bypassed, allowing incompatible pool configurations to be created. This is caused by the modifier's logic that only allows external callers, excluding self-calls. An attacker could exploit this by creating a pool with invalid parameters, such as non-native currency or static fees, undermining the protocol's security assumptions. The impact includes potential misconfiguration of pools and violation of intended constraints.\n",
+            "severity": "Medium",
             "location": [
-                "sBold.sol::swap#",
-                "SwapLogic.sol::_execute#",
-                "sBold.sol::withdraw#",
-                "sBold.sol::redeem#",
-                "sBold.sol::calcFragments#",
-                "sBold.sol::getSBoldRate#"
+                "AngstromL2.sol#L179",
+                "AngstromL2.sol#L186-L196"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
             "id": 3,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-682"
                 ],
                 "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-437"
+                    "CWE-1339"
                 ]
             },
-            "title": "swap() Calls Incorrect Function in SP to Receive Collateral",
-            "description": "In Version 1, the swap() function incorrectly used a Stability Pool function that did not properly claim stashed collateral and yield. The cause was a logic error in the integration with Liquity V2's StabilityPool contract. Specifically, the function failed to set the _doClaim flag to true when withdrawing collateral, resulting in pending and stashed collateral not being transferred back to sBOLD. This led to an inaccurate accounting of total assets and potential loss of yield and collateral. An attacker could exploit timing windows to manipulate the reported asset value, though direct theft was not possible. The impact was incorrect share pricing and reduced capital efficiency. The issue was corrected in later versions by ensuring proper use of withdrawFromSP() with _doClaim set to true. Additionally, the swap() function incorrectly calls SP.claimAllCollGains() to receive collateral from the StabilityPool. This function reverts when the depositor has a non-zero BOLD balance, making swap() permanently unavailable whenever it is called. The root cause is the misuse of a function that enforces a balance check not required in this context. An attacker cannot directly exploit this, but users are effectively blocked from using the swap functionality, leading to a denial of service. The impact is a critical disruption of core functionality, rendering the swap mechanism unusable under common conditions.\n",
-            "severity": "Critical",
+            "title": "Liquidity ranges deltas are not rounded in the right direction",
+            "description": "The liquidity delta calculations in _zeroForOneCreditRewards(), _oneForZeroCreditRewards(), getZeroForOne(), and getOneForZero() always round down, which deviates from the intended economic model. The protocol expects delta1 to be rounded up in zero-for-one swaps and delta0 in one-for-zero swaps to fairly reward liquidity providers near the price. Due to incorrect rounding, LPs may receive less reward than expected, and in edge cases, it can lead to underflow when lpCompensationAmount is reduced. This can be exploited by crafting swaps across many small liquidity ranges, causing miscalculations in reward distribution. The impact includes unfair reward allocation and potential arithmetic underflows, leading to transaction failures.\n",
+            "severity": "Medium",
             "location": [
-                "sBold.sol::swap#",
-                "StabilityPool.sol::withdrawFromSP#",
-                "StabilityPool.sol::claimAllCollGains#354",
-                "sBold.sol::swap"
+                "AngstromL2",
+                "CompensationPriceFinder"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol",
+                "l2-angstrom/src/libraries/CompensationPriceFinder.sol"
             ]
         },
         {
             "id": 4,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Collateral Value Is Not Accounted Below maxCollInBold Threshold",
-            "description": "In Version 2, the sBOLD vault excluded collateral value below the maxCollInBold threshold from total asset calculations, treating it as unrealized gain. The root cause was a design decision to gate asset inclusion based on a threshold. This led to an underestimation of total assets and share price when collateral value was below the threshold. Users could exploit this by timing deposits when collateral value was just below the threshold, allowing them to mint shares at a discount. The impact was economic imbalance and potential value transfer from existing to new shareholders. The issue was resolved in Version 3 by including all collateral value in asset calculations regardless of the threshold. Additionally, the calcFragments() function excludes the value of collateral up to the maxCollInBold threshold when calculating total assets, which leads to an underestimation of sBOLD's asset value. This design flaw allows new users to mint sBOLD shares at a discount and redeem them at full value after a swap, effectively extracting value from existing depositors. The root cause is the intentional exclusion of collateral value below a threshold, which creates an economic imbalance. An attacker can exploit this by self-liquidating troves to reduce sBOLD's accounted assets, minting discounted shares, executing a swap to restore asset value, and redeeming at a profit. The impact is a potential gradual draining of sBOLD's collateral, especially if the attacker controls a sufficient share of the Stability Pool liquidity.\n",
-            "severity": "High",
-            "location": [
-                "sBold.sol::calcFragments#",
-                "sBold.sol::totalAssets#",
-                "sBold.sol::calcFragments",
-                "SpLogic.sol::swap"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Incorrect Quote Calculation",
-            "description": "The oracle system in sBOLD had a flaw in how it calculated quotes for collateral valuation. The cause was an incorrect scaling or precision handling in the getQuote() method of the ChainlinkLstOracle and PythOracle contracts. This led to inaccurate USD-to-BOLD conversions, which affected both swap slippage checks and total asset valuation. An attacker could exploit this by manipulating oracle inputs or timing swaps when discrepancies were largest, potentially leading to overpayment or underpayment during swaps. The impact included incorrect pricing, loss of funds during swaps, and inaccurate share redemption values. The issue was corrected by fixing the precision scaling and validation logic in the oracle contracts. Additionally, the functions QuoteLogic.getInBoldQuote() and sBold._calcCollValue() incorrectly calculate the price of collateral in BOLD by multiplying two USD-denominated prices instead of dividing them. This results in an incorrect quote when BOLD is depegged. For example, if BOLD is worth $0.5, the collateral should be multiplied by 2, not 0.5. The root cause is a mathematical error in the price conversion logic. This leads to inaccurate asset valuation and flawed slippage protection, which can cause users to receive unfavorable swap rates or be exposed to unexpected losses during swaps. The impact is financial loss due to incorrect pricing and reduced user trust in the system's reliability.\n",
-            "severity": "High",
-            "location": [
-                "ChainlinkLstOracle.sol::getQuote#",
-                "PythOracle.sol::getQuote#",
-                "Registry.sol::getQuote#",
-                "QuoteLogic.sol::getInBoldQuote",
-                "sBold.sol::_calcCollValue"
-            ],
-            "files": [
-                "sBOLD/contracts/oracle/chainlink/ChainlinkLstOracle.sol",
-                "sBOLD/contracts/oracle/pyth/PythOracle.sol",
-                "sBOLD/contracts/libraries/logic/QuoteLogic.sol",
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Stashed Collateral Not Taken Into Account",
-            "description": "The sBOLD vault failed to include stashed collateral in its total asset calculation. The root cause was the calcFragments() function not querying the stashedColl() mapping from the StabilityPool contract. Since stashed collateral represents real assets owned by sBOLD, excluding it led to an underestimation of total assets and share price. An attacker could exploit this by triggering withdrawals that unstash collateral, creating a temporary discrepancy that could be used to deposit at a discount. The impact was economic dilution of existing shareholders and incorrect pricing. The issue was resolved by updating calcFragments() to include stashed collateral in the valuation. Additionally, the SpLogic._getCollBalanceSP() function fails to include stashed collateral in its balance calculation, relying only on sp.getDepositorCollGain(addr) instead of also checking sp.stashedColl(addr). This occurs when provideToSP() is called with _doClaim set to false, which is the case during deposit() and mint(). The root cause is incomplete accounting logic. As a result, the true collateral balance of sBOLD is underestimated, allowing users to acquire shares at a discount and redeem them at full value after a swap. The impact is economic dilution of existing shareholders and potential loss of value due to arbitrage exploitation.\n",
-            "severity": "High",
-            "location": [
-                "sBold.sol::calcFragments#",
-                "sBold.sol::totalAssets#",
-                "StabilityPool.sol::stashedColl#",
-                "SpLogic.sol::_getCollBalanceSP",
-                "SpLogic.sol::provideToSP",
-                "sBold.sol::deposit",
-                "sBold.sol::mint"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol",
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 7,
             "category": {
                 "1": [
                     "CWE-707"
@@ -177,173 +78,18 @@
                     "CWE-1284"
                 ]
             },
-            "title": "provideToSP() Can Be Called With Zero Amount",
-            "description": "The provideToSP() function reverts when called with a zero amount, which can occur during withdrawal if two withdrawals happen in the same block or due to rounding down of small asset amounts. The root cause is the lack of a zero-value check before the external call. This leads to the second withdrawal being blocked, resulting in a denial of service for users attempting to withdraw. The impact is temporary lockup of user funds and reduced system usability, especially under high-frequency withdrawal scenarios.\n",
-            "severity": "Medium",
-            "location": [
-                "SpLogic.sol::provideToSP",
-                "SpLogic.sol::withdrawFromSP"
-            ],
-            "files": [
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ]
-            },
-            "title": "BOLD Yield Is Never Redeposited",
-            "description": "When withdrawing from the Stability Pool via SpLogic.withdrawFromSP(), the BOLD yield is pulled into the sBOLD contract but never redeposited. The root cause is the absence of a mechanism to reinvest the accumulated yield. Over time, this leads to a growing amount of idle BOLD that does not earn interest, reducing capital efficiency. The impact is suboptimal yield generation for the vault and gradual erosion of potential returns for depositors.\n",
-            "severity": "Medium",
-            "location": [
-                "SpLogic.sol::withdrawFromSP"
-            ],
-            "files": [
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 9,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-670"
-                ]
-            },
-            "title": "Early Return in withdrawFromSP",
-            "description": "The withdrawFromSP() function contains a return statement when a pro-rata amount is zero, which causes it to skip processing subsequent stability pools even if they have non-zero balances. The root cause is incorrect loop control logic. This can result in incomplete withdrawals, where users fail to withdraw from all eligible pools. The impact is reduced withdrawal efficiency and potential user fund inaccessibility across multiple collateral types.\n",
-            "severity": "Medium",
-            "location": [
-                "SpLogic.sol::withdrawFromSP"
-            ],
-            "files": [
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 10,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Inconsistent Fee Calculation",
-            "description": "The fee calculation differs between deposit() and mint(): in deposit(), the fee is deducted from input, while in mint(), it is added to output. This makes mint() more favorable for users and causes the fee vault to receive more than the user actually pays, with the difference being covered by existing shareholders. The root cause is inconsistent fee application logic. This discrepancy enables a potential draining attack by the fee vault administrator, who can mint large amounts, pay fees to themselves, and withdraw profitably. The impact is unfair fee distribution and potential exploitation of shareholder value.\n",
-            "severity": "Medium",
-            "location": [
-                "sBold.sol::deposit",
-                "sBold.sol::mint"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 11,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-670"
-                ]
-            },
-            "title": "Partial Swaps Are Not Allowed",
-            "description": "The swap() function requires swapping the entire outstanding balance of collateral, with no support for partial swaps. The root cause is the lack of granular swap control. If a large swap exceeds slippage tolerance, no swaps can occur, and deposits/withdrawals are paused due to the maxCollInBold threshold. The impact is fund lockup and reduced system resilience during volatile market conditions.\n",
-            "severity": "Medium",
-            "location": [
-                "sBold.sol::swap",
-                "SwapAdapter.sol"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 12,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ],
-                "2": [
-                    "CWE-191"
-                ]
-            },
-            "title": "Undiscounted Collateral Used in maxCollInBold",
-            "description": "The calcFragments() function uses the raw collateral value (collInBold) instead of the net value (collInBoldNet) when subtracting up to maxCollInBold. Since collInBold is higher than collInBoldNet, this leads to an underestimation of protocol value. In extreme cases, if boldAmount is less than the difference between collInBold and collInBoldNet, the subtraction can underflow, breaking deposit and withdrawal functionality. The root cause is incorrect use of undiscounted collateral value in a net asset calculation. The impact is potential reverts in core functions and inaccurate valuation.\n",
-            "severity": "Medium",
-            "location": [
-                "sBold.sol::calcFragments"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 13,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "amountProRata Withdrawn From SP Is Too High",
-            "description": "The withdrawFromSP() function computes amountProRata based on total BOLD assets including yield, but passes it to SP.withdrawFromSP() which only withdraws from deposits. Since _doClaim is true, the full yield is transferred, resulting in more BOLD being withdrawn than necessary. The root cause is incorrect pro-rata calculation that includes yield in the withdrawal amount. The impact is excess BOLD accumulating in the sBOLD contract, reducing capital efficiency and creating idle balances.\n",
-            "severity": "Medium",
-            "location": [
-                "SpLogic.sol::withdrawFromSP"
-            ],
-            "files": [
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 14,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-684"
-                ],
-                "3": [
-                    "CWE-440"
-                ]
-            },
-            "title": "totalAssets() Is Not Overridden",
-            "description": "The sBOLD contract inherits from OpenZeppelin's ERC4626 but does not override totalAssets(), so it defaults to returning the contract's BOLD balance. This balance does not reflect the actual total assets, which include BOLD deposited in Stability Pools. The root cause is missing function override. The impact is incorrect reporting of total assets, violating ERC-4626 specifications and misleading users and integrators about the vault's true value.\n",
-            "severity": "Medium",
-            "location": [
-                "sBold.sol::totalAssets"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 16,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Dead Shares Can Be Invested",
-            "description": "The swap() and rebalanceSPs() functions are supposed to keep 1 BOLD (dead shares) in the contract, but if the balance is less than 1 BOLD, the entire balance is redeposited. The root cause is incorrect conditional logic in assetsToProvide calculation. This violates the convention of preserving dead shares. The impact is minimal, but breaks an expected invariant in the system.\n",
+            "title": "Fee mutators may cause total swap / tax fees to exceed 100%",
+            "description": "While initialization enforces that total swap and tax fees do not exceed 100%, the fee mutator functions lack these checks. Although MAX_PROTOCOL_SWAP_FEE_E6 exists, it is only applied during initialization, and MAX_PROTOCOL_TAX_FEE_E6 is unused. This allows governance or privileged roles to set fees that sum to over 100%, particularly dangerous for tax fees, as a 100% or higher tax results in zero lpCompensationAmount. When lpCompensationAmount is zero, _blockOfLastTopOfBlock is not updated, causing JIT and swap taxes to be repeatedly charged within the same block. This could be exploited to drain user funds through repeated taxation. The impact includes potential fund loss and broken incentive mechanisms.\n",
             "severity": "Low",
             "location": [
-                "sBold.sol::swap",
-                "sBold.sol::rebalanceSPs"
+                "AngstromL2.sol#L125-L137"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 17,
+            "id": 5,
             "category": {
                 "1": [
                     "CWE-703"
@@ -352,181 +98,38 @@
                     "CWE-754"
                 ]
             },
-            "title": "ERC4626 Function maxDeposit Should Reflect Pausability",
-            "description": "The maxDeposit(), maxMint(), maxWithdraw(), and maxRedeem() functions do not account for the paused state and could revert instead of returning 0. The root cause is missing pausability checks. This violates ERC-4626 best practices. The impact is potential reverts in integrations expecting non-reverting behavior, reducing system robustness during emergency pauses.\n",
+            "title": "Rewards are lost on single-tick swaps with no active liquidity",
+            "description": "When a swap of zero ETH is executed on a tick with no active liquidity, the protocol fails to distribute rewards correctly. This occurs because the swap starts and ends in the same tick, and with no liquidity, the liquidityBeforeSwap state variable reads zero, leading to no reward accrual. Although the tax is still collected, the associated rewards are effectively lost. This edge case can be triggered intentionally by users who perform zero-amount swaps on empty ticks. The impact is a loss of reward distribution efficiency and potential economic leakage, though it does not lead to fund loss or critical failure.\n",
             "severity": "Low",
             "location": [
-                "sBold.sol::maxDeposit",
-                "sBold.sol::maxMint",
-                "sBold.sol::maxWithdraw",
-                "sBold.sol::maxRedeem"
+                "AngstromL2"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 18,
+            "id": 6,
             "category": {
                 "1": [
                     "CWE-682"
                 ],
                 "2": [
-                    "CWE-1339"
+                    "CWE-369"
                 ]
             },
-            "title": "Inconsistent Decimal Adjustments",
-            "description": "Decimal adjustments are applied inconsistently across the codebase, such as using wrong precision constants or unnecessary scaling. The root cause is lack of uniform decimal handling. While not currently exploitable due to token choices, it introduces fragility and potential bugs if different tokens are used. The impact is low, but increases maintenance risk and potential for future vulnerabilities.\n",
+            "title": "pstarX96 rounds down to zero on low ticks ranges leading to reverts for division by zero",
+            "description": "The pstarX96 value, derived from pstarSqrtX96 squared, can round down to zero on very low ticks (below -665455), causing division by zero in _zeroForOneCreditRewards() and _oneForZeroCreditRewards(). This happens because the precision of the fixed-point arithmetic is insufficient at extreme values. When pstarX96 is zero, any division by it will revert, halting reward calculations. This can be triggered by swaps in pools with extremely low tick prices. The impact is a denial of service for reward distribution in edge-case scenarios, though it is unlikely under normal market conditions.\n",
             "severity": "Low",
             "location": [
-                "sBold.sol::decimals",
-                "Decimals.sol::scale",
-                "BaseChainlinkOracle.sol",
-                "ChainlinkLstOracle.sol",
-                "PythOracle.sol"
+                "AngstromL2.sol"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 19,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ],
-                "2": [
-                    "CWE-1339"
-                ]
-            },
-            "title": "Incorrect Rounding",
-            "description": "The _convertToAssets() and _convertToShares() functions use getSBoldRate() without proper rounding control, potentially rounding in favor of the user instead of the protocol. The root cause is incorrect rounding direction in mathematical operations. ERC-4626 requires rounding in favor of the protocol. The impact is a minor economic imbalance, though likely not profitable to exploit due to gas costs.\n",
-            "severity": "Low",
-            "location": [
-                "sBold.sol::_convertToAssets",
-                "sBold.sol::_convertToShares",
-                "sBold.sol::previewMint",
-                "sBold.sol::previewDeposit"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 20,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ],
-                "2": [
-                    "CWE-1339"
-                ]
-            },
-            "title": "Rounding in withdrawFromSP",
-            "description": "The withdrawFromSP() function does not account for rounding errors in portion calculation, potentially resulting in a 1 wei shortfall. The root cause is integer division truncation. Under normal conditions, the dead share balance covers the gap, but in edge cases, it could cause reverts. The impact is low, limited to minor withdrawal inaccuracies.\n",
-            "severity": "Low",
-            "location": [
-                "SpLogic.sol::withdrawFromSP"
-            ],
-            "files": [
-                "sBOLD/contracts/libraries/logic/SpLogic.sol"
-            ]
-        },
-        {
-            "id": 21,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-670"
-                ]
-            },
-            "title": "Unable to Swap a Single Collateral",
-            "description": "The swap() function requires swap instructions for all collateral types, even if only one needs swapping. The root cause is inflexible swap interface design. This blocks swaps if any oracle is down or if dust amounts exist. The impact is reduced usability and potential fund lockup due to external oracle or AMM issues.\n",
-            "severity": "Low",
-            "location": [
-                "sBold.sol::swap"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 22,
-            "category": {
-                "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-755"
-                ],
-                "3": [
-                    "CWE-636"
-                ]
-            },
-            "title": "maxDeposit() Should Never Revert",
-            "description": "The maxDeposit(), maxMint(), maxWithdraw(), and maxRedeem() functions can revert due to stale or invalid oracle data. The root cause is lack of error handling for oracle failures. ERC-4626 recommends returning 0 instead of reverting. The impact is integration failures and reduced system resilience during oracle outages.\n",
-            "severity": "Low",
-            "location": [
-                "sBold.sol::maxDeposit",
-                "sBold.sol::maxMint",
-                "sBold.sol::maxWithdraw",
-                "sBold.sol::maxRedeem"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 23,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1284"
-                ]
-            },
-            "title": "swap() Reverts if rewardBps Is Set to 100%",
-            "description": "If rewardBps is set to 100%, the entire swap proceeds go to the caller, leaving 0 to deposit to Stability Pools. This causes provideToSP() to revert due to zero amount. The root cause is missing validation on rewardBps. The impact is denial of service for swap functionality when misconfigured, though the risk is mitigated by later capping the value.\n",
-            "severity": "Low",
-            "location": [
-                "sBold.sol::setReward",
-                "sBold.sol::swap",
-                "SpLogic.sol::provideToSP"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 24,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ]
-            },
-            "title": "Gas Optimizations",
-            "description": "Several gas inefficiencies exist: redundant _checkCollHealth() calls, repeated copying of sps array in memory, unnecessary memory allocation in setOracles(), suboptimal storage packing in weight and struct fields. The root cause is suboptimal code design. The impact is higher transaction costs, though not a security risk. Some optimizations were not fully implemented.\n",
-            "severity": "Informational",
-            "location": [
-                "sBold.sol::withdraw",
-                "sBold.sol::redeem",
-                "sBold.sol::swap",
-                "Registry.sol::setOracles",
-                "ISBold.sol::SP",
-                "BaseChainlinkOracle.sol::Feed"
-            ],
-            "files": [
-                "sBOLD/contracts/sBold.sol"
-            ]
-        },
-        {
-            "id": 25,
+            "id": 7,
             "category": {
                 "1": [
                     "CWE-691"
@@ -535,89 +138,112 @@
                     "CWE-841"
                 ]
             },
-            "title": "No Rebalancing Between Stability Pools",
-            "description": "The weights set in the constructor are only used during deposit and after swap, but there is no mechanism to rebalance pools over time. The root cause is missing rebalancing logic. If liquidations or yield accrual are uneven, allocation drifts from target weights. The impact is suboptimal capital allocation and reduced yield efficiency.\n",
-            "severity": "Informational",
+            "title": "JIT tax can be avoided by first doing a small swap",
+            "description": "The JIT tax and swap tax are only charged on the first action in a block. By performing a negligible swap first, a user can pay only the swap tax and avoid the JIT tax on subsequent liquidity additions or swaps. Since the JIT tax is 4x the swap tax, this creates an economic incentive to game the system. The vulnerability arises from the _blockOfLastTopOfBlock update logic, which suppresses further taxes once set. An attacker can exploit this by structuring transactions to front-run their own actions, minimizing tax costs. The impact includes reduced protocol revenue and unfair advantage for sophisticated users.\n",
+            "severity": "Low",
             "location": [
-                "sBold.sol::deposit",
-                "sBold.sol::mint",
-                "sBold.sol::swap"
+                "AngstromL2.sol#L198-L242"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 26,
+            "id": 8,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-269"
-                ],
-                "3": [
-                    "CWE-267"
+                    "CWE-1041"
                 ]
             },
-            "title": "Unstated Owner Privileges",
-            "description": "The owner has several critical privileges not clearly documented: draining the contract, manipulating oracles, blocking deposits/swaps via fee receiver or reward settings. The root cause is excessive and undocumented admin powers. The impact is high trust assumption on the owner, creating centralization risk and potential for abuse, even if later mitigated.\n",
+            "title": "Native ID conversion to currency can be replaced with NATIVE_CURRENCY constant",
+            "description": "The code uses CurrencyLibrary.fromId(NATIVE_CURRENCY_ID) to obtain the native currency object, but this is redundant because the NATIVE_CURRENCY constant is already available. This is a code quality issue that increases gas usage slightly due to an unnecessary function call. While it does not pose a security risk, it reduces code clarity and efficiency. Replacing the call with the constant improves readability and reduces gas costs. The impact is purely optimization-related with no security consequences.\n",
             "severity": "Informational",
             "location": [
-                "sBold.sol::setSwapAdapter",
-                "sBold.sol::setOracles",
-                "sBold.sol::setFeeReceiver",
-                "sBold.sol::setReward",
-                "sBold.sol::setSwapFeeBps"
+                "AngstromL2.sol#L213",
+                "AngstromL2.sol#L233"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 27,
+            "id": 10,
             "category": {
                 "1": [
                     "CWE-664"
                 ],
                 "2": [
-                    "CWE-1329"
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-1176"
                 ]
             },
-            "title": "Weights Cannot Be Modified Once Set",
-            "description": "The capital allocation weights are fixed at deployment and cannot be updated. The root cause is lack of mutability. This prevents adaptation to changing conditions, such as Liquity V2 disabling a collateral branch. The impact is continued allocation to potentially inactive or low-yield pools, reducing capital efficiency.\n",
+            "title": "_oneForZeroCreditRewards() calculates rewards of ranges with 0 liquidity",
+            "description": "The _oneForZeroCreditRewards() function calculates rewards even for liquidity ranges with zero liquidity, which is inefficient and unnecessary. This occurs because the condition checks tickNext <= lastTick but does not verify that liquidity is non-zero. Although it does not lead to incorrect state, it wastes gas by performing calculations that have no effect. The fix involves adding a liquidity != 0 check. The impact is gas inefficiency during reward distribution.\n",
             "severity": "Informational",
             "location": [
-                "sBold.sol::constructor",
-                "sBold.sol::rebalanceSPs"
+                "AngstromL2.sol"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         },
         {
-            "id": 28,
+            "id": 12,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-655"
                 ]
             },
-            "title": "Collateral Counted Twice if Collaterals Repeated",
-            "description": "If the same collateral type is used in multiple branches (e.g., WETH with different LTVs), the balance is double-counted in calculations. The root cause is lack of deduplication in collateral accounting. While not an issue for mainnet deployment, it limits code reusability in forks. The impact is informational, affecting potential future deployments.\n",
+            "title": "Indirectly claiming rewards is subject to MEV tax",
+            "description": "Users can claim rewards indirectly by performing a zero-liquidity modification (poking a position), but this action is subject to the MEV tax if it is the first in a block. This creates a disincentive for users to claim rewards efficiently, as they may be taxed unnecessarily. The issue arises because the tax exemption does not apply to liquidity modifications, even when no actual liquidity change occurs. An attacker can front-run such claims to extract value. The impact includes user friction and potential loss of rewards due to tax overhead.\n",
             "severity": "Informational",
             "location": [
-                "sBold.sol::calcFragments"
+                "AngstromL2.sol#L229-L234"
             ],
             "files": [
-                "sBOLD/contracts/sBold.sol"
+                "l2-angstrom/src/AngstromL2.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
+                ]
+            },
+            "title": "Redundancies",
+            "description": "Several constants and functions (NegationOverflow, AttemptingToWithdrawLPRewards, MAX_DEFAULT_PROTOCOL_FEE_MULTIPLE_E6, MAX_PROTOCOL_TAX_FEE_E6) are defined but never used in the codebase. This increases code complexity and maintenance burden without providing value. These definitions should be removed to improve code clarity and reduce audit surface. The impact is purely code quality and maintainability.\n",
+            "severity": "Informational",
+            "location": [
+                "AngstromL2.sol#L57",
+                "AngstromL2.sol#L59",
+                "AngstromL2Factory.sol#L50",
+                "AngstromL2Factory.sol#L52"
+            ],
+            "files": [
+                "l2-angstrom/src/AngstromL2.sol"
             ]
         }
     ],
     "affected_files": {
-        "sBold.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {ERC20, IERC20} from \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport {ERC4626} from \"@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol\";\nimport {Math} from \"@openzeppelin/contracts/utils/math/Math.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport {BaseSBold} from \"./base/BaseSBold.sol\";\nimport {SpLogic} from \"./libraries/logic/SpLogic.sol\";\nimport {SwapLogic} from \"./libraries/logic/SwapLogic.sol\";\nimport {QuoteLogic} from \"./libraries/logic/QuoteLogic.sol\";\nimport {Constants} from \"./libraries/helpers/Constants.sol\";\nimport {Decimals} from \"./libraries/helpers/Decimals.sol\";\nimport {TransientStorage} from \"./libraries/helpers/TransientStorage.sol\";\n\n/// @title sBold Protocol\n/// @notice The $BOLD ERC4626 yield-bearing token.\ncontract sBold is BaseSBold {\n    using Math for uint256;\n\n    /// @notice Deploys sBold.\n    /// @param _asset The address of the $BOLD instance.\n    /// @param _name The name of `this` contract.\n    /// @param _symbol The symbol of `this` contract.\n    /// @param _sps The Stability Pools memory array.\n    /// @param _priceOracle The address of the price oracle adapter.\n    /// @param _vault The address of the vault for fee transfers.\n    constructor(\n        address _asset,\n        string memory _name,\n        string memory _symbol,\n        SPConfig[] memory _sps,\n        address _priceOracle,\n        address _vault\n    ) ERC4626(ERC20(_asset)) ERC20(_name, _symbol) BaseSBold(_sps, _priceOracle, _vault) {\n        super.deposit(10 ** decimals(), address(this));\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                                 LOGIC\n    //////////////////////////////////////////////////////////////*/\n\n    /// @notice Deposits $BOLD in SP and mints corresponding $sBOLD.\n    /// @param assets The amount of assets to deposit + fee to collect.\n    /// @param receiver The address to mint the shares to.\n    /// @return The amount of shares.\n    function deposit(\n        uint256 assets,\n        address receiver\n    ) public override whenNotPaused nonReentrant execCollateralOps returns (uint256) {\n        uint256 maxAssets = _maxDeposit(receiver);\n        if (assets > maxAssets) {\n            revert ERC4626ExceededMaxDeposit(receiver, assets, maxAssets);\n        }\n\n        uint256 fee = _feeOnTotal(assets, feeBps);\n\n        uint256 shares = super.previewDeposit(assets - fee);\n\n        _deposit(_msgSender(), receiver, assets, shares);\n\n        if (fee > 0) SafeERC20.safeTransfer(IERC20(asset()), vault, fee);\n\n        SpLogic.provideToSP(sps, assets - fee);\n\n        return shares;\n    }\n\n    /// @notice Mints shares of $sBOLD and provides corresponding $BOLD to SP.\n    /// @param shares The amount of shares to mint.\n    /// @param receiver The address to send the shares to.\n    /// @return The amount of assets.\n    function mint(\n        uint256 shares,\n        address receiver\n    ) public override whenNotPaused nonReentrant execCollateralOps returns (uint256) {\n        uint256 maxShares = _maxMint(receiver);\n        if (shares > maxShares) {\n            revert ERC4626ExceededMaxMint(receiver, shares, maxShares);\n        }\n\n        uint256 assets = super.previewMint(shares);\n\n        uint256 fee = _feeOnRaw(assets, feeBps);\n\n        _deposit(_msgSender(), receiver, assets + fee, shares);\n\n        if (fee > 0) SafeERC20.safeTransfer(IERC20(asset()), vault, fee);\n\n        SpLogic.provideToSP(sps, assets);\n\n        return assets + fee;\n    }\n\n    /// @notice Redeems shares of $sBOLD in $BOLD and burns $sBOLD.\n    /// @param shares The amount of shares to redeem.\n    /// @param receiver The address to send the assets to.\n    /// @param owner The owner of the shares.\n    /// @return The amount of assets.\n    function redeem(\n        uint256 shares,\n        address receiver,\n        address owner\n    ) public override whenNotPaused nonReentrant execCollateralOps returns (uint256) {\n        uint256 maxShares = _maxRedeem(owner);\n        if (shares > maxShares) {\n            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);\n        }\n\n        uint256 assets = super.previewRedeem(shares);\n\n        SpLogic.withdrawFromSP(sps, IERC20(asset()), decimals(), assets, true);\n\n        _withdraw(_msgSender(), receiver, owner, assets, shares);\n\n        return assets;\n    }\n\n    /// @notice Withdraws assets $BOLD from the SP and burns $sBOLD.\n    /// @param assets The amount of assets to withdraw.\n    /// @param receiver The address to send the shares to.\n    /// @param owner The owner of the shares.\n    /// @return The amount of shares.\n    function withdraw(\n        uint256 assets,\n        address receiver,\n        address owner\n    ) public override whenNotPaused nonReentrant execCollateralOps returns (uint256) {\n        uint256 maxAssets = _maxWithdraw(owner);\n        if (assets > maxAssets) {\n            revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);\n        }\n\n        uint256 shares = super.previewWithdraw(assets);\n\n        SpLogic.withdrawFromSP(sps, IERC20(asset()), decimals(), assets, true);\n\n        _withdraw(_msgSender(), receiver, owner, assets, shares);\n\n        return shares;\n    }\n\n    /// @notice Swaps collateral balances to $BOLD.\n    /// @param swapData The swap data.\n    /// @param receiver The reward receiver.\n    function swap(SwapData[] memory swapData, address receiver) public whenNotPaused nonReentrant {\n        address bold = asset();\n\n        // Prepare swap data and claim collateral.\n        SwapDataWithColl[] memory swapDataWithColl = SwapLogic.prepareSwap(bold, priceOracle, sps, swapData);\n        // Execute swaps for each collateral to $BOLD\n        uint256 assets = SwapLogic.swap(bold, swapAdapter, swapDataWithColl, maxSlippage);\n\n        (, uint256 swapFee, uint256 reward) = SwapLogic.applyFees(assets, swapFeeBps, rewardBps);\n\n        IERC20 iBold = IERC20(bold);\n\n        if (swapFee > 0) SafeERC20.safeTransfer(iBold, vault, swapFee);\n        if (reward > 0) SafeERC20.safeTransfer(iBold, receiver, reward);\n\n        uint256 assetsInternal = ERC20(bold).balanceOf(address(this));\n        uint256 deadShareAmount = 10 ** decimals();\n\n        if (assetsInternal > deadShareAmount) {\n            SpLogic.provideToSP(sps, assetsInternal - deadShareAmount);\n        }\n    }\n\n    /// @notice This function is able to both re-balance in terms of weights and change entirely current SPs.\n    /// @param _sps The Stability Pools memory array.\n    /// @param _swapData The swap data.\n    function rebalanceSPs(SPConfig[] calldata _sps, SwapData[] memory _swapData) external onlyOwner nonReentrant {\n        address bold = asset();\n\n        // Prepare swap data and claim collateral.\n        SwapDataWithColl[] memory swapDataWithColl = SwapLogic.prepareSwap(bold, priceOracle, sps, _swapData);\n        // Execute swaps for each collateral to $BOLD.\n        SwapLogic.swap(bold, swapAdapter, swapDataWithColl, maxSlippage);\n\n        _checkCollHealth(true);\n\n        uint256 boldAmount;\n        for (uint256 i = 0; i < sps.length; i++) {\n            // Add $BOLD compounded deposits from each SP\n            boldAmount += SpLogic._getBoldAssetsSP(sps[i].sp);\n        }\n\n        // Withdraw all assets from current SPs.\n        SpLogic.withdrawFromSP(sps, IERC20(bold), decimals(), boldAmount, false);\n\n        // Sanitize\n        delete sps;\n        // Set new SPs.\n        _setSPs(_sps);\n\n        uint256 assetsInternal = ERC20(bold).balanceOf(address(this));\n        uint256 deadShareAmount = 10 ** decimals();\n\n        if (assetsInternal > deadShareAmount) {\n            // Provide all assets to new SPs.\n            SpLogic.provideToSP(sps, assetsInternal - deadShareAmount);\n        }\n\n        emit Rebalance(_sps);\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                                MAXIMUMS\n    //////////////////////////////////////////////////////////////*/\n\n    /// @dev Max deposit function returning result from `_maxDeposit`. See {IERC4626-maxDeposit} and {sBold-_maxDeposit}.\n    function maxDeposit(address account) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _maxDeposit(account);\n    }\n\n    /// @dev Max deposit function returning result from `_maxMint`. See {IERC4626-maxMint} and {sBold-_maxMint}.\n    function maxMint(address account) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _maxMint(account);\n    }\n\n    /// @dev Max withdraw function returning result from `_maxWithdraw`. See {IERC4626-maxWithdraw} and {sBold-maxWithdraw}.\n    function maxWithdraw(address owner) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _maxWithdraw(owner);\n    }\n\n    /// @dev Max redeem function returning result from `_maxRedeem`. See {IERC4626-maxRedeem} and {sBold-_maxRedeem}.\n    function maxRedeem(address owner) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _maxRedeem(owner);\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                               PREVIEWS\n    //////////////////////////////////////////////////////////////*/\n\n    /// @dev Preview deducting an entry fee on deposit. See {IERC4626-previewDeposit}.\n    function previewDeposit(uint256 assets) public view virtual override nonReentrantReadOnly returns (uint256) {\n        uint256 fee = _feeOnTotal(assets, feeBps);\n\n        return super.previewDeposit(assets - fee);\n    }\n\n    /// @dev Preview adding an entry fee on mint. See {IERC4626-previewMint}.\n    function previewMint(uint256 shares) public view virtual override nonReentrantReadOnly returns (uint256) {\n        uint256 assets = super.previewMint(shares);\n\n        return assets + _feeOnRaw(assets, feeBps);\n    }\n\n    /// @dev Preview withdraw add readOnly reentrancy check. See {IERC4626-previewWithdraw}.\n    function previewWithdraw(uint256 assets) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return super.previewWithdraw(assets);\n    }\n\n    /// @dev Preview redeem add readOnly reentrancy check. See {IERC4626-previewRedeem}.\n    function previewRedeem(uint256 shares) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return super.previewRedeem(shares);\n    }\n\n    /** @dev See {IERC4626-convertToShares}. */\n    function convertToShares(uint256 assets) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _convertToShares(assets, Math.Rounding.Floor);\n    }\n\n    /** @dev See {IERC4626-convertToAssets}. */\n    function convertToAssets(uint256 shares) public view virtual override nonReentrantReadOnly returns (uint256) {\n        return _convertToAssets(shares, Math.Rounding.Floor);\n    }\n\n    /// @dev Total underlying assets owned by the sBOLD contract which are utilized in stability pools.\n    function totalAssets() public view virtual override nonReentrantReadOnly returns (uint256) {\n        (uint256 totalBold, , , ) = _calcFragments();\n\n        return totalBold;\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                                TRANSIENT\n    //////////////////////////////////////////////////////////////*/\n\n    /// @inheritdoc BaseSBold\n    function _checkAndStoreCollValueInBold() internal virtual override {\n        (, uint256 collValue, uint256 collInBold) = _checkCollHealth(true);\n        // Transient store for collaterals and flag\n        TransientStorage.storeCollValues(collValue, collInBold);\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                               GETTERS\n    //////////////////////////////////////////////////////////////*/\n\n    /// @notice Calculates the $sBOLD:BOLD rate.\n    /// @return The $sBOLD:$BOLD rate.\n    function getSBoldRate() public view nonReentrantReadOnly returns (uint256) {\n        (uint256 totalBold, , , ) = _calcFragments();\n\n        return (totalBold + 1).mulDiv(10 ** decimals(), totalSupply() + 10 ** _decimalsOffset());\n    }\n\n    function calcFragments() public view nonReentrantReadOnly returns (uint256, uint256, uint256, uint256) {\n        return _calcFragments();\n    }\n\n    /// @dev Max deposit returns 0 if collateral is above max, the contract is paused or call to oracle has failed. See {IERC4626-maxDeposit}.\n    function _maxDeposit(address account) private view returns (uint256) {\n        (bool success, , ) = _checkCollHealth(false);\n\n        if (!success || paused()) return 0;\n\n        return super.maxDeposit(account);\n    }\n\n    /// @dev Max mint returns 0 if collateral is above max, the contract is paused or call to oracle has failed. See {IERC4626-maxMint}.\n    function _maxMint(address account) private view returns (uint256) {\n        (bool success, , ) = _checkCollHealth(false);\n\n        if (!success || paused()) return 0;\n\n        return super.maxMint(account);\n    }\n\n    /// @dev Max withdraw returns 0 if collateral is above max. See {IERC4626-maxWithdraw}.\n    /// note: Returns an amount up to the one available in $BOLD.\n    function _maxWithdraw(address owner) private view returns (uint256) {\n        (bool success, , ) = _checkCollHealth(false);\n\n        if (!success || paused()) return 0;\n\n        uint256 maxWithdrawAssets = super.maxWithdraw(owner);\n\n        uint256 boldAmount = SpLogic.getBoldAssets(sps, IERC20(asset()));\n\n        if (maxWithdrawAssets > boldAmount) {\n            uint256 deadShareAmount = 10 ** decimals();\n\n            if (boldAmount < deadShareAmount) return 0;\n\n            return boldAmount - deadShareAmount;\n        }\n\n        return maxWithdrawAssets;\n    }\n\n    /// @dev Max redeem returns 0 if collateral is above max. See {IERC4626-maxRedeem}.\n    /// note: Returns an amount up to the one available in $BOLD, converted in shares.\n    function _maxRedeem(address owner) private view returns (uint256) {\n        (bool success, , ) = _checkCollHealth(false);\n\n        if (!success || paused()) return 0;\n\n        uint256 maxWithdrawAssets = super.maxWithdraw(owner);\n\n        uint256 boldAmount = SpLogic.getBoldAssets(sps, IERC20(asset()));\n\n        if (maxWithdrawAssets > boldAmount) {\n            uint256 deadShareAmount = 10 ** decimals();\n\n            if (boldAmount < deadShareAmount) return 0;\n\n            return _convertToShares(boldAmount - deadShareAmount, Math.Rounding.Floor);\n        }\n\n        return super.maxRedeem(owner);\n    }\n\n    /// @notice Calculates the total value in $BOLD of the assets in the contract.\n    /// @return The total value in USD, $BOLD amount and collateral in USD.\n    function _calcFragments() private view returns (uint256, uint256, uint256, uint256) {\n        address bold = asset();\n        // Get compounded $BOLD amount\n        uint256 boldAmount = SpLogic.getBoldAssets(sps, IERC20(bold));\n        // Get collateral value in USD and $BOLD\n        (, uint256 collValue, uint256 collInBold) = _calcCollValue(bold, true);\n        // Calculate based on the minimum amount to be received after swap\n        uint256 collToBoldMinOut = SwapLogic.calcMinOut(collInBold, maxSlippage);\n        // Apply fees after swap\n        (uint256 collInBoldNet, , ) = SwapLogic.applyFees(collToBoldMinOut, swapFeeBps, rewardBps);\n        // Calculate total $BOLD value\n        uint256 totalBold = boldAmount + collInBoldNet;\n\n        return (totalBold, boldAmount, collValue, collInBold);\n    }\n\n    /// @notice Converts the $BOLD assets to shares based on $sBOLD exchange rate.\n    /// @return The calculated $sBOLD share, based on the total value held.\n    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {\n        return\n            assets.mulDiv(\n                10 ** decimals(),\n                _getSBoldRateWithRounding(rounding == Math.Rounding.Floor ? Math.Rounding.Ceil : Math.Rounding.Floor),\n                rounding\n            );\n    }\n\n    /// @notice Converts the $sBOLD shares to $BOLD assets based on $sBOLD exchange rate.\n    /// @return The calculated $BOLD assets, based on the total value held.\n    function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {\n        return shares.mulDiv(_getSBoldRateWithRounding(rounding), 10 ** decimals(), rounding);\n    }\n\n    /// @notice Calculates the $sBOLD:BOLD rate with input rounding.\n    /// @param rounding Type of rounding on math calculations.\n    /// @return The $sBOLD:$BOLD rate.\n    function _getSBoldRateWithRounding(Math.Rounding rounding) private view returns (uint256) {\n        (uint256 totalBold, , , ) = _calcFragments();\n\n        return (totalBold + 1).mulDiv(10 ** decimals(), totalSupply() + 10 ** _decimalsOffset(), rounding);\n    }\n\n    /// @dev Calculates the fees that should be added to an amount `assets` that does not already include fees.\n    /// Used in {IERC4626-mint} operations.\n    function _feeOnRaw(uint256 assets, uint256 feeBasisPoints) internal pure returns (uint256) {\n        return assets.mulDiv(feeBasisPoints, Constants.BPS_DENOMINATOR, Math.Rounding.Ceil);\n    }\n\n    /// @dev Calculates the fee part of an amount `assets` that already includes fees.\n    /// Used in {IERC4626-deposit} operations.\n    function _feeOnTotal(uint256 assets, uint256 feeBasisPoints) internal pure returns (uint256) {\n        return assets.mulDiv(feeBasisPoints, feeBasisPoints + Constants.BPS_DENOMINATOR, Math.Rounding.Ceil);\n    }\n\n    /// @notice Calculates the collateral value in USD and $BOLD from all SPs.\n    /// @param _bold Asset contract address.\n    /// @param _revert Indication to revert on errors.\n    /// @return success Success result from function.\n    /// @return collValue The total collateral value.\n    /// @return collInBold The collateral value denominated in $BOLD.\n    function _calcCollValue(\n        address _bold,\n        bool _revert\n    ) private view returns (bool success, uint256 collValue, uint256 collInBold) {\n        // Return values from transient storage\n        if (TransientStorage.loadCollsFlag())\n            return (true, TransientStorage.loadCollValue(), TransientStorage.loadCollInBold());\n\n        CollBalance[] memory collBalances = SpLogic.getCollBalances(sps, false);\n\n        (success, collValue) = QuoteLogic.getAggregatedQuote(priceOracle, collBalances, _revert);\n\n        if (success)\n            try priceOracle.getQuote(10 ** decimals(), _bold) returns (uint256 boldUnitQuote) {\n                collInBold = collValue.mulDiv(10 ** Constants.ORACLE_PRICE_PRECISION, boldUnitQuote);\n            } catch (bytes memory data) {\n                if (_revert) revert(string(data));\n\n                return (false, collValue, 0);\n            }\n    }\n\n    /*//////////////////////////////////////////////////////////////\n                               VALIDATIONS\n    //////////////////////////////////////////////////////////////*/\n\n    /// @notice Checks if the collateral value in $BOLD is over the maximum allowed.\n    function _checkCollHealth(bool _revert) private view returns (bool, uint256, uint256) {\n        (bool success, uint256 collValue, uint256 collValueInBold) = _calcCollValue(asset(), _revert);\n\n        if (!success) return (false, 0, 0);\n\n        if (collValueInBold <= maxCollInBold) return (true, collValue, collValueInBold);\n\n        if (_revert) revert CollOverLimit();\n\n        return (false, collValue, collValueInBold);\n    }\n}\n",
-        "SpLogic.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport {IStabilityPool} from \"../../external/IStabilityPool.sol\";\nimport {ISBold} from \"../../interfaces/ISBold.sol\";\nimport {Math} from \"@openzeppelin/contracts/utils/math/Math.sol\";\nimport {Constants} from \"../../libraries/helpers/Constants.sol\";\n\n/// @title SpLogic\n/// @notice Manages liquidity in Stability Pools.\nlibrary SpLogic {\n    using Math for uint256;\n\n    /// @notice Provides $BOLD to SPs, based on the weight of each pool.\n    /// @param sps The SPs to provide $BOLD to.\n    /// @param assets The $BOLD amount.\n    function provideToSP(ISBold.SP[] memory sps, uint256 assets) internal {\n        for (uint256 i = 0; i < sps.length; i++) {\n            ISBold.SP memory sp = sps[i];\n            // Calculate amount for SP, based on the specified weight\n            uint256 amount = assets.mulDiv(sp.weight, Constants.BPS_DENOMINATOR);\n            if (amount > 0) {\n                // Provide amount to SP (accumulated gains are not transferred).\n                IStabilityPool(sp.sp).provideToSP(amount, false);\n            }\n        }\n    }\n\n    /// @notice Withdraws $BOLD from SPs.\n    /// @param sps The SPs to withdraw $BOLD from.\n    /// @param bold The $BOLD instance.\n    /// @param decimals The $BOLD decimals.\n    /// @param assets The $BOLD assets.\n    /// @param shouldProvide Should the withdraw provide leftover assets to current pools\n    function withdrawFromSP(\n        ISBold.SP[] memory sps,\n        IERC20 bold,\n        uint8 decimals,\n        uint256 assets,\n        bool shouldProvide\n    ) internal {\n        for (uint256 i = 0; i < sps.length; i++) {\n            IStabilityPool sp = IStabilityPool(sps[i].sp);\n            // Get compounded $BOLD amount from SP\n            uint256 amountCompoundedFromSp = sp.getCompoundedBoldDeposit(address(this));\n            // Get pending yield gain in $BOLD amount from SP\n            uint256 amountPendingFromSp = sp.getDepositorYieldGainWithPending(address(this));\n\n            if (amountCompoundedFromSp == 0 && amountPendingFromSp == 0) continue;\n            // Withdraw amount from SP (accumulated gains are transferred).\n            sp.withdrawFromSP(amountCompoundedFromSp, true);\n        }\n\n        uint256 balanceAfter = bold.balanceOf(address(this));\n        uint256 balanceToProvide = balanceAfter - assets;\n        uint256 deadShare = 10 ** decimals;\n\n        if (balanceToProvide > deadShare) {\n            // Provide the accumulated asset amount back to SPs.\n            if (shouldProvide) provideToSP(sps, balanceToProvide - deadShare);\n        }\n    }\n\n    /// @notice Aggregates $BOLD assets from each pool and returns the total holdings.\n    /// @param sps The SPs to get $BOLD from.\n    /// @param bold The $BOLD address.\n    /// @return amount The aggregated compounded $BOLD deposits.\n    function getBoldAssets(ISBold.SP[] memory sps, IERC20 bold) internal view returns (uint256 amount) {\n        for (uint256 i = 0; i < sps.length; i++) {\n            // Add $BOLD compounded deposits from each SP\n            amount += _getBoldAssetsSP(sps[i].sp);\n        }\n        // Add $BOLD internal balance\n        amount += bold.balanceOf(address(this));\n    }\n\n    /// @notice Aggregates collateral assets from each pool and returns an array with collateral assets structures.\n    /// @param sps The SPs to get collateral from.\n    /// @param onlyInternal The flag used to aggregate only internal balances.\n    /// @return collBalances The aggregated collateral structs containing address and balance.\n    function getCollBalances(\n        ISBold.SP[] memory sps,\n        bool onlyInternal\n    ) internal view returns (ISBold.CollBalance[] memory collBalances) {\n        collBalances = new ISBold.CollBalance[](sps.length);\n\n        for (uint256 i = 0; i < sps.length; i++) {\n            collBalances[i] = _getCollBalanceSP(sps[i], onlyInternal);\n        }\n    }\n\n    /// @notice Returns $BOLD assets from SP.\n    /// @param _sp The SP address.\n    /// @return The aggregated compounded $BOLD deposit from SP.\n    function _getBoldAssetsSP(address _sp) internal view returns (uint256) {\n        IStabilityPool sp = IStabilityPool(_sp);\n        // Accounted yield gains from deposits\n        uint256 compoundedBold = sp.getCompoundedBoldDeposit(address(this));\n        // Pending yield gains from deposits\n        uint256 pendingYield = sp.getDepositorYieldGainWithPending(address(this));\n\n        return compoundedBold + pendingYield;\n    }\n\n    /// @notice Returns collateral assets structure from SP.\n    /// @param _sp The SP address.\n    /// @param _onlyInternal The flag used to aggregate only internal balances.\n    /// @return collBalance The collateral struct containing address and balance from SP.\n    function _getCollBalanceSP(\n        ISBold.SP memory _sp,\n        bool _onlyInternal\n    ) internal view returns (ISBold.CollBalance memory) {\n        // Get collateral balance in contract\n        uint256 collInternal = IERC20(_sp.coll).balanceOf(address(this));\n        // Return only internal collateral holdings\n        if (_onlyInternal) return ISBold.CollBalance({addr: _sp.coll, balance: collInternal});\n        // Get collateral accumulated amounts\n        uint256 collAccumulatedGains = IStabilityPool(_sp.sp).getDepositorCollGain(address(this));\n        // Get collateral accumulated stashed amounts\n        uint256 collAccumulatedStashedGains = IStabilityPool(_sp.sp).stashedColl(address(this));\n        // Calculate total amount\n        uint256 totalBalance = collAccumulatedGains + collAccumulatedStashedGains + collInternal;\n\n        return ISBold.CollBalance({addr: _sp.coll, balance: totalBalance});\n    }\n}\n",
-        "ChainlinkLstOracle.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {AggregatorV3Interface} from \"../../external/AggregatorV3Interface.sol\";\nimport {BaseChainlinkOracle} from \"./BaseChainlinkOracle.sol\";\nimport {Decimals} from \"../../libraries/helpers/Decimals.sol\";\nimport {Common} from \"../../libraries/Common.sol\";\nimport {Constants} from \"../../libraries/helpers/Constants.sol\";\n\n/// @title ChainlinkLstOracle\n/// @notice PriceOracle adapter for Chainlink push-based price feeds, specific for liquid-staking tokens.\ncontract ChainlinkLstOracle is BaseChainlinkOracle {\n    /// @notice The max staleness mapped to feed address.\n    mapping(address => uint256) public feedToMaxStaleness;\n    /// @notice Name of the oracle.\n    string public constant name = \"Chainlink LST sBold V1\";\n    /// @notice The address of the ETH to USD.\n    Feed public ethUsdFeed;\n    /// @notice The address of the LST to ETH feed.\n    Feed public lstEthFeed;\n\n    /// @notice Deploys a Chainlink price oracle for liquid-staking tokens.\n    /// @param _base The address of the base asset.\n    /// @param _ethUsdFeed The structure for the ETH to USD feed.\n    /// @param _lstEthFeed The structure for the LST to ETH feed.\n    constructor(address _base, Feed memory _ethUsdFeed, Feed memory _lstEthFeed) {\n        Common.revertZeroAddress(_base);\n        Common.revertZeroAddress(_ethUsdFeed.addr);\n        Common.revertZeroAddress(_lstEthFeed.addr);\n\n        if (\n            _ethUsdFeed.maxStaleness < MAX_STALENESS_LOWER_BOUND || _ethUsdFeed.maxStaleness > MAX_STALENESS_UPPER_BOUND\n        ) {\n            revert InvalidMaxStaleness();\n        }\n\n        if (\n            _lstEthFeed.maxStaleness < MAX_STALENESS_LOWER_BOUND || _lstEthFeed.maxStaleness > MAX_STALENESS_UPPER_BOUND\n        ) {\n            revert InvalidMaxStaleness();\n        }\n\n        base = _base;\n        ethUsdFeed = _ethUsdFeed;\n        lstEthFeed = _lstEthFeed;\n    }\n\n    /// @inheritdoc BaseChainlinkOracle\n    function getQuote(uint256 inAmount, address) external view override returns (uint256) {\n        uint256 lstUsdPrice = _fetchPrice();\n\n        return (inAmount * lstUsdPrice) / 10 ** Decimals.getDecimals(base);\n    }\n\n    /// @inheritdoc BaseChainlinkOracle\n    function isBaseSupported(address _base) external view override returns (bool) {\n        return base == _base;\n    }\n\n    /// @notice Extracts price for ETH to USD and LST to ETH feeds.\n    /// @dev The returned price is the denomination of the LST to USD.\n    function _fetchPrice() internal view returns (uint256) {\n        uint256 ethInUsd = _getLatestAnswer(ethUsdFeed);\n        uint256 lstInEth = _getLatestAnswer(lstEthFeed);\n\n        // Calculate the price for LST to USD\n        return (ethInUsd * lstInEth) / 10 ** Constants.ORACLE_PRICE_PRECISION;\n    }\n}\n",
-        "PythOracle.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IPyth} from \"@pythnetwork/pyth-sdk-solidity/IPyth.sol\";\nimport {PythStructs} from \"@pythnetwork/pyth-sdk-solidity/PythStructs.sol\";\nimport {IPriceOracle} from \"../../interfaces/IPriceOracle.sol\";\nimport {Decimals} from \"../../libraries/helpers/Decimals.sol\";\nimport {Common} from \"../../libraries/Common.sol\";\nimport {Constants} from \"../../libraries/helpers/Constants.sol\";\n\n/// @title PythOracle\n/// @notice PriceOracle adapter for Pyth pull-based price feeds.\ncontract PythOracle is IPriceOracle, Ownable {\n    /// @notice The maximum length of time that a price can be in the future.\n    uint256 internal constant MAX_AHEADNESS = 1 minutes;\n    /// @notice The maximum permitted value for `maxStaleness`.\n    uint256 internal constant MAX_STALENESS_UPPER_BOUND = 15 minutes;\n    /// @notice The minimum permitted value for `maxConfWidth`.\n    /// @dev Equal to 0.1%.\n    uint256 internal constant MAX_CONF_WIDTH_LOWER_BOUND = 10;\n    /// @notice The maximum permitted value for `maxConfWidth`.\n    /// @dev Equal to 5%.\n    uint256 internal constant MAX_CONF_WIDTH_UPPER_BOUND = 500;\n    /// @dev The smallest PythStruct exponent that the oracle can handle.\n    int256 internal constant MIN_EXPONENT = -20;\n    /// @dev The largest PythStruct exponent that the oracle can handle.\n    int256 internal constant MAX_EXPONENT = 12;\n    /// @notice Name of the oracle.\n    string public constant name = \"Pyth sBold V1\";\n    /// @notice The address of the Pyth oracle proxy.\n    address public immutable pyth;\n    /// @notice The address of the asset to convert from.\n    address public immutable base;\n    /// @notice The feedId of the base asset. The id of the feed in the Pyth network for the base asset address.\n    /// @dev See https://pyth.network/developers/price-feed-ids.\n    bytes32 public immutable feedId;\n    /// @notice The decimals of the base asset.\n    uint8 public immutable baseDecimals;\n    /// @notice The max staleness of the feed id.\n    uint256 public immutable maxStaleness;\n    /// @notice The maximum allowed width of the confidence interval.\n    uint256 public immutable maxConfWidth;\n\n    /// @notice Deploys a PythOracle.\n    /// @param _pyth The address of the Pyth oracle proxy.\n    /// @param _base The base asset address.\n    /// @param _feedId The id of the feed.\n    /// @param _maxStaleness The maximum price staleness.\n    /// @param _maxConfWidth The maximum width of the confidence interval in basis points.\n    constructor(\n        address _pyth,\n        address _base,\n        bytes32 _feedId,\n        uint256 _maxStaleness,\n        uint256 _maxConfWidth\n    ) Ownable(_msgSender()) {\n        Common.revertZeroAddress(_pyth);\n        Common.revertZeroAddress(_base);\n\n        if (_maxStaleness > MAX_STALENESS_UPPER_BOUND) {\n            revert InvalidMaxStalenessUpperBound();\n        }\n\n        if (_maxConfWidth < MAX_CONF_WIDTH_LOWER_BOUND || _maxConfWidth > MAX_CONF_WIDTH_UPPER_BOUND) {\n            revert InvalidMaxConfWidthLowerBound();\n        }\n\n        if (_feedId == bytes32(0)) {\n            revert InvalidFeed();\n        }\n\n        pyth = _pyth;\n        base = _base;\n        maxConfWidth = _maxConfWidth;\n        baseDecimals = Decimals.getDecimals(_base);\n        feedId = _feedId;\n        maxStaleness = _maxStaleness;\n    }\n\n    /// @inheritdoc IPriceOracle\n    function getQuote(uint256 inAmount, address) external view override returns (uint256) {\n        // Check if asset is configured\n        if (baseDecimals == 0) revert InvalidBaseDecimals();\n        // Fetch Pyth price struct and validated output\n        PythStructs.Price memory priceStruct = _fetchPriceStruct(feedId);\n\n        uint256 price = uint256(uint64(priceStruct.price));\n\n        uint256 scale;\n        if (priceStruct.expo < 0) {\n            // scale down if exponent < 0\n            scale = (price * 10 ** Constants.ORACLE_PRICE_PRECISION) / (10 ** uint8(int8(-priceStruct.expo)));\n        } else {\n            // scale up if exponent >= 0\n            scale = (price * 10 ** Constants.ORACLE_PRICE_PRECISION) * (10 ** uint8(int8(priceStruct.expo)));\n        }\n        // Calculate amount out scaled to `ORACLE_PRICE_PRECISION`\n        return (scale * inAmount) / 10 ** baseDecimals;\n    }\n\n    /// @inheritdoc IPriceOracle\n    function isBaseSupported(address _base) external view returns (bool) {\n        return base == _base;\n    }\n\n    /// @notice Get the latest Pyth price and perform sanity checks.\n    /// @dev Revert conditions: update timestamp is too stale or too ahead, price is negative or zero,\n    /// confidence interval is too wide, exponent is too large or too small.\n    /// @return The Pyth price struct without modification.\n    function _fetchPriceStruct(bytes32 _feedId) internal view returns (PythStructs.Price memory) {\n        PythStructs.Price memory p = IPyth(pyth).getPriceUnsafe(_feedId);\n\n        if (p.publishTime < block.timestamp) {\n            // Verify that the price is not too stale\n            uint256 staleness = block.timestamp - p.publishTime;\n            if (staleness > maxStaleness) revert TooStalePrice();\n        } else {\n            // Verify that the price is not too ahead\n            uint256 aheadness = p.publishTime - block.timestamp;\n            if (aheadness > MAX_AHEADNESS) revert TooAheadPrice();\n        }\n\n        // Verify that the price is positive and within the confidence width.\n        if (p.price <= 0 || p.conf > (uint64(p.price) * maxConfWidth) / Constants.BPS_DENOMINATOR) {\n            revert InvalidPrice();\n        }\n\n        // Verify that the price exponent is within bounds.\n        if (p.expo < MIN_EXPONENT || p.expo > MAX_EXPONENT) {\n            revert InvalidPriceExponent();\n        }\n\n        return p;\n    }\n}\n",
-        "QuoteLogic.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\npragma solidity ^0.8.0;\n\nimport {ISBold} from \"../../interfaces/ISBold.sol\";\nimport {IPriceOracle} from \"../../interfaces/IPriceOracle.sol\";\nimport {Math} from \"@openzeppelin/contracts/utils/math/Math.sol\";\nimport {Constants} from \"../helpers/Constants.sol\";\n\n/// @title QuoteLogic\n/// @notice Logic for quotes derivation.\nlibrary QuoteLogic {\n    using Math for uint256;\n\n    /// @param oracle The oracle to use for getting the quote.\n    /// @param balances The collateral balance structs.\n    /// @param _revert If the getQuote should revert or not.\n    /// @return success The success result of this function.\n    /// @return amount The aggregated amount of collateral in USD.\n    function getAggregatedQuote(\n        IPriceOracle oracle,\n        ISBold.CollBalance[] memory balances,\n        bool _revert\n    ) internal view returns (bool success, uint256 amount) {\n        for (uint256 i = 0; i < balances.length; i++) {\n            if (balances[i].balance == 0) continue;\n\n            try oracle.getQuote(balances[i].balance, balances[i].addr) returns (uint256 amount_) {\n                amount += amount_;\n            } catch (bytes memory data) {\n                if (_revert) revert(string(data));\n\n                return (false, amount);\n            }\n        }\n\n        return (true, amount);\n    }\n\n    /// @param oracle The oracle to use for getting the quote.\n    /// @param bold The address of $BOLD.\n    /// @param coll The address of the collateral.\n    /// @param balance The balance to return quote for.\n    /// @return amount The quote amount of collateral in $BOLD.\n    function getInBoldQuote(\n        IPriceOracle oracle,\n        address bold,\n        address coll,\n        uint256 balance,\n        uint8 decimals\n    ) internal view returns (uint256) {\n        // Get collateral value in USD\n        uint256 collQuote = oracle.getQuote(balance, coll);\n        // Get $BOLD value in USD\n        uint256 boldUnitQuote = oracle.getQuote(10 ** decimals, bold);\n        // Calculate 1 $BOLD * `n` collateral\n        return collQuote.mulDiv(10 ** Constants.ORACLE_PRICE_PRECISION, boldUnitQuote);\n    }\n}\n"
+        "AngstromL2.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity =0.8.26;\n\nimport {UniConsumer} from \"./modules/UniConsumer.sol\";\nimport {Ownable} from \"solady/src/auth/Ownable.sol\";\nimport {IAngstromL2Hook} from \"./interfaces/IAngstromL2Hook.sol\";\nimport {IUniV4, IPoolManager, PoolId} from \"./interfaces/IUniV4.sol\";\nimport {TickIteratorLib, TickIteratorUp, TickIteratorDown} from \"./libraries/TickIterator.sol\";\nimport {\n    PoolKey,\n    IBeforeSwapHook,\n    IAfterSwapHook,\n    IAfterAddLiquidityHook,\n    IAfterRemoveLiquidityHook,\n    IBeforeInitializeHook\n} from \"./interfaces/IHooks.sol\";\nimport {IFlashBlockNumber} from \"./interfaces/IFlashBlockNumber.sol\";\nimport {IFactory} from \"./interfaces/IFactory.sol\";\nimport {BeforeSwapDelta, toBeforeSwapDelta} from \"v4-core/src/types/BeforeSwapDelta.sol\";\nimport {BalanceDelta, toBalanceDelta} from \"v4-core/src/types/BalanceDelta.sol\";\nimport {ModifyLiquidityParams, SwapParams} from \"v4-core/src/types/PoolOperation.sol\";\nimport {Hooks, IHooks} from \"v4-core/src/libraries/Hooks.sol\";\nimport {Slot0} from \"v4-core/src/types/Slot0.sol\";\nimport {TickMath} from \"v4-core/src/libraries/TickMath.sol\";\nimport {Currency, CurrencyLibrary} from \"v4-core/src/types/Currency.sol\";\nimport {SqrtPriceMath} from \"v4-core/src/libraries/SqrtPriceMath.sol\";\nimport {LPFeeLibrary} from \"v4-core/src/libraries/LPFeeLibrary.sol\";\nimport {SafeCastLib} from \"solady/src/utils/SafeCastLib.sol\";\nimport {MixedSignLib} from \"./libraries/MixedSignLib.sol\";\nimport {FixedPointMathLib} from \"solady/src/utils/FixedPointMathLib.sol\";\nimport {Q96MathLib} from \"./libraries/Q96MathLib.sol\";\nimport {CompensationPriceFinder} from \"./libraries/CompensationPriceFinder.sol\";\nimport {PoolRewards, PoolRewardsLib} from \"./types/PoolRewards.sol\";\nimport {PoolKeyHelperLib} from \"./libraries/PoolKeyHelperLib.sol\";\nimport {getRequiredHookPermissions} from \"src/hook-config.sol\";\nimport {tuint256, tbytes32} from \"transient-goodies/TransientPrimitives.sol\";\n\n/// @author philogy <https://github.com/philogy>\ncontract AngstromL2 is\n    UniConsumer,\n    Ownable,\n    IBeforeInitializeHook,\n    IBeforeSwapHook,\n    IAfterSwapHook,\n    IAfterAddLiquidityHook,\n    IAfterRemoveLiquidityHook,\n    IAngstromL2Hook\n{\n    using IUniV4 for IPoolManager;\n    using PoolKeyHelperLib for PoolKey;\n    using Hooks for IHooks;\n    using MixedSignLib for *;\n    using FixedPointMathLib for *;\n    using Q96MathLib for uint256;\n    using SafeCastLib for *;\n\n    error NegationOverflow();\n    error CreatorFeeExceedsMaximum();\n    error AttemptingToWithdrawLPRewards();\n    error IncompatiblePoolConfiguration();\n    error PoolNotInitialized();\n    error PoolAlreadyInitialized();\n\n    /// @dev The `SWAP_TAXED_GAS` is the abstract estimated gas cost for a swap. We want it to be\n    /// a constant so that competing searchers have a bid cost independent of how much gas swap\n    /// actually uses, the overall tax just needs to scale proportional to `priority_fee * swap_fixed_cost`.\n    uint256 internal constant SWAP_TAXED_GAS = 100_000;\n    /// @dev MEV tax charged is `priority_fee * SWAP_MEV_TAX_FACTOR` meaning the tax rate is\n    /// `SWAP_MEV_TAX_FACTOR / (SWAP_MEV_TAX_FACTOR + 1)`\n    uint256 constant SWAP_MEV_TAX_FACTOR = 49;\n    /// @dev Parameters for taxing just-in-time (JIT) liquidity\n    uint256 internal constant JIT_TAXED_GAS = 100_000;\n    uint256 internal constant JIT_MEV_TAX_FACTOR = SWAP_MEV_TAX_FACTOR * 4;\n\n    uint256 internal constant NATIVE_CURRENCY_ID = 0;\n    Currency internal constant NATIVE_CURRENCY = CurrencyLibrary.ADDRESS_ZERO;\n    uint256 internal constant FACTOR_E6 = 1e6;\n    uint256 internal constant MAX_CREATOR_SWAP_FEE_E6 = 0.2e6;\n    uint256 internal constant MAX_CREATOR_TAX_FEE_E6 = 0.5e6; // 50%\n\n    // TODO: Be able to set provider.\n    address public immutable FACTORY;\n\n    IFlashBlockNumber internal flashBlockNumberProvider;\n    uint96 internal _blockOfLastTopOfBlock;\n    mapping(PoolId id => PoolRewards) internal rewards;\n\n    struct PoolFeeConfiguration {\n        bool isInitialized;\n        uint24 creatorTaxFeeE6;\n        uint24 protocolTaxFeeE6;\n        uint24 creatorSwapFeeE6;\n        uint24 protocolSwapFeeE6;\n    }\n\n    mapping(PoolId id => PoolFeeConfiguration) internal _poolFeeConfiguration;\n\n    tuint256 internal liquidityBeforeSwap;\n    tbytes32 internal slot0BeforeSwapStore;\n\n    // Ownable explicit constructor commented out because of weird foundry bug causing\n    // \"modifier-style base constructor call without arguments\": https://github.com/foundry-rs/foundry/issues/11607.\n    constructor(\n        IPoolManager uniV4,\n        IFlashBlockNumber initialFlashBlockNumberProvider,\n        address owner\n    ) UniConsumer(uniV4) /* Ownable() */ {\n        _initializeOwner(owner);\n        FACTORY = msg.sender;\n        Hooks.validateHookPermissions(IHooks(address(this)), getRequiredHookPermissions());\n        flashBlockNumberProvider = initialFlashBlockNumberProvider;\n    }\n\n    receive() external payable {}\n\n    function syncFlashBlockNumberProvider() public {\n        flashBlockNumberProvider = IFactory(FACTORY).flashBlockNumberProvider();\n    }\n\n    function withdrawCreatorRevenue(Currency currency, address to, uint256 amount) public {\n        _checkOwner();\n        currency.transfer(to, amount);\n    }\n\n    function setProtocolSwapFee(PoolKey calldata key, uint256 newFeeE6) public {\n        _checkCallerIsFactory();\n        PoolFeeConfiguration storage feeConfiguration = _poolFeeConfiguration[key.calldataToId()];\n        if (!feeConfiguration.isInitialized) revert PoolNotInitialized();\n        feeConfiguration.protocolSwapFeeE6 = newFeeE6.toUint24();\n    }\n\n    function setProtocolTaxFee(PoolKey calldata key, uint256 newFeeE6) public {\n        _checkCallerIsFactory();\n        PoolFeeConfiguration storage feeConfiguration = _poolFeeConfiguration[key.calldataToId()];\n        if (!feeConfiguration.isInitialized) revert PoolNotInitialized();\n        feeConfiguration.protocolTaxFeeE6 = newFeeE6.toUint24();\n    }\n\n    function getSwapTaxAmount(uint256 priorityFee) public pure returns (uint256) {\n        return SWAP_MEV_TAX_FACTOR * SWAP_TAXED_GAS * priorityFee;\n    }\n\n    function getJitTaxAmount(uint256 priorityFee) public pure returns (uint256) {\n        return JIT_MEV_TAX_FACTOR * JIT_TAXED_GAS * priorityFee;\n    }\n\n    function getPendingPositionRewards(\n        PoolKey calldata key,\n        address owner,\n        int24 lowerTick,\n        int24 upperTick,\n        bytes32 salt\n    ) public view returns (uint256 rewards0) {\n        PoolId id = key.calldataToId();\n        rewards0 =\n            rewards[id].getPendingPositionRewards(UNI_V4, id, owner, lowerTick, upperTick, salt);\n    }\n\n    function getPoolFeeConfiguration(PoolKey calldata key)\n        public\n        view\n        returns (PoolFeeConfiguration memory)\n    {\n        return _poolFeeConfiguration[key.calldataToId()];\n    }\n\n    function initializeNewPool(\n        PoolKey calldata key,\n        uint160 sqrtPriceX96,\n        uint24 creatorSwapFeeE6,\n        uint24 creatorTaxFeeE6\n    ) public {\n        if (!(msg.sender == owner() || msg.sender == FACTORY)) revert Unauthorized();\n        PoolFeeConfiguration storage feeConfiguration = _poolFeeConfiguration[key.calldataToId()];\n        if (feeConfiguration.isInitialized) revert PoolAlreadyInitialized();\n        if (!(creatorSwapFeeE6 <= MAX_CREATOR_SWAP_FEE_E6)) revert CreatorFeeExceedsMaximum();\n        if (!(creatorTaxFeeE6 <= MAX_CREATOR_TAX_FEE_E6)) revert CreatorFeeExceedsMaximum();\n        feeConfiguration.isInitialized = true;\n        UNI_V4.initialize(key, sqrtPriceX96);\n        feeConfiguration.creatorSwapFeeE6 = creatorSwapFeeE6.toUint24();\n        feeConfiguration.creatorTaxFeeE6 = creatorTaxFeeE6.toUint24();\n        (feeConfiguration.protocolSwapFeeE6, feeConfiguration.protocolTaxFeeE6) = IFactory(FACTORY)\n            .recordPoolCreationAndGetStartingProtocolFee(key, creatorSwapFeeE6, creatorTaxFeeE6);\n    }\n\n    function beforeInitialize(address sender, PoolKey calldata key, uint160)\n        external\n        view\n        returns (bytes4)\n    {\n        _onlyUniV4();\n        if (sender != address(this)) revert Unauthorized();\n        if (key.currency0.toId() != NATIVE_CURRENCY_ID) revert IncompatiblePoolConfiguration();\n        if (LPFeeLibrary.isDynamicFee(key.fee)) revert IncompatiblePoolConfiguration();\n        return this.beforeInitialize.selector;\n    }\n\n    function afterAddLiquidity(\n        address sender,\n        PoolKey calldata key,\n        ModifyLiquidityParams calldata params,\n        BalanceDelta,\n        BalanceDelta,\n        bytes calldata\n    ) external returns (bytes4, BalanceDelta) {\n        _onlyUniV4();\n\n        PoolId id = key.calldataToId();\n        rewards[id].updateAfterLiquidityAdd(UNI_V4, id, key.tickSpacing, sender, params);\n        uint256 taxAmountInEther = _getJitTaxAmount();\n        if (taxAmountInEther > 0) {\n            // Protocol collects 100% of the JIT MEV tax\n            UNI_V4.take(CurrencyLibrary.fromId(NATIVE_CURRENCY_ID), FACTORY, taxAmountInEther);\n        }\n        return (this.afterAddLiquidity.selector, toBalanceDelta(taxAmountInEther.toInt128(), 0));\n    }\n\n    function afterRemoveLiquidity(\n        address sender,\n        PoolKey calldata key,\n        ModifyLiquidityParams calldata params,\n        BalanceDelta,\n        BalanceDelta,\n        bytes calldata\n    ) external returns (bytes4, BalanceDelta) {\n        _onlyUniV4();\n\n        PoolId id = key.calldataToId();\n        uint256 rewardAmount0 = rewards[id].updateAfterLiquidityRemove(UNI_V4, id, sender, params);\n        uint256 taxAmountInEther = _getJitTaxAmount();\n        if (taxAmountInEther > 0) {\n            // Protocol collects 100% of the JIT MEV tax\n            UNI_V4.take(CurrencyLibrary.fromId(NATIVE_CURRENCY_ID), FACTORY, taxAmountInEther);\n        }\n        if (rewardAmount0 > 0) {\n            UNI_V4.burn(address(this), NATIVE_CURRENCY_ID, rewardAmount0);\n        }\n        return (\n            this.afterRemoveLiquidity.selector,\n            toBalanceDelta(taxAmountInEther.toInt128() - rewardAmount0.toInt128(), 0)\n        );\n    }\n\n    function beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)\n        external\n        override\n        returns (bytes4, BeforeSwapDelta, uint24)\n    {\n        _onlyUniV4();\n\n        PoolId id = key.calldataToId();\n        slot0BeforeSwapStore.set(Slot0.unwrap(UNI_V4.getSlot0(id)));\n\n        if (_getBlock() == _blockOfLastTopOfBlock) {\n            return (this.beforeSwap.selector, toBeforeSwapDelta(0, 0), 0);\n        }\n\n        liquidityBeforeSwap.set(UNI_V4.getPoolLiquidity(id));\n        int128 etherDelta = _getSwapTaxAmount().toInt128();\n\n        bool etherWasSpecified = params.zeroForOne == params.amountSpecified < 0;\n        return (\n            this.beforeSwap.selector,\n            etherWasSpecified ? toBeforeSwapDelta(etherDelta, 0) : toBeforeSwapDelta(0, etherDelta),\n            0\n        );\n    }\n\n    function afterSwap(\n        address,\n        PoolKey calldata key,\n        SwapParams calldata params,\n        BalanceDelta swapDelta,\n        bytes calldata\n    ) external override returns (bytes4, int128 hookDeltaUnspecified) {\n        _onlyUniV4();\n\n        PoolId id = key.calldataToId();\n        uint96 blockNumber = _getBlock();\n        bool isTopOfBlock = blockNumber != _blockOfLastTopOfBlock;\n        (uint256 feeInUnspecified, uint256 lpCompensationAmount) = _computeAndCollectProtocolSwapFee(\n            key, id, params, swapDelta, isTopOfBlock ? _getSwapTaxAmount() : 0\n        );\n        hookDeltaUnspecified = feeInUnspecified.toInt128();\n\n        PoolKey calldata key_ = key;\n        Slot0 slot0BeforeSwap = Slot0.wrap(slot0BeforeSwapStore.get());\n        Slot0 slot0AfterSwap = UNI_V4.getSlot0(id);\n        rewards[id].updateAfterTickMove(\n            id, UNI_V4, slot0BeforeSwap.tick(), slot0AfterSwap.tick(), key_.tickSpacing\n        );\n\n        if (!isTopOfBlock || lpCompensationAmount == 0) {\n            return (this.afterSwap.selector, hookDeltaUnspecified);\n        }\n        _blockOfLastTopOfBlock = blockNumber;\n\n        params.zeroForOne\n            ? _zeroForOneDistributeTax(\n                id, key_.tickSpacing, slot0BeforeSwap, slot0AfterSwap, lpCompensationAmount\n            )\n            : _oneForZeroDistributeTax(\n                id, key_.tickSpacing, slot0BeforeSwap, slot0AfterSwap, lpCompensationAmount\n            );\n\n        return (this.afterSwap.selector, hookDeltaUnspecified);\n    }\n\n    function _computeAndCollectProtocolSwapFee(\n        PoolKey calldata key,\n        PoolId id,\n        SwapParams calldata params,\n        BalanceDelta swapDelta,\n        uint256 totalTaxInEther\n    ) internal returns (uint256 fee, uint256 lpCompensationAmountInEther) {\n        PoolFeeConfiguration storage feeConfiguration = _poolFeeConfiguration[id];\n        uint256 totalSwapFeeRateE6 =\n            feeConfiguration.protocolSwapFeeE6 + feeConfiguration.creatorSwapFeeE6;\n\n        // Compute the total swap fee amount\n        bool exactIn = params.amountSpecified < 0;\n        uint256 creatorSwapFeeAmount = 0;\n        uint256 protocolSwapFeeAmount = 0;\n        if (totalSwapFeeRateE6 != 0) {\n            int128 unspecifiedDelta =\n                exactIn != params.zeroForOne ? swapDelta.amount0() : swapDelta.amount1();\n            uint256 absTargetAmount = unspecifiedDelta.abs();\n            fee = exactIn\n                ? absTargetAmount * totalSwapFeeRateE6 / FACTOR_E6\n                : absTargetAmount * FACTOR_E6 / (FACTOR_E6 - totalSwapFeeRateE6) - absTargetAmount;\n\n            // Determine protocol/creator split\n            creatorSwapFeeAmount = fee * feeConfiguration.creatorSwapFeeE6 / totalSwapFeeRateE6;\n            protocolSwapFeeAmount = fee - creatorSwapFeeAmount;\n        }\n        Currency feeCurrency = exactIn != params.zeroForOne ? key.currency0 : key.currency1;\n\n        if (totalTaxInEther == 0) {\n            UNI_V4.take(feeCurrency, address(this), creatorSwapFeeAmount);\n            UNI_V4.take(feeCurrency, FACTORY, protocolSwapFeeAmount);\n            return (fee, 0);\n        }\n\n        uint256 creatorTaxShareInEther =\n            totalTaxInEther * feeConfiguration.creatorTaxFeeE6 / FACTOR_E6;\n        uint256 protocolTaxShareInEther =\n            totalTaxInEther * feeConfiguration.protocolTaxFeeE6 / FACTOR_E6;\n        lpCompensationAmountInEther =\n            totalTaxInEther - creatorTaxShareInEther - protocolTaxShareInEther;\n        UNI_V4.mint(address(this), NATIVE_CURRENCY_ID, lpCompensationAmountInEther);\n\n        if (feeCurrency == NATIVE_CURRENCY) {\n            UNI_V4.take(\n                NATIVE_CURRENCY, address(this), creatorSwapFeeAmount + creatorTaxShareInEther\n            );\n            UNI_V4.take(NATIVE_CURRENCY, FACTORY, protocolSwapFeeAmount + protocolTaxShareInEther);\n        } else {\n            UNI_V4.take(NATIVE_CURRENCY, address(this), creatorTaxShareInEther);\n            UNI_V4.take(NATIVE_CURRENCY, FACTORY, protocolTaxShareInEther);\n            UNI_V4.take(feeCurrency, address(this), creatorSwapFeeAmount);\n            UNI_V4.take(feeCurrency, FACTORY, protocolSwapFeeAmount);\n        }\n    }\n\n    function _zeroForOneDistributeTax(\n        PoolId id,\n        int24 tickSpacing,\n        Slot0 slot0BeforeSwap,\n        Slot0 slot0AfterSwap,\n        uint256 lpCompensationAmount\n    ) internal {\n        TickIteratorDown memory ticks = TickIteratorLib.initDown(\n            UNI_V4, id, tickSpacing, slot0BeforeSwap.tick(), slot0AfterSwap.tick()\n        );\n\n        uint128 liquidity = liquidityBeforeSwap.get().toUint128();\n        (int24 lastTick, uint160 pstarSqrtX96) = CompensationPriceFinder.getZeroForOne(\n            ticks, liquidity, lpCompensationAmount, slot0BeforeSwap.sqrtPriceX96(), slot0AfterSwap\n        );\n\n        ticks.reset(slot0BeforeSwap.tick());\n        _zeroForOneCreditRewards(\n            ticks,\n            liquidity,\n            lpCompensationAmount,\n            slot0BeforeSwap.sqrtPriceX96(),\n            lastTick,\n            pstarSqrtX96\n        );\n    }\n\n    function _oneForZeroDistributeTax(\n        PoolId id,\n        int24 tickSpacing,\n        Slot0 slot0BeforeSwap,\n        Slot0 slot0AfterSwap,\n        uint256 lpCompensationAmount\n    ) internal {\n        TickIteratorUp memory ticks = TickIteratorLib.initUp(\n            UNI_V4, id, tickSpacing, slot0BeforeSwap.tick(), slot0AfterSwap.tick()\n        );\n\n        uint128 liquidity = liquidityBeforeSwap.get().toUint128();\n        (int24 lastTick, uint160 pstarSqrtX96) = CompensationPriceFinder.getOneForZero(\n            ticks, liquidity, lpCompensationAmount, slot0BeforeSwap, slot0AfterSwap\n        );\n\n        ticks.reset(slot0BeforeSwap.tick());\n        _oneForZeroCreditRewards(\n            ticks,\n            liquidity,\n            lpCompensationAmount,\n            slot0BeforeSwap.sqrtPriceX96(),\n            lastTick,\n            pstarSqrtX96\n        );\n    }\n\n    function _zeroForOneCreditRewards(\n        TickIteratorDown memory ticks,\n        uint128 liquidity,\n        uint256 lpCompensationAmount,\n        uint160 priceUpperSqrtX96,\n        int24 lastTick,\n        uint160 pstarSqrtX96\n    ) internal {\n        uint256 pstarX96 = uint256(pstarSqrtX96).mulX96(pstarSqrtX96);\n        uint256 cumulativeGrowthX128 = 0;\n        uint160 priceLowerSqrtX96;\n\n        while (ticks.hasNext()) {\n            int24 tickNext = ticks.getNext();\n\n            priceLowerSqrtX96 = max(TickMath.getSqrtPriceAtTick(tickNext), pstarSqrtX96);\n\n            uint256 rangeReward = 0;\n            if (tickNext >= lastTick && liquidity != 0) {\n                uint256 delta0 = SqrtPriceMath.getAmount0Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                uint256 delta1 = SqrtPriceMath.getAmount1Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                rangeReward = (delta1.divX96(pstarX96) - delta0).min(lpCompensationAmount);\n\n                unchecked {\n                    lpCompensationAmount -= rangeReward;\n                    cumulativeGrowthX128 += PoolRewardsLib.getGrowthDelta(rangeReward, liquidity);\n                }\n            }\n\n            unchecked {\n                rewards[ticks.poolId].rewardGrowthOutsideX128[tickNext] += cumulativeGrowthX128;\n            }\n\n            (, int128 liquidityNet) = ticks.manager.getTickLiquidity(ticks.poolId, tickNext);\n            liquidity = liquidity.sub(liquidityNet);\n\n            priceUpperSqrtX96 = priceLowerSqrtX96;\n        }\n\n        // Distribute remainder to last range and update global accumulator.\n        unchecked {\n            cumulativeGrowthX128 += PoolRewardsLib.getGrowthDelta(lpCompensationAmount, liquidity);\n            rewards[ticks.poolId].globalGrowthX128 += cumulativeGrowthX128;\n        }\n    }\n\n    function _oneForZeroCreditRewards(\n        TickIteratorUp memory ticks,\n        uint128 liquidity,\n        uint256 lpCompensationAmount,\n        uint160 priceLowerSqrtX96,\n        int24 lastTick,\n        uint160 pstarSqrtX96\n    ) internal {\n        uint256 pstarX96 = uint256(pstarSqrtX96).mulX96(pstarSqrtX96);\n        uint256 cumulativeGrowthX128 = 0;\n        uint160 priceUpperSqrtX96;\n\n        while (ticks.hasNext()) {\n            int24 tickNext = ticks.getNext();\n\n            priceUpperSqrtX96 = min(TickMath.getSqrtPriceAtTick(tickNext), pstarSqrtX96);\n\n            uint256 rangeReward = 0;\n            if (tickNext <= lastTick || liquidity == 0) {\n                uint256 delta0 = SqrtPriceMath.getAmount0Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                uint256 delta1 = SqrtPriceMath.getAmount1Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                rangeReward = (delta0 - delta1.divX96(pstarX96)).min(lpCompensationAmount);\n\n                unchecked {\n                    lpCompensationAmount -= rangeReward;\n                    cumulativeGrowthX128 += PoolRewardsLib.getGrowthDelta(rangeReward, liquidity);\n                }\n            }\n\n            unchecked {\n                rewards[ticks.poolId].rewardGrowthOutsideX128[tickNext] += cumulativeGrowthX128;\n            }\n\n            (, int128 liquidityNet) = ticks.manager.getTickLiquidity(ticks.poolId, tickNext);\n            liquidity = liquidity.add(liquidityNet);\n\n            priceLowerSqrtX96 = priceUpperSqrtX96;\n        }\n\n        // Distribute remainder to last range and update global accumulator.\n        unchecked {\n            cumulativeGrowthX128 += PoolRewardsLib.getGrowthDelta(lpCompensationAmount, liquidity);\n            rewards[ticks.poolId].globalGrowthX128 += cumulativeGrowthX128;\n        }\n    }\n\n    function min(uint160 x, uint160 y) internal pure returns (uint160) {\n        return x < y ? x : y;\n    }\n\n    function max(uint160 x, uint160 y) internal pure returns (uint160) {\n        return x > y ? x : y;\n    }\n\n    function _getBlock() internal view returns (uint96) {\n        if (address(flashBlockNumberProvider) == address(0)) {\n            return uint96(block.number);\n        }\n        return uint96(flashBlockNumberProvider.getFlashblockNumber());\n    }\n\n    function _getSwapTaxAmount() internal view returns (uint256) {\n        uint256 priorityFee = tx.gasprice - block.basefee;\n        return getSwapTaxAmount(priorityFee);\n    }\n\n    function _getJitTaxAmount() internal view returns (uint256) {\n        if (_getBlock() == _blockOfLastTopOfBlock) {\n            return 0;\n        }\n        uint256 priorityFee = tx.gasprice - block.basefee;\n        return getJitTaxAmount(priorityFee);\n    }\n\n    function _checkCallerIsFactory() internal view {\n        if (msg.sender != FACTORY) revert Unauthorized();\n    }\n}\n",
+        "CompensationPriceFinder.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {IUniV4, IPoolManager} from \"../interfaces/IUniV4.sol\";\nimport {Slot0} from \"v4-core/src/types/Slot0.sol\";\nimport {TickMath} from \"v4-core/src/libraries/TickMath.sol\";\nimport {SqrtPriceMath} from \"v4-core/src/libraries/SqrtPriceMath.sol\";\nimport {MixedSignLib} from \"../libraries/MixedSignLib.sol\";\nimport {FixedPointMathLib} from \"solady/src/utils/FixedPointMathLib.sol\";\nimport {TickIteratorUp, TickIteratorDown} from \"./TickIterator.sol\";\nimport {Math512Lib} from \"./Math512Lib.sol\";\nimport {SafeCastLib} from \"solady/src/utils/SafeCastLib.sol\";\nimport {Q96MathLib} from \"./Q96MathLib.sol\";\n\n/// @author philogy <https://github.com/philogy>\nlibrary CompensationPriceFinder {\n    using IUniV4 for IPoolManager;\n    using MixedSignLib for *;\n    using FixedPointMathLib for uint256;\n    using SafeCastLib for uint256;\n    using Q96MathLib for uint256;\n\n    function getZeroForOne(\n        TickIteratorDown memory ticks,\n        uint128 liquidity,\n        uint256 taxInEther,\n        uint160 priceUpperSqrtX96,\n        Slot0 slot0AfterSwap\n    ) internal view returns (int24 lastTick, uint160 pstarSqrtX96) {\n        uint256 sumAmount0Deltas = 0; // X\n        uint256 sumAmount1Deltas = 0; // Y\n\n        uint160 priceLowerSqrtX96;\n        while (ticks.hasNext()) {\n            lastTick = ticks.getNext();\n            priceLowerSqrtX96 = TickMath.getSqrtPriceAtTick(lastTick);\n\n            {\n                uint256 delta0 = SqrtPriceMath.getAmount0Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                uint256 delta1 = SqrtPriceMath.getAmount1Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                sumAmount0Deltas += delta0;\n                sumAmount1Deltas += delta1;\n\n                if (sumAmount0Deltas > taxInEther) {\n                    if (\n                        sumAmount1Deltas.divX96(sumAmount0Deltas + taxInEther)\n                            >= uint256(priceLowerSqrtX96).mulX96(priceLowerSqrtX96)\n                    ) {\n                        pstarSqrtX96 = _zeroForOneGetFinalCompensationPrice(\n                            priceUpperSqrtX96,\n                            taxInEther,\n                            liquidity,\n                            sumAmount0Deltas - delta0,\n                            sumAmount1Deltas - delta1\n                        );\n\n                        return (lastTick, pstarSqrtX96);\n                    }\n                }\n            }\n\n            (, int128 liquidityNet) = ticks.manager.getTickLiquidity(ticks.poolId, lastTick);\n            liquidity = liquidity.sub(liquidityNet);\n\n            priceUpperSqrtX96 = priceLowerSqrtX96;\n        }\n\n        priceLowerSqrtX96 = slot0AfterSwap.sqrtPriceX96();\n\n        uint256 delta0 =\n            SqrtPriceMath.getAmount0Delta(priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false);\n        uint256 delta1 =\n            SqrtPriceMath.getAmount1Delta(priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false);\n        sumAmount0Deltas += delta0;\n        sumAmount1Deltas += delta1;\n\n        uint256 simplePstarX96 = sumAmount1Deltas.divX96(sumAmount0Deltas + taxInEther);\n        if (simplePstarX96 > uint256(priceLowerSqrtX96).mulX96(priceLowerSqrtX96)) {\n            pstarSqrtX96 = _zeroForOneGetFinalCompensationPrice(\n                priceUpperSqrtX96,\n                taxInEther,\n                liquidity,\n                sumAmount0Deltas - delta0,\n                sumAmount1Deltas - delta1\n            );\n\n            return (type(int24).min, pstarSqrtX96);\n        }\n\n        (uint256 p1, uint256 p0) = Math512Lib.checkedMul2Pow96(0, simplePstarX96);\n\n        return (type(int24).min, Math512Lib.sqrt512(p1, p0).toUint160());\n    }\n\n    /// @dev Computes the effective execution price `p*` such that we can compensate as many\n    /// liquidity ranges for the difference between their actual execution price and `p*`.\n    function getOneForZero(\n        TickIteratorUp memory ticks,\n        uint128 liquidity,\n        uint256 taxInEther,\n        Slot0 slot0BeforeSwap,\n        Slot0 slot0AfterSwap\n    ) internal view returns (int24 lastTick, uint160 pstarSqrtX96) {\n        uint256 sumAmount0Deltas = 0; // X\n        uint256 sumAmount1Deltas = 0; // Y\n\n        uint160 priceLowerSqrtX96 = slot0BeforeSwap.sqrtPriceX96();\n        uint160 priceUpperSqrtX96;\n        while (ticks.hasNext()) {\n            lastTick = ticks.getNext();\n            priceUpperSqrtX96 = TickMath.getSqrtPriceAtTick(lastTick);\n\n            {\n                uint256 delta0 = SqrtPriceMath.getAmount0Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                uint256 delta1 = SqrtPriceMath.getAmount1Delta(\n                    priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false\n                );\n                sumAmount0Deltas += delta0;\n                sumAmount1Deltas += delta1;\n\n                if (sumAmount0Deltas > taxInEther) {\n                    uint256 simplePstarX96 = sumAmount1Deltas.divX96(sumAmount0Deltas - taxInEther);\n                    if (simplePstarX96 <= uint256(priceUpperSqrtX96).mulX96(priceUpperSqrtX96)) {\n                        pstarSqrtX96 = _oneForZeroGetFinalCompensationPrice(\n                            liquidity,\n                            priceLowerSqrtX96,\n                            taxInEther,\n                            sumAmount0Deltas - delta0,\n                            sumAmount1Deltas - delta1\n                        );\n\n                        return (lastTick, pstarSqrtX96);\n                    }\n                }\n            }\n\n            (, int128 liquidityNet) = ticks.manager.getTickLiquidity(ticks.poolId, lastTick);\n            liquidity = liquidity.add(liquidityNet);\n\n            priceLowerSqrtX96 = priceUpperSqrtX96;\n        }\n\n        priceUpperSqrtX96 = slot0AfterSwap.sqrtPriceX96();\n\n        uint256 delta0 =\n            SqrtPriceMath.getAmount0Delta(priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false);\n        uint256 delta1 =\n            SqrtPriceMath.getAmount1Delta(priceLowerSqrtX96, priceUpperSqrtX96, liquidity, false);\n        sumAmount0Deltas += delta0;\n        sumAmount1Deltas += delta1;\n\n        uint256 simplePstarX96 = sumAmount1Deltas.divX96(sumAmount0Deltas - taxInEther);\n        if (simplePstarX96 <= uint256(priceUpperSqrtX96).mulX96(priceUpperSqrtX96)) {\n            pstarSqrtX96 = _oneForZeroGetFinalCompensationPrice(\n                liquidity,\n                priceLowerSqrtX96,\n                taxInEther,\n                sumAmount0Deltas - delta0,\n                sumAmount1Deltas - delta1\n            );\n\n            return (type(int24).max, pstarSqrtX96);\n        }\n\n        (uint256 p1, uint256 p0) = Math512Lib.checkedMul2Pow96(0, simplePstarX96);\n\n        return (type(int24).max, Math512Lib.sqrt512(p1, p0).toUint160());\n    }\n\n    function _zeroForOneGetFinalCompensationPrice(\n        uint160 priceUpperSqrtX96,\n        uint256 compensationAmount0,\n        uint128 liquidity,\n        uint256 sumUpToThisRange0,\n        uint256 sumUpToThisRange1\n    ) internal pure returns (uint160 pstarSqrtX96) {\n        uint256 rangeVirtualReserves0 = uint256(liquidity).divX96(priceUpperSqrtX96);\n        uint256 rangeVirtualReserves1 = uint256(liquidity).mulX96(priceUpperSqrtX96);\n        // sumX: `Xhat + B`\n        uint256 sumX = sumUpToThisRange0 + compensationAmount0;\n        (uint256 d1, uint256 d0) = Math512Lib.fullMul(rangeVirtualReserves1, sumX);\n        if (sumX >= rangeVirtualReserves0) {\n            // `A` is positive, compute `D = y * (Xhat + B) + A * Yhat`, `p* = (-L + sqrt(D)) / A`.\n            uint256 a = sumX - rangeVirtualReserves0;\n            {\n                (uint256 ay1, uint256 ay0) = Math512Lib.fullMul(a, sumUpToThisRange1);\n                (d1, d0) = Math512Lib.checkedAdd(d1, d0, ay1, ay0);\n            }\n            // Compute `sqrtDX96 := sqrt(D) * 2^96 <> sqrt(D * 2^192)`\n            (d1, d0) = Math512Lib.checkedMul2Pow192(d1, d0);\n            // Reuse `d1, d0` to store numerator `-L + sqrt(D)`.\n            (d1, d0) =\n                Math512Lib.checkedSub(0, Math512Lib.sqrt512(d1, d0), 0, uint256(liquidity) << 96);\n            (uint256 upperBits, uint256 p1) = Math512Lib.div512by256(d1, d0, a);\n            assert(upperBits == 0);\n\n            return p1.toUint160();\n        } else {\n            // `A` is negative, compute `D = y * (Xhat + B) - (-A) * Yhat`, `p* = (L - sqrt(D)) / -A`.\n            uint256 negA = rangeVirtualReserves0 - sumX;\n            {\n                (uint256 ay1, uint256 ay0) = Math512Lib.fullMul(negA, sumUpToThisRange1);\n                (d1, d0) = Math512Lib.checkedSub(d1, d0, ay1, ay0);\n            }\n            // Compute `sqrtDX96 := sqrt(D) * 2^96 <> sqrt(D * 2^192)`\n            (d1, d0) = Math512Lib.checkedMul2Pow192(d1, d0);\n            // Reuse `d1, d0` to store numerator `L - sqrt(D)`.\n            (d1, d0) =\n                Math512Lib.checkedSub(0, uint256(liquidity) << 96, 0, Math512Lib.sqrt512(d1, d0));\n            (uint256 upperBits, uint256 p1) = Math512Lib.div512by256(d1, d0, negA);\n            assert(upperBits == 0);\n\n            return p1.toUint160();\n        }\n    }\n\n    function _oneForZeroGetFinalCompensationPrice(\n        uint128 liquidity,\n        uint160 priceLowerSqrtX96,\n        uint256 compensationAmount0,\n        uint256 sumUpToThisRange0,\n        uint256 sumUpToThisRange1\n    ) internal pure returns (uint160 pstarSqrtX96) {\n        uint256 rangeVirtualReserves0 = uint256(liquidity).divX96(priceLowerSqrtX96);\n        uint256 rangeVirtualReserves1 = uint256(liquidity).mulX96(priceLowerSqrtX96);\n        // `A = Xhat + x - B`\n        uint256 a = sumUpToThisRange0 + rangeVirtualReserves0 - compensationAmount0;\n        // Compute determinant.\n        uint256 d1;\n        uint256 d0;\n        {\n            (uint256 x1, uint256 x0) = Math512Lib.fullMul(sumUpToThisRange1, a);\n            if (sumUpToThisRange0 >= compensationAmount0) {\n                // if `Xhat >= B` then compute `D = Yhat * A - y * (Xhat - B)`\n                (d1, d0) = Math512Lib.fullMul(\n                    rangeVirtualReserves1, sumUpToThisRange0 - compensationAmount0\n                );\n                (d1, d0) = Math512Lib.checkedSub(x1, x0, d1, d0);\n            } else {\n                // if `Xhat < B` then compute `D = Yhat * A + y * (B - Xhat)`\n                (d1, d0) = Math512Lib.fullMul(\n                    rangeVirtualReserves1, compensationAmount0 - sumUpToThisRange0\n                );\n                (d1, d0) = Math512Lib.checkedAdd(x1, x0, d1, d0);\n            }\n        }\n        // Compute `sqrtDX96 := sqrt(D) * 2^96 <> sqrt(D * 2^192)`\n        (d1, d0) = Math512Lib.checkedMul2Pow192(d1, d0);\n        uint256 sqrtDX96 = Math512Lib.sqrt512(d1, d0);\n\n        uint256 liquidityX96 = uint256(liquidity) << 96;\n        // Reuse `d1, d0` to store numerator `L + sqrt(D)`.\n        (d1, d0) = Math512Lib.checkedAdd(0, liquidityX96, 0, sqrtDX96);\n        (uint256 upperBits, uint256 p1) = Math512Lib.div512by256(d1, d0, a);\n        assert(upperBits == 0);\n\n        return p1.toUint160();\n    }\n}\n"
     }
 }

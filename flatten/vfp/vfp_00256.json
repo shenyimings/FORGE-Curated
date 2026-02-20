@@ -1,75 +1,36 @@
 {
     "vfp_id": "vfp_00256",
-    "project_name": "Frax0 Mesh - Zellic Audit Report.pdf",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-1339"
-                ]
-            },
-            "title": "Incorrect condition for determining dust removal",
-            "description": "The RemoteCustodian contract fails to remove dust from share amounts when the custodian token's decimals are less than or equal to six, due to a conditional check based on custodianTknDecimals() rather than the frxUSD token's decimals. This causes inconsistencies in cross-chain transfers where dust is not properly handled, leading to discrepancies between deposited assets and received shares. An attacker could exploit this by crafting deposits with dust that get rounded up during conversion but not properly accounted for during transfer, resulting in the contract holding more assets than the corresponding shares justify. This leads to a loss of user funds and incorrect accounting in cross-chain operations.\n",
-            "severity": "Medium",
-            "location": [
-                "RemoteCustodian.sol::_removeDustFrxUsdFloor",
-                "RemoteCustodian.sol::_removeDustFrxUsdCeil",
-                "RemoteCustodian.sol::_convertToAssets",
-                "RemoteCustodian.sol::previewMint",
-                "RemoteCustodian.sol::mint",
-                "RemoteCustodian.sol::_convertToShares",
-                "RemoteCustodian.sol::previewDeposit"
-            ],
-            "files": [
-                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
-            ]
-        },
-        {
-            "id": 2,
-            "category": {
-                "1": [
-                    "CWE-710"
+                    "CWE-20"
                 ],
-                "2": [
-                    "CWE-573"
+                "3": [
+                    "CWE-1288"
                 ]
             },
-            "title": "Incorrect Transfer event parameters",
-            "description": "The StakedFrxUSD3 contract emits the Transfer event with from = msg.sender instead of the actual token owner in internal transfer logic, violating ERC-20 event semantics. This occurs because the event is incorrectly parameterized in the __transfer function. Off-chain services that rely on Transfer events for balance tracking or transaction monitoring will misattribute the source of the transfer, leading to incorrect accounting, flawed analytics, and potential front-end display errors. While this does not directly enable fund theft, it compromises the reliability of event-based systems and can lead to operational issues in wallets and explorers.\n",
-            "severity": "Informational",
+            "title": "Incorrect oracle staleness period leads to price feed DoS",
+            "description": "The PriceOracle contract uses a single staleness period for all price feeds, despite different assets having different update frequencies (e.g., stablecoins updated every 24 hours vs. ETH/BTC every hour). This misconfiguration causes the oracle to either reject valid prices from slow-updating assets or accept stale prices from fast-updating ones. The root cause is the use of a global staleness threshold without per-asset customization. An attacker or system failure could exploit this by manipulating the timing of price updates, leading to denial of service in price retrieval. The impact is that critical functions relying on price feeds may revert or operate with incorrect data, disrupting lending, borrowing, and liquidation mechanisms.\n",
+            "severity": "High",
             "location": [
-                "StakedFrxUSD3.sol::__transfer"
+                "contracts/oracle/PriceOracle.sol::__PriceOracle_init_unchained#21-25",
+                "contracts/deploy/service/DeployInfra.sol::_deployInfra#36-40",
+                "Oracle.sol"
             ],
             "files": [
-                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
-            ]
-        },
-        {
-            "id": 3,
-            "category": {
-                "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-358"
-                ]
-            },
-            "title": "Incorrect EIP-712 domain separator in upgradable proxy",
-            "description": "The StakedFrxUSD3 contract uses Solmate’s DOMAIN_SEPARATOR() in a proxy context, which caches the domain separator based on the implementation address rather than the proxy address. This violates EIP-712, which requires the verifying contract to be the proxy itself. As a result, signatures (e.g., for permit) may be invalid or bound to the wrong contract address, breaking compatibility with wallets and third-party services that rely on EIP-712 signatures. This undermines the security and usability of off-chain signing mechanisms and can prevent legitimate users from authorizing transactions.\n",
-            "severity": "Informational",
-            "location": [
-                "StakedFrxUSD3.sol::__domainSeparatorV4"
-            ],
-            "files": [
-                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/contracts/frxUsd/SFrxUSDOFTUpgradeable.sol"
+                "cap-contracts/contracts/oracle/PriceOracle.sol",
+                "cap-contracts/contracts/deploy/service/DeployInfra.sol"
             ]
         }
     ],
     "affected_files": {
-        "SFrxUSDOFTUpgradeable.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.22;\n\nimport { OFTUpgradeable } from \"@fraxfinance/layerzero-v2-upgradeable/oapp/contracts/oft/OFTUpgradeable.sol\";\nimport { SendParam } from \"@fraxfinance/layerzero-v2-upgradeable/oapp/contracts/oft/interfaces/IOFT.sol\";\n\nimport {EIP3009Module} from \"contracts/modules/EIP3009Module.sol\";\nimport {PermitModule} from \"contracts/modules/PermitModule.sol\";\n\nimport {ERC20Upgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\n\ncontract SFrxUSDOFTUpgradeable is OFTUpgradeable, EIP3009Module, PermitModule {\n    constructor(address _lzEndpoint) OFTUpgradeable(_lzEndpoint) {\n        _disableInitializers();\n    }\n\n   function version() public pure returns (string memory) {\n        return \"1.1.0\";\n    }\n\n    // Admin\n    /// @dev This method is called specifically when upgrading an existing OFT\n    function initializeV110() external reinitializer(3) {\n        __EIP712_init(name(), version());\n    }\n\n\n    function name() public pure override returns (string memory) {\n        return \"Staked Frax USD\";\n    }\n\n    function symbol() public pure override returns (string memory) {\n        return \"sfrxUSD\";\n    }\n\n    // Helper views\n\n    function toLD(uint64 _amountSD) external view returns (uint256 amountLD) {\n        return _toLD(_amountSD);\n    }\n\n    function toSD(uint256 _amountLD) external view returns (uint64 amountSD) {\n        return _toSD(_amountLD);\n    }\n\n    function removeDust(uint256 _amountLD) public view returns (uint256 amountLD) {\n        return _removeDust(_amountLD);\n    }\n\n    function debitView(uint256 _amountLD, uint256 _minAmountLD, uint32 _dstEid) external view returns (uint256 amountSentLD, uint256 amountReceivedLD) {\n        /// @dev: _dstEid is unused in _debitView\n        return _debitView(_amountLD, _minAmountLD, _dstEid);\n    }\n\n    function buildMsgAndOptions(\n        SendParam calldata _sendParam,\n        uint256 _amountLD\n    ) external view returns (bytes memory message, bytes memory options) {\n        return _buildMsgAndOptions(_sendParam, _amountLD);\n    }\n\n    //==============================================================================\n    // Overrides\n    //==============================================================================\n\n    /// @dev supports EIP3009\n    function _transfer(address from, address to, uint256 amount) internal override(EIP3009Module, ERC20Upgradeable) {\n        return ERC20Upgradeable._transfer(from, to, amount);\n    }\n\n    /// @dev supports EIP2612\n    function _approve(address owner, address spender, uint256 amount) internal override(PermitModule, ERC20Upgradeable) {\n        return ERC20Upgradeable._approve(owner, spender, amount);\n    }\n}\n"
+        "DeployInfra.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { AccessControl } from \"../../access/AccessControl.sol\";\n\nimport { Delegation } from \"../../delegation/Delegation.sol\";\nimport { Lender } from \"../../lendingPool/Lender.sol\";\nimport { Oracle } from \"../../oracle/Oracle.sol\";\n\nimport { L2Token } from \"../../token/L2Token.sol\";\nimport { Vault } from \"../../vault/Vault.sol\";\n\nimport { PreMainnetVault } from \"../../testnetCampaign/PreMainnetVault.sol\";\nimport {\n    ImplementationsConfig,\n    InfraConfig,\n    L2VaultConfig,\n    PreMainnetInfraConfig,\n    UsersConfig,\n    VaultConfig\n} from \"../interfaces/DeployConfigs.sol\";\nimport { LzAddressbook } from \"../utils/LzUtils.sol\";\nimport { ProxyUtils } from \"../utils/ProxyUtils.sol\";\n\ncontract DeployInfra is ProxyUtils {\n    function _deployInfra(ImplementationsConfig memory implementations, UsersConfig memory users)\n        internal\n        returns (InfraConfig memory d)\n    {\n        // deploy proxy contracts\n        d.accessControl = _proxy(implementations.accessControl);\n        d.lender = _proxy(implementations.lender);\n        d.oracle = _proxy(implementations.oracle);\n        d.delegation = _proxy(implementations.delegation);\n\n        // init infra instances\n        AccessControl(d.accessControl).initialize(users.access_control_admin);\n        Lender(d.lender).initialize(d.accessControl, d.delegation, d.oracle, 1.33e27, 1 hours, 1 days, 0.1e27, 0.91e27);\n        Oracle(d.oracle).initialize(d.accessControl, 1 hours);\n        Delegation(d.delegation).initialize(d.accessControl, d.oracle, 1 days);\n    }\n\n    function _deployPreMainnetInfra(\n        LzAddressbook memory srcAddressbook,\n        LzAddressbook memory dstAddressbook,\n        address asset,\n        uint48 maxCampaignLength\n    ) internal returns (PreMainnetInfraConfig memory d) {\n        d.preMainnetVault = address(\n            new PreMainnetVault(asset, address(srcAddressbook.endpointV2), dstAddressbook.eid, maxCampaignLength)\n        );\n    }\n\n    function _deployL2InfraForVault(\n        UsersConfig memory users,\n        VaultConfig memory l1Vault,\n        LzAddressbook memory addressbook\n    ) internal returns (L2VaultConfig memory d) {\n        address lzEndpoint = address(addressbook.endpointV2);\n        string memory name;\n        string memory symbol;\n        address delegate = users.vault_config_admin;\n\n        name = Vault(l1Vault.capToken).name();\n        symbol = Vault(l1Vault.capToken).symbol();\n        d.bridgedCapToken = address(new L2Token(name, symbol, lzEndpoint, delegate));\n\n        name = Vault(l1Vault.stakedCapToken).name();\n        symbol = Vault(l1Vault.stakedCapToken).symbol();\n        d.bridgedStakedCapToken = address(new L2Token(name, symbol, lzEndpoint, delegate));\n    }\n}\n",
+        "PriceOracle.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\nimport { IOracle } from \"../interfaces/IOracle.sol\";\nimport { IPriceOracle } from \"../interfaces/IPriceOracle.sol\";\nimport { PriceOracleStorageUtils } from \"../storage/PriceOracleStorageUtils.sol\";\n\n/// @title Oracle for fetching prices\n/// @author kexley, @capLabs\n/// @dev Payloads are stored on this contract and calculation logic is hosted on external libraries\ncontract PriceOracle is IPriceOracle, Access, PriceOracleStorageUtils {\n    /// @dev Initialize the price oracle\n    /// @param _accessControl Access control address\n    /// @param _staleness Staleness period in seconds for asset prices\n    function __PriceOracle_init(address _accessControl, uint256 _staleness) internal onlyInitializing {\n        __Access_init(_accessControl);\n        __PriceOracle_init_unchained(_staleness);\n    }\n\n    /// @dev Initialize unchained\n    /// @param _staleness Staleness period in seconds for asset prices\n    function __PriceOracle_init_unchained(uint256 _staleness) internal onlyInitializing {\n        getPriceOracleStorage().staleness = _staleness;\n    }\n\n    /// @notice Fetch the price for an asset\n    /// @dev If initial price fetch fails or is stale then a backup source is used, reverts if both fail\n    /// @param _asset Asset address\n    /// @return price Price of the asset\n    /// @return lastUpdated Latest timestamp of the price\n    function getPrice(address _asset) external view returns (uint256 price, uint256 lastUpdated) {\n        PriceOracleStorage storage $ = getPriceOracleStorage();\n        IOracle.OracleData memory data = $.oracleData[_asset];\n\n        (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n        if (price == 0 || _isStale(lastUpdated)) {\n            data = $.backupOracleData[_asset];\n            (price, lastUpdated) = _getPrice(data.adapter, data.payload);\n\n            if (_isStale(lastUpdated)) revert StalePrice(lastUpdated);\n        }\n    }\n\n    /// @notice View the oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Oracle data for an asset\n    function priceOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().oracleData[_asset];\n    }\n\n    /// @notice View the backup oracle data for an asset\n    /// @param _asset Asset address\n    /// @return data Backup oracle data for an asset\n    function priceBackupOracleData(address _asset) external view returns (IOracle.OracleData memory data) {\n        data = getPriceOracleStorage().backupOracleData[_asset];\n    }\n\n    /// @notice View the staleness period for asset prices\n    /// @return stalenessPeriod Staleness period in seconds for asset prices\n    function staleness() external view returns (uint256 stalenessPeriod) {\n        stalenessPeriod = getPriceOracleStorage().staleness;\n    }\n\n    /// @notice Set a price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceOracleData.selector)\n    {\n        getPriceOracleStorage().oracleData[_asset] = _oracleData;\n        emit SetPriceOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set a backup price source for an asset\n    /// @param _asset Asset address\n    /// @param _oracleData Oracle data\n    function setPriceBackupOracleData(address _asset, IOracle.OracleData calldata _oracleData)\n        external\n        checkAccess(this.setPriceBackupOracleData.selector)\n    {\n        getPriceOracleStorage().backupOracleData[_asset] = _oracleData;\n        emit SetPriceBackupOracleData(_asset, _oracleData);\n    }\n\n    /// @notice Set the staleness period for asset prices\n    /// @param _staleness Staleness period in seconds for asset prices\n    function setStaleness(uint256 _staleness) external checkAccess(this.setStaleness.selector) {\n        getPriceOracleStorage().staleness = _staleness;\n        emit SetStaleness(_staleness);\n    }\n\n    /// @dev Calculate price using an adapter and payload but do not revert on errors\n    /// @param _adapter Adapter for calculation logic\n    /// @param _payload Encoded call to adapter with all required data\n    /// @return price Calculated price\n    function _getPrice(address _adapter, bytes memory _payload)\n        private\n        view\n        returns (uint256 price, uint256 lastUpdated)\n    {\n        (bool success, bytes memory returnedData) = _adapter.staticcall(_payload);\n        if (success) (price, lastUpdated) = abi.decode(returnedData, (uint256, uint256));\n    }\n\n    /// @dev Check if a price is stale\n    /// @param _lastUpdated Last updated timestamp\n    /// @return isStale True if the price is stale\n    function _isStale(uint256 _lastUpdated) internal view returns (bool isStale) {\n        isStale = block.timestamp - _lastUpdated > getPriceOracleStorage().staleness;\n    }\n}\n"
     }
 }

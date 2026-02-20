@@ -1,82 +1,29 @@
 {
     "vfp_id": "vfp_00520",
-    "project_name": "Uniswap Calibur Audit.md",
+    "project_name": "Mitosis (May) - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 19,
-            "category": {
-                "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-345"
-                ],
-                "3": [
-                    "CWE-347"
-                ]
-            },
-            "title": "Missing Signature Deadlines",
-            "description": "The signature validation logic only checks whether the associated key has expired, based on the key's settings, but does not enforce per-signature deadlines. This means a valid signature can be replayed at any time before the key expires, deviating from best practices that include time-limited signatures. The root cause is the lack of a deadline parameter in the signature verification flow. An attacker could capture a valid signature (e.g., via a compromised frontend or phishing) and replay it at a later time to execute unauthorized transactions. The impact includes replay attacks, loss of fine-grained control over permissions, and increased window of exposure for stolen signatures.\n",
-            "severity": "Medium",
-            "location": [
-                "KeyManagement.sol::settings expiry check#77"
-            ],
-            "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
-            ]
-        },
-        {
-            "id": 12,
+            "id": 5,
             "category": {
                 "1": [
                     "CWE-664"
                 ],
                 "2": [
-                    "CWE-665"
-                ],
-                "3": [
-                    "CWE-909"
-                ],
-                "4": [
-                    "CWE-456"
+                    "CWE-669"
                 ]
             },
-            "title": "A Newly Registered Key Has No Expiration Date",
-            "description": "Keys registered via the `register` function are created without an expiration date because no entry is made in the `keySettings` mapping, which defaults to no expiry. This violates the principle of least privilege. The cause is incomplete initialization logic in `KeyManagement.sol`. An attacker who gains access to a forgotten admin key could exploit this to maintain long-term access. The impact is prolonged exposure from orphaned or forgotten keys, increasing the attack surface over time.\n",
-            "severity": "Low",
+            "title": "Missing instance index update in migration function",
+            "description": "The migrate function in EOLVaultFactory.sol adds an instance to the destination vault type's instances array but fails to update the instanceIndex mapping for that instance. While the source index is properly deleted, the destination index is not set, breaking the bidirectional consistency between the array and the mapping. This could lead to incorrect index lookups or failed removal operations in the future. The issue stems from incomplete state maintenance during migration. Although this does not directly affect fund security, it could cause administrative operations to fail or behave unpredictably, especially when trying to remove or query the migrated instance.\n",
+            "severity": "Informational",
             "location": [
-                "KeyManagement.sol::register#21",
-                "SettingsLib.sol#52"
+                "protocol/src/hub/eol/EOLVaultFactory.sol"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-284"
-                ],
-                "2": [
-                    "CWE-285"
-                ],
-                "3": [
-                    "CWE-863"
-                ]
-            },
-            "title": "Unrestricted Admin Keys",
-            "description": "Admin keys can register new keys and update any key's settings, including their own, allowing them to remove expiration dates or grant admin privileges to others. This creates a trust escalation issue where any admin can become permanent and grant further privileges, effectively making the wallet a 1-of-n multisig with no limits. The cause is overly permissive access control in `KeyManagement.sol`. An attacker who compromises an admin key could exploit this to grant themselves permanent access and bypass time-based restrictions. The impact is a weakened security model where the compromise of a single admin key can lead to full and permanent control of the wallet.\n",
-            "severity": "Low",
-            "location": [
-                "KeyManagement.sol::update#32"
-            ],
-            "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/KeyManagement.sol"
+                "f18b1965c3d5816e422edb206efe598f0fb39899/protocol/src/hub/eol/EOLVaultFactory.sol"
             ]
         }
     ],
     "affected_files": {
-        "KeyManagement.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {EnumerableSetLib} from \"solady/utils/EnumerableSetLib.sol\";\nimport {IKeyManagement} from \"./interfaces/IKeyManagement.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {Key, KeyLib, KeyType} from \"./libraries/KeyLib.sol\";\nimport {Settings, SettingsLib} from \"./libraries/SettingsLib.sol\";\n\n/// @dev A base contract for managing keys\nabstract contract KeyManagement is IKeyManagement, BaseAuthorization {\n    using EnumerableSetLib for EnumerableSetLib.Bytes32Set;\n    using KeyLib for *;\n    using SettingsLib for Settings;\n\n    EnumerableSetLib.Bytes32Set keyHashes;\n    mapping(bytes32 keyHash => bytes encodedKey) keyStorage;\n    mapping(bytes32 keyHash => Settings settings) keySettings;\n\n    /// @inheritdoc IKeyManagement\n    function register(Key memory key) external onlyThis {\n        if (key.isRootKey()) revert CannotRegisterRootKey();\n\n        bytes32 keyHash = key.hash();\n        keyStorage[keyHash] = abi.encode(key);\n        keyHashes.add(keyHash);\n\n        emit Registered(keyHash, key);\n    }\n\n    /// @inheritdoc IKeyManagement\n    function update(bytes32 keyHash, Settings settings) external onlyThis {\n        if (keyHash.isRootKey()) revert CannotUpdateRootKey();\n        if (!isRegistered(keyHash)) revert KeyDoesNotExist();\n        keySettings[keyHash] = settings;\n    }\n\n    /// @inheritdoc IKeyManagement\n    function revoke(bytes32 keyHash) external onlyThis {\n        if (!keyHashes.remove(keyHash)) revert KeyDoesNotExist();\n        delete keyStorage[keyHash];\n        keySettings[keyHash] = SettingsLib.DEFAULT;\n\n        emit Revoked(keyHash);\n    }\n\n    /// @inheritdoc IKeyManagement\n    function keyCount() external view returns (uint256) {\n        return keyHashes.length();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function keyAt(uint256 i) external view returns (Key memory) {\n        return getKey(keyHashes.at(i));\n    }\n\n    /// @inheritdoc IKeyManagement\n    function getKey(bytes32 keyHash) public view returns (Key memory) {\n        if (keyHash.isRootKey()) return KeyLib.toRootKey();\n        if (isRegistered(keyHash)) return abi.decode(keyStorage[keyHash], (Key));\n        revert KeyDoesNotExist();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function getKeySettings(bytes32 keyHash) public view returns (Settings) {\n        if (keyHash.isRootKey()) return SettingsLib.ROOT_KEY_SETTINGS;\n        if (isRegistered(keyHash)) return keySettings[keyHash];\n        revert KeyDoesNotExist();\n    }\n\n    /// @inheritdoc IKeyManagement\n    function isRegistered(bytes32 keyHash) public view returns (bool) {\n        return keyHashes.contains(keyHash);\n    }\n\n    /// @notice Reverts if the key settings are expired\n    function _checkExpiry(Settings settings) internal view {\n        (bool isExpired, uint40 expiry) = settings.isExpired();\n        if (isExpired) revert IKeyManagement.KeyExpired(expiry);\n    }\n\n    /// @notice Check if the keyHash is the root key or an admin key\n    function _isOwnerOrAdmin(bytes32 keyHash) internal view returns (bool) {\n        if (keyHash.isRootKey()) return true;\n        if (!isRegistered(keyHash)) return false;\n        Settings settings = keySettings[keyHash];\n        if (settings.isAdmin()) return true;\n        return false;\n    }\n}\n"
+        "EOLVaultFactory.sol": "// SPDX-License-Identifier: MIT\npragma solidity >=0.8.23 <0.9.0;\n\nimport { IERC20Metadata } from '@oz/interfaces/IERC20Metadata.sol';\nimport { Ownable2StepUpgradeable } from '@ozu/access/Ownable2StepUpgradeable.sol';\nimport { UUPSUpgradeable } from '@ozu/proxy/utils/UUPSUpgradeable.sol';\n\nimport { UpgradeableBeacon } from '@solady/utils/UpgradeableBeacon.sol';\n\nimport { IEOLVaultFactory } from '../../interfaces/hub/eol/IEOLVaultFactory.sol';\nimport { ERC7201Utils } from '../../lib/ERC7201Utils.sol';\nimport { BeaconProxy, IBeaconProxy } from '../../lib/proxy/BeaconProxy.sol';\nimport { EOLVault } from './EOLVault.sol';\n\ncontract EOLVaultFactory is IEOLVaultFactory, Ownable2StepUpgradeable, UUPSUpgradeable {\n  using ERC7201Utils for string;\n\n  struct BeaconInfo {\n    bool initialized;\n    address beacon;\n    address[] instances;\n    mapping(address => uint256) instanceIndex;\n  }\n\n  struct Storage {\n    mapping(address instance => bool) isInstance;\n    mapping(VaultType vaultType => BeaconInfo) infos;\n  }\n\n  string private constant _NAMESPACE = 'mitosis.storage.EOLVaultFactory';\n  bytes32 private immutable _slot = _NAMESPACE.storageSlot();\n\n  function _getStorage() private view returns (Storage storage $) {\n    bytes32 slot = _slot;\n    // slither-disable-next-line assembly\n    assembly {\n      $.slot := slot\n    }\n  }\n\n  constructor() {\n    _disableInitializers();\n  }\n\n  function initialize(address owner_) external initializer {\n    __Ownable2Step_init();\n    __Ownable_init(owner_);\n    __UUPSUpgradeable_init();\n  }\n\n  function beacon(VaultType t) external view returns (address) {\n    return address(_getStorage().infos[t].beacon);\n  }\n\n  function isInstance(address instance) external view returns (bool) {\n    return _getStorage().isInstance[instance];\n  }\n\n  function isInstance(VaultType t, address instance) external view returns (bool) {\n    return _isInstance(_getStorage(), t, instance);\n  }\n\n  function instances(VaultType t, uint256 index) external view returns (address) {\n    return _getStorage().infos[t].instances[index];\n  }\n\n  function instances(VaultType t, uint256[] memory indexes) external view returns (address[] memory) {\n    BeaconInfo storage info = _getStorage().infos[t];\n\n    address[] memory result = new address[](indexes.length);\n    for (uint256 i = 0; i < indexes.length; i++) {\n      result[i] = info.instances[indexes[i]];\n    }\n    return result;\n  }\n\n  function instancesLength(VaultType t) external view returns (uint256) {\n    return _getStorage().infos[t].instances.length;\n  }\n\n  function initVaultType(VaultType vaultType, address initialImpl) external onlyOwner {\n    require(vaultType != VaultType.Unset, IEOLVaultFactory__InvalidVaultType());\n\n    Storage storage $ = _getStorage();\n    require(!$.infos[vaultType].initialized, IEOLVaultFactory__AlreadyInitialized());\n\n    $.infos[vaultType].initialized = true;\n    $.infos[vaultType].beacon = address(new UpgradeableBeacon(address(this), initialImpl));\n\n    emit VaultTypeInitialized(vaultType, address($.infos[vaultType].beacon));\n  }\n\n  function vaultTypeInitialized(VaultType t) external view returns (bool) {\n    return _getStorage().infos[t].initialized;\n  }\n\n  /**\n   * @dev used to migrate the beacon implementation - see `UpgradeableBeacon.upgradeTo`\n   */\n  function callBeacon(VaultType t, bytes calldata data) external onlyOwner returns (bytes memory) {\n    Storage storage $ = _getStorage();\n    require($.infos[t].initialized, IEOLVaultFactory__NotInitialized());\n\n    (bool success, bytes memory result) = address($.infos[t].beacon).call(data);\n    require(success, IEOLVaultFactory__CallBeaconFailed(result));\n\n    emit BeaconCalled(_msgSender(), t, data, success, result);\n\n    return result;\n  }\n\n  function create(VaultType t, bytes calldata args) external onlyOwner returns (address) {\n    Storage storage $ = _getStorage();\n    require($.infos[t].initialized, IEOLVaultFactory__NotInitialized());\n\n    address instance;\n\n    if (t == VaultType.Basic) instance = _create($, abi.decode(args, (BasicVaultInitArgs)));\n    else revert IEOLVaultFactory__InvalidVaultType();\n\n    emit EOLVaultCreated(t, instance, args);\n    return instance;\n  }\n\n  function migrate(VaultType from, VaultType to, address instance, bytes calldata data) external onlyOwner {\n    Storage storage $ = _getStorage();\n    require($.infos[from].initialized, IEOLVaultFactory__NotInitialized());\n    require($.infos[to].initialized, IEOLVaultFactory__NotInitialized());\n    require(_isInstance($, from, instance), IEOLVaultFactory__NotAnInstance());\n\n    // Remove instance from 'from' type's tracking\n    uint256 index = $.infos[from].instanceIndex[instance];\n    if ($.infos[from].instances.length > 1) {\n      // Move last element to the removed index and update its index mapping\n      address last = $.infos[from].instances[$.infos[from].instances.length - 1];\n      $.infos[from].instances[index] = last;\n      $.infos[from].instanceIndex[last] = index;\n    }\n    $.infos[from].instances.pop();\n    delete $.infos[from].instanceIndex[instance]; // Use delete instead of setting to 0\n\n    $.infos[to].instances.push(instance);\n    IBeaconProxy(instance).upgradeBeaconToAndCall($.infos[to].beacon, data);\n\n    emit EOLVaultMigrated(from, to, instance);\n  }\n\n  function _isInstance(Storage storage $, VaultType t, address instance) private view returns (bool) {\n    if (!$.infos[t].initialized) return false;\n    if ($.infos[t].instances.length == 0) return false;\n    uint256 index = $.infos[t].instanceIndex[instance];\n    return !(index == 0 && $.infos[t].instances[index] != instance);\n  }\n\n  function _create(Storage storage $, BasicVaultInitArgs memory args) private returns (address) {\n    BeaconInfo storage info = $.infos[VaultType.Basic];\n\n    bytes memory data = abi.encodeCall(\n      EOLVault.initialize, //\n      (args.owner, args.asset, args.name, args.symbol)\n    );\n    address instance = address(new BeaconProxy(address(info.beacon), data));\n\n    info.instances.push(instance);\n    info.instanceIndex[instance] = info.instances.length - 1;\n\n    return instance;\n  }\n\n  function _authorizeUpgrade(address) internal override onlyOwner { }\n}\n"
     }
 }

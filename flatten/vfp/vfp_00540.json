@@ -1,25 +1,26 @@
 {
     "vfp_id": "vfp_00540",
-    "project_name": "cantina_seamless_sep2025.pdf",
+    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
     "findings": [
         {
-            "id": 8,
+            "id": 0,
             "category": {
                 "1": [
                     "CWE-682"
                 ],
                 "2": [
-                    "CWE-1339"
+                    "CWE-191"
                 ]
             },
-            "title": "PricingAdapter should be discouraged for on-chain use",
-            "description": "1. **Description:** The getLeverageTokenPriceAdjusted function may return imprecise or zero values due to rounding, especially when oracle precision and base asset decimals differ significantly.\n2. **Cause:** The calculation involves multiple divisions and rounding steps that can erase value in extreme cases.\n3. **Exploitation:** On-chain integrators relying on this price feed could make incorrect decisions due to inaccurate pricing.\n4. **Impact:** Risk of incorrect valuation in on-chain logic, leading to potential financial loss if used in critical paths.\n",
-            "severity": "Informational",
+            "title": "paidOutReward subtraction may lead to unstake and unstakePrincipal functions reverting",
+            "description": "This vulnerability occurs in the DIAWhitelistedStaking contract where, upon a user's first reward claim, the currentStore.reward is zeroed out after payout. If the user then attempts to unstake after the unstaking period, the unstake function may revert during the calculation `rewardToSend = currentStore.reward - currentStore.paidOutReward`, because currentStore.reward could be less than currentStore.paidOutReward if insufficient time has passed since staking began. The root cause is improper accounting of reward and paidOutReward state variables, leading to an underflow condition. An attacker could exploit this by claiming rewards early and then initiating an unstake request, causing the transaction to revert. The impact is that users are permanently blocked from unstaking their principal and rewards, effectively locking their funds in the contract.\n",
+            "severity": "Critical",
             "location": [
-                "PricingAdapter.sol#L56-L73"
+                "DIAWhitelistedStaking.sol::unstake#",
+                "DIAWhitelistedStaking.sol::unstakePrincipal#"
             ],
             "files": [
-                "leverage-tokens/src/periphery/PricingAdapter.sol"
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
             ]
         },
         {
@@ -29,19 +30,701 @@
                     "CWE-682"
                 ]
             },
-            "title": "PricingAdapter doesn't account for fee adjusted supply, leading to potential overpricing",
-            "description": "1. **Description:** The PricingAdapter contract calculates leverage token prices using totalSupply(), which does not account for accrued management fees. This results in an underreported supply and thus an overpriced output.\n2. **Cause:** The use of raw totalSupply() instead of getFeeAdjustedTotalSupply(ILeverageToken token) fails to reflect the true economic supply after fee accrual.\n3. **Exploitation:** Off-chain or on-chain systems relying on PricingAdapter for pricing data may overvalue tokens, leading to incorrect valuations in trading, lending, or analytics platforms.\n4. **Impact:** Mispricing can lead to financial losses for users or integrators who rely on accurate pricing data, especially in automated systems.\n",
-            "severity": "Low",
+            "title": "Inflation Attack in DIAExternalStaking Allows Stealing First Depositor's Stake",
+            "description": "The DIAExternalStaking contract is vulnerable to an inflation attack due to the permissionless addRewardToPool function and flawed share calculation logic. The attacker stakes a minimal amount, then unstakes all but one token, leaving total shares and total supply at 1. By frontrunning a victim's deposit and calling addRewardToPool with an amount equal to the victim's deposit, the attacker manipulates the pool state so the victim receives zero shares. The root cause is the lack of minimum share minting and unrestricted access to reward injection. This allows an attacker to repeatedly steal the first depositor's stake in a new or empty pool by manipulating share distribution. The impact is direct theft of user funds, leading to loss of deposited assets and undermining trust in the protocol.\n",
+            "severity": "Critical",
             "location": [
-                "PricingAdapter.sol#L26-L38",
-                "PricingAdapter.sol#L41-L53"
+                "DIAExternalStaking.sol::addRewardToPool",
+                "DIAExternalStaking.sol::_stake"
             ],
             "files": [
-                "leverage-tokens/src/periphery/PricingAdapter.sol"
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ],
+                "4": [
+                    "CWE-456"
+                ]
+            },
+            "title": "Missing Reward Accumulator Initialization in Stake Creation",
+            "description": "In the DIAStakingCommons contract's _internalStakeForAddress function, the rewardAccumulator is not initialized when a new stake is created. This allows stakers to claim all historical rewards accumulated by the contract, not just those accrued since their deposit, due to the calculation `stakerDelta = rewardAccumulator - currentStore.rewardAccumulator` where the uninitialized currentStore.rewardAccumulator defaults to zero. A similar flaw exists in DIAWhitelistedStaking._getTotalRewards. The root cause is the omission of proper initialization of rewardAccumulator during stake creation. An attacker can exploit this by creating a new stake and immediately claiming rewards, receiving an unfairly large amount. The impact is incorrect reward distribution and potential loss of funds from the rewards pool due to unauthorized claims.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAStakingCommons.sol::_internalStakeForAddress",
+                "DIAWhitelistedStaking.sol::_getTotalRewards"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "currentStore.principal is not subtracted after it was withdrawn, allowing users to claim it again infinitely",
+            "description": "In the DIAWhitelistedStaking contract, the currentStore.principal value is not reset after a user withdraws their principal via the unstake function. This creates a vulnerability where a user can repeatedly call unstake and withdraw the same principal amount multiple times, as the contract does not track that the principal has already been withdrawn. The root cause is the missing update of the principal balance in storage post-withdrawal. An attacker can exploit this by calling unstake multiple times, draining more tokens than originally staked. The impact is severe financial loss to the protocol, potentially leading to complete depletion of the staking contract's token balance.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAWhitelistedStaking.sol::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "WDIA prohibits zero transfers, which will block rewards distribution to beneficiary address if 100% goes to principal unstaker",
+            "description": "The DIAExternalStaking contract's unstake function calculates reward distribution based on principalWalletShareBps. When set to 100%, the entire reward goes to the principal unstaker, making the beneficiary's reward amount zero. However, the WDIA token reverts on zero-amount transfers (if (wad == 0) revert ZeroTransferAmount()), causing the entire transaction to fail. The root cause is the lack of a zero-amount check before the transfer and WDIA's strict zero-transfer prohibition. An attacker or misconfigured setup can trigger this by setting principalWalletShareBps to 100%, blocking all reward claims. The impact is that users cannot claim any rewards under this configuration, effectively freezing rewards and rendering the staking mechanism unusable for such stakes.\n",
+            "severity": "Critical",
+            "location": [
+                "DIAExternalStaking.sol::unstake",
+                "WDIA.sol::transfer"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 5,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Rewards are lost if user requests unstake in less than one day",
+            "description": "The DIAWhitelistedStaking contract's getRewardForStakingStore function calculates rewards based on full days using the formula passedDays = passedSeconds / (24 * 60 * 60). If a user requests unstake in less than one day, passedDays becomes 0, resulting in no reward being calculated for that period. This occurs due to integer division truncation in Solidity, which discards fractional days. An attacker could exploit this by repeatedly staking and unstaking within sub-daily intervals to manipulate reward accrual timing. The impact is that users lose accrued rewards for partial days, leading to unfair distribution and reduced user trust in the staking mechanism.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-703"
+                ],
+                "2": [
+                    "CWE-754"
+                ]
+            },
+            "title": "Rewards claiming may fail due to potentially decreasing parameters used in calculation",
+            "description": "In the DIAWhitelistedStaking contract, the updateReward function contains an assertion assert(reward >= currentStore.reward) that can fail if either rewardRatePerDay is decreased by the owner or currentStore.principal is reduced during partial unstaking. The getRewardForStakingStore function calculates rewards as (rewardRatePerDay * passedDays * currentStore.principal) / 10000, which may yield a value lower than currentStore.reward when inputs decrease. This causes the assertion to revert, blocking both reward and principal withdrawals for the user. The root cause is improper state validation when mutable parameters affect reward calculations. An attacker with ownership privileges could intentionally lower the reward rate to block user withdrawals. The impact is denial of service for reward and principal claiming, potentially locking user funds indefinitely.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::updateReward",
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ]
+            },
+            "title": "Pending principal wallet share BPS value is not saved in storage",
+            "description": "In both DIAExternalStaking and DIAWhitelistedStaking contracts, the _getCurrentPrincipalWalletShareBps function reads from memory without persisting the pending BPS update to storage after the timeout period. This leads to outdated stakingStores[stakingStoreIndex].principalWalletShareBps values being used if new pending updates occur before the grace period ends. The cause is missing storage update logic in the BPS update mechanism. An attacker (or malicious beneficiary) could exploit this by timing BPS changes to manipulate reward distribution between principal and beneficiary wallets. The impact is loss of expected control over reward splits for beneficiaries, undermining the intended governance model and potentially causing financial loss.\n",
+            "severity": "High",
+            "location": [
+                "DIAExternalStaking::_getCurrentPrincipalWalletShareBps",
+                "DIAWhitelistedStaking::_getCurrentPrincipalWalletShareBps"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect Reward Calculation When Reward Rate Changes",
+            "description": "The getRewardForStakingStore function in DIAWhitelistedStaking uses the current rewardRatePerDay to calculate rewards regardless of historical rate changes. This means two identical stakes started at different times may receive different rewards depending on when they call unstake(), even if their staking duration is the same. The root cause is the lack of time-segmented reward accounting based on rate periods. A malicious user could exploit this by timing unstake calls to maximize gains under higher rates, while others receive less due to rate drops. The impact is unfair and inconsistent reward distribution, which undermines trust in the staking system and may lead to user disputes or loss of confidence.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1024"
+                ]
+            },
+            "title": "Incorrect Initialization of lastWithdrawalResetDay Causes Withdrawal Limits to Malfunction",
+            "description": "In the DIAExternalStaking contract constructor, lastWithdrawalResetDay is initialized with block.timestamp instead of block.timestamp / SECONDS_IN_A_DAY. This causes the daily withdrawal reset logic to malfunction because the comparison block.timestamp / SECONDS_IN_A_DAY > lastWithdrawalResetDay will never be true. As a result, the daily withdrawal limit becomes a one-time limit, breaking the intended security mechanism. The cause is incorrect unit handling during initialization. An attacker could exploit this by making early withdrawals to exhaust the pool's daily limit, permanently blocking others. The impact is a critical failure of the withdrawal rate-limiting feature, potentially leading to fund lockouts and reduced security.\n",
+            "severity": "High",
+            "location": [
+                "DIAExternalStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ],
+                "2": [
+                    "CWE-1339"
+                ]
+            },
+            "title": "Reward Accumulation Manipulation Through Frequent Claims",
+            "description": "In the claim function of DIAWhitelistedStaking, a malicious user can repeatedly call claim() multiple times per day with minimal stake. Each call updates rewardLastUpdateTime but due to daysElapsed = (block.timestamp - rewardLastUpdateTime) / SECONDS_IN_A_DAY rounding down to zero, no rewards are accrued and rewardAccumulator remains unchanged. This prevents other stakers from receiving rewards, effectively freezing the entire reward distribution system. The root cause is insufficient precision in time-based reward accrual calculations. The impact is severe financial harm to honest stakers, as their rewards are withheld due to griefing attacks, undermining the economic model of the protocol.\n",
+            "severity": "High",
+            "location": [
+                "DIAWhitelistedStaking::claim"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Daily withdrawal limit decreases with totalPoolSize reduction",
+            "description": "In the DIAExternalStaking contract, the availableDailyLimit is calculated as (totalPoolSize * withdrawalCapBps) / 10000 inside the checkDailyWithdrawalLimit modifier. When totalPoolSize decreases due to unstaking, the daily limit shrinks proportionally, even if the remaining pool is large. This creates inconsistent behavior where users may be blocked from withdrawing later in the day despite sufficient liquidity. The root cause is dynamic dependency on a fluctuating totalPoolSize instead of a fixed daily baseline. An attacker could exploit this by unstaking large amounts early to reduce the limit for others. The impact is denial of access to funds and unpredictable withdrawal behavior, reducing user confidence.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::checkDailyWithdrawalLimit"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Principal wallet pending share BPS usage is missed in getRewardForStakingStore function",
+            "description": "In the DIAExternalStaking contract, the getRewardForStakingStore function uses the static store.principalWalletShareBps value instead of calling _getCurrentPrincipalWalletShareBps, which accounts for pending updates. This means pending BPS changes are not reflected in reward estimates, misleading users about expected payouts. The cause is failure to use the correct view function for dynamic state. An attacker could exploit this by initiating a BPS change and then quickly claiming rewards before the update takes effect, capturing more than intended. The impact is inaccurate reward reporting and potential for unfair distribution during transition periods.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::getRewardForStakingStore"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 14,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-372"
+                ]
+            },
+            "title": "stakingIndicesByPrincipalUnstaker mapping not updated in updatePrincipalUnstaker function",
+            "description": "In both DIAExternalStaking and DIAWhitelistedStaking contracts, the updatePrincipalUnstaker function fails to update the stakingIndicesByPrincipalUnstaker mapping when changing the principal unstaker. This results in stale indices for both old and new unstakers, leading to incorrect tracking of associated stakes. The cause is missing mapping maintenance logic in the update function. An attacker could exploit this by changing unstakers and then manipulating stake operations using outdated indices. The impact is corrupted internal accounting, which may lead to incorrect unstaking behavior or denial of service for legitimate unstake requests.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAExternalStaking::updatePrincipalUnstaker",
+                "DIAWhitelistedStaking::updatePrincipalUnstaker"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Whitelist can be bypassed in DIAWhitelistedStaking",
+            "description": "The stakeForAddress function in DIAWhitelistedStaking allows specifying any whitelisted beneficiary while assigning 100% of rewards to the principal. Since the beneficiary can be a contract, this enables non-whitelisted users to effectively bypass the whitelist by using a whitelisted contract as a proxy. The cause is insufficient validation of reward share distribution during staking. An attacker could exploit this to gain unauthorized access to the staking mechanism by leveraging a whitelisted contract beneficiary. The impact is circumvention of access controls, allowing unapproved participants to stake and earn rewards, undermining the security model.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAWhitelistedStaking::stakeForAddress"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 16,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ]
+            },
+            "title": "Principal withdrawal may be blocked by insufficient rewards wallet balance in DIAWhitelistedStaking",
+            "description": "The unstake() and unstakePrincipal() functions in DIAWhitelistedStaking require transferring rewards from an external rewardsWallet before allowing principal withdrawal. If the rewardsWallet has insufficient balance or revoked allowances, the safeTransferFrom() call reverts, blocking the entire transaction and preventing principal withdrawal. The cause is tight coupling between reward payout and principal release. An attacker could exploit this by draining or revoking the rewardsWallet to freeze user withdrawals. The impact is permanent lockout of user principal funds despite the principal being available in the contract, leading to loss of user assets and trust.\n",
+            "severity": "Medium",
+            "location": [
+                "DIAWhitelistedStaking::unstake",
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 17,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect event emission in updatePrincipalPayoutWallet in DIAStakingCommons",
+            "description": "The updatePrincipalPayoutWallet() function in DIAStakingCommons incorrectly emits the PrincipalPayoutWalletUpdated event by using the updated value of currentStore.principalPayoutWallet instead of the previously stored oldWallet variable. This occurs because the storage is updated before the event is emitted, causing the event to log the same address for both old and new wallet fields, making it impossible to track the actual change. The root cause is improper ordering of state update and event emission. An attacker or observer cannot rely on event logs to detect wallet changes, leading to incorrect off-chain indexing and reduced transparency. The impact is limited to incorrect event data, as core functionality remains intact.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::updatePrincipalPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 18,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ]
+            },
+            "title": "Lack of slippage protection in unstake function in DIAExternalStaking",
+            "description": "The unstake() function in DIAExternalStaking calculates withdrawal amounts based on real-time pool state without allowing users to specify a minimum output amount. The calculation depends on variables like totalPoolSize and totalShareAmount, which can change between the requestUnstake() call and the actual unstake execution due to other users' actions or reward additions. The root cause is the absence of a slippage protection mechanism. An attacker or market participant could manipulate the pool state to reduce the amount a user receives upon unstaking. The impact is that users may receive less than expected, leading to potential economic loss, though the contract remains functional.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 19,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ]
+            },
+            "title": "Missing tokensStaked update in unstakePrincipal causing accounting drift in DIAWhitelistedStaking",
+            "description": "The unstakePrincipal() function in DIAWhitelistedStaking decreases the individual principal amount but fails to decrement the global tokensStaked counter. This causes a growing discrepancy between the sum of individual stakes and the global accounting variable. The root cause is the omission of the tokensStaked -= amount operation. While tokensStaked is not currently used in DIAWhitelistedStaking logic, the inconsistency could mislead external systems that rely on this variable for analytics or integration. The impact is inaccurate accounting data, which could affect protocol monitoring and third-party services.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 21,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Redundant zero check for unsigned integer in setDailyWithdrawalThreshold",
+            "description": "The setDailyWithdrawalThreshold() function performs a check if (newThreshold <= 0) on a uint256 parameter, which is redundant because unsigned integers cannot be negative. The condition is functionally equivalent to == 0 but is misleading and suggests a misunderstanding of Solidity types. The root cause is poor code clarity due to incorrect comparison logic. While it does not introduce a direct security flaw, it can confuse developers and auditors. The impact is reduced code readability and potential for future bugs during maintenance.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::setDailyWithdrawalThreshold",
+                "DIAStakingCommons::setDailyWithdrawalThreshold"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 22,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unused logic related to the daily withdrawal threshold in DIAStakingCommons",
+            "description": "The setDailyWithdrawalThreshold() function and related storage variables (withdrawalCap, totalDailyWithdrawals, etc.) are present but unused in DIAStakingCommons. The root cause is dead code from incomplete refactoring or feature removal. This increases contract size, deployment cost, and potential confusion. An attacker could attempt to interact with these functions if they were mistakenly exposed, though they are not callable in the current state. The impact is bloat and reduced maintainability.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::setDailyWithdrawalThreshold"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 23,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Missing zero amount validation in token transfers in DIAWhitelistedStaking",
+            "description": "The unstakePrincipal() function performs token transfers without checking if the amount is zero, leading to unnecessary gas costs and misleading events when beneficiaryReward is zero. The root cause is lack of input validation before safeTransferFrom calls. While the transfer succeeds, it wastes gas and pollutes event logs. The impact is inefficiency and noise in transaction data, which could affect indexing and analytics.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 25,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-1329"
+                ]
+            },
+            "title": "Staking Limit Cannot Be Updated in Case of Incorrect Value",
+            "description": "The stakingLimit parameter in DIAExternalStaking is set only during deployment and cannot be changed afterward. The root cause is the absence of a setter function. If an incorrect value is set, the contract must be redeployed. This reduces operational flexibility. The impact is reduced upgradability and potential need for migration, though no direct security breach occurs.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 26,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "Lack of checks in the DIAExternalStaking and DIAWhitelistedStaking constructors",
+            "description": "The constructors of DIAExternalStaking and DIAWhitelistedStaking do not validate unstakingDuration or stakingTokenAddress against zero. The root cause is missing input validation. Setting invalid values could lead to unusable contract states. The impact is potential misconfiguration, though the severity is low as it does not directly enable attacks.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::constructor",
+                "DIAWhitelistedStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 29,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-285"
+                ],
+                "3": [
+                    "CWE-863"
+                ]
+            },
+            "title": "Wrong role checked in onlyBeneficiaryOrPayoutWallet modifier in DIAExternalStaking",
+            "description": "The onlyBeneficiaryOrPayoutWallet modifier checks principalUnstaker instead of principalPayoutWallet, preventing the correct address from calling authorized functions. The root cause is a logic error in access control. This denies legitimate users access to unstake functions, contradicting the modifier's intent. The impact is a denial-of-service for rightful payout recipients when roles are separated.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::onlyBeneficiaryOrPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 30,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
+                ]
+            },
+            "title": "Principal payout wallet can be set to zero address causing permanent fund loss in DIAStakingCommons",
+            "description": "The updatePrincipalPayoutWallet() function allows setting the payout wallet to address(0) without validation. The root cause is missing zero address check. When set, all future withdrawals send funds to the zero address, resulting in irreversible token loss. The impact is permanent destruction of both principal and reward tokens, though the issue is mitigated by role restrictions.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::updatePrincipalPayoutWallet"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 31,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1041"
+                ]
+            },
+            "title": "Duplicate IERC20 import in DIAExternalStaking",
+            "description": "DIAExternalStaking imports IERC20 from two different OpenZeppelin paths, one of which is redundant. The root cause is unnecessary code duplication. This can cause confusion and compilation inconsistencies. The impact is reduced code clarity and potential for version mismatches.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 32,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1106"
+                ]
+            },
+            "title": "Replace hardcoded 24 * 60 * 60 with SECONDS_PER_DAY in DIAWhitelistedStaking",
+            "description": "The DIAWhitelistedStaking contract uses a hardcoded 24 * 60 * 60 instead of the defined SECONDS_PER_DAY constant. The root cause is inconsistent coding practices. This reduces readability and maintainability. The impact is minor, limited to code quality and consistency.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 33,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ],
+                "3": [
+                    "CWE-405"
+                ],
+                "4": [
+                    "CWE-407"
+                ]
+            },
+            "title": "Potential out-of-gas risk in _removeStakingIndexFromAddressMapping with large stake counts",
+            "description": "The _removeStakingIndexFromAddressMapping function uses a linear search to remove a staking index, which could exceed the block gas limit if a user has many stakes. The root cause is inefficient data structure usage. An attacker could force high gas costs by creating many stakes, preventing removal. The impact is denial of service for users with large stake counts.\n",
+            "severity": "Low",
+            "location": [
+                "DIAStakingCommons::_removeStakingIndexFromAddressMapping"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 34,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ],
+                "3": [
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
+                ]
+            },
+            "title": "Shadowed variables in DIAWhitelistedStaking constructor",
+            "description": "The constructor parameters rewardsWallet and rewardRatePerDay shadow state variables of the same name. The root cause is poor naming practice. This can confuse developers and lead to bugs during maintenance. The impact is reduced code clarity and increased risk of human error.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::constructor"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 35,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Unnecessary update of stakingStartTime after full principal withdrawal in unstakePrincipal() and unstake()",
+            "description": "The unstakePrincipal() and unstake() functions unconditionally update stakingStartTime even when the principal is fully withdrawn. The root cause is redundant state update. This wastes gas and may confuse interpretation of stake history. The impact is inefficiency and potential misinterpretation of contract state.\n",
+            "severity": "Low",
+            "location": [
+                "DIAWhitelistedStaking::unstakePrincipal",
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAWhitelistedStaking.sol"
+            ]
+        },
+        {
+            "id": 36,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event emission in updatePrincipalUnstaker() in DIAExternalStaking and DIAStakingCommons",
+            "description": "The updatePrincipalUnstaker() function updates the principalUnstaker address but does not emit an event. The root cause is lack of transparency mechanism. This makes it difficult for off-chain systems to track role changes. The impact is reduced auditability and integration challenges.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::updatePrincipalUnstaker",
+                "DIAStakingCommons::updatePrincipalUnstaker"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol",
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAStakingCommons.sol"
+            ]
+        },
+        {
+            "id": 37,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-670"
+                ]
+            },
+            "title": "Incorrect Parameters in Claimed Event",
+            "description": "The Claimed event in the unstake function of DIAExternalStaking is emitted after state variables are reset to zero, resulting in zero values being logged. The root cause is incorrect event emission order. This leads to inaccurate historical data. The impact is incorrect off-chain tracking and analysis of unstaking events.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::unstake"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
+            ]
+        },
+        {
+            "id": 38,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-571"
+                ]
+            },
+            "title": "Redundant Return Value from _updateRewardAccumulator",
+            "description": "The _updateRewardAccumulator function always returns true, making the return value and subsequent conditional checks meaningless. The root cause is unnecessary code design. This leads to redundant logic throughout the contract. The impact is reduced code clarity and wasted gas from unnecessary variable assignments.\n",
+            "severity": "Low",
+            "location": [
+                "DIAExternalStaking::_updateRewardAccumulator"
+            ],
+            "files": [
+                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/DIAExternalStaking.sol"
             ]
         }
     ],
     "affected_files": {
-        "PricingAdapter.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {IERC20Metadata} from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\nimport {IAggregatorV2V3Interface} from \"../interfaces/periphery/IAggregatorV2V3Interface.sol\";\nimport {ILendingAdapter} from \"../interfaces/ILendingAdapter.sol\";\nimport {ILeverageToken} from \"../interfaces/ILeverageToken.sol\";\nimport {ILeverageManager} from \"../interfaces/ILeverageManager.sol\";\nimport {IPricingAdapter} from \"../interfaces/periphery/IPricingAdapter.sol\";\n\n/// @custom:contact security@seamlessprotocol.com\ncontract PricingAdapter is IPricingAdapter {\n    uint256 internal constant WAD = 1e18;\n\n    /// @inheritdoc IPricingAdapter\n    ILeverageManager public immutable leverageManager;\n\n    /// @notice Constructor\n    /// @param _leverageManager The LeverageManager contract\n    constructor(ILeverageManager _leverageManager) {\n        leverageManager = _leverageManager;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInCollateral(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInCollateralAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInCollateralAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInCollateralAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceInDebt(ILeverageToken leverageToken) public view returns (uint256) {\n        uint256 totalSupply = leverageToken.totalSupply();\n\n        if (totalSupply == 0) {\n            return 0;\n        }\n\n        uint256 totalEquityInDebtAsset =\n            leverageManager.getLeverageTokenLendingAdapter(leverageToken).getEquityInDebtAsset();\n\n        // LT is on 18 decimals, so 1 LT is WAD wei\n        return (WAD * totalEquityInDebtAsset) / totalSupply;\n    }\n\n    /// @inheritdoc IPricingAdapter\n    function getLeverageTokenPriceAdjusted(\n        ILeverageToken leverageToken,\n        IAggregatorV2V3Interface chainlinkOracle,\n        bool isBaseDebtAsset\n    ) public view returns (int256) {\n        uint256 priceInBaseAsset = isBaseDebtAsset\n            ? getLeverageTokenPriceInDebt(leverageToken)\n            : getLeverageTokenPriceInCollateral(leverageToken);\n        uint256 baseAssetDecimals = isBaseDebtAsset\n            ? IERC20Metadata(address(leverageManager.getLeverageTokenDebtAsset(leverageToken))).decimals()\n            : IERC20Metadata(address(leverageManager.getLeverageTokenCollateralAsset(leverageToken))).decimals();\n\n        int256 oraclePrice = chainlinkOracle.latestAnswer();\n\n        int256 adjustedPrice = (oraclePrice * int256(priceInBaseAsset)) / int256(10 ** baseAssetDecimals);\n\n        return adjustedPrice;\n    }\n}\n"
+        "DIAExternalStaking.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.29;\n\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/utils/ReentrancyGuard.sol\";\nimport \"./StakingErrorsAndEvents.sol\";\n\n/**\n * @title DIAExternalStaking\n * @notice A staking contract that allows users to stake tokens and earn rewards\n * @dev Implements external staking functionality with principal/reward sharing and daily withdrawal limits\n */\ncontract DIAExternalStaking is Ownable, ReentrancyGuard {\n    using SafeERC20 for IERC20;\n\n    /// @notice Mapping of beneficiary addresses to their staking indices\n    mapping(address => uint256[]) internal stakingIndicesByBeneficiary;\n\n    /// @notice Mapping of principal unstaker addresses to their staking indices\n    mapping(address => uint256[]) internal stakingIndicesByPrincipalUnstaker;\n\n    /// @notice Mapping of payout wallet addresses to their staking indices\n    mapping(address => uint256[]) internal stakingIndicesByPayoutWallet;\n\n    /// @notice Current staking index counter\n    uint256 public stakingIndex;\n\n    /// @notice Structure for pending share updates\n    struct PendingShareUpdate {\n        uint32 newShareBps; // New share in basis points\n        uint64 requestTime; // Time when update was requested\n    }\n\n    /// @notice Mapping of stake IDs to their pending share updates\n    mapping(uint256 => PendingShareUpdate) public pendingShareUpdates;\n\n    /// @notice Grace period for share updates (1 day)\n    uint64 public constant SHARE_UPDATE_GRACE_PERIOD = 1 days;\n\n    /// @notice ERC20 token used for staking\n    IERC20 public immutable STAKING_TOKEN;\n\n    /// @notice Structure for storing staking information\n    struct ExternalStakingStore {\n        address beneficiary; // Address receiving rewards\n        address principalPayoutWallet; // Address receiving principal\n        address principalUnstaker; // Address allowed to unstake principal\n        uint256 principal; // Amount of tokens staked\n        uint256 poolShares; // Share of the total pool\n        uint64 stakingStartTime; // When staking began\n        uint64 unstakingRequestTime; // When unstaking was requested\n        uint32 principalWalletShareBps; // Share of rewards going to principal wallet\n    }\n\n    /// @notice Total size of the staking pool\n    uint256 public totalPoolSize;\n\n    /// @notice Total amount of pool shares\n    uint256 public totalShareAmount;\n\n    /// @notice Total amount of tokens staked\n    uint256 public tokensStaked;\n\n    /// @notice Maximum amount of tokens that can be staked\n    uint256 public stakingLimit;\n\n    /// @notice Duration required before unstaking can be completed\n    uint256 public unstakingDuration;\n\n    /// @notice Total amount withdrawn in the current day\n    uint256 public totalDailyWithdrawals;\n\n    /// @notice Timestamp of the last day when withdrawals were reset\n    uint256 public lastWithdrawalResetDay;\n\n    /// @notice Minimum pool size required to trigger withdrawal limits\n    uint256 public dailyWithdrawalThreshold = 100000 * 10 ** 18;\n\n    /// @notice Maximum percentage of pool that can be withdrawn per day (in basis points)\n    uint256 public withdrawalCapBps = 1000; // 1000 bps = 10%\n\n    /// @notice Mapping of staking indices to their corresponding staking stores\n    mapping(uint256 => ExternalStakingStore) public stakingStores;\n\n    /**\n     * @notice Modifier to check if caller is beneficiary or payout wallet\n     * @param stakingStoreIndex Index of the staking store\n     * @custom:revert AccessDenied if caller is neither beneficiary nor payout wallet\n     */\n    modifier onlyBeneficiaryOrPayoutWallet(uint256 stakingStoreIndex) {\n        ExternalStakingStore storage currentStore = stakingStores[\n            stakingStoreIndex\n        ];\n        if (\n            msg.sender != currentStore.beneficiary &&\n            msg.sender != currentStore.principalUnstaker\n        ) {\n            revert AccessDenied();\n        }\n        _;\n    }\n\n    /**\n     * @notice Modifier to check daily withdrawal limits\n     * @param amount Amount to be withdrawn\n     * @custom:revert DailyWithdrawalLimitExceeded if withdrawal would exceed daily limit\n     */\n    modifier checkDailyWithdrawalLimit(uint256 amount) {\n        if (block.timestamp / SECONDS_IN_A_DAY > lastWithdrawalResetDay) {\n            totalDailyWithdrawals = 0;\n            lastWithdrawalResetDay = block.timestamp / SECONDS_IN_A_DAY;\n        }\n\n        if (totalPoolSize > dailyWithdrawalThreshold) {\n            uint256 availableDailyLimit = (totalPoolSize * withdrawalCapBps) /\n                10000;\n            if (totalDailyWithdrawals + amount > availableDailyLimit) {\n                revert DailyWithdrawalLimitExceeded();\n            }\n        }\n        _;\n    }\n\n    /**\n     * @notice Initializes the contract with staking parameters\n     * @param _unstakingDuration Duration required before unstaking can be completed\n     * @param _stakingTokenAddress Address of the ERC20 token used for staking\n     * @param _stakingLimit Maximum amount of tokens that can be staked\n     * @custom:revert ZeroAddress if staking token address is zero\n     */\n    constructor(\n        uint256 _unstakingDuration,\n        address _stakingTokenAddress,\n        uint256 _stakingLimit\n    ) Ownable(msg.sender) {\n        if (_stakingTokenAddress == address(0)) revert ZeroAddress();\n        unstakingDuration = _unstakingDuration;\n        STAKING_TOKEN = IERC20(_stakingTokenAddress);\n        stakingLimit = _stakingLimit;\n        lastWithdrawalResetDay = block.timestamp;\n    }\n\n    /**\n     * @notice Allows a user to stake tokens directly\n     * @param amount Amount of tokens to stake\n     * @param principalWalletShareBps Share of rewards going to principal wallet in basis points\n     */\n    function stake(\n        uint256 amount,\n        uint32 principalWalletShareBps\n    ) public nonReentrant {\n        _stake(msg.sender, amount, principalWalletShareBps, msg.sender);\n    }\n\n    /**\n     * @notice Stakes tokens on behalf of a given address\n     * @param beneficiaryAddress Address receiving the staking rewards\n     * @param amount Amount of tokens to be staked\n     * @param principalWalletShareBps Share of rewards going to principal wallet in basis points\n     */\n    function stakeForAddress(\n        address beneficiaryAddress,\n        uint256 amount,\n        uint32 principalWalletShareBps\n    ) public nonReentrant {\n        _stake(beneficiaryAddress, amount, principalWalletShareBps, msg.sender);\n    }\n\n    /**\n     * @notice Internal function to handle staking logic\n     * @param beneficiaryAddress Address receiving the staking rewards\n     * @param amount Amount of tokens to be staked\n     * @param principalWalletShareBps Share of rewards going to principal wallet in basis points\n     * @param staker Address performing the stake operation\n     * @custom:revert AmountAboveStakingLimit if amount exceeds staking limit\n     * @custom:revert InvalidPrincipalWalletShare if share exceeds 100%\n     * @custom:revert AmountBelowMinimumStake if amount is below minimum stake\n     */\n    function _stake(\n        address beneficiaryAddress,\n        uint256 amount,\n        uint32 principalWalletShareBps,\n        address staker\n    ) internal {\n        if (amount > (stakingLimit - tokensStaked)) {\n            revert AmountAboveStakingLimit(amount);\n        }\n\n        if (principalWalletShareBps > 10000)\n            revert InvalidPrincipalWalletShare();\n\n        if (amount < minimumStake) {\n            revert AmountBelowMinimumStake(amount);\n        }\n\n        STAKING_TOKEN.safeTransferFrom(staker, address(this), amount);\n\n        uint256 poolSharesGiven = 0;\n        if (totalShareAmount == 0) {\n            poolSharesGiven = amount;\n        } else {\n            poolSharesGiven = (amount * totalShareAmount) / totalPoolSize;\n        }\n\n        totalPoolSize += amount;\n        totalShareAmount += poolSharesGiven;\n\n        stakingIndex++;\n        ExternalStakingStore storage newStore = stakingStores[stakingIndex];\n        newStore.beneficiary = beneficiaryAddress;\n        newStore.principalPayoutWallet = staker;\n        newStore.principal = amount;\n        newStore.poolShares = poolSharesGiven;\n        newStore.stakingStartTime = uint64(block.timestamp);\n        newStore.principalWalletShareBps = principalWalletShareBps;\n        newStore.principalUnstaker = staker;\n\n        tokensStaked += amount;\n        stakingIndicesByBeneficiary[beneficiaryAddress].push(stakingIndex);\n        stakingIndicesByPrincipalUnstaker[staker].push(stakingIndex);\n        stakingIndicesByPayoutWallet[staker].push(stakingIndex);\n\n        emit Staked(beneficiaryAddress, stakingIndex, amount);\n    }\n\n    /**\n     * @notice Updates the duration required before unstaking can be completed\n     * @param newDuration New unstaking duration in seconds\n     * @custom:revert UnstakingDurationTooShort if duration is less than 1 day\n     * @custom:revert UnstakingDurationTooLong if duration exceeds 20 days\n     */\n    function setUnstakingDuration(uint256 newDuration) external onlyOwner {\n        if (newDuration < 1 days) {\n            revert UnstakingDurationTooShort();\n        }\n        if (newDuration > 20 days) {\n            revert UnstakingDurationTooLong();\n        }\n        emit UnstakingDurationUpdated(unstakingDuration, newDuration);\n        unstakingDuration = newDuration;\n    }\n\n    /**\n     * @notice Updates the withdrawal cap in basis points\n     * @param newBps New cap value in basis points\n     * @custom:revert InvalidWithdrawalCap if new cap exceeds 10000 bps\n     */\n    function setWithdrawalCapBps(uint256 newBps) external onlyOwner {\n        if (newBps > 10000) {\n            revert InvalidWithdrawalCap(newBps);\n        }\n        uint256 oldCap = withdrawalCapBps;\n        withdrawalCapBps = newBps;\n        emit WithdrawalCapUpdated(oldCap, newBps);\n    }\n\n    /**\n     * @notice Updates the daily withdrawal threshold\n     * @param newThreshold New threshold value\n     * @custom:revert InvalidDailyWithdrawalThreshold if new threshold is 0\n     */\n    function setDailyWithdrawalThreshold(\n        uint256 newThreshold\n    ) external onlyOwner {\n        if (newThreshold <= 0) {\n            revert InvalidDailyWithdrawalThreshold(newThreshold);\n        }\n        uint256 oldThreshold = dailyWithdrawalThreshold;\n        dailyWithdrawalThreshold = newThreshold;\n        emit DailyWithdrawalThresholdUpdated(oldThreshold, newThreshold);\n    }\n\n    /**\n     * @notice Gets all staking indices for a beneficiary\n     * @param beneficiary Address of the beneficiary\n     * @return Array of staking indices\n     */\n    function getStakingIndicesByBeneficiary(\n        address beneficiary\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByBeneficiary[beneficiary];\n    }\n\n    /**\n     * @notice Gets all staking indices for a principal unstaker\n     * @param unstaker Address of the principal unstaker\n     * @return Array of staking indices\n     */\n    function getStakingIndicesByPrincipalUnstaker(\n        address unstaker\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByPrincipalUnstaker[unstaker];\n    }\n\n    /**\n     * @notice Gets all staking indices for a payout wallet\n     * @param payoutWallet Address of the payout wallet\n     * @return Array of staking indices\n     */\n    function getStakingIndicesByPayoutWallet(\n        address payoutWallet\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByPayoutWallet[payoutWallet];\n    }\n\n    /**\n     * @notice Internal function to remove a staking index from an address mapping\n     * @param user Address to remove index from\n     * @param _stakingIndex Index to remove\n     * @param indexMap Mapping to remove from\n     */\n    function _removeStakingIndexFromAddressMapping(\n        address user,\n        uint256 _stakingIndex,\n        mapping(address => uint256[]) storage indexMap\n    ) internal {\n        uint256[] storage indices = indexMap[user];\n        for (uint256 i = 0; i < indices.length; i++) {\n            if (indices[i] == _stakingIndex) {\n                indices[i] = indices[indices.length - 1];\n                indices.pop();\n                break;\n            }\n        }\n    }\n\n    /**\n     * @notice Updates the principal payout wallet for a stake\n     * @param newWallet New wallet address for receiving principal\n     * @param stakingStoreIndex Index of the staking store\n     * @custom:revert ZeroAddress if new wallet is zero address\n     * @custom:revert NotPrincipalUnstaker if caller is not the principal unstaker\n     */\n    function updatePrincipalPayoutWallet(\n        address newWallet,\n        uint256 stakingStoreIndex\n    ) external {\n        if (newWallet == address(0)) revert ZeroAddress();\n        ExternalStakingStore storage currentStore = stakingStores[\n            stakingStoreIndex\n        ];\n        address oldWallet = currentStore.principalPayoutWallet;\n        currentStore.principalPayoutWallet = newWallet;\n\n        if (currentStore.principalUnstaker != msg.sender) {\n            revert NotPrincipalUnstaker();\n        }\n\n        _removeStakingIndexFromAddressMapping(\n            oldWallet,\n            stakingStoreIndex,\n            stakingIndicesByPayoutWallet\n        );\n        stakingIndicesByPayoutWallet[newWallet].push(stakingStoreIndex);\n\n        emit PrincipalPayoutWalletUpdated(\n            oldWallet,\n            newWallet,\n            stakingStoreIndex\n        );\n    }\n\n    /**\n     * @notice Updates the principal unstaker for a stake\n     * @param newUnstaker New address allowed to unstake principal\n     * @param stakingStoreIndex Index of the staking store\n     * @custom:revert ZeroAddress if new unstaker is zero address\n     * @custom:revert NotPrincipalUnstaker if caller is not the current principal unstaker\n     */\n    function updatePrincipalUnstaker(\n        address newUnstaker,\n        uint256 stakingStoreIndex\n    ) external {\n        if (newUnstaker == address(0)) revert ZeroAddress();\n        ExternalStakingStore storage currentStore = stakingStores[\n            stakingStoreIndex\n        ];\n        if (currentStore.principalUnstaker != msg.sender) {\n            revert NotPrincipalUnstaker();\n        }\n        currentStore.principalUnstaker = newUnstaker;\n    }\n\n    /**\n     * @notice Requests unstaking, starting the waiting period\n     * @param stakingStoreIndex Index of the staking store\n     * @custom:revert AlreadyRequestedUnstake if unstaking was already requested\n     * @custom:revert AccessDenied if caller is not beneficiary or payout wallet\n     */\n    function requestUnstake(\n        uint256 stakingStoreIndex\n    ) external nonReentrant onlyBeneficiaryOrPayoutWallet(stakingStoreIndex) {\n        ExternalStakingStore storage currentStore = stakingStores[\n            stakingStoreIndex\n        ];\n        if (currentStore.unstakingRequestTime != 0) {\n            revert AlreadyRequestedUnstake();\n        }\n        currentStore.unstakingRequestTime = uint64(block.timestamp);\n        emit UnstakeRequested(msg.sender, stakingStoreIndex);\n    }\n\n    /**\n     * @notice Completes the unstaking process after the required duration\n     * @param stakingStoreIndex Index of the staking store\n     * @param amount Amount to unstake\n     * @custom:revert UnstakingNotRequested if unstaking was not requested\n     * @custom:revert UnstakingPeriodNotElapsed if unstaking period has not elapsed\n     * @custom:revert AmountExceedsStaked if amount exceeds staked amount\n     * @custom:revert DailyWithdrawalLimitExceeded if withdrawal would exceed daily limit\n     */\n    function unstake(\n        uint256 stakingStoreIndex,\n        uint256 amount\n    )\n        external\n        nonReentrant\n        onlyBeneficiaryOrPayoutWallet(stakingStoreIndex)\n        checkDailyWithdrawalLimit(amount)\n    {\n        ExternalStakingStore storage currentStore = stakingStores[\n            stakingStoreIndex\n        ];\n        if (currentStore.unstakingRequestTime == 0) {\n            revert UnstakingNotRequested();\n        }\n\n        if (\n            currentStore.unstakingRequestTime + unstakingDuration >\n            block.timestamp\n        ) {\n            revert UnstakingPeriodNotElapsed();\n        }\n\n        uint256 currentAmountOfPool = (currentStore.poolShares *\n            totalPoolSize) / totalShareAmount;\n        if (amount > currentAmountOfPool) {\n            revert AmountExceedsStaked();\n        }\n\n        uint256 poolSharesUnstakeAmount = (currentStore.poolShares * amount) /\n            currentAmountOfPool;\n        uint256 principalUnstakeAmount = (currentStore.principal * amount) /\n            currentAmountOfPool;\n        uint256 rewardUnstakeAmount = amount - principalUnstakeAmount;\n\n        uint256 principalToSend = principalUnstakeAmount;\n        uint256 rewardToSend = rewardUnstakeAmount;\n        currentStore.principal =\n            currentStore.principal -\n            principalUnstakeAmount;\n        tokensStaked -= principalUnstakeAmount;\n        currentStore.poolShares -= poolSharesUnstakeAmount;\n        currentStore.unstakingRequestTime = 0;\n        currentStore.stakingStartTime = uint64(block.timestamp);\n\n        totalDailyWithdrawals += amount;\n        totalPoolSize -= amount;\n        totalShareAmount -= poolSharesUnstakeAmount;\n\n        uint256 principalWalletReward = (rewardToSend *\n            _getCurrentPrincipalWalletShareBps(stakingStoreIndex)) / 10000;\n        uint256 beneficiaryReward = rewardToSend - principalWalletReward;\n\n        if (principalWalletReward > 0) {\n            STAKING_TOKEN.safeTransfer(\n                currentStore.principalPayoutWallet,\n                principalWalletReward\n            );\n        }\n\n        STAKING_TOKEN.safeTransfer(\n            currentStore.principalPayoutWallet,\n            principalToSend\n        );\n        STAKING_TOKEN.safeTransfer(currentStore.beneficiary, beneficiaryReward);\n\n        emit Unstaked(\n            stakingStoreIndex,\n            principalToSend,\n            principalWalletReward,\n            beneficiaryReward,\n            currentStore.principalPayoutWallet,\n            currentStore.beneficiary\n        );\n    }\n\n    function addRewardToPool(uint256 amount) public {\n        STAKING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);\n        totalPoolSize += amount;\n        emit RewardAdded(amount, msg.sender);\n    }\n\n    /**\n     * @notice Gets the current principal wallet share basis points for a stake\n     * @param stakingStoreIndex ID of the stake\n     * @return Current principal wallet share in basis points\n     */\n    function _getCurrentPrincipalWalletShareBps(\n        uint256 stakingStoreIndex\n    ) internal view returns (uint32) {\n        PendingShareUpdate memory pending = pendingShareUpdates[stakingStoreIndex];\n        if (\n            pending.requestTime > 0 &&\n            block.timestamp >= pending.requestTime + SHARE_UPDATE_GRACE_PERIOD\n        ) {\n            return pending.newShareBps;\n        }\n\n        return stakingStores[stakingStoreIndex].principalWalletShareBps;\n    }\n\n    /**\n     * @notice Gets the current principal wallet share basis points for a stake\n     * @param stakingStoreIndex of the stake\n     * @return Current principal wallet share in basis points\n     */\n    function getCurrentPrincipalWalletShareBps(\n        uint256 stakingStoreIndex\n    ) public view returns (uint32) {\n        return _getCurrentPrincipalWalletShareBps(stakingStoreIndex);\n    }\n\n    /**\n     * @notice Calculates the reward for a given staking store\n     * @param stakingStoreIndex Index of the staking store\n     * @return Amount of rewards available\n     */\n    function getRewardForStakingStore(\n        uint256 stakingStoreIndex\n    ) public view returns (uint256, uint256) {\n        ExternalStakingStore storage store = stakingStores[stakingStoreIndex];\n        uint256 claimableTokens = (store.poolShares * totalPoolSize) /\n            totalShareAmount;\n        uint256 fullReward = claimableTokens - store.principal;\n\t\t\t\tuint256 principalWalletReward = (fullReward * store.principalWalletShareBps) / 10000;\n\t\t\t\treturn (principalWalletReward, fullReward - principalWalletReward);\n    }\n\n    /**\n     * @notice Requests an update to the principal wallet share\n     * @param stakingStoreIndex of the stake\n     * @param newShareBps New share in basis points\n     * @custom:revert NotBeneficiary if caller is not the beneficiary\n     * @custom:revert InvalidPrincipalWalletShare if new share exceeds 100%\n     */\n    function requestPrincipalWalletShareUpdate(\n        uint256 stakingStoreIndex,\n        uint32 newShareBps\n    ) external {\n        if (msg.sender != stakingStores[stakingStoreIndex].principalUnstaker) {\n            revert NotPrincipalUnstaker();\n        }\n        if (newShareBps > 10000) revert InvalidPrincipalWalletShare();\n\n        pendingShareUpdates[stakingStoreIndex] = PendingShareUpdate({\n            newShareBps: newShareBps,\n            requestTime: uint64(block.timestamp)\n        });\n\n        emit PrincipalWalletShareUpdateRequested(\n            stakingStoreIndex,\n            newShareBps,\n            block.timestamp\n        );\n    }\n}\n",
+        "DIAStakingCommons.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.29;\n\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/utils/ReentrancyGuard.sol\";\nimport \"./StakingErrorsAndEvents.sol\";\nimport \"forge-std/console.sol\";\n// Events\n\nabstract contract DIAStakingCommons is Ownable, ReentrancyGuard {\n    using SafeERC20 for IERC20;\n\n    mapping(address => uint256[]) internal stakingIndicesByBeneficiary;\n    mapping(address => uint256[]) internal stakingIndicesByPrincipalUnstaker;\n    mapping(address => uint256[]) internal stakingIndicesByPayoutWallet;\n\n    uint256 public stakingIndex;\n\n    struct PendingShareUpdate {\n        uint32 newShareBps;\n        uint64 requestTime;\n    }\n\n    mapping(uint256 => PendingShareUpdate) public pendingShareUpdates;\n    uint64 public constant SHARE_UPDATE_GRACE_PERIOD = 1 days;\n\n    /// @notice ERC20 token used for staking.\n    IERC20 public immutable STAKING_TOKEN;\n\n    struct StakingStore {\n        address beneficiary;\n        address principalPayoutWallet;\n        address principalUnstaker;\n        uint256 principal;\n        uint256 reward;\n        uint256 paidOutReward;\n        uint64 stakingStartTime;\n        uint64 unstakingRequestTime;\n        uint32 principalWalletShareBps;\n    }\n\n    uint256 public tokensStaked;\n\n    uint256 public stakingLimit;\n\n    /// @notice How long (in seconds) for unstaking to take place\n    uint256 public unstakingDuration;\n\n    uint256 public totalDailyWithdrawals;\n\n    uint256 public lastWithdrawalResetDay;\n    uint256 public dailyWithdrawalThreshold = 100000 * 10 ** 18; // Set threshold as needed\n    uint256 public withdrawalCapBps = 1000; // 1000 bps = 10%\n\n    /// @notice Mapping of staking index to corresponding staking store.\n    mapping(uint256 => DIAStakingCommons.StakingStore) public stakingStores;\n\n    modifier onlyBeneficiaryOrPayoutWallet(uint256 stakingStoreIndex) {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n\n        if (\n            msg.sender != currentStore.beneficiary &&\n            msg.sender != currentStore.principalPayoutWallet\n        ) {\n            revert AccessDenied();\n        }\n        _;\n    }\n\n    /**\n     * @notice Updates the duration required before unstaking can be completed.\n     * @dev Only callable by the contract owner.\n     * @param newDuration The new unstaking duration, in seconds.\n     * @custom:revert UnstakingDurationTooShort() if the new duration is less than 1 day.\n     * @custom:revert UnstakingDurationTooLong() if the new duration exceeds 20 days.\n     */\n    function setUnstakingDuration(uint256 newDuration) external onlyOwner {\n        if (newDuration < 1 days) {\n            revert UnstakingDurationTooShort();\n        }\n\n        if (newDuration > 20 days) {\n            revert UnstakingDurationTooLong();\n        }\n        emit UnstakingDurationUpdated(unstakingDuration, newDuration);\n\n        unstakingDuration = newDuration;\n    }\n\n    function setWithdrawalCapBps(uint256 newBps) external onlyOwner {\n        if (newBps > 10000) {\n            revert InvalidWithdrawalCap(newBps);\n        }\n\n        uint256 oldCap = withdrawalCapBps;\n        withdrawalCapBps = newBps;\n\n        emit WithdrawalCapUpdated(oldCap, newBps); // Emit event with old and new values\n    }\n\n    function setDailyWithdrawalThreshold(\n        uint256 newThreshold\n    ) external onlyOwner {\n        if (newThreshold <= 0) {\n            revert InvalidDailyWithdrawalThreshold(newThreshold);\n        }\n\n        uint256 oldThreshold = dailyWithdrawalThreshold;\n        dailyWithdrawalThreshold = newThreshold;\n\n        emit DailyWithdrawalThresholdUpdated(oldThreshold, newThreshold);\n    }\n\n    function getStakingIndicesByBeneficiary(\n        address beneficiary\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByBeneficiary[beneficiary];\n    }\n\n    function getStakingIndicesByPrincipalUnstaker(\n        address unstaker\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByPrincipalUnstaker[unstaker];\n    }\n\n    function getStakingIndicesByPayoutWallet(\n        address payoutWallet\n    ) external view returns (uint256[] memory) {\n        return stakingIndicesByPayoutWallet[payoutWallet];\n    }\n\n    function _removeStakingIndexFromAddressMapping(\n        address user,\n        uint256 _stakingIndex,\n        mapping(address => uint256[]) storage indexMap\n    ) internal {\n        uint256[] storage indices = indexMap[user];\n        for (uint256 i = 0; i < indices.length; i++) {\n            if (indices[i] == _stakingIndex) {\n                indices[i] = indices[indices.length - 1];\n                indices.pop();\n                break;\n            }\n        }\n    }\n\n    function _internalStakeForAddress(\n        address sender,\n        address beneficiaryAddress,\n        uint256 amount,\n        uint32 principalWalletShareBps\n    ) internal returns (uint256 index) {\n        if (principalWalletShareBps > 10000)\n            revert InvalidPrincipalWalletShare();\n\n        if (amount < minimumStake) {\n            revert AmountBelowMinimumStake(amount);\n        }\n\n        // Transfer tokens\n        STAKING_TOKEN.safeTransferFrom(sender, address(this), amount);\n\n        // Create staking entry\n        stakingIndex++;\n        StakingStore storage newStore = stakingStores[stakingIndex];\n        newStore.beneficiary = beneficiaryAddress;\n        newStore.principalPayoutWallet = sender;\n        newStore.principal = amount;\n        newStore.stakingStartTime = uint64(block.timestamp);\n        newStore.principalWalletShareBps = principalWalletShareBps;\n        newStore.principalUnstaker = sender;\n\n        // Track stake info\n        tokensStaked += amount;\n        stakingIndicesByBeneficiary[beneficiaryAddress].push(stakingIndex);\n        stakingIndicesByPrincipalUnstaker[sender].push(stakingIndex);\n        stakingIndicesByPayoutWallet[sender].push(stakingIndex);\n\n        emit Staked(beneficiaryAddress, stakingIndex, amount);\n\n        return stakingIndex;\n    }\n\n    /**\n     * @notice Updates the principal payout wallet for a given staking index.\n     * @dev Only callable by the contract owner.\n     * @param newWallet New wallet address for receiving the principal.\n     * @param stakingStoreIndex Index of the staking store.\n     */\n    function updatePrincipalPayoutWallet(\n        address newWallet,\n        uint256 stakingStoreIndex\n    ) external {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n\n        address oldWallet = currentStore.principalPayoutWallet;\n\n        currentStore.principalPayoutWallet = newWallet;\n\n        if (currentStore.principalUnstaker != msg.sender) {\n            revert NotPrincipalUnstaker();\n        }\n\n        _removeStakingIndexFromAddressMapping(\n            oldWallet,\n            stakingStoreIndex,\n            stakingIndicesByPayoutWallet\n        );\n        stakingIndicesByPayoutWallet[newWallet].push(stakingStoreIndex);\n\n        emit PrincipalPayoutWalletUpdated(\n            currentStore.principalPayoutWallet,\n            newWallet,\n            stakingStoreIndex\n        );\n    }\n\n    /**\n     * @notice Allows the current unstaker to update the unstaker.\n     * @param newUnstaker New address allowed to unstake the principal.\n     * @param stakingStoreIndex Index of the staking store.\n     */\n    function updatePrincipalUnstaker(\n        address newUnstaker,\n        uint256 stakingStoreIndex\n    ) external {\n        if (newUnstaker == address(0)) revert ZeroAddress();\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n        if (currentStore.principalUnstaker != msg.sender) {\n            revert NotPrincipalUnstaker();\n        }\n\n        currentStore.principalUnstaker = newUnstaker;\n    }\n\n    /**\n     * @notice Requests unstaking, starting the waiting period.\n     * @dev Can only be called by the beneficiary.\n     * @param stakingStoreIndex Index of the staking store.\n     */\n    function requestUnstake(\n        uint256 stakingStoreIndex\n    ) external nonReentrant onlyBeneficiaryOrPayoutWallet(stakingStoreIndex) {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n        if (currentStore.unstakingRequestTime != 0) {\n            revert AlreadyRequestedUnstake();\n        }\n\n        currentStore.unstakingRequestTime = uint64(block.timestamp);\n        emit UnstakeRequested(msg.sender, stakingStoreIndex);\n    }\n\n    function _getCurrentPrincipalWalletShareBps(\n        uint256 stakeId\n    ) internal view returns (uint32) {\n        PendingShareUpdate memory pending = pendingShareUpdates[stakeId];\n\n        if (\n            pending.requestTime > 0 &&\n            block.timestamp >= pending.requestTime + SHARE_UPDATE_GRACE_PERIOD\n        ) {\n            return pending.newShareBps;\n        }\n\n        return stakingStores[stakeId].principalWalletShareBps;\n    }\n\n    function requestPrincipalWalletShareUpdate(\n        uint256 stakeId,\n        uint32 newShareBps\n    ) external {\n        if (msg.sender != stakingStores[stakeId].beneficiary) {\n            revert NotBeneficiary();\n        }\n\n        if (newShareBps > 10000) revert InvalidPrincipalWalletShare();\n\n        pendingShareUpdates[stakeId] = PendingShareUpdate({\n            newShareBps: newShareBps,\n            requestTime: uint64(block.timestamp)\n        });\n\n        emit PrincipalWalletShareUpdateRequested(\n            stakeId,\n            newShareBps,\n            block.timestamp\n        );\n    }\n}\n",
+        "DIAWhitelistedStaking.sol": "// SPDX-License-Identifier: GPL\n\npragma solidity 0.8.29;\n\nimport {Ownable} from \"@openzeppelin/contracts/access/Ownable.sol\";\nimport {IERC20} from \"@openzeppelin/contracts/interfaces/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"./DIAStakingCommons.sol\";\nimport \"@openzeppelin/contracts/utils/ReentrancyGuard.sol\";\n\nimport \"./DIARewardsDistribution.sol\";\n\n/**\n * @title DIAWhitelistedStaking\n * @notice This contract allows whitelisted addresses to stake tokens and earn rewards.\n */\ncontract DIAWhitelistedStaking is\n    Ownable,\n    DIARewardsDistribution,\n    ReentrancyGuard,\n    DIAStakingCommons\n{\n    using SafeERC20 for IERC20;\n\n    /// @notice Mapping of whitelisted addresses for staking\n    /// @dev Maps address to boolean indicating if address is whitelisted\n    mapping(address => bool) public stakingWhitelist;\n\n    /// @notice Emitted when a new staker is added to the whitelist\n    /// @param newStaker The address that was added to the whitelist\n    event StakerAddressAdded(address newStaker);\n\n    /// @notice Emitted when a staker is removed from the whitelist\n    /// @param removedStaker The address that was removed from the whitelist\n    event StakerAddressRemoved(address removedStaker);\n\n    /// @notice Emitted when daily withdrawal threshold is updated\n    /// @param oldThreshold The previous threshold value\n    /// @param newThreshold The new threshold value\n    event DailyWithdrawalThresholdUpdated(\n        uint256 oldThreshold,\n        uint256 newThreshold\n    );\n\n    /// @notice Emitted when withdrawal cap is updated\n    /// @param oldCap The previous cap value in basis points\n    /// @param newCap The new cap value in basis points\n    event WithdrawalCapUpdated(uint256 oldCap, uint256 newCap);\n\n    /// @notice Errors\n    error AlreadyWhitelisted();\n\n    /**\n     * @dev Initializes the contract with staking parameters.\n     * @param newUnstakingDuration Duration in seconds required before unstaking.\n     * @param stakingTokenAddress Address of the ERC20 token used for staking.\n     * @param rewardsWallet Address of the wallet that holds rewards.This wallet should appove tokens for this contract\n     * @param rewardRatePerDay Rate at which rewards accumulate daily.\n     */\n\n    constructor(\n        uint256 newUnstakingDuration,\n        address stakingTokenAddress,\n        address rewardsWallet,\n        uint256 rewardRatePerDay\n    )\n        Ownable(msg.sender)\n        DIARewardsDistribution(\n            stakingTokenAddress,\n            rewardsWallet,\n            rewardRatePerDay\n        )\n    {\n        unstakingDuration = newUnstakingDuration;\n        STAKING_TOKEN = IERC20(stakingTokenAddress);\n    }\n\n    /**\n     * @notice Stakes tokens on behalf of a given address\n     * @param beneficiaryAddress Address receiving the staking rewards\n     * @param amount Amount of tokens to be staked\n     * @param principalWalletShareBps Share of rewards going to principal wallet in basis points\n     * @custom:revert NotWhitelisted if beneficiary is not whitelisted\n     */\n    function stakeForAddress(\n        address beneficiaryAddress,\n        uint256 amount,\n        uint32 principalWalletShareBps\n    ) public nonReentrant {\n        if (!stakingWhitelist[beneficiaryAddress]) {\n            revert NotWhitelisted();\n        }\n\n        _internalStakeForAddress(\n            msg.sender,\n            beneficiaryAddress,\n            amount,\n            principalWalletShareBps\n        );\n    }\n\n    /**\n     * @notice Allows a user to stake tokens directly\n     * @param amount The amount of tokens to stake\n     * @custom:revert NotWhitelisted if caller is not whitelisted\n     */\n    function stake(uint256 amount) external nonReentrant {\n        if (!stakingWhitelist[msg.sender]) {\n            revert NotWhitelisted();\n        }\n        _internalStakeForAddress(msg.sender, msg.sender, amount, 10_000);\n    }\n\n    /**\n     * @notice Completes the unstaking process after the required duration\n     * @dev Checks daily withdrawal limits before processing\n     * @param stakingStoreIndex Index of the staking store\n     * @custom:revert DailyWithdrawalLimitExceeded if withdrawal would exceed daily limit\n     * @custom:revert UnstakingNotRequested if unstaking was not requested\n     * @custom:revert UnstakingPeriodNotElapsed if unstaking period has not elapsed\n     */\n    function unstake(\n        uint256 stakingStoreIndex\n    ) external onlyBeneficiaryOrPayoutWallet(stakingStoreIndex) nonReentrant {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n        if (currentStore.unstakingRequestTime == 0) {\n            revert UnstakingNotRequested();\n        }\n\n        if (\n            currentStore.unstakingRequestTime + unstakingDuration >\n            block.timestamp\n        ) {\n            revert UnstakingPeriodNotElapsed();\n        }\n\n        // Ensure the reward amount is up to date\n        updateReward(stakingStoreIndex);\n\n        uint256 rewardToSend = currentStore.reward - currentStore.paidOutReward;\n        currentStore.paidOutReward += rewardToSend;\n\n        uint256 principalWalletReward = (rewardToSend *\n            _getCurrentPrincipalWalletShareBps(stakingStoreIndex)) / 10000;\n        uint256 beneficiaryReward = rewardToSend - principalWalletReward;\n\n        if (principalWalletReward > 0) {\n            // Send tokens to delegator\n            STAKING_TOKEN.safeTransferFrom(\n                rewardsWallet,\n                currentStore.principalPayoutWallet,\n                principalWalletReward\n            );\n        }\n\n        STAKING_TOKEN.safeTransferFrom(\n            rewardsWallet,\n            currentStore.beneficiary,\n            beneficiaryReward\n        );\n        currentStore.unstakingRequestTime = 0;\n        currentStore.reward = 0;\n        currentStore.stakingStartTime = uint64(block.timestamp);\n\n        emit Unstaked(\n            stakingStoreIndex,\n            0,\n            principalWalletReward,\n            beneficiaryReward,\n            currentStore.principalPayoutWallet,\n            currentStore.beneficiary\n        );\n    }\n\n    /**\n     * @notice Unstakes the principal amount immediately\n     * @dev Only possible for the principal unstaker\n     * @param stakingStoreIndex Index of the staking store\n     * @param amount Amount of principal to unstake\n     * @custom:revert NotPrincipalUnstaker if caller is not the principal unstaker\n     * @custom:revert UnstakingNotRequested if unstaking was not requested\n     * @custom:revert UnstakingPeriodNotElapsed if unstaking period has not elapsed\n     * @custom:revert AmountExceedsStaked if amount exceeds staked principal\n     */\n    function unstakePrincipal(\n        uint256 stakingStoreIndex,\n        uint256 amount\n    ) external nonReentrant {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n\n        if (currentStore.unstakingRequestTime == 0) {\n            revert UnstakingNotRequested();\n        }\n        if (\n            currentStore.unstakingRequestTime + unstakingDuration >\n            block.timestamp\n        ) {\n            revert UnstakingPeriodNotElapsed();\n        }\n\n        if (currentStore.principalUnstaker != msg.sender) {\n            revert NotPrincipalUnstaker();\n        }\n\n        if (amount > currentStore.principal) {\n            revert AmountExceedsStaked();\n        }\n\n        updateReward(stakingStoreIndex);\n        uint256 principalToSend = amount;\n        currentStore.principal = currentStore.principal - amount;\n\n        uint256 rewardToSend = currentStore.reward - currentStore.paidOutReward;\n        currentStore.paidOutReward += rewardToSend;\n\n        currentStore.unstakingRequestTime = 0;\n        currentStore.stakingStartTime = uint64(block.timestamp);\n\n        uint256 principalWalletReward = (rewardToSend *\n            _getCurrentPrincipalWalletShareBps(stakingStoreIndex)) / 10000;\n        uint256 beneficiaryReward = rewardToSend - principalWalletReward;\n\n        if (principalWalletReward > 0) {\n            // Send tokens to delegator\n            STAKING_TOKEN.safeTransferFrom(\n                rewardsWallet,\n                currentStore.principalPayoutWallet,\n                principalWalletReward\n            );\n        }\n\n        // Pay out principal\n        STAKING_TOKEN.safeTransfer(\n            currentStore.principalPayoutWallet,\n            principalToSend\n        );\n\n        // Send remaining reward tokens to beneficiary\n        STAKING_TOKEN.safeTransferFrom(\n            rewardsWallet,\n            currentStore.beneficiary,\n            beneficiaryReward\n        );\n\n        emit Unstaked(\n            stakingStoreIndex,\n            principalToSend,\n            principalWalletReward,\n            beneficiaryReward,\n            currentStore.principalPayoutWallet,\n            currentStore.beneficiary\n        );\n    }\n\n    /**\n     * @notice Adds an address to the whitelist for staking\n     * @dev Only callable by the contract owner\n     * @param newStakerAddress The address to be whitelisted\n     * @custom:revert AlreadyWhitelisted if the address is already whitelisted\n     * @custom:event Emits StakerAddressAdded on success\n     */\n    function addWhitelistedStaker(address newStakerAddress) external onlyOwner {\n        if (stakingWhitelist[newStakerAddress]) {\n            revert AlreadyWhitelisted();\n        }\n        stakingWhitelist[newStakerAddress] = true;\n        emit StakerAddressAdded(newStakerAddress);\n    }\n\n    /**\n     * @notice Removes an address from the staking whitelist\n     * @dev Only callable by the contract owner\n     * @param stakerAddressToRemove The address to remove from the whitelist\n     * @custom:revert NotWhitelisted if the address is not currently whitelisted\n     * @custom:event Emits StakerAddressRemoved on success\n     */\n    function removeWhitelistedStaker(\n        address stakerAddressToRemove\n    ) external onlyOwner {\n        if (!stakingWhitelist[stakerAddressToRemove]) {\n            revert NotWhitelisted();\n        }\n        stakingWhitelist[stakerAddressToRemove] = false;\n        emit StakerAddressRemoved(stakerAddressToRemove);\n    }\n\n    /**\n     * @notice Calculates the accrued reward for a given staking store\n     * @dev The reward is calculated based on the number of full days passed since staking started\n     * @param stakingStoreIndex The index of the staking store\n     * @return The total reward accumulated so far\n     */\n    function getRewardForStakingStore(\n        uint256 stakingStoreIndex\n    ) public view override returns (uint256) {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n\n        // Calculate number of full days that passed for staking store\n        uint256 passedSeconds;\n        if (currentStore.unstakingRequestTime > 0) {\n            passedSeconds =\n                currentStore.unstakingRequestTime -\n                currentStore.stakingStartTime;\n        } else {\n            passedSeconds = block.timestamp - currentStore.stakingStartTime;\n        }\n        uint256 passedDays = passedSeconds / (24 * 60 * 60);\n\n        // assumption: reward rate is measured in bps\n        return (rewardRatePerDay * passedDays * currentStore.principal) / 10000;\n    }\n\n    /**\n     * @notice Updates the reward amount for a given staking store\n     * @dev Ensures the reward does not decrease\n     * @param stakingStoreIndex The index of the staking store\n     * @custom:assert The newly calculated reward must be greater than or equal to the current reward\n     */\n    function updateReward(uint256 stakingStoreIndex) internal {\n        StakingStore storage currentStore = stakingStores[stakingStoreIndex];\n        uint256 reward = getRewardForStakingStore(stakingStoreIndex);\n        assert(reward >= currentStore.reward);\n\n        currentStore.reward = reward;\n    }\n\n    /**\n     * @notice Get the current principal wallet share basis points for a stake\n     * @param stakeId The ID of the stake to check\n     * @return The current principal wallet share in basis points\n     */\n    function getCurrentPrincipalWalletShareBps(\n        uint256 stakeId\n    ) public view returns (uint32) {\n        return _getCurrentPrincipalWalletShareBps(stakeId);\n    }\n}\n"
     }
 }

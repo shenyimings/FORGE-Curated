@@ -3,24 +3,24 @@
     "project_name": "Likwid - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 30,
+            "id": 45,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-435"
                 ]
             },
-            "title": "Incorrect revert offset in LiquidityMath.sol",
-            "description": "The LiquidityMath library contains assembly code in the addDelta() and addInvestment() functions that reverts with an empty error message. These functions use mstore to store error codes at memory offset 0x1c (28 bytes), but the revert instruction uses revert(0, 4), which reads from offset 0 instead of 0x1c. As a result, the error message is not correctly retrieved, and an empty revert is triggered. The root cause is incorrect memory offset usage in low-level EVM assembly. An attacker or user cannot directly exploit this, but it reduces transparency during failures by hiding meaningful error messages. The impact is reduced debuggability and user experience due to missing error details, though functionality remains intact.\n",
-            "severity": "Low",
+            "title": "Facilitate max withdrawal of a lending position",
+            "description": "The withdrawal function requires users to specify an exact amount, which may be suboptimal if interest has accrued since transaction submission. The root cause is lack of support for full withdrawal semantics. Users may withdraw less than their full balance. The impact is poor user experience and potential confusion about available balances.\n",
+            "severity": "Informational",
             "location": [
-                "LiquidityMath.sol"
+                "LendPosition.sol"
             ],
             "files": [
-                "likwid-margin/src/libraries/LiquidityMath.sol"
+                "likwid-margin/src/libraries/LendPosition.sol"
             ]
         }
     ],
     "affected_files": {
-        "LiquidityMath.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n/// @title Math library for liquidity\nlibrary LiquidityMath {\n    /// @notice Add a signed liquidity delta to liquidity and revert if it overflows or underflows\n    /// @param x The liquidity before change\n    /// @param y The delta by which liquidity should be changed\n    /// @return z The liquidity delta\n    function addDelta(uint128 x, int128 y) internal pure returns (uint128 z) {\n        assembly (\"memory-safe\") {\n            z := add(and(x, 0xffffffffffffffffffffffffffffffff), signextend(15, y))\n            if shr(128, z) {\n                // revert SafeCastOverflow()\n                mstore(0, 0x93dafdf1)\n                revert(0, 4)\n            }\n        }\n    }\n\n    function addInvestment(uint256 prev, int128 amount0, int128 amount1) internal pure returns (uint256 current) {\n        assembly (\"memory-safe\") {\n            // Unpack prev into two 128-bit values\n            let prevAmount0 := shr(128, prev)\n            let prevAmount1 := and(prev, 0xffffffffffffffffffffffffffffffff)\n\n            // Add deltas, checking for int128 overflow\n            let currentAmount0 := add(signextend(15, prevAmount0), signextend(15, amount0))\n            if iszero(eq(signextend(15, currentAmount0), currentAmount0)) {\n                // revert SafeCastOverflow()\n                mstore(0, 0x93dafdf1)\n                revert(0, 4)\n            }\n\n            let currentAmount1 := add(signextend(15, prevAmount1), signextend(15, amount1))\n            if iszero(eq(signextend(15, currentAmount1), currentAmount1)) {\n                // revert SafeCastOverflow()\n                mstore(0, 0x93dafdf1)\n                revert(0, 4)\n            }\n\n            // Pack the results back into a uint256\n            current := or(\n                shl(128, and(currentAmount0, 0xffffffffffffffffffffffffffffffff)),\n                and(currentAmount1, 0xffffffffffffffffffffffffffffffff)\n            )\n        }\n    }\n}"
+        "LendPosition.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\nimport {Math} from \"./Math.sol\";\nimport {BalanceDelta, BalanceDeltaLibrary} from \"../types/BalanceDelta.sol\";\nimport {CustomRevert} from \"./CustomRevert.sol\";\nimport {PositionLibrary} from \"./PositionLibrary.sol\";\nimport {SafeCast} from \"./SafeCast.sol\";\n\n/// @title LendPosition\n/// @notice Positions represent an owner address' lend tokens\nlibrary LendPosition {\n    using CustomRevert for bytes4;\n    using PositionLibrary for address;\n    using SafeCast for *;\n\n    error CannotUpdateEmptyPosition();\n\n    error WithdrawOverflow();\n\n    struct State {\n        uint128 lendAmount;\n        uint256 depositCumulativeLast;\n    }\n\n    function get(mapping(bytes32 => State) storage self, address owner, bool lendForOne, bytes32 salt)\n        internal\n        view\n        returns (State storage position)\n    {\n        bytes32 positionKey = owner.calculatePositionKey(lendForOne, salt);\n        position = self[positionKey];\n    }\n\n    function update(State storage self, bool lendForOne, uint256 depositCumulativeLast, BalanceDelta delta)\n        internal\n        returns (uint256)\n    {\n        int128 amount;\n        if (lendForOne) {\n            amount = delta.amount1();\n        } else {\n            amount = delta.amount0();\n        }\n        if ((delta == BalanceDeltaLibrary.ZERO_DELTA && self.lendAmount == 0) || amount == 0) {\n            CannotUpdateEmptyPosition.selector.revertWith();\n        }\n\n        uint256 lendAmount;\n        if (self.depositCumulativeLast != 0) {\n            lendAmount = Math.mulDiv(self.lendAmount, depositCumulativeLast, self.depositCumulativeLast);\n        }\n\n        if (amount < 0) {\n            // deposit\n            lendAmount += uint128(-amount);\n        } else {\n            // withdraw\n            if (uint128(amount) > lendAmount) {\n                WithdrawOverflow.selector.revertWith();\n            }\n            lendAmount -= uint128(amount);\n        }\n        self.lendAmount = lendAmount.toUint128();\n        self.depositCumulativeLast = depositCumulativeLast;\n\n        return self.lendAmount;\n    }\n}\n"
     }
 }

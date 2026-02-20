@@ -1,33 +1,32 @@
 {
     "vfp_id": "vfp_00599",
-    "project_name": "f(x) v2 Audit.md",
+    "project_name": "Oxorio SAMM Module Audit.md",
     "findings": [
         {
-            "id": 35,
+            "id": 3,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-1164"
+                    "CWE-311"
+                ],
+                "3": [
+                    "CWE-312"
                 ]
             },
-            "title": "Unused Errors",
-            "description": "Custom errors are defined but never emitted in the code, which can mislead auditors and developers about possible failure paths. The cause is leftover error definitions from prior development stages. This reduces code clarity and may lead to incorrect assumptions about error handling. The impact is reduced maintainability and potential confusion during audits.\n",
-            "severity": null,
+            "title": "Participants Are Partially De-Anonymized",
+            "description": "The SAMM contract requires the caller to publicly specify the email domain and public key hash of each participant when submitting a proof. While the identity within the domain is hidden, the domain itself is revealed on-chain, reducing the anonymity set to only those participants sharing the same domain. This partial de-anonymization allows external observers to correlate approvals by domain, weakening the privacy guarantees of the system. The root cause is the design decision to expose the domain as a public signal in the ZK proof verification process. An attacker can exploit this by analyzing transaction patterns and linking approvals from the same domain across different transactions. The impact is a degradation of user privacy, making it easier to profile or target specific organizations or groups using the system.\n",
+            "severity": "Medium",
             "location": [
-                "PoolErrors.sol::ErrorRebalanceOnLiquidatablePosition#57",
-                "PoolErrors.sol::ErrorInsufficientCollateralToLiquidate#59",
-                "ReservePool.sol::ErrorRatioTooLarge#23",
-                "ReservePool.sol::ErrorRebalancePoolAlreadyAdded#26",
-                "ReservePool.sol::ErrorRebalancePoolNotAdded#29"
+                "samm-contracts/src/interfaces/ISAMM.sol#30-L31"
             ],
             "files": [
-                "fx-protocol-contracts/contracts/core/pool/PoolErrors.sol"
+                "c2d255dfe6e0be8a1650c6018da37e73f29521ed/samm-contracts/src/interfaces/ISAMM.sol"
             ]
         }
     ],
     "affected_files": {
-        "PoolErrors.sol": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.26;\n\nabstract contract PoolErrors {\n  /**********\n   * Errors *\n   **********/\n  \n  /// @dev Thrown when the given address is zero.\n  error ErrorZeroAddress();\n\n  /// @dev Thrown when the given value exceeds maximum value.\n  error ErrorValueTooLarge();\n  \n  /// @dev Thrown when the caller is not pool manager.\n  error ErrorCallerNotPoolManager();\n  \n  /// @dev Thrown when the debt amount is too small.\n  error ErrorDebtTooSmall();\n\n  /// @dev Thrown when the collateral amount is too small.\n  error ErrorCollateralTooSmall();\n  \n  /// @dev Thrown when both collateral amount and debt amount are zero.\n  error ErrorNoSupplyAndNoBorrow();\n  \n  /// @dev Thrown when borrow is paused.\n  error ErrorBorrowPaused();\n\n  /// @dev Thrown when redeem is paused.\n  error ErrorRedeemPaused();\n  \n  /// @dev Thrown when the caller is not position owner during withdraw or borrow.\n  error ErrorNotPositionOwner();\n  \n  /// @dev Thrown when withdraw more than supplied.\n  error ErrorWithdrawExceedSupply();\n  \n  /// @dev Thrown when the debt ratio is too small.\n  error ErrorDebtRatioTooSmall();\n\n  /// @dev Thrown when the debt ratio is too large.\n  error ErrorDebtRatioTooLarge();\n  \n  /// @dev Thrown when pool is under collateral.\n  error ErrorPoolUnderCollateral();\n  \n  /// @dev Thrown when the current debt ratio <= rebalance debt ratio.\n  error ErrorRebalanceDebtRatioNotReached();\n\n  /// @dev Thrown when the current debt ratio > liquidate debt ratio.\n  error ErrorPositionInLiquidationMode();\n\n  error ErrorRebalanceOnLiquidatableTick();\n\n  error ErrorRebalanceOnLiquidatablePosition();\n\n  error ErrorInsufficientCollateralToLiquidate();\n\n  error ErrorOverflow();\n\n  /**********************\n   * Internal Functions *\n   **********************/\n\n  /// @dev Internal function to check value not too large.\n  /// @param value The value to check.\n  /// @param upperBound The upper bound for the given value.\n  function _checkValueTooLarge(uint256 value, uint256 upperBound) internal pure {\n    if (value > upperBound) revert ErrorValueTooLarge();\n  }\n\n  function _checkAddressNotZero(address value) internal pure {\n    if (value == address(0)) revert ErrorZeroAddress();\n  }\n}\n"
+        "ISAMM.sol": "// SPDX-License-Identifier: GPL-3\n/**\n *     Safe Anonymization Mail Module\n *     Copyright (C) 2024 OXORIO-FZCO\n *\n *     This program is free software: you can redistribute it and/or modify\n *     it under the terms of the GNU General Public License as published by\n *     the Free Software Foundation, either version 3 of the License, or\n *     (at your option) any later version.\n *\n *     This program is distributed in the hope that it will be useful,\n *     but WITHOUT ANY WARRANTY; without even the implied warranty of\n *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n *     GNU General Public License for more details.\n *\n *     You should have received a copy of the GNU General Public License\n *     along with this program.  If not, see <https://www.gnu.org/licenses/>.\n */\npragma solidity 0.8.23;\n\nimport {ISafe} from \"../Safe/interfaces/ISafe.sol\";\nimport {ISAMMEvents} from \"./ISAMMEvents.sol\";\nimport {ISAMMErrors} from \"./ISAMMErrors.sol\";\nimport {ISAMMGetters} from \"./ISAMMGetters.sol\";\n\ninterface ISAMM is ISAMMEvents, ISAMMErrors, ISAMMGetters {\n    struct Proof {\n        bytes proof;\n        uint256 commit;\n        string domain;\n        bytes32 pubkeyHash;\n        bool is2048sig;\n    }\n\n    struct TxAllowance {\n        address to;\n        bytes4 selector;\n        uint256 amount;\n    }\n\n    function setup(\n        address safe,\n        uint256 participantsRoot,\n        uint64 threshold,\n        string calldata relayer,\n        address dkimRegistry,\n        TxAllowance[] calldata txAllowances\n    ) external;\n\n    function executeTransaction(\n        address to,\n        uint256 value,\n        bytes memory data,\n        ISafe.Operation operation,\n        Proof[] calldata proofs,\n        uint256 deadline\n    ) external returns (bool success);\n\n    function executeTransactionReturnData(\n        address to,\n        uint256 value,\n        bytes memory data,\n        ISafe.Operation operation,\n        Proof[] calldata proofs,\n        uint256 deadline\n    ) external returns (bool success, bytes memory returnData);\n}\n"
     }
 }

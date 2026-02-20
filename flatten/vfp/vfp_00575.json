@@ -1,35 +1,32 @@
 {
     "vfp_id": "vfp_00575",
-    "project_name": "Lido V3 _ Consensys Diligence.md",
+    "project_name": "cantina_generic_money_nov2025.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-693"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-345"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-346"
+                    "CWE-1287"
                 ]
             },
-            "title": "PinnedBeaconProxy Can Hide Malicious Implementation via Constructor",
-            "description": "The vulnerability allows an attacker to deploy a malicious staking vault implementation by manipulating the constructor of the PinnedBeaconProxy, which is otherwise expected to point to a legitimate implementation. The root cause lies in the fact that the VaultHub validates only the proxy's codehash and the isOssified() status from the implementation, but does not verify the actual pinned implementation address in storage. Since the constructor of the proxy is not part of the runtime bytecode, an attacker can craft a malicious constructor that pre-initializes the PINNED_BEACON_STORAGE_SLOT with a malicious implementation address. This implementation can return false for isOssified(), bypassing the VaultHub’s checks. Once connected, the attacker can mint stETH against non-existent collateral and then drain all funds from the vault, leading to a loss of funds for the Lido protocol.\n",
-            "severity": "Critical",
+            "title": "Vault price manipulation allows yield manager to mint tokens",
+            "description": "The yield manager can mint additional tokens when the perceived value of backing assets exceeds the total shares. This vulnerability arises because the _additionalOwnedAssets() function, used to determine asset value, is susceptible to manipulation—such as through an attacker distorting pool prices in Curve 3pool. By inflating the perceived asset value, an attacker can trigger erroneous yield distribution and minting. The yield manager, especially if malicious, could front-run these calls and redirect funds. The impact includes unauthorized token minting and potential theft of protocol funds, especially when combined with governance-controlled yield distribution.\n",
+            "severity": "High",
             "location": [
-                "PinnedBeaconProxy.sol::constructor#L25-L39",
-                "PinnedBeaconUtils.sol::getPinnedImplementation#L16-L30",
-                "StakingVault.sol::isOssified#L180-L182",
-                "PinnedBeaconUtils.sol::ossified#L36-L38"
+                "YieldManager.sol::#L51-L61"
             ],
             "files": [
-                "core/contracts/0.8.25/vaults/PinnedBeaconProxy.sol"
+                "67cb0291/generic-protocol/src/controller/YieldManager.sol"
             ]
         }
     ],
     "affected_files": {
-        "PinnedBeaconProxy.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\n\n// See contracts/COMPILERS.md\npragma solidity 0.8.25;\n\nimport {IBeacon} from \"@openzeppelin/contracts-v5.2/proxy/beacon/IBeacon.sol\";\nimport {BeaconProxy} from \"@openzeppelin/contracts-v5.2/proxy/beacon/BeaconProxy.sol\";\nimport {PinnedBeaconUtils} from \"./lib/PinnedBeaconUtils.sol\";\n\n/**\n * @title PinnedBeaconProxy\n * @author Lido\n * @notice\n *\n * PinnedBeaconProxy is an extended version of OpenZeppelin's BeaconProxy that adds the ability\n * to \"pin\" (ossify) specific implementation versions for individual proxy instances.\n *\n * Implementation details:\n * - Uses PinnedBeaconUtils library to manage pinned implementation state\n * - Pinned implementation is stored in a storage slot (keccak256(\"stakingVault.proxy.pinnedBeacon\") - 1)\n * - When ossified, the proxy will always use the pinned implementation instead of the beacon's implementation\n *\n */\ncontract PinnedBeaconProxy is BeaconProxy {\n    constructor(address beacon, bytes memory data) BeaconProxy(beacon, data) payable {}\n\n    function _implementation() internal view virtual override returns (address) {\n        address pinnedImpl = PinnedBeaconUtils.getPinnedImplementation();\n        if (pinnedImpl != address(0)) {\n            return pinnedImpl;\n        }\n        return IBeacon(_getBeacon()).implementation();\n    }\n\n    function implementation() external view returns (address) {\n        return _implementation();\n    }\n}\n"
+        "YieldManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.29;\n\nimport { Math } from \"@openzeppelin/contracts/utils/math/Math.sol\";\n\nimport { BaseController } from \"./BaseController.sol\";\nimport { AccountingLogic } from \"./AccountingLogic.sol\";\n\n/**\n * @title YieldManager\n * @dev Abstract contract that manages yield distribution for the protocol.\n * Handles the calculation and distribution of yield generated from backing assets,\n * including protocol fee collection and safety buffer management.\n */\nabstract contract YieldManager is BaseController, AccountingLogic {\n    using Math for uint256;\n\n    /**\n     * @dev Role identifier for addresses authorized to distribute yield\n     */\n    bytes32 public constant YIELD_MANAGER_ROLE = keccak256(\"YIELD_MANAGER_ROLE\");\n\n    /**\n     * @dev Emitted when yield is distributed to the yield distributor\n     */\n    event YieldDistributed(address indexed yieldDistributor, uint256 yield);\n\n    /**\n     * @dev Thrown when yield distribution is paused (share redemption price != mint price)\n     */\n    error Yield_DistributionPaused();\n    /**\n     * @dev Thrown when the safety buffer exceeds the available yield\n     */\n    error Yield_ExcessiveSafetyBuffer();\n\n    /**\n     * @dev Initializer function for the YieldManager contract\n     * @notice This function should be called during contract initialization\n     */\n    // forge-lint: disable-next-line(mixed-case-function)\n    function __YieldManager_init() internal onlyInitializing { }\n\n    /**\n     * @notice Distributes yield generated from backing assets to the yield distributor\n     * @dev Calculates yield as the difference between backing assets value and share total supply.\n     * Deducts safety buffer and protocol fees before distribution.\n     * Only callable when share redemption price equals mint price (distribution not paused).\n     * @return yield The net amount of yield distributed after fees and safety buffer\n     */\n    function distributeYield() external nonReentrant onlyRole(YIELD_MANAGER_ROLE) returns (uint256 yield) {\n        uint256 value = backingAssetsValue();\n        require(_shareRedemptionPrice(value) == SHARE_MINT_PRICE, Yield_DistributionPaused());\n\n        yield = value - _share.totalSupply(); // share redemption price is 1 with same decimals\n        require(yield > safetyBufferYieldDeduction, Yield_ExcessiveSafetyBuffer());\n        yield -= safetyBufferYieldDeduction;\n\n        _share.mint(address(_yieldDistributor), yield);\n        emit YieldDistributed(address(_yieldDistributor), yield);\n    }\n}\n"
     }
 }

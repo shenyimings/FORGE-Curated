@@ -3,24 +3,30 @@
     "project_name": "Likwid - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 46,
+            "id": 54,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-563"
                 ]
             },
-            "title": "Assembly in PositionLibrary could use scratch space",
-            "description": "The PositionLibrary functions use free memory pointer for hashing data, but the data size fits within EVM scratch space (0x00–0x3f). The root cause is suboptimal memory usage. This leads to higher gas costs. The impact is increased transaction fees due to inefficient memory management.\n",
+            "title": "Unused field in MarginBalanceDelta struct",
+            "description": "The realDelta field in MarginBalanceDelta struct is declared but never used. The root cause is dead code. This increases storage size and reduces clarity. The impact is unnecessary gas costs and maintenance burden.\n",
             "severity": "Informational",
             "location": [
-                "PositionLibrary.sol"
+                "MarginBalanceDelta.sol"
             ],
             "files": [
-                "likwid-margin/src/libraries/PositionLibrary.sol"
+                "likwid-margin/src/types/MarginBalanceDelta.sol"
             ]
         }
     ],
     "affected_files": {
-        "PositionLibrary.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\n/// @title PositionLibrary\n/// @notice A library for creating unique identifiers for positions.\nlibrary PositionLibrary {\n    /// @notice Calculates a unique position key for an owner and a salt.\n    /// @param owner The owner of the position.\n    /// @param salt A unique salt for the position.\n    /// @return positionKey The unique identifier for the position.\n    function calculatePositionKey(address owner, bytes32 salt) internal pure returns (bytes32 positionKey) {\n        // This assembly block is a gas-optimized version of:\n        // positionKey = keccak256(abi.encodePacked(owner, salt));\n        assembly (\"memory-safe\") {\n            let fmp := mload(0x40)\n            // Place owner and salt sequentially into memory\n            mstore(fmp, owner)\n            mstore(add(fmp, 0x20), salt)\n            // Hash the 20 bytes of owner and 32 bytes of salt.\n            // An address is 20 bytes, but stored in a 32-byte word. It's right-aligned,\n            // so we skip the first 12 zero bytes.\n            // The total length to hash is 20 (owner) + 32 (salt) = 52 bytes (0x34).\n            positionKey := keccak256(add(fmp, 0x0c), 0x34)\n\n            // now clean the memory we used\n            mstore(fmp, 0) // fmp held owner\n            mstore(add(fmp, 0x20), 0) // fmp held salt\n        }\n    }\n\n    function calculatePositionKey(address owner, bool isForOne, bytes32 salt)\n        internal\n        pure\n        returns (bytes32 positionKey)\n    {\n        assembly (\"memory-safe\") {\n            // Get a pointer to some free memory\n            let ptr := mload(0x40)\n\n            // abi.encodePacked(owner, isForOne, salt) is 53 bytes:\n            // | owner (20 bytes) | isForOne (1 byte) | salt (32 bytes) |\n\n            // We construct the first 32 bytes of the packed data:\n            // | owner (20 bytes) | isForOne (1 byte) | salt (first 11 bytes) |\n            // Shift owner left by 12 bytes (96 bits) to align it to the start of the word.\n            let word1 := shl(96, owner)\n            // Shift isForOne left by 11 bytes (88 bits) to place it right after the owner.\n            word1 := or(word1, shl(88, isForOne))\n            // Take the top 11 bytes (88 bits) of the salt and place them after isForOne.\n            word1 := or(word1, shr(168, salt))\n\n            // We construct the second 32 bytes of the packed data:\n            // | salt (last 21 bytes) | padding (11 bytes) |\n            // Shift the salt left by 88 bits to get the last 21 bytes at the start of the word.\n            let word2 := shl(88, salt)\n\n            // Store the two constructed words in memory\n            mstore(ptr, word1)\n            mstore(add(ptr, 0x20), word2)\n\n            // Hash the 53 bytes of packed data\n            positionKey := keccak256(ptr, 53)\n\n            // Clean the memory that we used\n            mstore(ptr, 0)\n            mstore(add(ptr, 0x20), 0)\n        }\n    }\n}\n"
+        "MarginBalanceDelta.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport {MarginActions} from \"./MarginActions.sol\";\nimport {BalanceDelta} from \"./BalanceDelta.sol\";\n\nstruct MarginBalanceDelta {\n    MarginActions action;\n    bool marginForOne;\n    uint128 marginTotal;\n    uint24 marginFee;\n    uint256 swapFeeAmount;\n    BalanceDelta marginDelta;\n    BalanceDelta realDelta;\n    BalanceDelta mirrorDelta;\n    BalanceDelta pairDelta;\n    BalanceDelta lendDelta;\n    uint256 debtDepositCumulativeLast;\n}\n"
     }
 }

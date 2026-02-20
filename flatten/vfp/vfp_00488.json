@@ -1,94 +1,92 @@
 {
     "vfp_id": "vfp_00488",
-    "project_name": "USDT0 Child Token Audit.md",
+    "project_name": "SoSoValue - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1068"
-                ]
-            },
-            "title": "Missing Support for EIP-3009",
-            "description": "The developer documentation claims support for EIP-3009 (gasless transfers), but the `UChildUSDT0` contract does not implement the required `transferWithAuthorization` and `receiveWithAuthorization` functions. This discrepancy misleads developers and users who expect gasless transfer functionality, potentially leading to integration errors or failed transactions. The cause is an omission in the contract implementation despite documentation claims. This undermines trust in the project's documentation and limits the utility of the token.\n",
-            "severity": "Low",
-            "location": [
-                "UChildUSDT0.sol#L9-L197",
-                "developer documentation"
-            ],
-            "files": [
-                "UChildERC20Proxy/UChildERC20Proxy.sol"
-            ]
-        },
-        {
-            "id": 6,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-799"
-                ],
-                "3": [
-                    "CWE-837"
-                ]
-            },
-            "title": "Redundant Event Emission",
-            "description": "The `addToBlockedList` and `removeFromBlockedList` functions in `WithBlockedList.sol` emit events without first checking if the blocklist state has actually changed. This can result in redundant events being emitted when an address is added or removed multiple times, leading to unnecessary gas costs and potentially misleading off-chain monitoring systems. The root cause is the absence of a state-diff check before event emission. While the impact is minor, it affects efficiency and data reliability.\n",
-            "severity": "Low",
-            "location": [
-                "WithBlockedList.sol#L37",
-                "WithBlockedList.sol#L42"
-            ],
-            "files": [
-                "UChildERC20Proxy/UChildERC20Proxy.sol"
-            ]
-        },
-        {
-            "id": 7,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
-                ]
-            },
-            "title": "Missing ERC-165 Support",
-            "description": "The `UChildUSDT0` contract implements EIP-7802 but does not support ERC-165, meaning it lacks the `supportsInterface` function to advertise its interface compliance. This makes it harder for external contracts to reliably detect whether the contract supports specific standards, reducing interoperability. The cause is the omission of the `IERC165` interface and implementation. Although the functionality exists, the lack of standard discovery mechanism is a compatibility issue.\n",
-            "severity": "Low",
-            "location": [
-                "UChildUSDT0.sol#L9-L197"
-            ],
-            "files": [
-                "UChildERC20Proxy/UChildERC20Proxy.sol"
-            ]
-        },
-        {
-            "id": 8,
+            "id": 0,
             "category": {
                 "1": [
                     "CWE-707"
                 ],
                 "2": [
                     "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
                 ]
             },
-            "title": "Missing Zero-Address Check",
-            "description": "The `upgradeToUSDT0` function in `UChildUSDT0.sol` does not validate that the `newAdmin` parameter is not the zero address. If accidentally set to zero, the contract could become unmanageable, as administrative functions would be inaccessible. This is a common configuration risk in upgradeable contracts. The root cause is the lack of input validation for critical address parameters. This could lead to permanent loss of control if triggered.\n",
-            "severity": "Low",
+            "title": "Missing duplicate-token check",
+            "description": "The function `containTokenset` is designed to verify that a larger token set contains all tokens from a smaller set with sufficient amounts. However, it does not check for duplicate tokens in the smaller set. This can lead to incorrect validation when the smaller set contains duplicate tokens with amounts that individually are less than the corresponding token in the larger set, but whose combined amount exceeds it.\n\nThe root cause is the lack of a duplicate token check within the `containTokenset` function. While other functions like `addRebalanceRequest` perform a duplicate check using `hasDuplicates`, the `addBurnFeeRequest` function calls `containTokenset` without first validating duplicates.\n\nAn attacker could exploit this by crafting a fee request with duplicated tokens in the `sellTokenset`, causing the system to accept a fee amount that exceeds the available balance in the asset. This would allow the extraction of more fees than should be permitted.\n\nThe impact is that the protocol may miscalculate fee obligations, leading to incorrect state updates and potential loss of funds from the asset pool due to over-withdrawal of fees.\n",
+            "severity": "Medium",
             "location": [
-                "UChildUSDT0.sol#L16"
+                "AssetFeeManager::containTokenset",
+                "AssetFeeManager::addBurnFeeRequest"
             ],
             "files": [
-                "UChildERC20Proxy/UChildERC20Proxy.sol"
+                "ssi-protocol/src/AssetFeeManager.sol",
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-682"
+                ]
+            },
+            "title": "Incorrect length calculation on subTokenset",
+            "description": "The `subTokenset` function subtracts one token set from another and returns the result. It calculates the length of the resulting array by decrementing a counter when a token's amount reaches zero. However, this method is flawed because it assumes no zero-balance tokens exist in the input set and does not account for multiple subtractions of zero-balance tokens.\n\nThe cause is an incorrect logic in length calculation: the initial length is set to the full input length, and only decrements when a token's amount becomes zero during subtraction. If the input already contains zero-balance tokens, or if a zero-balance token is subtracted multiple times, the final array length will be miscalculated.\n\nAn attacker could exploit this by providing token sets containing zero-amount tokens or by structuring operations that repeatedly subtract from zero-balance entries, leading to an array with uninitialized elements or missing valid tokens.\n\nThe impact is that the resulting token set may contain uninitialized data or omit valid tokens, leading to incorrect state representation and potential inconsistencies in token basket calculations.\n",
+            "severity": "High",
+            "location": [
+                "Utils::subTokenset"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ],
+                "2": [
+                    "CWE-1025"
+                ]
+            },
+            "title": "Incomplete duplicate-token check",
+            "description": "The `hasDuplicates` function checks for duplicate tokens by hashing each token's fields and comparing sorted hashes. However, the `stringToAddress` function used to convert address strings does not validate that the string starts with \"0x\", allowing different strings (e.g., \"0x123\" vs \"xx123\") to produce the same address but different hashes. Additionally, case differences in hexadecimal addresses produce different hashes despite representing the same address.\n\nThe root cause is the use of raw string representation in `calcTokenHash` without normalizing the address format. This allows bypassing the duplicate check by using syntactically different but semantically identical addresses.\n\nAn attacker could exploit this by submitting token sets with duplicated tokens that differ only in the prefix or case of the address string, thereby evading the duplicate detection mechanism.\n\nThe impact includes the ability to introduce duplicate tokens into critical operations like rebalancing, which could lead to incorrect basket updates and potential manipulation of token amounts. It also breaks whitelist checks that rely on exact string matching.\n",
+            "severity": "Medium",
+            "location": [
+                "Utils::hasDuplicates",
+                "Utils::stringToAddress",
+                "Utils::calcTokenHash"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-697"
+                ]
+            },
+            "title": "Incorrect token comparison",
+            "description": "The `isSameToken` function relies on `calcTokenHash`, which uses `abi.encodePacked` to hash token fields. Because `abi.encodePacked` does not pad dynamic types, different combinations of `chain` and `symbol` can produce the same encoded output (e.g., \"BTC\"+\"2200\" vs \"BTC2\"+\"200\"), leading to hash collisions.\n\nThe root cause is the use of `abi.encodePacked` on multiple dynamic strings without separators, which creates ambiguous encodings. This allows two different tokens to be considered identical.\n\nWhile exploitation is difficult due to address validation, the collision could still lead to logical errors in token comparison, especially in edge cases involving crafted strings.\n\nThe impact is potential confusion and incorrect behavior in token validation logic, which could result in unintended token substitutions or failed validations, undermining the integrity of token set operations.\n",
+            "severity": "Low",
+            "location": [
+                "Utils::calcTokenHash",
+                "Utils::isSameToken"
+            ],
+            "files": [
+                "ssi-protocol/src/Utils.sol"
             ]
         }
     ],
     "affected_files": {
-        "UChildERC20Proxy.sol": "\n// File: contracts/common/Proxy/IERCProxy.sol\n\npragma solidity 0.6.6;\n\ninterface IERCProxy {\n    function proxyType() external pure returns (uint256 proxyTypeId);\n\n    function implementation() external view returns (address codeAddr);\n}\n\n// File: contracts/common/Proxy/Proxy.sol\n\npragma solidity 0.6.6;\n\n\nabstract contract Proxy is IERCProxy {\n    function delegatedFwd(address _dst, bytes memory _calldata) internal {\n        // solium-disable-next-line security/no-inline-assembly\n        assembly {\n            let result := delegatecall(\n                sub(gas(), 10000),\n                _dst,\n                add(_calldata, 0x20),\n                mload(_calldata),\n                0,\n                0\n            )\n            let size := returndatasize()\n\n            let ptr := mload(0x40)\n            returndatacopy(ptr, 0, size)\n\n            // revert instead of invalid() bc if the underlying call failed with invalid() it already wasted gas.\n            // if the call returned error data, forward it\n            switch result\n                case 0 {\n                    revert(ptr, size)\n                }\n                default {\n                    return(ptr, size)\n                }\n        }\n    }\n\n    function proxyType() external virtual override pure returns (uint256 proxyTypeId) {\n        // Upgradeable proxy\n        proxyTypeId = 2;\n    }\n\n    function implementation() external virtual override view returns (address);\n}\n\n// File: contracts/common/Proxy/UpgradableProxy.sol\n\npragma solidity 0.6.6;\n\n\ncontract UpgradableProxy is Proxy {\n    event ProxyUpdated(address indexed _new, address indexed _old);\n    event ProxyOwnerUpdate(address _new, address _old);\n\n    bytes32 constant IMPLEMENTATION_SLOT = keccak256(\"matic.network.proxy.implementation\");\n    bytes32 constant OWNER_SLOT = keccak256(\"matic.network.proxy.owner\");\n\n    constructor(address _proxyTo) public {\n        setProxyOwner(msg.sender);\n        setImplementation(_proxyTo);\n    }\n\n    fallback() external payable {\n        delegatedFwd(loadImplementation(), msg.data);\n    }\n\n    receive() external payable {\n        delegatedFwd(loadImplementation(), msg.data);\n    }\n\n    modifier onlyProxyOwner() {\n        require(loadProxyOwner() == msg.sender, \"NOT_OWNER\");\n        _;\n    }\n\n    function proxyOwner() external view returns(address) {\n        return loadProxyOwner();\n    }\n\n    function loadProxyOwner() internal view returns(address) {\n        address _owner;\n        bytes32 position = OWNER_SLOT;\n        assembly {\n            _owner := sload(position)\n        }\n        return _owner;\n    }\n\n    function implementation() external override view returns (address) {\n        return loadImplementation();\n    }\n\n    function loadImplementation() internal view returns(address) {\n        address _impl;\n        bytes32 position = IMPLEMENTATION_SLOT;\n        assembly {\n            _impl := sload(position)\n        }\n        return _impl;\n    }\n\n    function transferProxyOwnership(address newOwner) public onlyProxyOwner {\n        require(newOwner != address(0), \"ZERO_ADDRESS\");\n        emit ProxyOwnerUpdate(newOwner, loadProxyOwner());\n        setProxyOwner(newOwner);\n    }\n\n    function setProxyOwner(address newOwner) private {\n        bytes32 position = OWNER_SLOT;\n        assembly {\n            sstore(position, newOwner)\n        }\n    }\n\n    function updateImplementation(address _newProxyTo) public onlyProxyOwner {\n        require(_newProxyTo != address(0x0), \"INVALID_PROXY_ADDRESS\");\n        require(isContract(_newProxyTo), \"DESTINATION_ADDRESS_IS_NOT_A_CONTRACT\");\n\n        emit ProxyUpdated(_newProxyTo, loadImplementation());\n        \n        setImplementation(_newProxyTo);\n    }\n\n    function updateAndCall(address _newProxyTo, bytes memory data) payable public onlyProxyOwner {\n        updateImplementation(_newProxyTo);\n\n        (bool success, bytes memory returnData) = address(this).call{value: msg.value}(data);\n        require(success, string(returnData));\n    }\n\n    function setImplementation(address _newProxyTo) private {\n        bytes32 position = IMPLEMENTATION_SLOT;\n        assembly {\n            sstore(position, _newProxyTo)\n        }\n    }\n    \n    function isContract(address _target) internal view returns (bool) {\n        if (_target == address(0)) {\n            return false;\n        }\n\n        uint256 size;\n        assembly {\n            size := extcodesize(_target)\n        }\n        return size > 0;\n    }\n}\n\n// File: contracts/child/ChildToken/UpgradeableChildERC20/UChildERC20Proxy.sol\n\npragma solidity 0.6.6;\n\n\ncontract UChildERC20Proxy is UpgradableProxy {\n    constructor(address _proxyTo)\n        public\n        UpgradableProxy(_proxyTo)\n    {}\n}\n"
+        "AssetFeeManager.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.25;\nimport \"./Interface.sol\";\nimport {AssetController} from \"./AssetController.sol\";\nimport {Utils} from './Utils.sol';\n\n// import \"forge-std/console.sol\";\n\ncontract AssetFeeManager is AssetController, IAssetFeeManager {\n    Request[] burnFeeRequests;\n\n    event AddBurnFeeRequest(uint nonce);\n    event RejectBurnFeeRequest(uint nonce);\n    event ConfirmBurnFeeRequest(uint nonce);\n\n    function setFee(uint256 assetID, uint256 fee) external onlyOwner {\n        IAssetFactory factory = IAssetFactory(factoryAddress);\n        IAssetToken assetToken = IAssetToken(factory.assetTokens(assetID));\n        require(assetToken.feeCollected(), \"has fee not collected\");\n        require(assetToken.hasRole(assetToken.FEEMANAGER_ROLE(), address(this)), \"not a fee manager\");\n        assetToken.setFee(fee);\n    }\n\n    function collectFeeTokenset(uint256 assetID) external onlyOwner {\n        IAssetFactory factory = IAssetFactory(factoryAddress);\n        IAssetToken assetToken = IAssetToken(factory.assetTokens(assetID));\n        require(assetToken.hasRole(assetToken.FEEMANAGER_ROLE(), address(this)), \"not a fee manager\");\n        require(assetToken.rebalancing() == false, \"is rebalancing\");\n        require(assetToken.issuing() == false, \"is issuing\");\n        assetToken.collectFeeTokenset();\n    }\n\n    function getBurnFeeRequestLength() external view returns (uint256) {\n        return burnFeeRequests.length;\n    }\n\n    function getBurnFeeRequest(uint256 nonce) external view returns (Request memory) {\n        return burnFeeRequests[nonce];\n    }\n\n    function addBurnFeeRequest(uint256 assetID, OrderInfo memory orderInfo) external onlyOwner returns (uint256) {\n        IAssetFactory factory = IAssetFactory(factoryAddress);\n        address assetTokenAddress = factory.assetTokens(assetID);\n        IAssetToken assetToken = IAssetToken(assetTokenAddress);\n        address swapAddress = factory.swaps(assetID);\n        ISwap swap = ISwap(swapAddress);\n        require(assetToken.hasRole(assetToken.FEEMANAGER_ROLE(), address(this)), \"not a fee manager\");\n        require(assetToken.burningFee() == false, \"is burning fee\");\n        require(swap.checkOrderInfo(orderInfo) == 0, \"order not valid\");\n        Token[] memory sellTokenset = Utils.muldivTokenset(orderInfo.order.inTokenset, orderInfo.order.inAmount, 10**8);\n        require(Utils.containTokenset(assetToken.getFeeTokenset(), sellTokenset), \"not enough fee to sell\");\n        for (uint i = 0; i < orderInfo.order.outTokenset.length; i++) {\n            require(Utils.stringToAddress(orderInfo.order.outAddressList[i]) == factory.vault(), \"fee receiver not match\");\n            require(bytes32(bytes(orderInfo.order.outTokenset[i].chain)) == bytes32(bytes(factory.chain())), \"outTokenset chain not match\");\n        }\n        swap.addSwapRequest(orderInfo, false, true);\n        burnFeeRequests.push(Request({\n            nonce: burnFeeRequests.length,\n            requester: msg.sender,\n            assetTokenAddress: assetTokenAddress,\n            amount: 0,\n            swapAddress: swapAddress,\n            orderHash: orderInfo.orderHash,\n            status: RequestStatus.PENDING,\n            requestTimestamp: block.timestamp,\n            issueFee: 0\n        }));\n        assetToken.lockBurnFee();\n        emit AddBurnFeeRequest(burnFeeRequests.length - 1);\n        return burnFeeRequests.length - 1;\n    }\n\n    function rejectBurnFeeRequest(uint nonce) external onlyOwner {\n        require(nonce < burnFeeRequests.length, \"nonce too large\");\n        Request memory burnFeeRequest = burnFeeRequests[nonce];\n        require(burnFeeRequest.status == RequestStatus.PENDING);\n        ISwap swap = ISwap(burnFeeRequest.swapAddress);\n        SwapRequest memory swapRequest = swap.getSwapRequest(burnFeeRequest.orderHash);\n        require(swapRequest.status == SwapRequestStatus.REJECTED || swapRequest.status == SwapRequestStatus.CANCEL || swapRequest.status == SwapRequestStatus.FORCE_CANCEL);\n        IAssetToken assetToken = IAssetToken(burnFeeRequest.assetTokenAddress);\n        assetToken.unlockBurnFee();\n        burnFeeRequests[nonce].status = RequestStatus.REJECTED;\n        emit RejectBurnFeeRequest(nonce);\n    }\n\n    function confirmBurnFeeRequest(uint nonce, OrderInfo memory orderInfo, bytes[] memory inTxHashs) external onlyOwner {\n        require(nonce < burnFeeRequests.length, \"nonce too large\");\n        Request memory burnFeeRequest = burnFeeRequests[nonce];\n        checkRequestOrderInfo(burnFeeRequest, orderInfo);\n        require(burnFeeRequest.status == RequestStatus.PENDING);\n        ISwap swap = ISwap(burnFeeRequest.swapAddress);\n        SwapRequest memory swapRequest = swap.getSwapRequest(burnFeeRequest.orderHash);\n        require(swapRequest.status == SwapRequestStatus.MAKER_CONFIRMED);\n        swap.confirmSwapRequest(orderInfo, inTxHashs);\n        IAssetToken assetToken = IAssetToken(burnFeeRequest.assetTokenAddress);\n        Order memory order = orderInfo.order;\n        Token[] memory sellTokenset = Utils.muldivTokenset(order.inTokenset, order.inAmount, 10**8);\n        assetToken.burnFeeTokenset(sellTokenset);\n        burnFeeRequests[nonce].status = RequestStatus.CONFIRMED;\n        assetToken.unlockBurnFee();\n        emit ConfirmBurnFeeRequest(nonce);\n    }\n}",
+        "Utils.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.25;\nimport './Interface.sol';\nimport \"@openzeppelin/contracts/utils/Arrays.sol\";\n\nlibrary Utils {\n    function stringToAddress(string memory str) internal pure returns (address) {\n        bytes memory strBytes = bytes(str);\n        require(strBytes.length == 42, \"Invalid address length\");\n        bytes memory addrBytes = new bytes(20);\n\n        for (uint i = 0; i < 20; i++) {\n            addrBytes[i] = bytes1(hexCharToByte(strBytes[2 + i * 2]) * 16 + hexCharToByte(strBytes[3 + i * 2]));\n        }\n\n        return address(uint160(bytes20(addrBytes)));\n    }\n\n    function hexCharToByte(bytes1 char) internal pure returns (uint8) {\n        uint8 byteValue = uint8(char);\n        if (byteValue >= uint8(bytes1('0')) && byteValue <= uint8(bytes1('9'))) {\n            return byteValue - uint8(bytes1('0'));\n        } else if (byteValue >= uint8(bytes1('a')) && byteValue <= uint8(bytes1('f'))) {\n            return 10 + byteValue - uint8(bytes1('a'));\n        } else if (byteValue >= uint8(bytes1('A')) && byteValue <= uint8(bytes1('F'))) {\n            return 10 + byteValue - uint8(bytes1('A'));\n        }\n        revert(\"Invalid hex character\");\n    }\n\n    function containTokenset(Token[] memory a, Token[] memory b) internal pure returns (bool) {\n        uint k;\n        for (uint i = 0; i < b.length; i++) {\n            k = a.length;\n            for (uint j = 0; j < a.length; j++) {\n                if (isSameToken(b[i], a[j])) {\n                    if (a[j].amount < b[i].amount) {\n                        return false;\n                    }\n                    k = j;\n                    break;\n                }\n            }\n            if (k == a.length) {\n                return false;\n            }\n        }\n        return true;\n    }\n\n    function subTokenset(Token[] memory a_, Token[] memory b) internal pure returns (Token[] memory) {\n        Token[] memory a = copyTokenset(a_);\n        uint newLength = a.length;\n        uint k;\n        for (uint i = 0; i < b.length; i++) {\n            k = a.length;\n            for (uint j = 0; j < a.length; j++) {\n                if (isSameToken(b[i], a[j])) {\n                    require(a[j].amount >= b[i].amount, \"a.amount less than b.amount\");\n                    a[j].amount -= b[i].amount;\n                    if (a[j].amount == 0) {\n                        newLength -= 1;\n                    }\n                    k = j;\n                    break;\n                }\n            }\n            require(k < a.length, \"a not contains b\");\n        }\n        Token[] memory res = new Token[](newLength);\n        k = 0;\n        for (uint i = 0; i < a.length; i++) {\n            if (a[i].amount > 0) {\n                res[k++] = a[i];\n            }\n        }\n        return res;\n    }\n\n    function addTokenset(Token[] memory a_, Token[] memory b_) internal pure returns (Token[] memory) {\n        Token[] memory a = copyTokenset(a_);\n        Token[] memory b = copyTokenset(b_);\n        uint k;\n        uint newCnt = 0;\n        for (uint i = 0; i < b.length; i++) {\n            k = a.length;\n            for (uint j = 0; j < a.length; j++) {\n                if (isSameToken(a[j], b[i])) {\n                    a[j].amount += b[i].amount;\n                    k = j;\n                    break;\n                }\n            }\n            if (k == a.length) {\n                if (newCnt < i) {\n                    b[newCnt] = b[i];\n                }\n                newCnt += 1;\n            }\n        }\n        Token[] memory res = new Token[](a.length + newCnt);\n        for (uint i = 0; i < a.length; i++) {\n            res[i] = a[i];\n        }\n        for (uint i = 0; i < newCnt; i++) {\n            res[a.length + i] = b[i];\n        }\n        return res;\n    }\n\n    function copyTokenset(Token[] memory a) internal pure returns (Token[] memory) {\n        Token[] memory b = new Token[](a.length);\n        for (uint i = 0; i < a.length; i++) {\n            b[i] = Token({\n                chain: a[i].chain,\n                symbol: a[i].symbol,\n                addr: a[i].addr,\n                decimals: a[i].decimals,\n                amount: a[i].amount\n            });\n        }\n        return b;\n    }\n\n    function muldivTokenset(Token[] memory a_, uint mul_factor, uint div_facotr) internal pure returns (Token[] memory) {\n        Token[] memory a = copyTokenset(a_);\n        for (uint i = 0; i < a.length; i++) {\n            a[i].amount = a[i].amount * mul_factor / div_facotr;\n        }\n        return a;\n    }\n\n    function isSameToken(Token memory a, Token memory b) internal pure returns (bool) {\n        return calcTokenHash(a) == calcTokenHash(b);\n    }\n\n    function calcTokenHash(Token memory token) internal pure returns (bytes32) {\n        return keccak256(abi.encodePacked(token.chain, token.symbol, token.addr, token.decimals));\n    }\n\n    function hasDuplicates(Token[] memory a) internal pure returns (bool) {\n        uint256[] memory b = new uint256[](a.length);\n        for (uint i = 0; i < a.length; i++) {\n            b[i] = uint256(calcTokenHash(a[i]));\n        }\n        uint256[] memory c = Arrays.sort(b);\n        for (uint i = 0; i < c.length - 1; i++) {\n            if (c[i] == c[i+1]) {\n                return true;\n            }\n        }\n        return false;\n    }\n}"
     }
 }

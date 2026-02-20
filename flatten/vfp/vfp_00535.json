@@ -1,33 +1,103 @@
 {
     "vfp_id": "vfp_00535",
-    "project_name": "cantina_eco_february2025.pdf",
+    "project_name": "Across Audit.md",
     "findings": [
         {
-            "id": 12,
+            "id": 2,
             "category": {
                 "1": [
-                    "CWE-707"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1286"
+                    "CWE-1076"
                 ]
             },
-            "title": "Missing validation of orderDataType and incorrect EIP-712 encoding may break ERC-7683 requirement",
-            "description": "The `orderDataType` field in `OnchainCrossChainOrder` and `GaslessCrossChainOrder` is not validated against the correct typehashes. Additionally, the EIP-712 encoding contains errors, such as incorrect struct names and missing fields.\n\nThis breaks ERC-7683 compliance, as the standard requires ABI decodability and correct typehash validation.\n\nFillers relying on proper EIP-712 signing may fail to process intents, leading to interoperability issues.\n\nThe impact is low, as it affects compliance and integration but does not directly compromise funds.\n",
-            "severity": "Low",
+            "title": "Forwarder and Withdrawal Helper Contracts Do Not Handle ETH Transfers Correctly",
+            "description": "The `ForwarderBase` and `WithdrawalHelperBase` contracts, designed to operate on L2s and facilitate communication with L3s, lack a `receive` function, making them unable to accept direct ETH transfers. \nThe root cause is the omission of the `receive` function, which is required for a contract to receive ETH via `call` or `transfer`. This affects both WETH unwrapping logic and direct ETH bridging from L3 chains. \nAn attacker could exploit timing or routing dependencies where ETH must be unwrapped or bridged, causing transactions to fail. For example, WETH unwrapping during bridging (as in `Optimism_Adapter`) would fail, stranding funds. Similarly, ETH bridged from L3s cannot be received or forwarded to L1. \nThe impact is high: inability to process ETH transfers, leading to fund lockups and disruption of cross-chain operations involving native ETH.\n",
+            "severity": "High",
             "location": [
-                "EcoERC7683.sol#L21-L47",
-                "EcoERC7683.sol#L49-L55"
+                "ForwarderBase.sol#18",
+                "WithdrawalHelperBase.sol#18",
+                "Optimism_Adapter.sol#L101-L105",
+                "Ovm_WithdrawalHelper.sol#L114-L124",
+                "WithdrawalHelperBase.sol#L87-L101"
             ],
             "files": [
-                "eco-routes/contracts/types/EcoERC7683.sol"
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "Changing crossDomainAdmin Will Prohibit Pending Operations",
+            "description": "Changing the `crossDomainAdmin` via the `setCrossDomainAdmin` function in the `ForwarderBase` contract will block any pending cross-chain operations initiated by the old admin. This is because incoming messages on L2 are validated against the current `crossDomainAdmin`, which no longer matches the original sender. The root cause is the lack of consideration for in-flight messages during admin changes. An attacker or malicious admin could exploit this by changing the admin to prevent completion of legitimate cross-chain operations. The impact is a denial of service for any pending L1->L2 message processing, potentially freezing user funds or actions.\n",
+            "severity": "Low",
+            "location": [
+                "ForwarderBase.sol::setCrossDomainAdmin#69",
+                "ForwarderBase.sol::crossDomainAdmin#20"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ],
+                "2": [
+                    "CWE-436"
+                ],
+                "3": [
+                    "CWE-437"
+                ]
+            },
+            "title": "No Way to Invoke Some Privileged Functions of Forwarders",
+            "description": "The `ForwarderBase` contract includes privileged functions like `setCrossDomainAdmin` and `updateAdapter` that can only be called via cross-chain messages from the `crossDomainAdmin`. However, the `Router_Adapter` contract, which is the intended communication path from L1, only supports `relayMessage` and `relayTokens`, not arbitrary function calls. \nThe root cause is the lack of a generic function call forwarding mechanism in `Router_Adapter`, limiting administrative flexibility. \nAn attacker could exploit governance delays or lack of admin access by forcing upgrades or misconfigurations that cannot be corrected without deploying new adapters. While not directly exploitable for fund theft, it reduces protocol agility. \nThe impact is medium: reduced operational flexibility and potential inability to reconfigure forwarders in response to security incidents or upgrades.\n",
+            "severity": "Medium",
+            "location": [
+                "ForwarderBase.sol#18",
+                "ForwarderBase.sol::setCrossDomainAdmin#69",
+                "ForwarderBase.sol::updateAdapter#82",
+                "Router_Adapter.sol#26"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
+            ]
+        },
+        {
+            "id": 15,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-400"
+                ]
+            },
+            "title": "Cross-chain Calls May Fail Due to Insufficient Assets",
+            "description": "1. **Description:** When relaying messages or tokens from L2 to L3 via forwarder contracts, there is no check to ensure the forwarder holds sufficient gas tokens to cover execution costs on the target chain.\n2. **Cause:** The `ForwarderBase` contract's `relayMessage` function lacks a balance check for the required gas token, and there is no automated mechanism to replenish the forwarder's balance.\n3. **Exploitation:** An attacker could force a series of L2-to-L3 calls that deplete the forwarder's balance, causing subsequent legitimate calls to fail due to insufficient gas.\n4. **Impact:** Failed cross-chain transactions, leading to user fund lockups, degraded protocol functionality, and potential denial of service on L3 integrations.\n",
+            "severity": "Medium",
+            "location": [
+                "ForwarderBase.sol::relayMessage#95-134"
+            ],
+            "files": [
+                "contracts/contracts/chain-adapters/ForwarderBase.sol"
             ]
         }
     ],
     "affected_files": {
-        "EcoERC7683.sol": "/* -*- c-basic-offset: 4 -*- */\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {TokenAmount, Route, Call} from \"./Intent.sol\";\n/**\n * @title EcoERC7683\n * @dev ERC7683 orderData subtypes designed for Eco Protocol\n */\n\n/**\n * @notice contains everything which, when combined with other aspects of GaslessCrossChainOrder\n * is sufficient to publish an intent via Eco Protocol\n * @dev the orderData field of GaslessCrossChainOrder should be decoded as GaslessCrosschainOrderData\\\n * @param route the route data\n * @param creator the address of the intent creator\n * @param prover the address of the prover contract this intent will be proven against\n * @param nativeValue the amount of native token offered as a reward\n * @param tokens the addresses and amounts of reward tokens\n */\nstruct OnchainCrosschainOrderData {\n    Route route;\n    address creator;\n    address prover;\n    uint256 nativeValue;\n    TokenAmount[] rewardTokens;\n}\n/**\n * @notice contains everything which, when combined with other aspects of GaslessCrossChainOrder\n * is sufficient to publish an intent via Eco Protocol\n * @dev the orderData field of GaslessCrossChainOrder should be decoded as GaslessCrosschainOrderData\n * @param destination the ID of the chain where the intent was created\n * @param inbox the inbox contract on the destination chain that will fulfill the intent\n * @param calls the call instructions to be called during intent fulfillment\n * @param prover the address of the prover contract this intent will be proven against\n * @param nativeValue the amount of native token offered as a reward\n * @param tokens the addresses and amounts of reward tokens\n */\nstruct GaslessCrosschainOrderData {\n    uint256 destination;\n    address inbox;\n    TokenAmount[] routeTokens;\n    Call[] calls;\n    address prover;\n    uint256 nativeValue;\n    TokenAmount[] rewardTokens;\n}\n\n//EIP712 typehashes\nbytes32 constant ONCHAIN_CROSSCHAIN_ORDER_DATA_TYPEHASH = keccak256(\n    \"OnchainCrosschainOrderData(Route route,address creator,address prover,uint256 nativeValue,TokenAmount[] rewardTokens)Route(bytes32 salt,uint256 source,uint256 destination,address inbox,TokenAmount[] tokens,Call[] calls)TokenAmount(address token,uint256 amount)Call(address target,bytes data,uint256 value)\"\n);\nbytes32 constant GASLESS_CROSSCHAIN_ORDER_DATA_TYPEHASH = keccak256(\n    \"GaslessCrosschainOrderData(uint256 destination,address inbox,TokenAmount[] routeTokens,Call[] calls,address prover,uint256 nativeValue,TokenAmount[] rewardTokens)TokenAmount(address token,uint256 amount)Call(address target,bytes data,uint256 value)\"\n);\n"
+        "ForwarderBase.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.0;\n\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { ForwarderInterface } from \"./interfaces/ForwarderInterface.sol\";\nimport { AdapterInterface } from \"./interfaces/AdapterInterface.sol\";\n\n/**\n * @title ForwarderBase\n * @notice This contract expects to receive messages and tokens from an authorized sender on L1 and forwards messages and tokens to spoke pool contracts on\n * L3. Messages are intended to originate from the hub pool. The motivating use case for this contract is to aid with sending messages from L1 to an L3, which\n * by definition is a network which does not have a direct connection with L1 but instead must communicate with that L1 via an L2. Each contract that extends\n * the ForwarderBase maintains a mapping of chain IDs to a bridge adapter addresses. For example, if this contract is deployed on Arbitrum, then this mapping\n * would send L3 chain IDs which roll up to Arbitrum to an adapter contract address deployed on Arbitrum which directly interfaces with the L3 token/message\n * bridge. In other words, this contract maintains a mapping of important contracts which helps transmit messages to the \"next layer\".\n * @custom:security-contact bugs@across.to\n */\nabstract contract ForwarderBase is UUPSUpgradeable, ForwarderInterface {\n    // Address that can relay messages using this contract and also upgrade this contract.\n    address public crossDomainAdmin;\n\n    // Map from a destination chain ID to the address of an adapter contract which interfaces with the L2-L3 bridge. The destination chain ID corresponds to\n    // the network ID of an L3. These chain IDs are used as the key in this mapping because network IDs are enforced to be unique. Since we require the chain\n    // ID to be sent along with a message or token relay, ForwarderInterface's relay functions include an extra field, `destinationChainId`, when compared to the\n    // relay functions of `AdapterInterface`.\n    mapping(uint256 => address) chainAdapters;\n\n    event ChainAdaptersUpdated(uint256 indexed destinationChainId, address l2Adapter);\n    event SetXDomainAdmin(address indexed crossDomainAdmin);\n\n    error InvalidCrossDomainAdmin();\n    error InvalidChainAdapter();\n    error RelayMessageFailed();\n    error RelayTokensFailed(address baseToken);\n    // Error which is triggered when there is no adapter set in the `chainAdapters` mapping.\n    error UninitializedChainAdapter();\n\n    /*\n     * @dev Cross domain admin permissioning is implemented specifically for each L2 that this contract is deployed on, so this base contract\n     * simply prescribes this modifier to protect external functions using that L2's specific admin permissioning logic.\n     */\n    modifier onlyAdmin() {\n        _requireAdminSender();\n        _;\n    }\n\n    /**\n     * @notice Constructs the Forwarder contract.\n     * @dev _disableInitializers() restricts anybody from initializing the implementation contract, which if not done,\n     * may disrupt the proxy if another EOA were to initialize it.\n     */\n    constructor() {\n        _disableInitializers();\n    }\n\n    /**\n     * @notice Initializes the forwarder contract.\n     * @param _crossDomainAdmin L1 address of the contract which can send root bundles/messages to this forwarder contract.\n     */\n    function __Forwarder_init(address _crossDomainAdmin) public onlyInitializing {\n        __UUPSUpgradeable_init();\n        _setCrossDomainAdmin(_crossDomainAdmin);\n    }\n\n    /**\n     * @notice Sets a new cross domain admin for this contract.\n     * @param _newCrossDomainAdmin L1 address of the new cross domain admin.\n     */\n    function setCrossDomainAdmin(address _newCrossDomainAdmin) external onlyAdmin {\n        if (_newCrossDomainAdmin == address(0)) revert InvalidCrossDomainAdmin();\n        _setCrossDomainAdmin(_newCrossDomainAdmin);\n        emit SetXDomainAdmin(_newCrossDomainAdmin);\n    }\n\n    /**\n     * @notice Maps a new destination chain ID to an adapter contract which facilitates bridging to that chain.\n     * @param _destinationChainId The chain ID of the target network.\n     * @param _l2Adapter Contract address of the adapter which interfaces with the L2-L3 bridge.\n     * @dev Actual bridging logic is delegated to the adapter contract so that the forwarder can function irrespective of the \"flavor\" of\n     * L3 (e.g. ArbitrumOrbit, OpStack, etc.).\n     */\n    function updateAdapter(uint256 _destinationChainId, address _l2Adapter) external onlyAdmin {\n        if (_l2Adapter == address(0)) revert InvalidChainAdapter();\n        chainAdapters[_destinationChainId] = _l2Adapter;\n        emit ChainAdaptersUpdated(_destinationChainId, _l2Adapter);\n    }\n\n    /**\n     * @notice Relays a specified message to a contract on L3. This contract assumes that `target` exists on the L3 and can properly\n     * receive the function being called.\n     * @param target The address of the spoke pool contract that will receive the input message.\n     * @param destinationChainId The chain ID of the network which contains `target`.\n     * @param message The data to execute on the target contract.\n     */\n    function relayMessage(\n        address target,\n        uint256 destinationChainId,\n        bytes memory message\n    ) external payable override onlyAdmin {\n        address adapter = chainAdapters[destinationChainId];\n        if (adapter == address(0)) revert UninitializedChainAdapter();\n\n        // The forwarder assumes that `target` exists on the following network.\n        (bool success, ) = adapter.delegatecall(abi.encodeCall(AdapterInterface.relayMessage, (target, message)));\n        if (!success) revert RelayMessageFailed();\n        emit MessageForwarded(target, destinationChainId, message);\n    }\n\n    /**\n     * @notice Relays `amount` of a token to a contract on L3. Importantly, this contract assumes that `target` exists on L3.\n     * @param baseToken This layer's address of the token to send.\n     * @param destinationChainToken The next layer's address of the token to send.\n     * @param amount The amount of the token to send.\n     * @param destinationChainId The chain ID of the network which contains `target`.\n     * @param target The address of the contract that which will *ultimately* receive the tokens. For most cases, this is the spoke pool contract on L3.\n     * @dev While `relayMessage` also assumes that `target` is correct, this function has the potential of deleting funds if `target` is incorrectly set.\n     * This should be guarded by the logic of the Hub Pool on L1, since the Hub Pool will always set `target` to the L3 spoke pool per UMIP-157.\n     */\n    function relayTokens(\n        address baseToken,\n        address destinationChainToken,\n        uint256 amount,\n        uint256 destinationChainId,\n        address target\n    ) external payable override onlyAdmin {\n        address adapter = chainAdapters[destinationChainId];\n        if (adapter == address(0)) revert UninitializedChainAdapter();\n\n        (bool success, ) = adapter.delegatecall(\n            abi.encodeCall(AdapterInterface.relayTokens, (baseToken, destinationChainToken, amount, target))\n        );\n        if (!success) revert RelayTokensFailed(baseToken);\n        emit TokensForwarded(baseToken, destinationChainToken, amount, destinationChainId, target);\n    }\n\n    // Function to be overridden in order to authenticate that messages sent to this contract originated\n    // from the expected account.\n    function _requireAdminSender() internal virtual;\n\n    // We also want to restrict who can upgrade this contract. The same admin that can relay messages through this\n    // contract can upgrade this contract.\n    function _authorizeUpgrade(address) internal virtual override onlyAdmin {}\n\n    function _setCrossDomainAdmin(address _newCrossDomainAdmin) internal {\n        if (_newCrossDomainAdmin == address(0)) revert InvalidCrossDomainAdmin();\n        crossDomainAdmin = _newCrossDomainAdmin;\n        emit SetXDomainAdmin(_newCrossDomainAdmin);\n    }\n\n    // Reserve storage slots for future versions of this base contract to add state variables without\n    // affecting the storage layout of child contracts. Decrement the size of __gap whenever state variables\n    // are added. This is at bottom of contract to make sure it's always at the end of storage.\n    uint256[1000] private __gap;\n}\n"
     }
 }

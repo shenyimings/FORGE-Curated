@@ -1,27 +1,59 @@
 {
     "vfp_id": "vfp_00104",
-    "project_name": "2024.12.09 - Final - Oku's New Order Types Contract Contest Audit Report.pdf",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 9,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-697"
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
                 ]
             },
-            "title": "Incorrect Price Freshness Validation in PythOracle",
-            "description": "The contract incorrectly validates the freshness of price data from the Pyth Oracle by using a flawed comparison logic in the `checkInRange` function. The root cause is a reversed comparison operator in the require statement, where it checks `price.publishTime < block.timestamp - noOlderThan` instead of `price.publishTime >= block.timestamp - noOlderThan`. This causes valid and fresh prices to be rejected as stale. An attacker cannot directly exploit this, but users placing stop-limit orders will experience failed executions when valid price updates are misinterpreted as stale. This leads to missed trading opportunities, financial losses, and erosion of trust in the protocol's reliability.\n",
+            "title": "Missing input validation in FeeAuction.buy allows payment without asset transfer",
+            "description": "The FeeAuction.buy function does not validate the _assets parameter, allowing users to call the function with an empty array or token addresses that have zero balance in the contract. This causes the transaction to proceed without transferring any assets to the buyer. The root cause is the lack of input validation before processing the asset transfer and payment. An attacker or user could exploit this by calling buy with an empty _assets array or including tokens not held by the contract, resulting in a successful payment without receiving any assets. The impact is a loss of funds for the buyer, as they pay the full auction price but receive nothing in return.\n",
             "severity": "Medium",
             "location": [
-                "PythOracle.sol::checkInRange#29",
-                "PythOracle.sol::getPriceUnsafe#28-31"
+                "contracts/feeAuction/FeeAuction.sol::buy#64-80",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
             ],
             "files": [
-                "ee3f781a73d65e33fb452c9a44eb1337c5cfdbd6/oku-custom-order-types/contracts/oracle/External/PythOracle.sol"
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
+            ]
+        },
+        {
+            "id": 12,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Fee auction allows buying zero assets, leading to front-running attacks",
+            "description": "The FeeAuction.buy function does not validate that assets are actually transferred before accepting payment. A malicious actor can front-run a legitimate buy transaction, depleting the asset balance, and causing the victim's transaction to pay without receiving anything. The root cause is the lack of a check ensuring non-zero asset transfer before payment. This creates a race condition exploitable via MEV. The impact is financial loss for victims who pay double the price (due to price doubling after each successful buy) but receive no assets.\n",
+            "severity": "High",
+            "location": [
+                "contracts/feeAuction/FeeAuction.sol::buy",
+                "contracts/feeAuction/FeeAuction.sol::_transferOutAssets#113-124",
+                "FeeAuction.sol::buy"
+            ],
+            "files": [
+                "cap-contracts/contracts/feeAuction/FeeAuction.sol"
             ]
         }
     ],
     "affected_files": {
-        "PythOracle.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.9;\n\nimport \"../IPythRelay.sol\";\nimport \"../../interfaces/pyth/IPyth.sol\";\n\n\ncontract PythOracle is IPythRelay {\n    IPyth public immutable pythOracle;\n    bytes32 public immutable tokenId;\n    uint256 public immutable noOlderThan;\n    address public immutable underlying;\n\n    constructor(\n        IPyth _pythOraclContract,\n        bytes32 _tokenId,\n        uint256 _noOlderThan,\n        address _underlying\n    ) {\n        pythOracle = _pythOraclContract;\n        tokenId = _tokenId;\n        noOlderThan = _noOlderThan;\n        underlying = _underlying;\n    }\n\n    function currentValue() external view override returns (uint256) {\n        IPyth.Price memory price = pythOracle.getPriceUnsafe(tokenId);\n        require(\n            price.publishTime < block.timestamp - noOlderThan,\n            \"Stale Price\"\n        );\n        return uint256(uint64(price.price));\n    }\n\n    function updatePrice(\n        bytes[] calldata priceUpdate\n    ) external payable override returns (uint256 updatedPrice) {\n        // Submit a priceUpdate to the Pyth contract to update the on-chain price.\n        // Updating the price requires paying the fee returned by getUpdateFee.\n        // WARNING: These lines are required to ensure the getPriceNoOlderThan call below succeeds. If you remove them, transactions may fail with \"0x19abf40e\" error.\n        uint fee = pythOracle.getUpdateFee(priceUpdate);\n        pythOracle.updatePriceFeeds{value: fee}(priceUpdate);\n\n        IPyth.Price memory price = pythOracle.getPriceNoOlderThan(\n            tokenId,\n            uint256(uint64(noOlderThan))\n        );\n        updatedPrice = uint256(uint64(price.price));\n    }\n\n    function getUpdateFee(bytes[] calldata priceUpdate) external view override returns (uint fee){\n        return pythOracle.getUpdateFee(priceUpdate);\n    }\n}\n"
+        "FeeAuction.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { Access } from \"../access/Access.sol\";\n\nimport { IAuctionCallback } from \"../interfaces/IAuctionCallback.sol\";\n\nimport { IFeeAuction } from \"../interfaces/IFeeAuction.sol\";\nimport { FeeAuctionStorageUtils } from \"../storage/FeeAuctionStorageUtils.sol\";\nimport { UUPSUpgradeable } from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\nimport { IERC20, SafeERC20 } from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\n/// @title Fee Auction\n/// @author kexley, @capLabs\n/// @notice Fees are sold via a dutch auction\ncontract FeeAuction is IFeeAuction, UUPSUpgradeable, Access, FeeAuctionStorageUtils {\n    using SafeERC20 for IERC20;\n\n    /// @dev Disable initializers on the implementation\n    constructor() {\n        _disableInitializers();\n    }\n\n    /// @notice Initialize the fee auction\n    /// @param _accessControl Access control address\n    /// @param _paymentToken Payment token address\n    /// @param _paymentRecipient Payment recipient address\n    /// @param _duration Duration of auction in seconds\n    /// @param _minStartPrice Minimum start price in payment token decimals\n    function initialize(\n        address _accessControl,\n        address _paymentToken,\n        address _paymentRecipient,\n        uint256 _duration,\n        uint256 _minStartPrice\n    ) external initializer {\n        __Access_init(_accessControl);\n        __UUPSUpgradeable_init();\n\n        FeeAuctionStorage storage $ = get();\n        $.paymentToken = _paymentToken;\n        $.paymentRecipient = _paymentRecipient;\n        $.startPrice = _minStartPrice;\n        $.startTimestamp = block.timestamp;\n        if (_duration == 0) revert NoDuration();\n        $.duration = _duration;\n        $.minStartPrice = _minStartPrice;\n    }\n\n    /// @notice Current price in the payment token, linearly decays toward 0 over time\n    /// @return price Current price\n    function currentPrice() public view returns (uint256 price) {\n        FeeAuctionStorage storage $ = get();\n        uint256 elapsed = block.timestamp - $.startTimestamp;\n        if (elapsed > $.duration) elapsed = $.duration;\n        price = $.startPrice * (1e27 - (elapsed * 1e27 / $.duration)) / 1e27;\n    }\n\n    /// @notice Buy fees in exchange for the payment token\n    /// @dev Starts new auction where start price is double the settled price of this one\n    /// @param _assets Assets to buy\n    /// @param _receiver Receiver address for the assets\n    /// @param _callback Optional callback data\n    function buy(address[] calldata _assets, address _receiver, bytes calldata _callback) external {\n        uint256 price = currentPrice();\n        FeeAuctionStorage storage $ = get();\n        $.startTimestamp = block.timestamp;\n\n        uint256 newStartPrice = price * 2;\n        if (newStartPrice < $.minStartPrice) newStartPrice = $.minStartPrice;\n        $.startPrice = newStartPrice;\n\n        uint256[] memory balances = _transferOutAssets(_assets, _receiver);\n\n        if (_callback.length > 0) IAuctionCallback(msg.sender).auctionCallback(_assets, balances, price, _callback);\n\n        IERC20($.paymentToken).safeTransferFrom(msg.sender, $.paymentRecipient, price);\n\n        emit Buy(msg.sender, price, _assets, balances);\n    }\n\n    /// @notice Set the start price of the current auction\n    /// @dev This will affect the current price, use with caution\n    /// @param _startPrice New start price\n    function setStartPrice(uint256 _startPrice) external checkAccess(this.setStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        $.startPrice = _startPrice;\n        emit SetStartPrice(_startPrice);\n    }\n\n    /// @notice Set duration of auctions\n    /// @dev This will affect the current price, use with caution\n    /// @param _duration New duration in seconds\n    function setDuration(uint256 _duration) external checkAccess(this.setDuration.selector) {\n        if (_duration == 0) revert NoDuration();\n        FeeAuctionStorage storage $ = get();\n        $.duration = _duration;\n        emit SetDuration(_duration);\n    }\n\n    /// @notice Set minimum start price\n    /// @param _minStartPrice New minimum start price\n    function setMinStartPrice(uint256 _minStartPrice) external checkAccess(this.setMinStartPrice.selector) {\n        FeeAuctionStorage storage $ = get();\n        $.minStartPrice = _minStartPrice;\n        emit SetMinStartPrice(_minStartPrice);\n    }\n\n    /// @dev Transfer all specified assets to the receiver from this address\n    /// @param _assets Asset addresses\n    /// @param _receiver Receiver address\n    /// @return balances Balances transferred to receiver\n    function _transferOutAssets(address[] calldata _assets, address _receiver)\n        internal\n        returns (uint256[] memory balances)\n    {\n        uint256 assetsLength = _assets.length;\n        balances = new uint256[](assetsLength);\n        for (uint256 i; i < assetsLength; ++i) {\n            address asset = _assets[i];\n            balances[i] = IERC20(asset).balanceOf(address(this));\n            if (balances[i] > 0) IERC20(asset).safeTransfer(_receiver, balances[i]);\n        }\n    }\n\n    /// @notice Get the payment token address\n    /// @return token Address of the token used for payments\n    function paymentToken() external view returns (address token) {\n        token = get().paymentToken;\n    }\n\n    /// @notice Get the payment recipient address\n    /// @return recipient Address that receives the payments\n    function paymentRecipient() external view returns (address recipient) {\n        recipient = get().paymentRecipient;\n    }\n\n    /// @notice Get the current start price\n    /// @return price Current start price in payment token decimals\n    function startPrice() external view returns (uint256 price) {\n        price = get().startPrice;\n    }\n\n    /// @notice Get the start timestamp of the current auction\n    /// @return timestamp Timestamp when the current auction started\n    function startTimestamp() external view returns (uint256 timestamp) {\n        timestamp = get().startTimestamp;\n    }\n\n    /// @notice Get the auction duration\n    /// @return auctionDuration Duration in seconds\n    function duration() external view returns (uint256 auctionDuration) {\n        auctionDuration = get().duration;\n    }\n\n    /// @notice Get the minimum start price\n    /// @return price Minimum start price in payment token decimals\n    function minStartPrice() external view returns (uint256 price) {\n        price = get().minStartPrice;\n    }\n\n    /// @dev Only admin can upgrade\n    function _authorizeUpgrade(address) internal view override checkAccess(bytes4(0)) { }\n}\n"
     }
 }

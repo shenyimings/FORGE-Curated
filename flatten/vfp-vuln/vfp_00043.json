@@ -1,29 +1,29 @@
 {
     "vfp_id": "vfp_00043",
-    "project_name": "2025.07.18 - Final - Notional Exponent Audit Report.pdf",
+    "project_name": "cantina_byzantine_sep2025.pdf",
     "findings": [
         {
-            "id": 31,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-703"
+                    "CWE-697"
                 ],
                 "2": [
-                    "CWE-754"
+                    "CWE-1023"
                 ]
             },
-            "title": "Reducing liquidity in the hardcoded Curve sDAI/sUSDe pool leads to unnecessary slippage loss",
-            "description": "The protocol uses a hardcoded path (sUSDe -> sDAI -> asset) for swapping via the Curve sDAI/sUSDe pool (0x167478921b907422F8E88B43C4Af2B8BEa278d3A). Over time, liquidity in this pool has decreased as users migrate from sDAI to sUSDS under the new SKY protocol, where most incentives are now directed.\n\nThe root cause is the static swap logic in PendlePT_sUSDe.sol that does not adapt to changing market conditions or liquidity levels. As sDAI reserves decline, slippage on swaps increases significantly, especially for large trades.\n\nUsers are forced to use this low-liquidity pool even when better alternatives exist, resulting in worse execution prices. This is particularly problematic during periods of high volatility or large withdrawals.\n\nThe impact is high, as users incur unnecessary slippage losses during exits, reducing their net returns and potentially making the protocol less competitive compared to alternatives with dynamic routing.\n",
-            "severity": "High",
+            "title": "Anyone can overwrite factory mapping",
+            "description": "The CompoundV3AdapterFactory stores deployed adapter addresses in a mapping keyed only by parentVault and comet, excluding the cometRewards parameter. This allows any user to deploy a new adapter with the same parentVault and comet but a different cometRewards address, overwriting the existing mapping entry. The root cause is the insufficient key structure in the mapping, which fails to account for all configuration parameters. An attacker could exploit this by deploying a malicious adapter with altered reward logic, causing downstream systems relying on the mapping to interact with the wrong or malicious contract. While the contract is not directly used by other audited contracts, external integrators may be misled, potentially leading to fund loss. Due to the uncertain scope of impact, it is classified as medium risk despite high exploit likelihood.\n",
+            "severity": "Medium",
             "location": [
-                "PendlePT_sUSDe.sol::swap#42"
+                "CompoundV3AdapterFactory.sol#L23"
             ],
             "files": [
-                "7e0abc3e118db0abb20c7521c6f53f1762fdf562/2025-06-notional-exponent/notional-v4/src/staking/PendlePT_sUSDe.sol"
+                "debt-fund-vault-v2/src/adapters/CompoundV3AdapterFactory.sol"
             ]
         }
     ],
     "affected_files": {
-        "PendlePT_sUSDe.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity >=0.8.29;\n\nimport \"./PendlePT.sol\";\nimport \"../withdraws/Ethena.sol\";\nimport \"../interfaces/ITradingModule.sol\";\n\ncontract PendlePT_sUSDe is PendlePT {\n    using SafeERC20 for ERC20;\n\n    constructor(\n        address market,\n        address tokenInSY,\n        address tokenOutSY,\n        address asset,\n        address yieldToken,\n        uint256 feeRate,\n        IWithdrawRequestManager withdrawRequestManager\n    ) PendlePT(market, tokenInSY, tokenOutSY, asset, yieldToken, feeRate, withdrawRequestManager) {\n        require(tokenOutSY == address(sUSDe));\n    }\n\n    /// @notice The vast majority of the sUSDe liquidity is in an sDAI/sUSDe curve pool.\n    /// sDAI has much greater liquidity once it is unwrapped as DAI so that is done manually\n    /// in this method.\n    function _executeInstantRedemption(\n        uint256 yieldTokensToRedeem,\n        bytes memory redeemData\n    ) internal override virtual returns (uint256 assetsPurchased) {\n        PendleRedeemParams memory params = abi.decode(redeemData, (PendleRedeemParams));\n        uint256 netTokenOut = _redeemPT(yieldTokensToRedeem, params.limitOrderData);\n\n        Trade memory sDAITrade = Trade({\n            tradeType: TradeType.EXACT_IN_SINGLE,\n            sellToken: address(sUSDe),\n            buyToken: address(sDAI),\n            amount: netTokenOut,\n            limit: 0, // NOTE: no slippage guard is set here, it is enforced in the second leg\n                        // of the trade.\n            deadline: block.timestamp,\n            exchangeData: abi.encode(CurveV2SingleData({\n                pool: 0x167478921b907422F8E88B43C4Af2B8BEa278d3A,\n                fromIndex: 1, // sUSDe\n                toIndex: 0 // sDAI\n            }))\n        });\n\n        (/* */, uint256 sDAIAmount) = _executeTrade(sDAITrade, uint16(DexId.CURVE_V2));\n\n        // Unwraps the sDAI to DAI\n        uint256 daiAmount = sDAI.redeem(sDAIAmount, address(this), address(this));\n        \n        if (asset != address(DAI)) {\n            Trade memory trade = Trade({\n                tradeType: TradeType.EXACT_IN_SINGLE,\n                sellToken: address(DAI),\n                buyToken: asset,\n                amount: daiAmount,\n                limit: params.minPurchaseAmount,\n                deadline: block.timestamp,\n                exchangeData: params.exchangeData\n            });\n\n            // Trades the unwrapped DAI back to the given token.\n            (/* */, assetsPurchased) = _executeTrade(trade, params.dexId);\n        } else {\n            if (params.minPurchaseAmount > daiAmount) revert SlippageTooHigh(daiAmount, params.minPurchaseAmount);\n            assetsPurchased = daiAmount;\n        }\n    }\n}\n"
+        "CompoundV3AdapterFactory.sol": "// SPDX-License-Identifier: GPL-2.0-or-later\n// Copyright (c) 2025 [Byzantine Finance]\n// The implementation of this contract was inspired by Morpho Vault V2, developed by the Morpho Association in 2025.\npragma solidity 0.8.28;\n\nimport {CompoundV3Adapter} from \"./CompoundV3Adapter.sol\";\nimport {ICompoundV3AdapterFactory} from \"./interfaces/ICompoundV3AdapterFactory.sol\";\n\ncontract CompoundV3AdapterFactory is ICompoundV3AdapterFactory {\n    /* STORAGE */\n\n    mapping(address => mapping(address => address)) public compoundV3Adapter;\n    mapping(address => bool) public isCompoundV3Adapter;\n\n    /* FUNCTIONS */\n\n    /// @dev Returns the address of the deployed CompoundV3Adapter.\n    function createCompoundV3Adapter(address parentVault, address comet, address cometRewards)\n        external\n        returns (address)\n    {\n        address _compoundV3Adapter = address(new CompoundV3Adapter{salt: bytes32(0)}(parentVault, comet, cometRewards));\n        compoundV3Adapter[parentVault][comet] = _compoundV3Adapter;\n        isCompoundV3Adapter[_compoundV3Adapter] = true;\n        emit CreateCompoundV3Adapter(parentVault, comet, cometRewards, _compoundV3Adapter);\n        return _compoundV3Adapter;\n    }\n}\n"
     }
 }

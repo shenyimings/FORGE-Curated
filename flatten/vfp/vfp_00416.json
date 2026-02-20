@@ -1,29 +1,95 @@
 {
     "vfp_id": "vfp_00416",
-    "project_name": "Forte - Zenith Audit Report.pdf",
+    "project_name": "cantina_eco_pr247_nov2025.pdf",
     "findings": [
         {
-            "id": 7,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-269"
+                    "CWE-20"
                 ]
             },
-            "title": "Risk of losing admin rights for Factory contract",
-            "description": "The FactoryBase contract uses OpenZeppelin's Ownable2Step for secure ownership management but does not override the renounceOwnership function to prevent its use. This allows the owner to accidentally call renounceOwnership(), resulting in irreversible loss of administrative control. Since there is no recovery mechanism, this could permanently disable critical functions like updating fee collectors or allowlists. The root cause is the lack of a safeguard against accidental renouncement. The impact is a potential freeze of governance functionality, rendering the contract partially or fully uncontrollable.\n",
-            "severity": "Low",
+            "title": "No 0-checks on incoming message",
+            "description": "1. **Description:** The CCIPProver contract does not perform zero-value checks on critical incoming message fields such as senderAddress, sourceChainSelector, and messageId in the ccipReceive function, unlike other provers (HyperProver, MetaProver, LayerZeroProver) which include such validations.\n2. **Cause:** The absence of input validation for zero values in the ccipReceive function increases the risk of processing malformed or invalid messages, which could lead to unexpected behavior or errors downstream.\n3. **Exploitation:** An attacker could potentially craft a malicious message with zero-valued fields, which might bypass certain assumptions in the system and lead to incorrect state transitions or reverts that could be exploited in edge cases.\n4. **Impact:** While the impact is limited due to downstream safeguards, the lack of consistency in validation reduces code robustness and increases the risk surface. The issue was acknowledged and fixed.\n",
+            "severity": "Informational",
             "location": [
-                "FactoryBase.sol"
+                "CCIPProver.sol::ccipReceive#L78"
             ],
             "files": [
-                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/factory/FactoryBase.sol"
+                "eco-routes/contracts/prover/CCIPProver.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "Prover accepts too-large proof batch sizes",
+            "description": "1. **Description:** The CCIPProver contract does not pre-validate the size of the encodedProofs bytes array, allowing it to be arbitrarily large, despite CCIP's documented maximum data size limit of 30 KB.\n2. **Cause:** The contract relies on external reverts (e.g., from the router during fee calculation) to handle oversized data rather than proactively checking the size.\n3. **Exploitation:** A caller could submit a proof batch exceeding the CCIP data limit, causing the transaction to revert at the router level, leading to wasted gas and potential denial-of-service vectors if exploited repeatedly.\n4. **Impact:** This results in inefficient gas usage and a poor user experience. While not directly exploitable for fund loss, it represents a deviation from best practices in input validation. The issue was acknowledged by the team.\n",
+            "severity": "Informational",
+            "location": [
+                "CCIPProver.sol::encodedProofs#L183"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/CCIPProver.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ]
+            },
+            "title": "The sender of proofs must ensure that the allowOutOfOrderExecution flag respects chain restrictions",
+            "description": "1. **Description:** The responsibility of setting the allowOutOfOrderExecution flag correctly lies entirely with the caller of the prove() function. If set incorrectly, the EVM2EVMOnRamp contract may revert with ExtraArgOutOfOrderExecutionMustBeTrue().\n2. **Cause:** The contract does not enforce or validate the flag's value, leaving it to external actors to comply with chain-specific requirements.\n3. **Exploitation:** A caller who fails to set allowOutOfOrderExecution=true on chains that require it could cause transaction reverts, disrupting message delivery and potentially blocking critical operations.\n4. **Impact:** This could lead to failed message executions and inconsistent behavior across chains, especially when interacting with contracts that depend on ordered execution. The issue was fixed in PR 351.\n",
+            "severity": "Informational",
+            "location": [
+                "CCIPProver.sol::allowOutOfOrderExecution#L189"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/CCIPProver.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "The provided gasLimit is not checked against MIN_GAS_LIMIT",
+            "description": "1. **Description:** The gasLimit parameter in the prove() function of CCIPProver is not validated against a minimum threshold (MIN_GAS_LIMIT), unlike in LayerZeroProver.\n2. **Cause:** The absence of a validation check allows callers to set an unreasonably low gas limit, which may result in insufficient gas for successful execution on the destination chain.\n3. **Exploitation:** A malicious or misconfigured caller could set a gas limit below the required minimum, causing the execution to fail mid-operation, leading to wasted resources and potential denial of service.\n4. **Impact:** This could result in failed message processing and loss of user funds due to gas consumption without successful completion. The issue was fixed in PR 352.\n",
+            "severity": "Informational",
+            "location": [
+                "CCIPProver.sol::gasLimit#L188"
+            ],
+            "files": [
+                "eco-routes/contracts/prover/CCIPProver.sol"
             ]
         }
     ],
     "affected_files": {
-        "FactoryBase.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.24;\n\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\nimport \"../common/IErrors.sol\";\nimport {IFactory} from \"../factory/IFactory.sol\";\nimport {IAllowList} from \"../allowList/IAllowList.sol\";\n\n/**\n * @title Pool Factory\n * @dev creates the pools in an automated and permissioned fashion\n * @author  @oscarsernarosero @mpetersoCode55 @cirsteve\n */\n\nabstract contract FactoryBase is Ownable2Step, IFactory {\n    string public constant VERSION = \"v0.2.0\";\n    uint16 public constant MAX_PROTOCOL_FEE = 20;\n\n    address yTokenAllowList;\n    address deployerAllowList;\n    address public protocolFeeCollector;\n    address public proposedProtocolFeeCollector;\n    uint16 public protocolFee;\n\n    constructor() Ownable(_msgSender()) {}\n\n    modifier onlyAllowedDeployers() {\n        if (!IAllowList(deployerAllowList).isAllowed(_msgSender())) revert NotAnAllowedDeployer();\n        _;\n    }\n\n    modifier onlyAllowedYTokens(address _yToken) {\n        if (!IAllowList(yTokenAllowList).isAllowed(_yToken)) revert YTokenNotAllowed();\n        _;\n    }\n\n    modifier onlyProposedProtocolFeeCollector() {\n        if (_msgSender() != proposedProtocolFeeCollector) revert NotProposedProtocolFeeCollector();\n        _;\n    }\n\n    /**\n     * @dev sets the y token allow list\n     * @param _address of the allow list contract\n     */\n    function setYTokenAllowList(address _address) external onlyOwner {\n        if (_address == address(0)) revert ZeroAddress();\n        yTokenAllowList = _address;\n        emit SetYTokenAllowList(_address);\n    }\n\n    /**\n     * @dev gets the y token allow list\n     * @return _address of the current allow list contract\n     */\n    function getYTokenAllowList() external view returns (address) {\n        return yTokenAllowList;\n    }\n\n    /**\n     * @dev sets the deployer allow list\n     * @param _address of the allow list contract\n     * @notice Only the owner can set the deployer allow list\n     */\n    function setDeployerAllowList(address _address) external onlyOwner {\n        if (_address == address(0)) revert ZeroAddress();\n        deployerAllowList = _address;\n        emit SetDeployerAllowList(_address);\n    }\n\n    /**\n     * @dev gets the deployer allow list\n     * @return _address of the current allow list contract\n     */\n    function getDeployerAllowList() external view returns (address) {\n        return deployerAllowList;\n    }\n\n    /**\n     * @dev This is the function to update the protocol fees per trade.\n     * @param _protocolFee percentage of the transaction that will get collected as fees (in percentage basis points:\n     * 10000 -> 100.00%; 500 -> 5.00%; 1 -> 0.01%)\n     * @notice Only the owner can set the protocol fee\n     */\n    function setProtocolFee(uint16 _protocolFee) public onlyOwner {\n        if (_protocolFee > MAX_PROTOCOL_FEE) revert ProtocolFeeAboveMax({proposedFee: _protocolFee, maxFee: MAX_PROTOCOL_FEE});\n        protocolFee = _protocolFee;\n        emit ProtocolFeeSet(_protocolFee);\n    }\n\n    /**\n     * @dev function to propose a new protocol fee collector\n     * @param _protocolFeeCollector the new fee collector\n     * @notice that only the current fee collector address can call this function\n     */\n    function proposeProtocolFeeCollector(address _protocolFeeCollector) external onlyOwner {\n        // slither-disable-start missing-zero-check // unnecessary\n        proposedProtocolFeeCollector = _protocolFeeCollector;\n        // slither-disable-end missing-zero-check\n        emit ProtocolFeeCollectorProposed(_protocolFeeCollector);\n    }\n\n    /**\n     * @dev function to confirm a new protocol fee collector\n     * @notice that only the already proposed fee collector can call this function\n     */\n    function confirmProtocolFeeCollector() external onlyProposedProtocolFeeCollector {\n        delete proposedProtocolFeeCollector;\n        protocolFeeCollector = _msgSender();\n        emit ProtocolFeeCollectorConfirmed(_msgSender());\n    }\n}\n"
+        "CCIPProver.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport {MessageBridgeProver} from \"./MessageBridgeProver.sol\";\nimport {Semver} from \"../libs/Semver.sol\";\nimport {AddressConverter} from \"../libs/AddressConverter.sol\";\nimport {\n    IRouterClient\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IRouterClient.sol\";\nimport {\n    IAny2EVMMessageReceiver\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/interfaces/IAny2EVMMessageReceiver.sol\";\nimport {\n    Client\n} from \"@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol\";\n\n/**\n * @title CCIPProver\n * @notice Prover implementation using Chainlink CCIP (Cross-Chain Interoperability Protocol)\n * @dev Extends MessageBridgeProver to send and receive intent proofs across chains via CCIP\n */\ncontract CCIPProver is MessageBridgeProver, IAny2EVMMessageReceiver, Semver {\n    using AddressConverter for bytes32;\n    using AddressConverter for address;\n\n    /// @notice The CCIP proof type identifier\n    string public constant PROOF_TYPE = \"CCIP\";\n\n    /// @notice The CCIP Router contract address\n    address public immutable ROUTER;\n\n    /// @notice Struct to reduce stack depth when unpacking calldata\n    /// @param sourceChainProver The address of the prover on the source chain (as bytes32)\n    /// @param gasLimit The gas limit for execution on the destination chain\n    struct UnpackedData {\n        address sourceChainProver;\n        uint256 gasLimit;\n    }\n\n    /**\n     * @notice Constructs a new CCIPProver\n     * @param router The CCIP Router contract address\n     * @param portal The portal contract address\n     * @param provers Array of whitelisted prover addresses (as bytes32)\n     * @param minGasLimit Minimum gas limit for cross-chain messages (0 for default 200k)\n     */\n    constructor(\n        address router,\n        address portal,\n        bytes32[] memory provers,\n        uint256 minGasLimit\n    ) MessageBridgeProver(portal, provers, minGasLimit) {\n        if (router == address(0)) revert MessengerContractCannotBeZeroAddress();\n        ROUTER = router;\n    }\n\n    /**\n     * @notice Checks if this contract supports a given interface\n     * @dev Overrides to include IAny2EVMMessageReceiver for CCIP compatibility\n     * @param interfaceId Interface identifier to check\n     * @return True if the interface is supported\n     */\n    function supportsInterface(\n        bytes4 interfaceId\n    ) public view override returns (bool) {\n        return\n            interfaceId == type(IAny2EVMMessageReceiver).interfaceId ||\n            super.supportsInterface(interfaceId);\n    }\n\n    /**\n     * @notice Receives cross-chain messages from CCIP\n     * @dev Only callable by the CCIP Router. Implements IAny2EVMMessageReceiver\n     * @param message The CCIP message containing sender, data, and metadata\n     */\n    function ccipReceive(\n        Client.Any2EVMMessage calldata message\n    ) external only(ROUTER) {\n        // Verify source chain selector is not zero\n        if (message.sourceChainSelector == 0) {\n            revert MessageOriginChainDomainIDCannotBeZero();\n        }\n\n        // Decode sender from bytes to address, then convert to bytes32\n        address sender = abi.decode(message.sender, (address));\n\n        // Verify sender address is not zero\n        if (sender == address(0)) revert MessageSenderCannotBeZeroAddress();\n\n        // Handle the cross-chain message using base contract functionality\n        _handleCrossChainMessage(sender.toBytes32(), message.data);\n    }\n\n    /**\n     * @notice Dispatches a cross-chain message via CCIP\n     * @dev Internal function called by the base contract's prove() function\n     * @dev CCIP has a maximum data payload size and a message execution gas limit.\n     *      At time of writing, these are 30KB and 3,000,000 gas respectively.\n     *      Please check CCIP's documentation for the most up-to-date values.\n     * @param domainID The destination chain selector (CCIP uses this as destinationChainSelector)\n     * @param encodedProofs The encoded proof data to send\n     * @param data Additional data containing source chain prover and gas configuration\n     * @param fee The fee amount (in native token) to pay for the cross-chain message\n     */\n    function _dispatchMessage(\n        uint64 domainID,\n        bytes calldata encodedProofs,\n        bytes calldata data,\n        uint256 fee\n    ) internal override {\n        // Unpack the additional data\n        UnpackedData memory unpacked = _unpackData(data);\n\n        // Format the CCIP message\n        Client.EVM2AnyMessage memory ccipMessage = _formatCCIPMessage(\n            unpacked.sourceChainProver,\n            encodedProofs,\n            unpacked.gasLimit\n        );\n\n        // Send the message via CCIP Router\n        IRouterClient(ROUTER).ccipSend{value: fee}(domainID, ccipMessage);\n    }\n\n    /**\n     * @notice Calculates the fee required to send a cross-chain message\n     * @dev Public function to query fees before sending\n     * @param domainID The destination chain selector\n     * @param encodedProofs The encoded proof data to send\n     * @param data Additional data containing source chain prover and gas configuration\n     * @return The fee amount (in native token) required\n     */\n    function fetchFee(\n        uint64 domainID,\n        bytes calldata encodedProofs,\n        bytes calldata data\n    ) public view override returns (uint256) {\n        // Unpack the additional data\n        UnpackedData memory unpacked = _unpackData(data);\n\n        // Format the CCIP message\n        Client.EVM2AnyMessage memory ccipMessage = _formatCCIPMessage(\n            unpacked.sourceChainProver,\n            encodedProofs,\n            unpacked.gasLimit\n        );\n\n        // Query the fee from CCIP Router\n        return IRouterClient(ROUTER).getFee(domainID, ccipMessage);\n    }\n\n    /**\n     * @notice Unpacks the encoded data into structured format\n     * @dev Internal helper to avoid stack too deep errors\n     * @dev Enforces minimum gas limit to prevent underfunded transactions\n     * @param data The encoded data containing source chain prover and gas configuration\n     * @return unpacked The unpacked data struct with validated gas limit\n     */\n    function _unpackData(\n        bytes calldata data\n    ) internal view returns (UnpackedData memory unpacked) {\n        // Decode: (sourceChainProver, gasLimit)\n        (\n            unpacked.sourceChainProver,\n            unpacked.gasLimit\n        ) = abi.decode(data, (address, uint256));\n\n        // Enforce minimum gas limit to prevent underfunded transactions\n        if (unpacked.gasLimit < MIN_GAS_LIMIT) {\n            unpacked.gasLimit = MIN_GAS_LIMIT;\n        }\n    }\n\n    /**\n     * @notice Formats a CCIP message for sending\n     * @dev Internal helper to construct the EVM2AnyMessage struct\n     * @dev Out-of-order execution is always enabled for optimal performance\n     * @param sourceChainProver The prover address on the source chain\n     * @param encodedProofs The proof data payload\n     * @param gasLimit The gas limit for execution\n     * @return ccipMessage The formatted CCIP message\n     */\n    function _formatCCIPMessage(\n        address sourceChainProver,\n        bytes calldata encodedProofs,\n        uint256 gasLimit\n    ) internal pure returns (Client.EVM2AnyMessage memory ccipMessage) {\n        // Construct the CCIP message\n        ccipMessage = Client.EVM2AnyMessage({\n            receiver: abi.encode(sourceChainProver),\n            data: encodedProofs,\n            tokenAmounts: new Client.EVMTokenAmount[](0), // No token transfers\n            feeToken: address(0), // Pay fees in native token\n            extraArgs: Client._argsToBytes(\n                Client.EVMExtraArgsV2({\n                    gasLimit: gasLimit,\n                    allowOutOfOrderExecution: true // Always allow out-of-order execution\n                })\n            )\n        });\n    }\n\n    /**\n     * @notice Returns the proof type identifier\n     * @return The proof type string\n     */\n    function getProofType() external pure override returns (string memory) {\n        return PROOF_TYPE;\n    }\n}\n"
     }
 }

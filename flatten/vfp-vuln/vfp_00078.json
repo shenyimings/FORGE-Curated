@@ -1,32 +1,95 @@
 {
     "vfp_id": "vfp_00078",
-    "project_name": "Forte - Zenith Audit Report (October).pdf",
+    "project_name": "Virtuals Protocol Staking - Zenith Audit Report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-703"
-                ],
-                "2": [
-                    "CWE-754"
-                ],
-                "3": [
-                    "CWE-252"
+                    "CWE-682"
                 ]
             },
-            "title": "Unsafe transferFrom() may make the deployer not have to provide the initial liquidity",
-            "description": "The vulnerability arises in the createPool function of ALTBCFactory.sol, where the contract uses an unsafe IERC20.transferFrom() call to transfer the initial liquidity token (xToken) from the deployer to the newly created pool. \nThe root cause is the lack of proper validation of the boolean return value of transferFrom(), which some tokens may return false without reverting upon failure. \nAn attacker could exploit this by using a token that does not revert on failure but returns false, causing the protocol to incorrectly assume the transfer succeeded and proceed with initializing the pool with claimed but non-existent liquidity. \nThis could allow a malicious deployer to create a pool without actually providing initial liquidity, potentially leading to a broken or exploitable pool state, though the likelihood is low due to specific conditions required.\n",
-            "severity": "Medium",
+            "title": "Stakers with autoRenew enabled have an unfair advantage",
+            "description": "1. **Description:** Users who enable the autoRenew feature during staking are granted full, non-decaying voting power for the entire lock period, while still being able to withdraw after the standard maxWeeks period. In contrast, users who stake for maxWeeks without autoRenew experience vote decay over time and face the same withdrawal delay, creating an unfair advantage for autoRenew users.\n2. **Cause:** The _balanceOfLockAt() function returns the full lock value if autoRenew is enabled, bypassing vote decay logic. Additionally, the stake() function forces numWeeks to maxWeeks when autoRenew is true, allowing these users to benefit from maximum lock duration without decay.\n3. **Exploitation:** An attacker could repeatedly enable autoRenew on their locks to maintain maximum voting power indefinitely relative to non-autoRenew stakers, gaining disproportionate influence in governance decisions.\n4. **Impact:** This leads to an inequitable distribution of voting power, undermining the fairness and integrity of the protocol's governance system.\n",
+            "severity": "High",
             "location": [
-                "ALTBCFactory.sol::createPool#72-73"
+                "veVirtual.sol::stake#130",
+                "veVirtual.sol::_balanceOfLockAt#162-181"
             ],
             "files": [
-                "4c365ab40df0bbb740df950531c857693308dc91/liquidity-altbc/src/factory/ALTBCFactory.sol"
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 1,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-706"
+                ],
+                "3": [
+                    "CWE-386"
+                ]
+            },
+            "title": "withdraw() switches indexes around which can lead to unintended operations when calling toggleAutoRenew(), extend() and withdraw() in a short time",
+            "description": "1. **Description:** The withdraw() function reorders the locks array by moving the last element into the position of the withdrawn lock and then deleting the last entry. However, other functions like toggleAutoRenew(), extend(), and withdraw() itself rely on the index of a lock to perform operations.\n2. **Cause:** The use of array indices as identifiers without a stable lock ID means that concurrent transactions can operate on incorrect locks due to index shifts caused by prior withdrawals.\n3. **Exploitation:** If a user submits multiple transactions targeting different locks in quick succession, the reordering of indices during execution could cause a transaction to act on a different lock than intended, potentially leading to failed transactions or unintended state changes.\n4. **Impact:** This can result in user funds being locked unexpectedly or governance actions being performed on the wrong lock, leading to loss of control or reduced usability.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::withdraw#162",
+                "veVirtual.sol::toggleAutoRenew#183",
+                "veVirtual.sol::extend#199"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1284"
+                ]
+            },
+            "title": "stake() allows to stake for 0 weeks leading to just-in-time voting",
+            "description": "1. **Description:** The stake() function allows users to specify 0 weeks as the lock duration, which immediately makes the tokens eligible for withdrawal while still granting full voting power based on the staked amount.\n2. **Cause:** There is no validation preventing numWeeks from being set to 0, enabling users to stake and vote with zero time commitment.\n3. **Exploitation:** An attacker can stake tokens for 0 weeks, vote in a governance proposal, and immediately withdraw their tokens, effectively executing a just-in-time voting attack to manipulate governance outcomes without any long-term stake.\n4. **Impact:** This undermines the economic security of the governance system by allowing temporary, non-committed stakeholders to influence decisions, potentially leading to malicious proposals passing.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::stake#130"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-435"
+                ]
+            },
+            "title": "Changing the maxWeeks variable can lead to unexpected consequences",
+            "description": "1. **Description:** Modifying the maxWeeks parameter via setMaxWeeks() can lead to inconsistent behavior in lock management, particularly for locks with autoRenew enabled. The toggleAutoRenew() function uses the old value of maxWeeks stored in lock.numWeeks, which may no longer reflect the current maxWeeks.\n2. **Cause:** The lock.numWeeks is not updated when maxWeeks changes, and the value calculation in _balanceOfLockAt() does not account for the current maxWeeks, leading to incorrect voting power calculations and potential multipliers exceeding 100%.\n3. **Exploitation:** An attacker with a lock created under a higher maxWeeks value could retain inflated voting power after maxWeeks is reduced, or manipulate the system by timing their autoRenew toggling around a maxWeeks change.\n4. **Impact:** This can result in incorrect voting power distribution, inconsistent lock behavior, and potential exploitation of governance mechanisms due to outdated or mismatched lock parameters.\n",
+            "severity": "Medium",
+            "location": [
+                "veVirtual.sol::toggleAutoRenew#183",
+                "veVirtual.sol::setMaxWeeks#217",
+                "veVirtual.sol::_balanceOfLockAt#106",
+                "veVirtual.sol::getMaturity#221"
+            ],
+            "files": [
+                "protocol-contracts/contracts/token/veVirtual.sol"
             ]
         }
     ],
     "affected_files": {
-        "ALTBCFactory.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.24;\n\nimport \"lib/liquidity-base/src/common/IErrors.sol\";\nimport {ALTBCPool, FeeInfo, IERC20} from \"src/amm/ALTBCPool.sol\";\nimport {ALTBCFactoryDeployed} from \"src/common/IALTBCEvents.sol\";\nimport {ALTBCInput} from \"src/amm/ALTBC.sol\";\nimport {FactoryBase} from \"lib/liquidity-base/src/factory/FactoryBase.sol\";\nimport \"lib/liquidity-base/src/common/IEvents.sol\";\nimport {ILPToken} from \"lib/liquidity-base/src/common/ILPToken.sol\";\n\n/**\n * @title Pool Factory\n * @dev creates the pools in an automated and permissioned fashion\n * @author  @oscarsernarosero @mpetersoCode55 @cirsteve\n */\n\ncontract ALTBCFactory is FactoryBase {\n    bytes altbcBytecode;\n    string public constant VERSION = \"v1.0.0\";\n\n    /**\n     * @dev constructor receives and saves the ALTBCPool byte code to bypass contract side limit\n     * @param _altbcBytecode the bytecode of the ALTBC\n     */\n    constructor(bytes memory _altbcBytecode) {\n        altbcBytecode = _altbcBytecode;\n        emit ALTBCFactoryDeployed(VERSION);\n    }\n\n    /**\n     * @dev deploys an ALTBC pool\n     * @param _xToken address of the X token (x axis)\n     * @param _yToken address of the Y token (y axis)\n     * @param _lpFee percentage of the fees in percentage basis points\n     * @param _tbcInput input data for the pool\n     * @param _xAdd the initial liquidity of xTokens that will be transferred to the pool\n     * @return deployedPool the address of the deployed pool\n     * @notice Only allowed deployers can deploy pools and only allowed yTokens are allowed\n     */\n    function createPool(\n        address _xToken,\n        address _yToken,\n        uint16 _lpFee,\n        ALTBCInput memory _tbcInput,\n        uint256 _xAdd,\n        uint256 _wInactive\n    ) external onlyAllowedDeployers onlyAllowedYTokens(_yToken) returns (address deployedPool) {\n        if (protocolFeeCollector == address(0)) revert NoProtocolFeeCollector();\n\n        bytes memory _constructor = abi.encode(\n            _xToken,\n            _yToken,\n            lpTokenAddress,\n            ILPToken(lpTokenAddress).currentTokenId() + 1,\n            FeeInfo(_lpFee, protocolFee, protocolFeeCollector),\n            _tbcInput,\n            VERSION\n        );\n        bytes memory deployBytecode = abi.encodePacked(altbcBytecode, _constructor);\n\n        assembly {\n            deployedPool := create(0, add(deployBytecode, 0x20), mload(deployBytecode))\n            if iszero(deployedPool) {\n                returndatacopy(0, 0, returndatasize())\n                revert(0, returndatasize())\n            }\n        }\n        emit PoolCreated(deployedPool);\n        _addPoolToAllowList(deployedPool);\n\n        IERC20(_xToken).transferFrom(_msgSender(), address(deployedPool), _xAdd);\n        ALTBCPool(deployedPool).initializePool(_msgSender(), _xAdd, _wInactive);\n    }\n}\n"
+        "veVirtual.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts/utils/structs/Checkpoints.sol\";\nimport \"@openzeppelin/contracts-upgradeable/governance/utils/VotesUpgradeable.sol\";\n\ncontract veVirtual is\n    Initializable,\n    ReentrancyGuardUpgradeable,\n    AccessControlUpgradeable,\n    VotesUpgradeable\n{\n    using SafeERC20 for IERC20;\n    struct Lock {\n        uint256 amount;\n        uint256 start;\n        uint256 end;\n        uint8 numWeeks; // Active duration in weeks. Reset to maxWeeks if autoRenew is true.\n        uint256 value;\n        bool autoRenew;\n    }\n\n    uint16 public constant DENOM = 10000;\n\n    bytes32 public constant ADMIN_ROLE = keccak256(\"ADMIN_ROLE\");\n\n    address public baseToken;\n    mapping(address => Lock[]) public locks;\n\n    uint8 public maxWeeks;\n\n    event Stake(address indexed user, uint256 amount, uint8 numWeeks);\n    event Withdraw(address indexed user, uint256 index, uint256 amount);\n\n    bool public adminUnlocked;\n\n    event AdminUnlocked(bool adminUnlocked);\n\n    function initialize(\n        address baseToken_,\n        uint8 maxWeeks_\n    ) external initializer {\n        __ReentrancyGuard_init();\n        __AccessControl_init();\n        __Votes_init();\n\n        require(baseToken_ != address(0), \"Invalid token\");\n        baseToken = baseToken_;\n        maxWeeks = maxWeeks_;\n\n        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());\n        _grantRole(ADMIN_ROLE, _msgSender());\n    }\n\n    function numPositions(address account) public view returns (uint256) {\n        return locks[account].length;\n    }\n\n    function getPositions(\n        address account,\n        uint256 start,\n        uint256 count\n    ) public view returns (Lock[] memory) {\n        Lock[] memory results = new Lock[](count);\n        uint j = 0;\n        for (\n            uint i = start;\n            i < (start + count) && i < locks[account].length;\n            i++\n        ) {\n            results[j] = locks[account][i];\n            j++;\n        }\n        return results;\n    }\n\n    // Query balance at a specific timestamp\n    // If the timestamp is before the lock was created, it will return 0\n    // This does not work on withdrawn locks\n    function balanceOfAt(\n        address account,\n        uint256 timestamp\n    ) public view returns (uint256) {\n        uint256 balance = 0;\n        for (uint i = 0; i < locks[account].length; i++) {\n            balance += _balanceOfLockAt(locks[account][i], timestamp);\n        }\n        return balance;\n    }\n\n    function balanceOf(address account) public view returns (uint256) {\n        return balanceOfAt(account, block.timestamp);\n    }\n\n    function balanceOfLock(\n        address account,\n        uint256 index\n    ) public view returns (uint256) {\n        return _balanceOfLock(locks[account][index]);\n    }\n\n    function _balanceOfLockAt(\n        Lock memory lock,\n        uint256 timestamp\n    ) internal pure returns (uint256) {\n        uint256 value = lock.value;\n        if (lock.autoRenew) {\n            return value;\n        }\n\n        if (timestamp < lock.start || timestamp >= lock.end) {\n            return 0;\n        }\n\n        uint256 duration = lock.end - lock.start;\n        uint256 elapsed = timestamp - lock.start;\n        uint256 decayRate = (value * DENOM) / duration;\n\n        return value - (elapsed * decayRate) / DENOM;\n    }\n\n    function _balanceOfLock(Lock memory lock) internal view returns (uint256) {\n        return _balanceOfLockAt(lock, block.timestamp);\n    }\n\n    function stake(\n        uint256 amount,\n        uint8 numWeeks,\n        bool autoRenew\n    ) external nonReentrant {\n        require(amount > 0, \"Amount must be greater than 0\");\n        require(numWeeks <= maxWeeks, \"Num weeks must be less than max weeks\");\n\n        IERC20(baseToken).safeTransferFrom(_msgSender(), address(this), amount);\n\n        if (autoRenew == true) {\n            numWeeks = maxWeeks;\n        }\n\n        uint multiplier = (uint(numWeeks) * DENOM) / uint(maxWeeks);\n        uint256 value = (amount * multiplier) / DENOM;\n\n        uint256 end = block.timestamp + uint256(numWeeks) * 1 weeks;\n\n        Lock memory lock = Lock({\n            amount: amount,\n            start: block.timestamp,\n            end: end,\n            numWeeks: numWeeks,\n            value: value,\n            autoRenew: autoRenew\n        });\n        locks[_msgSender()].push(lock);\n        emit Stake(_msgSender(), amount, numWeeks);\n        _transferVotingUnits(address(0), _msgSender(), amount);\n    }\n\n    function withdraw(uint256 index) external nonReentrant {\n        require(index < locks[_msgSender()].length, \"Invalid index\");\n        Lock memory lock = locks[_msgSender()][index];\n        require(\n            block.timestamp >= lock.end || adminUnlocked,\n            \"Lock is not expired\"\n        );\n\n        uint256 amount = lock.amount;\n\n        uint256 lastIndex = locks[_msgSender()].length - 1;\n        if (index != lastIndex) {\n            locks[_msgSender()][index] = locks[_msgSender()][lastIndex];\n        }\n        delete locks[_msgSender()][lastIndex];\n\n        IERC20(baseToken).safeTransfer(_msgSender(), amount);\n        emit Withdraw(_msgSender(), index, amount);\n        _transferVotingUnits(_msgSender(), address(0), amount);\n    }\n\n    function toggleAutoRenew(uint256 index) external nonReentrant {\n        require(index < locks[_msgSender()].length, \"Invalid index\");\n        Lock storage lock = locks[_msgSender()][index];\n        require(block.timestamp < lock.end, \"Lock is expired\");\n        lock.autoRenew = !lock.autoRenew;\n\n        if (lock.autoRenew) {\n            lock.numWeeks = maxWeeks;\n        }\n\n        lock.start = block.timestamp;\n        lock.end = block.timestamp + uint(lock.numWeeks) * 1 weeks;\n        uint multiplier = (uint(lock.numWeeks) * DENOM) / uint(maxWeeks);\n        lock.value = (lock.amount * multiplier) / DENOM;\n    }\n\n    function extend(uint256 index, uint8 numWeeks) external nonReentrant {\n        require(index < locks[_msgSender()].length, \"Invalid index\");\n        Lock storage lock = locks[_msgSender()][index];\n        require(lock.autoRenew == false, \"Lock is auto-renewing\");\n        require(block.timestamp < lock.end, \"Lock is expired\");\n        require(\n            (lock.numWeeks + numWeeks) <= maxWeeks,\n            \"Num weeks must be less than max weeks\"\n        );\n        uint256 newEnd = lock.end + uint256(numWeeks) * 1 weeks;\n\n        lock.numWeeks += numWeeks;\n        lock.end = newEnd;\n        uint multiplier = ((uint(newEnd) - lock.start) * DENOM) /\n            (uint(maxWeeks) * 1 weeks);\n        lock.value = (lock.amount * multiplier) / DENOM;\n    }\n\n    function setMaxWeeks(uint8 maxWeeks_) external onlyRole(ADMIN_ROLE) {\n        maxWeeks = maxWeeks_;\n    }\n\n    function getMaturity(\n        address account,\n        uint256 index\n    ) public view returns (uint256) {\n        Lock memory lock = locks[account][index];\n        if (!lock.autoRenew) {\n            return locks[account][index].end;\n        }\n\n        return block.timestamp + maxWeeks * 1 weeks;\n    }\n\n    function name() public pure returns (string memory) {\n        return \"veVIRTUAL\";\n    }\n\n    function symbol() public pure returns (string memory) {\n        return \"veVIRTUAL\";\n    }\n\n    function decimals() public pure returns (uint8) {\n        return 18;\n    }\n\n    function setAdminUnlocked(\n        bool adminUnlocked_\n    ) external onlyRole(ADMIN_ROLE) {\n        adminUnlocked = adminUnlocked_;\n        emit AdminUnlocked(adminUnlocked);\n    }\n\n    function _getVotingUnits(\n        address account\n    ) internal view virtual override returns (uint256) {\n        return stakedAmountOf(account);\n    }\n\n    function stakedAmountOf(address account) public view returns (uint256) {\n        uint256 amount = 0;\n        for (uint i = 0; i < locks[account].length; i++) {\n            amount += locks[account][i].amount;\n        }\n        return amount;\n    }\n}\n"
     }
 }

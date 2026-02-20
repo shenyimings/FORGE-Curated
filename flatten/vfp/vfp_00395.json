@@ -1,53 +1,57 @@
 {
     "vfp_id": "vfp_00395",
-    "project_name": "cantina_horizen_april2025.pdf",
+    "project_name": "Uniswap Hooks Library Milestone 1 Audit.md",
     "findings": [
         {
-            "id": 0,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-284"
-                ],
-                "2": [
-                    "CWE-269"
-                ],
-                "3": [
-                    "CWE-266"
+                    "CWE-435"
                 ]
             },
-            "title": "Excessive admin controls in LinearTokenVesting could break vesting invariants",
-            "description": "The LinearTokenVesting.sol contract grants excessive administrative privileges that can compromise the integrity of the vesting schedule. The changeVestingParams() function allows the admin to modify critical parameters such as timeBetweenClaims and intervalsToClaim with arbitrary values. This creates two potential vulnerabilities: first, the admin can instantly release 100% of the remaining tokens by setting both parameters to 1, effectively bypassing the vesting schedule. Second, a malicious admin can prevent users from claiming tokens by repeatedly resetting the vesting period just before claims are due, resulting in a denial-of-service condition. The root cause is the lack of immutability or restrictions on admin privileges after deployment. This could lead to loss of user trust and potential financial harm if admin keys are compromised.\n",
-            "severity": "Medium",
+            "title": "Hooks Do Not Support Native Tokens",
+            "description": "The CurrencySettler library supports native token transfers via the `settle` function, which uses the `payable` `PoolManager.settle` method. However, none of the hook contracts are designed to receive native tokens (e.g., ETH), meaning they cannot hold a non-zero native token balance.\n\nThe root cause is the absence of a `receive` or `fallback` function in the hook contracts, which prevents them from accepting native token payments. As a result, any operation that requires the hook to settle native tokens—such as providing liquidity to a pool involving ETH—will fail because the hook cannot receive the necessary funds.\n\nAn attacker cannot directly exploit this, but malicious actors could front-run or manipulate interactions knowing that ETH-denominated pools are unsupported. The impact is that the hooks are incompatible with native token pools, severely limiting their utility and potentially leading to failed transactions or locked funds in ETH-based pools.\n",
+            "severity": "High",
             "location": [
-                "LinearTokenVesting.sol::changeVestingParams"
+                "CurrencySettler.sol::settle#28",
+                "CurrencySettler.sol#34"
             ],
             "files": [
-                "horizen-migration/erc20-migration/contracts/LinearTokenVesting.sol"
+                "uniswap-hooks/src/utils/CurrencySettler.sol"
             ]
         },
         {
-            "id": 10,
+            "id": 19,
             "category": {
                 "1": [
-                    "CWE-284"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-269"
+                    "CWE-1076"
                 ],
                 "3": [
-                    "CWE-266"
+                    "CWE-1078"
+                ],
+                "4": [
+                    "CWE-1099"
                 ]
             },
-            "title": "The admin and owner usage is confusing in LinearTokenVesting",
-            "description": "The LinearTokenVesting contract uses both Ownable and a separate immutable admin field. The owner can only call setERC20, which is used once during initialization, while all other privileged functions are restricted to the admin. This dual control model is confusing and redundant. The root cause is inconsistent access control design. It increases cognitive load and risks misconfiguration. Simplifying to use only the owner role with restricted transferability would improve clarity and maintainability.\n",
+            "title": "Naming Suggestions",
+            "description": "Several identifiers in the codebase could be improved for clarity. For example, `manager` variables should be renamed to `poolManager` for consistency, `DynamicAfterFee` should be `BaseDynamicAfterFee` to indicate it's abstract, `liquidity` should be `shares` to distinguish from Uniswap V4 liquidity, and `amountIn` in `_getAmount` should be `amountSpecified` to reflect its actual use. The root cause is inconsistent or imprecise naming. Poor naming increases cognitive load and risk of misunderstanding, potentially leading to integration errors.\n",
             "severity": "Informational",
-            "location": [],
+            "location": [
+                "CurrencySettler.sol#28",
+                "DynamicAfterFee.sol#28",
+                "BaseCustomAccounting.sol#123",
+                "BaseCustomCurve.sol::_getAmount#195",
+                "BaseCustomCurve.sol::_getAmountInForExactOutput#216"
+            ],
             "files": [
-                "horizen-migration/erc20-migration/contracts/LinearTokenVesting.sol"
+                "uniswap-hooks/src/utils/CurrencySettler.sol"
             ]
         }
     ],
     "affected_files": {
-        "LinearTokenVesting.sol": "// SPDX-License-Identifier: MIT \npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"./interfaces/IVesting.sol\";\n\n/// @title LinearTokenVesting\n/// @notice This contract implements the vesting strategy for the remaining ZEN supply.  \ncontract LinearTokenVesting is Ownable, IVesting {\n    \n    uint8 private _allowedOwnershipTransfers = 2;\n\n    ERC20 public token;\n    address public beneficiary;\n\n    uint256 public amountForEachClaim;\n    uint256 public startTimestamp;\n    uint256 public timeBetweenClaims; \n    uint256 public intervalsToClaim;\n    uint256 public intervalsAlreadyClaimed;\n\n    event Claimed(address indexed claimer, address indexed beneficiary, uint256 claimAmount, uint256 timestamp);\n    event ChangedBeneficiary(address indexed newBeneficiary, address indexed oldBeneficiary);\n    event ChangedVestingParams(\n                                uint256 newTimeBetweenClaims, \n                                uint256 newIntervalsToClaim, \n                                uint256 oldTimeBetweenClaims, \n                                uint256 oldIntervalsToClaim);\n\n    error AddressParameterCantBeZero();\n    error TokenAndBeneficiaryCantBeTheSame();\n    error AmountCantBeZero();\n    error InvalidTimes();\n    error InvalidNumOfIntervals();\n    error NothingToClaim();\n    error ClaimCompleted();\n    error UnauthorizedOperation();\n    error ERC20NotSet();\n    error VestingNotStartedYet();\n    error VestingAlreadyStarted();\n    error UnauthorizedAccount(address account);\n    error ImmutableOwner();\n\n    /// @notice Smart contract constructor\n    /// @param _beneficiary the account that will receive the vested zen\n    /// @param _timeBetweenClaims The minimum time in seconds that must be waited between claims\n    /// @param _intervalsToClaim The number of vesting periods \n    constructor(address _beneficiary, uint256 _timeBetweenClaims, uint256 _intervalsToClaim) Ownable(msg.sender) {\n        _setBeneficiary(_beneficiary);\n        _setVestingParams(_timeBetweenClaims, _intervalsToClaim);\n    }\n\n    /// @notice Set official ZEN ERC-20 smart contract that will be used for initial transfer and start vesting\n    /// @param addr Address of the ERC20\n    function setERC20(address addr) public onlyOwner {\n        if (address(token) != address(0)) revert UnauthorizedOperation();  //ERC-20 address already set\n        if(addr == address(0)) revert AddressParameterCantBeZero();\n        if(addr == beneficiary) revert TokenAndBeneficiaryCantBeTheSame();\n        token = ERC20(addr);\n    }\n\n    /// @notice This function is called by the ERC20 when minting has ended, to notify that the vesting period can start.\n    function startVesting() public {\n        if (msg.sender != address(token)) revert UnauthorizedOperation(); \n        if (amountForEachClaim != 0 || startTimestamp != 0) revert VestingAlreadyStarted(); //already called\n\n        uint256 totalToVest = token.balanceOf(address(this));\n        if (totalToVest == 0) revert AmountCantBeZero();\n        amountForEachClaim = totalToVest / intervalsToClaim;\n        startTimestamp = block.timestamp;\n    } \n\n    /// @notice This function is called for transfer to beneficiary the amount that was accrued from the last claim. If it is called before at least one interval has passed, the claim fails. \n    ///         If more than one period have passed, the sum of amounts of the passed periods is transferred. \n    function claim() public {\n        if (address(token) == address(0)) revert ERC20NotSet();\n        if (startTimestamp == 0) revert VestingNotStartedYet();\n        if (intervalsAlreadyClaimed == intervalsToClaim) revert ClaimCompleted();\n\n        uint256 periodsPassed = (block.timestamp - (startTimestamp + timeBetweenClaims * intervalsAlreadyClaimed)) / timeBetweenClaims;\n        if (periodsPassed == 0) revert NothingToClaim();\n\n        uint256 intervalsToClaimNow = _min(intervalsToClaim - intervalsAlreadyClaimed, periodsPassed); \n        intervalsAlreadyClaimed += intervalsToClaimNow;       \n        uint256 amountToClaimNow;\n        if (intervalsAlreadyClaimed < intervalsToClaim) {\n            amountToClaimNow = intervalsToClaimNow * amountForEachClaim;\n        }\n        else {\n            amountToClaimNow = token.balanceOf(address(this));\n        }\n\n        emit Claimed(msg.sender, beneficiary, amountToClaimNow, block.timestamp);\n\n        token.transfer(beneficiary, amountToClaimNow);\n    }\n\n    /// @notice Changes the beneficiary of the vesting\n    /// @param newBeneficiary Address of the new beneficiary\n    function changeBeneficiary(address newBeneficiary) public onlyOwner {\n        if (intervalsAlreadyClaimed == intervalsToClaim) revert UnauthorizedOperation();\n        if (newBeneficiary == address(token)) revert TokenAndBeneficiaryCantBeTheSame();\n\n        address oldBeneficiary = beneficiary;\n        _setBeneficiary(newBeneficiary);\n        emit ChangedBeneficiary(newBeneficiary, oldBeneficiary);\n    }\n\n    /// @notice Changes the number of vesting intervals and their duration. After this method has been called, the supply not claimed yet (i.e the balance of this contract) will be able to be claimed \n    /// in a time equal to newTimeBetweenClaims * newNumberOfIntervalsToClaim. Note that the remaining supply includes the amounts already accrued but not claimed yet.\n    /// @param newTimeBetweenClaims New duration in seconds of a vesting interval\n    /// @param newNumberOfIntervalsToClaim Number of intervals that need to pass for vesting the remaining supply\n    function changeVestingParams(uint256 newTimeBetweenClaims, uint256 newNumberOfIntervalsToClaim) public onlyOwner {\n        if (intervalsAlreadyClaimed == intervalsToClaim) revert UnauthorizedOperation();\n        uint256 oldTimeBetweenClaims = timeBetweenClaims;\n        uint256 oldNumberOfIntervalsToClaim = intervalsToClaim;\n        _setVestingParams(newTimeBetweenClaims, newNumberOfIntervalsToClaim);\n\n        // if startVesting was already called, startTimestamp, amountForEachClaim and intervalsAlreadyClaimed need to be reset\n        if (startTimestamp != 0){\n            uint256 totalToVest = token.balanceOf(address(this));\n            amountForEachClaim = totalToVest / intervalsToClaim;\n            startTimestamp = block.timestamp;\n            intervalsAlreadyClaimed = 0;\n        }\n        emit ChangedVestingParams(newTimeBetweenClaims, newNumberOfIntervalsToClaim, oldTimeBetweenClaims, oldNumberOfIntervalsToClaim);\n    }\n\n    function _min(uint256 a, uint256 b) internal pure returns(uint256) {\n        return a < b? a : b;\n    }\n\n    function _setBeneficiary(address newBeneficiary) internal {\n        if(newBeneficiary == address(0)) revert AddressParameterCantBeZero();\n        beneficiary = newBeneficiary;\n    }\n\n    function _setVestingParams(uint256 newTimeBetweenClaims, uint256 newNumberOfIntervalsToClaim) internal {\n        if(newNumberOfIntervalsToClaim == 0) revert InvalidNumOfIntervals(); \n        if(newTimeBetweenClaims == 0) revert InvalidTimes();\n\n        timeBetweenClaims = newTimeBetweenClaims;\n        intervalsToClaim = newNumberOfIntervalsToClaim;        \n    }\n\n    function _transferOwnership(address newOwner) internal override {\n        if (_allowedOwnershipTransfers == 0) revert ImmutableOwner();\n\n        unchecked {--_allowedOwnershipTransfers;}\n        super._transferOwnership(newOwner);\n   }\n}"
+        "CurrencySettler.sol": "// SPDX-License-Identifier: MIT\n// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/utils/CurrencySettler.sol)\n\npragma solidity ^0.8.24;\n\nimport {Currency} from \"v4-core/src/types/Currency.sol\";\nimport {IPoolManager} from \"v4-core/src/interfaces/IPoolManager.sol\";\nimport {IERC20} from \"openzeppelin/token/ERC20/IERC20.sol\";\n\n/**\n * @dev Library used to interact with the `PoolManager` to settle any open deltas.\n * To settle a positive delta (a credit to the user), a user may take or mint.\n * To settle a negative delta (a debt on the user), a user may transfer or burn to pay off a debt.\n *\n * Based on the https://github.com/Uniswap/v4-core/blob/main/test/utils/CurrencySettler.sol[Uniswap v4 test utils implementation].\n *\n * NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.\n */\nlibrary CurrencySettler {\n    /**\n     * @notice Settle (pay) a currency to the `PoolManager`\n     * @param currency Currency to settle\n     * @param poolManager `PoolManager` to settle to\n     * @param payer Address of the payer, which can be the hook itself or an external address.\n     * @param amount Amount to send\n     * @param burn If true, burn the ERC-6909 token, otherwise transfer ERC-20 to the `PoolManager`\n     */\n    function settle(Currency currency, IPoolManager poolManager, address payer, uint256 amount, bool burn) internal {\n        // Early return when amount is 0 given that some tokens may revert in this case\n        if (amount == 0) return;\n\n        // For native currencies or burns, calling sync is not required\n        // Short circuit for ERC-6909 burns to support ERC-6909-wrapped native tokens\n        if (burn) {\n            poolManager.burn(payer, currency.toId(), amount);\n        } else if (currency.isAddressZero()) {\n            poolManager.sync(currency);\n            poolManager.settle{value: amount}();\n        } else {\n            poolManager.sync(currency);\n            if (payer != address(this)) {\n                IERC20(Currency.unwrap(currency)).transferFrom(payer, address(poolManager), amount);\n            } else {\n                IERC20(Currency.unwrap(currency)).transfer(address(poolManager), amount);\n            }\n            poolManager.settle();\n        }\n    }\n\n    /**\n     * @notice Take (receive) a currency from the `PoolManager`\n     * @param currency Currency to take\n     * @param poolManager `PoolManager` to take from\n     * @param recipient Address of the recipient of the ERC-6909 or ERC-20 token.\n     * @param amount Amount to receive\n     * @param claims If true, mint the ERC-6909 token, otherwise transfer ERC-20 from the `PoolManager` to recipient\n     */\n    function take(Currency currency, IPoolManager poolManager, address recipient, uint256 amount, bool claims)\n        internal\n    {\n        // Early return when amount is 0 given that some tokens may revert in this case\n        if (amount == 0) return;\n\n        claims ? poolManager.mint(recipient, currency.toId(), amount) : poolManager.take(currency, recipient, amount);\n    }\n}\n"
     }
 }

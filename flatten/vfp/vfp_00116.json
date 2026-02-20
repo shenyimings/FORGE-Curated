@@ -1,55 +1,58 @@
 {
     "vfp_id": "vfp_00116",
-    "project_name": "Uniswap Labs UNIfication Fees Audit.md",
+    "project_name": "cantina_coinbase_nov2025.pdf",
     "findings": [
+        {
+            "id": 0,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-221"
+                ],
+                "3": [
+                    "CWE-223"
+                ],
+                "4": [
+                    "CWE-778"
+                ]
+            },
+            "title": "Missing event for signer rotations",
+            "description": "1. **Description:** The `setSigner` function in `SignatureDiscountValidator.sol` updates the signer address without emitting an event, and the constructor also initializes the signer silently. This omission prevents off-chain systems from being notified of signer changes.\n2. **Cause:** The lack of an event emission when the signer state is modified means there is no log-based mechanism for external systems to detect changes.\n3. **Exploitation:** An attacker or misconfigured service relying on stale signer data could accept signatures from a deprecated signer if revocation is delayed due to polling inefficiencies.\n4. **Impact:** This increases operational risk and delays in revocation detection for off-chain services such as discount portals, caching layers, and monitoring tools, potentially leading to misuse of outdated trust assumptions.\n",
+            "severity": "Informational",
+            "location": [
+                "SignatureDiscountValidator.sol#L35-L39"
+            ],
+            "files": [
+                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
+            ]
+        },
         {
             "id": 2,
             "category": {
                 "1": [
-                    "CWE-691"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-362"
-                ]
-            },
-            "title": "Users Can Overpay if `threshold` Changes",
-            "description": "The Firepit releaser contract allows users to release fees from the TokenJar by paying a threshold amount of RESOURCE tokens. However, if the threshold is adjusted by the thresholdSetter after a user has submitted a transaction but before it is mined, the user may end up paying more than intended. The release function uses the current threshold at execution time, not at submission time.\n\nThe root cause is the lack of synchronization between the threshold value and the nonce mechanism. The nonce is not incremented when the threshold is changed, so pending transactions in the mempool remain valid even if the cost has increased.\n\nAn attacker could exploit this by monitoring the mempool and frontrunning a release transaction with a threshold increase, forcing the original user to overpay. Alternatively, a user could be victimized by normal network latency if the threshold is raised during confirmation.\n\nThe impact is economic loss for users who end up overpaying for fee releases, leading to a poor user experience and potential loss of trust in the system's predictability.\n",
-            "severity": "Low",
-            "location": [
-                "ResourceManager.sol::setThreshold#45",
-                "Firepit.sol::release#22-25",
-                "Nonce.sol#8"
-            ],
-            "files": [
-                "phoenix-fees/src/base/ResourceManager.sol"
-            ]
-        },
-        {
-            "id": 3,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
+                    "CWE-345"
                 ],
                 "3": [
-                    "CWE-1078"
+                    "CWE-347"
                 ]
             },
-            "title": "Unconventional Import Paths",
-            "description": "The ResourceManager contract uses indirect import paths for the ERC20 interface and the IResourceManager interface, importing them through intermediate files rather than directly from their source. This practice, while not affecting runtime behavior, reduces code clarity and complicates dependency tracing for developers and auditors. The root cause is the use of transitive imports instead of direct references. This could lead to confusion during maintenance or auditing, especially in large codebases or during integration efforts. The impact is limited to reduced code readability and maintainability, with no direct security risk.\n",
-            "severity": null,
+            "title": "Discount signatures scoped per validator instance",
+            "description": "1. **Description:** The `isValidDiscountRegistration` function validates signatures based only on (claimer, expires, signature) and does not include the `discountKey` in the verification payload. This design could allow replay of a valid signature across different discount tiers if multiple keys were associated with the same validator.\n2. **Cause:** The signed message payload omits the `discountKey`, creating a potential for signature replay across tiers if the same validator serves multiple keys.\n3. **Exploitation:** If the deployment ever allowed multiple discount keys per validator, an attacker could reuse a valid signature intended for one tier to claim a different discount.\n4. **Impact:** While currently not exploitable due to the operational constraint of one key per validator, this represents a latent risk that could become active if the architecture evolves without corresponding code changes, leading to unauthorized discount claims.\n",
+            "severity": "Informational",
             "location": [
-                "ResourceManager.sol#5",
-                "ResourceManager.sol#6"
+                "SignatureDiscountValidator.sol#L48-L51"
             ],
             "files": [
-                "phoenix-fees/src/base/ResourceManager.sol"
+                "basenames/src/L2/discounts/SignatureDiscountValidator.sol"
             ]
         }
     ],
     "affected_files": {
-        "ResourceManager.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.29;\n\nimport {Owned} from \"solmate/src/auth/Owned.sol\";\nimport {ERC20} from \"solmate/src/utils/SafeTransferLib.sol\";\nimport {IResourceManager} from \"../interfaces/IReleaser.sol\";\n\n/// @title ResourceManager\n/// @notice A contract that holds immutable state for the resource token and the resource recipient\n/// address. It also maintains logic for managing the threshold of the resource token.\nabstract contract ResourceManager is IResourceManager, Owned {\n  /// @inheritdoc IResourceManager\n  uint256 public threshold;\n\n  /// @inheritdoc IResourceManager\n  address public thresholdSetter;\n\n  /// @inheritdoc IResourceManager\n  ERC20 public immutable RESOURCE;\n\n  /// @inheritdoc IResourceManager\n  address public immutable RESOURCE_RECIPIENT;\n\n  /// @notice Ensures only the threshold setter can call the setThreshold function\n  modifier onlyThresholdSetter() {\n    if (msg.sender != thresholdSetter) revert Unauthorized();\n    _;\n  }\n\n  /// @dev At construction the thresholdSetter defaults to 0 and its on the owner to set.\n  constructor(address _resource, uint256 _threshold, address _owner, address _recipient)\n    Owned(_owner)\n  {\n    RESOURCE = ERC20(_resource);\n    RESOURCE_RECIPIENT = _recipient;\n    threshold = _threshold;\n  }\n\n  /// @inheritdoc IResourceManager\n  function setThresholdSetter(address _thresholdSetter) external onlyOwner {\n    thresholdSetter = _thresholdSetter;\n  }\n\n  /// @inheritdoc IResourceManager\n  function setThreshold(uint256 _threshold) external onlyThresholdSetter {\n    threshold = _threshold;\n  }\n}\n"
+        "SignatureDiscountValidator.sol": "//SPDX-License-Identifier: MIT\npragma solidity ^0.8.23;\n\nimport {Ownable} from \"solady/auth/Ownable.sol\";\n\nimport {IDiscountValidator} from \"src/L2/interface/IDiscountValidator.sol\";\nimport {SybilResistanceVerifier} from \"src/lib/SybilResistanceVerifier.sol\";\n\n/// @title Discount Validator for: Signature Discount Validator\n///\n/// @notice Implements a simple signature validation schema which performs signature verification to validate\n///         signatures were generated from the Base Signer Service.\n///\n/// @author Coinbase (https://github.com/base-org/basenames)\ncontract SignatureDiscountValidator is Ownable, IDiscountValidator {\n    /// @dev The Base Signer Service signer address.\n    address signer;\n\n    /// @dev Thrown when setting the zero address as `owner` or `signer`.\n    error NoZeroAddress();\n\n    /// @notice constructor\n    ///\n    /// @param owner_ The permissioned `owner` in the `Ownable` context.\n    /// @param signer_ The off-chain signer of the Base Signer Service.\n    constructor(address owner_, address signer_) {\n        if (owner_ == address(0)) revert NoZeroAddress();\n        if (signer_ == address(0)) revert NoZeroAddress();\n        _initializeOwner(owner_);\n        signer = signer_;\n    }\n\n    /// @notice Allows the owner to update the expected signer.\n    ///\n    /// @param signer_ The address of the new signer.\n    function setSigner(address signer_) external onlyOwner {\n        if (signer_ == address(0)) revert NoZeroAddress();\n        signer = signer_;\n    }\n\n    /// @notice Required implementation for compatibility with IDiscountValidator.\n    ///\n    /// @dev The data must be encoded as `abi.encode(discountClaimerAddress, expiry, signature_bytes)`.\n    ///\n    /// @param claimer the discount claimer's address.\n    /// @param validationData opaque bytes for performing the validation.\n    ///\n    /// @return `true` if the validation data provided is determined to be valid for the specified claimer, else `false`.\n    function isValidDiscountRegistration(address claimer, bytes calldata validationData) external view returns (bool) {\n        return SybilResistanceVerifier.verifySignature(signer, claimer, validationData);\n    }\n}\n"
     }
 }

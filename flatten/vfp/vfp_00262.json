@@ -1,27 +1,52 @@
 {
     "vfp_id": "vfp_00262",
-    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
+    "project_name": "Jovay Rollup Contracts Audit.md",
     "findings": [
         {
-            "id": 16,
+            "id": 24,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ],
+                "3": [
+                    "CWE-561"
                 ]
             },
-            "title": "Wrong capTokenDecimals value used in StakedCapAdapter.price causes inaccurate prices",
-            "description": "The StakedCapAdapter library incorrectly uses the decimal count (e.g., 18) instead of the corresponding scaling factor (10^18) in price calculations, leading to wildly inaccurate prices. The root cause is a fundamental misunderstanding of how decimal scaling works in the price function: it passes the decimal count to convertToAssets, which expects a share amount, and divides by the decimal count rather than the scaling factor. This results in price miscalculations by several orders of magnitude. An attacker can exploit this by observing the incorrect prices and executing trades that take advantage of the disparity between the reported and actual values. The impact includes potential manipulation of minting and burning operations, incorrect valuation of collateral, and possible insolvency due to erroneous price feeds being used in critical financial operations.\n",
-            "severity": "High",
+            "title": "‘TRANSFER_ROLE’ Role Declared but Never Used",
+            "description": "The `TRANSFER_ROLE` constant is defined in `ERC20Token.sol` but is never assigned or checked in any function within the contract. This creates unnecessary code bloat and confusion about the intended access control model. The root cause is incomplete or outdated role management logic. An attacker cannot exploit this directly, but it may indicate a design inconsistency or a missing feature. Future developers might assume the role is functional and attempt to use it, leading to unexpected behavior. The impact is low, primarily affecting code clarity and maintainability.\n",
+            "severity": "Low",
             "location": [
-                "contracts/oracle/libraries/StakedCapAdapter.sol#L15-L21",
-                "StakedCapAdapter.sol::price"
+                "ERC20Token.sol#20"
             ],
             "files": [
-                "cap-contracts/contracts/oracle/libraries/StakedCapAdapter.sol"
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
+            ]
+        },
+        {
+            "id": 9,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Redundant `ADMIN_ROLE` Definition Instead of Using `DEFAULT_ADMIN_ROLE`",
+            "description": "The `ERC20Token` contract defines a custom `ADMIN_ROLE` and assigns it as the admin of all other roles, instead of using OpenZeppelin's built-in `DEFAULT_ADMIN_ROLE`. This creates redundancy and potential confusion in access control management.\n\nThe root cause is unnecessary customization of a standard pattern. OpenZeppelin's `AccessControl` defaults to `DEFAULT_ADMIN_ROLE` as the admin of new roles, so failing to assign it can result in roles being unmanageable.\n\nWhile not directly exploitable, this design increases the risk of privilege escalation or loss of control if new roles are added and `DEFAULT_ADMIN_ROLE` remains unassigned. It also consumes more gas due to extra role definitions.\n\nThe impact is increased maintenance complexity, higher risk of administrative errors, and suboptimal gas usage. It does not pose an immediate security threat but reduces code clarity and safety.\n",
+            "severity": "Low",
+            "location": [
+                "ERC20Token.sol::ADMIN_ROLE#34-38"
+            ],
+            "files": [
+                "jovay-contracts/rollup_contracts/contracts/common/ERC20Token.sol"
             ]
         }
     ],
     "affected_files": {
-        "StakedCapAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IERC4626 } from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Staked Cap Token Adapter\n/// @notice Prices are calculated based on the underlying cap token price and accrued yield\nlibrary StakedCapAdapter {\n    /// @notice Fetch price for a staked cap token\n    /// @param _asset Staked cap token address\n    /// @return latestAnswer Price of the staked cap token fixed to 8 decimals\n    /// @return lastUpdated Latest timestamp of the price\n    function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {\n        address capToken = IERC4626(_asset).asset();\n        (latestAnswer, lastUpdated) = IOracle(msg.sender).getPrice(capToken);\n        uint256 capTokenDecimals = IERC20Metadata(capToken).decimals();\n        uint256 pricePerFullShare = IERC4626(_asset).convertToAssets(capTokenDecimals);\n        latestAnswer = latestAnswer * pricePerFullShare / capTokenDecimals;\n    }\n}\n"
+        "ERC20Token.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20CappedUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol\";\n\nimport \"./interfaces/IERC20Token.sol\";\n\n/**\n* @title Asset Token Contract\n* @notice Asset token contract, used to manage assets\n* @dev inherit ERC20BurnableUpgradeable, ERC20CappedUpgradeable, AccessControlEnumerableUpgradeable\n */\ncontract ERC20Token is AccessControlEnumerableUpgradeable, ERC20BurnableUpgradeable, ERC20CappedUpgradeable, IERC20Token {\n    //roles\n    bytes32 public constant ADMIN_ROLE = keccak256(abi.encodePacked(\"ADMIN_ROLE\"));\n    bytes32 public constant MINTER_ROLE = keccak256(abi.encodePacked(\"MINTER_ROLE\"));\n    bytes32 public constant BURNER_ROLE = keccak256(abi.encodePacked(\"BURNER_ROLE\"));\n    bytes32 public constant TRANSFER_ROLE = keccak256(abi.encodePacked(\"TRANSFER_ROLE\"));\n\n    constructor() {\n        _disableInitializers();\n    }\n\n    function initialize(string calldata name_, string calldata symbol_, uint256 cap_, address admin_) external initializer {\n        __Context_init_unchained();\n        __AccessControl_init_unchained();\n        __ERC20_init_unchained(name_, symbol_);\n        __AccessControlEnumerable_init_unchained();\n        __ERC20Burnable_init_unchained();\n        __ERC20Capped_init_unchained(cap_);\n\n        _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(MINTER_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(BURNER_ROLE, ADMIN_ROLE);\n        _setRoleAdmin(TRANSFER_ROLE, ADMIN_ROLE);\n        _grantRole(ADMIN_ROLE, admin_);\n    }\n\n    function hasRole(bytes32 role, address account) public view virtual override(AccessControlUpgradeable, IAccessControlUpgradeable) returns (bool) {\n        return super.hasRole(role, account) || super.hasRole(getRoleAdmin(role), account);\n    }\n\n    /**\n     * @dev See {ERC20-_mint}.\n     */\n    function _mint(address account, uint256 amount) internal override (ERC20Upgradeable, ERC20CappedUpgradeable) {\n        super._mint(account, amount);\n    }\n\n    /**\n     * @dev require MINTER_ROLE=keccak256(abi.encodePacked(\"MINTER_ROLE\"))\n     */\n    function mint(address account, uint256 amount) external onlyRole(MINTER_ROLE) {\n        _mint(account, amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burn(uint256 amount) public override onlyRole(BURNER_ROLE) {\n        super.burn(amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burn(address account, uint256 amount) public override onlyRole(BURNER_ROLE) {\n        _burn(account, amount);\n    }\n\n    /**\n     * @dev require BURNER_ROLE=keccak256(abi.encodePacked(\"BURNER_ROLE\"))\n     */\n    function burnFrom(address account, uint256 amount) public override onlyRole(BURNER_ROLE) {\n        super.burnFrom(account, amount);\n    }\n}"
     }
 }

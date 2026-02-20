@@ -1,29 +1,144 @@
 {
     "vfp_id": "vfp_00129",
-    "project_name": "cantina_euler_swap_april2025.pdf",
+    "project_name": "Mina Token Bridge EVM - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 11,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-703"
                 ],
                 "2": [
-                    "CWE-1041"
+                    "CWE-754"
+                ],
+                "3": [
+                    "CWE-252"
                 ]
             },
-            "title": "maxWithdraw in QuoteLib.calcLimits() double-counts deposited assets",
-            "description": "The calcLimits function adds deposited assets to maxWithdraw after already including them in cash, leading to double-counting. However, a subsequent check ensures maxWithdraw does not exceed cash, which mitigates the issue. The root cause is redundant logic. While the double-counting is incorrect, it does not result in incorrect final values due to the override. The impact is informational, as it represents a code inefficiency and potential confusion rather than a functional bug.\n",
-            "severity": "Informational",
+            "title": "Return value of transferFrom is not checked",
+            "description": "The lock function in Bridge.sol calls transferFrom on an ERC-20 token but does not check its return value. Some ERC-20 tokens return false on failure instead of reverting, which can lead to the bridge assuming a successful transfer when no tokens were actually transferred. This is caused by relying on the transferFrom return value without proper validation. An attacker could exploit this by using a non-reverting failing token to trigger a Lock event without actually depositing funds. This could allow the attacker to mint tokens on the Mina side without backing, leading to a complete loss of funds from the bridge.\n",
+            "severity": "Critical",
             "location": [
-                "QuoteLib.sol#L98-L103"
+                "Bridge.sol::lock"
             ],
             "files": [
-                "euler-swap/src/libraries/QuoteLib.sol"
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ],
+                "3": [
+                    "CWE-266"
+                ]
+            },
+            "title": "The protocol owner can withdraw all funds from the bridge",
+            "description": "The withdrawETH function in Bridge.sol allows the owner to withdraw any amount of ETH from the contract without restriction. While fees from Mina-to-Ethereum transfers are intended to be collected, the accumulated amounts are tracked off-chain in the backend, not on-chain. This design allows the owner to withdraw more than just fees, including user deposits. The cause is the lack of on-chain accounting and withdrawal limits. An attacker who compromises the owner key, or a malicious owner, could drain all ETH from the bridge. This introduces significant centralization risk and undermines user trust in the protocol's security.\n",
+            "severity": "High",
+            "location": [
+                "Bridge.sol::withdrawETH"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-284"
+                ],
+                "2": [
+                    "CWE-269"
+                ]
+            },
+            "title": "Validators cannot be removed",
+            "description": "The Bridge.sol contract allows adding validators via _addListValidator but provides no mechanism to remove them. This is caused by the absence of a corresponding remove function. If a validator becomes compromised or untrustworthy, the owner cannot revoke its privileges. This creates a permanent security liability, as any added validator remains authorized indefinitely. The impact is a reduced ability to respond to security incidents and long-term operational inflexibility, posing a medium-level protocol risk.\n",
+            "severity": "Medium",
+            "location": [
+                "Bridge.sol::_addListValidator"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 8,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Lack of parameter validation in initialization",
+            "description": "The initialize function in Bridge.sol sets minAmount and maxAmount without verifying that maxAmount >= minAmount. This is caused by missing input validation logic. If the contract is initialized with maxAmount < minAmount, the lock function will revert for all inputs, effectively disabling the bridge. While these values can be corrected later, the invalid state may go unnoticed, leading to a denial of service. The impact is low because it's a configuration issue that can be fixed, but it still represents a robustness flaw in contract initialization.\n",
+            "severity": "Informational",
+            "location": [
+                "Bridge.sol::initialize"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 10,
+            "category": {
+                "1": [
+                    "CWE-707"
+                ],
+                "2": [
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1288"
+                ]
+            },
+            "title": "Invalid threshold can halt the protocol",
+            "description": "The changeThreshold function in Bridge.sol allows the owner to set the threshold to any value without checking if it exceeds the number of validators. This is caused by missing validation logic. If the threshold is set higher than the number of validators, the quorum cannot be reached, and the unlock function will always revert. This results in a complete denial of service for the bridge. The impact is protocol-wide disruption due to a simple configuration error, which could be accidental or malicious. While the owner is trusted, this lack of safeguard increases operational risk, justifying an informational severity.\n",
+            "severity": "Informational",
+            "location": [
+                "Bridge.sol::changeThreshold"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
+            ]
+        },
+        {
+            "id": 13,
+            "category": {
+                "1": [
+                    "CWE-693"
+                ],
+                "2": [
+                    "CWE-345"
+                ],
+                "3": [
+                    "CWE-347"
+                ]
+            },
+            "title": "Threat Model: unlock function input validation",
+            "description": "The unlock function accepts several user-controlled inputs, including token, amount, user, hash, fee, and signatures, each with specific constraints and security checks.\nThe function relies on ECDSA signatures and validator checks to authorize the unlock operation, and reverts if the hash is already used, the signer is not a validator, or the balance is insufficient.\nIf any of the validation steps are bypassed or incorrectly implemented, an attacker could replay a hash, forge a signature, or drain the contract via unauthorized withdrawals.\nThis could lead to loss of funds or double-spending if the signature verification or hash uniqueness check fails. However, the description is cut off, so full impact and details are not available in this chunk.\n",
+            "severity": "Informational",
+            "location": [
+                "Bridge.sol::unlock"
+            ],
+            "files": [
+                "6071594f4e12717b8a6636d7b06186124a9bd744/multichain-bridge-smart-contract-evm/contracts/Bridge.sol"
             ]
         }
     ],
     "affected_files": {
-        "QuoteLib.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.27;\n\nimport {IEVC} from \"evc/interfaces/IEthereumVaultConnector.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\nimport {IEulerSwap} from \"../interfaces/IEulerSwap.sol\";\nimport {CtxLib} from \"./CtxLib.sol\";\nimport {CurveLib} from \"./CurveLib.sol\";\n\nlibrary QuoteLib {\n    error UnsupportedPair();\n    error OperatorNotInstalled();\n    error SwapLimitExceeded();\n\n    /// @dev Computes the quote for a swap by applying fees and validating state conditions\n    /// @param evc EVC instance\n    /// @param p The EulerSwap params\n    /// @param asset0IsInput Swap direction\n    /// @param amount The amount to quote (input amount if exactIn=true, output amount if exactIn=false)\n    /// @param exactIn True if quoting for exact input amount, false if quoting for exact output amount\n    /// @return The quoted amount (output amount if exactIn=true, input amount if exactIn=false)\n    /// @dev Validates:\n    ///      - EulerSwap operator is installed\n    ///      - Token pair is supported\n    ///      - Sufficient reserves exist\n    ///      - Sufficient cash is available\n    function computeQuote(address evc, IEulerSwap.Params memory p, bool asset0IsInput, uint256 amount, bool exactIn)\n        internal\n        view\n        returns (uint256)\n    {\n        if (amount == 0) return 0;\n\n        require(IEVC(evc).isAccountOperatorAuthorized(p.eulerAccount, address(this)), OperatorNotInstalled());\n        require(amount <= type(uint112).max, SwapLimitExceeded());\n\n        uint256 fee = p.fee;\n\n        // exactIn: decrease effective amountIn\n        if (exactIn) amount = amount - (amount * fee / 1e18);\n\n        (uint256 inLimit, uint256 outLimit) = calcLimits(p, asset0IsInput);\n\n        uint256 quote = findCurvePoint(p, amount, exactIn, asset0IsInput);\n\n        if (exactIn) {\n            // if `exactIn`, `quote` is the amount of assets to buy from the AMM\n            require(amount <= inLimit && quote <= outLimit, SwapLimitExceeded());\n        } else {\n            // if `!exactIn`, `amount` is the amount of assets to buy from the AMM\n            require(amount <= outLimit && quote <= inLimit, SwapLimitExceeded());\n        }\n\n        // exactOut: inflate required amountIn\n        if (!exactIn) quote = (quote * 1e18) / (1e18 - fee);\n\n        return quote;\n    }\n\n    /// @notice Calculates the maximum input and output amounts for a swap based on protocol constraints\n    /// @dev Determines limits by checking multiple factors:\n    ///      1. Supply caps and existing debt for the input token\n    ///      2. Available reserves in the EulerSwap for the output token\n    ///      3. Available cash and borrow caps for the output token\n    ///      4. Account balances in the respective vaults\n    /// @param p The EulerSwap params\n    /// @param asset0IsInput Boolean indicating whether asset0 (true) or asset1 (false) is the input token\n    /// @return uint256 Maximum amount of input token that can be deposited\n    /// @return uint256 Maximum amount of output token that can be withdrawn\n    function calcLimits(IEulerSwap.Params memory p, bool asset0IsInput) internal view returns (uint256, uint256) {\n        CtxLib.Storage storage s = CtxLib.getStorage();\n\n        uint256 inLimit = type(uint112).max;\n        uint256 outLimit = type(uint112).max;\n\n        address eulerAccount = p.eulerAccount;\n        (IEVault vault0, IEVault vault1) = (IEVault(p.vault0), IEVault(p.vault1));\n        // Supply caps on input\n        {\n            IEVault vault = (asset0IsInput ? vault0 : vault1);\n            uint256 maxDeposit = vault.debtOf(eulerAccount) + vault.maxDeposit(eulerAccount);\n            if (maxDeposit < inLimit) inLimit = maxDeposit;\n        }\n\n        // Remaining reserves of output\n        {\n            uint112 reserveLimit = asset0IsInput ? s.reserve1 : s.reserve0;\n            if (reserveLimit < outLimit) outLimit = reserveLimit;\n        }\n\n        // Remaining cash and borrow caps in output\n        {\n            IEVault vault = (asset0IsInput ? vault1 : vault0);\n\n            uint256 cash = vault.cash();\n            if (cash < outLimit) outLimit = cash;\n\n            (, uint16 borrowCap) = vault.caps();\n            uint256 maxWithdraw = decodeCap(uint256(borrowCap));\n            maxWithdraw = vault.totalBorrows() > maxWithdraw ? 0 : maxWithdraw - vault.totalBorrows();\n            if (maxWithdraw > cash) maxWithdraw = cash;\n            maxWithdraw += vault.convertToAssets(vault.balanceOf(eulerAccount));\n            if (maxWithdraw < outLimit) outLimit = maxWithdraw;\n        }\n\n        return (inLimit, outLimit);\n    }\n\n    /// @notice Decodes a compact-format cap value to its actual numerical value\n    /// @dev The cap uses a compact-format where:\n    ///      - If amountCap == 0, there's no cap (returns max uint256)\n    ///      - Otherwise, the lower 6 bits represent the exponent (10^exp)\n    ///      - The upper bits (>> 6) represent the mantissa\n    ///      - The formula is: (10^exponent * mantissa) / 100\n    /// @param amountCap The compact-format cap value to decode\n    /// @return The actual numerical cap value (type(uint256).max if uncapped)\n    /// @custom:security Uses unchecked math for gas optimization as calculations cannot overflow:\n    ///                  maximum possible value 10^(2^6-1) * (2^10-1) ≈ 1.023e+66 < 2^256\n    function decodeCap(uint256 amountCap) internal pure returns (uint256) {\n        if (amountCap == 0) return type(uint256).max;\n\n        unchecked {\n            // Cannot overflow because this is less than 2**256:\n            //   10**(2**6 - 1) * (2**10 - 1) = 1.023e+66\n            return 10 ** (amountCap & 63) * (amountCap >> 6) / 100;\n        }\n    }\n\n    /// @notice Verifies that the given tokens are supported by the EulerSwap pool and determines swap direction\n    /// @dev Returns a boolean indicating whether the input token is asset0 (true) or asset1 (false)\n    /// @param p The EulerSwap params\n    /// @param tokenIn The input token address for the swap\n    /// @param tokenOut The output token address for the swap\n    /// @return asset0IsInput True if tokenIn is asset0 and tokenOut is asset1, false if reversed\n    /// @custom:error UnsupportedPair Thrown if the token pair is not supported by the EulerSwap pool\n    function checkTokens(IEulerSwap.Params memory p, address tokenIn, address tokenOut)\n        internal\n        view\n        returns (bool asset0IsInput)\n    {\n        address asset0 = IEVault(p.vault0).asset();\n        address asset1 = IEVault(p.vault1).asset();\n\n        if (tokenIn == asset0 && tokenOut == asset1) asset0IsInput = true;\n        else if (tokenIn == asset1 && tokenOut == asset0) asset0IsInput = false;\n        else revert UnsupportedPair();\n    }\n\n    function findCurvePoint(IEulerSwap.Params memory p, uint256 amount, bool exactIn, bool asset0IsInput)\n        internal\n        view\n        returns (uint256 output)\n    {\n        CtxLib.Storage storage s = CtxLib.getStorage();\n\n        uint256 px = p.priceX;\n        uint256 py = p.priceY;\n        uint256 x0 = p.equilibriumReserve0;\n        uint256 y0 = p.equilibriumReserve1;\n        uint256 cx = p.concentrationX;\n        uint256 cy = p.concentrationY;\n        uint112 reserve0 = s.reserve0;\n        uint112 reserve1 = s.reserve1;\n\n        uint256 xNew;\n        uint256 yNew;\n\n        if (exactIn) {\n            // exact in\n            if (asset0IsInput) {\n                // swap X in and Y out\n                xNew = reserve0 + amount;\n                if (xNew < x0) {\n                    // remain on f()\n                    yNew = CurveLib.f(xNew, px, py, x0, y0, cx);\n                } else {\n                    // move to g()\n                    yNew = CurveLib.fInverse(xNew, py, px, y0, x0, cy);\n                }\n                output = reserve1 > yNew ? reserve1 - yNew : 0;\n            } else {\n                // swap Y in and X out\n                yNew = reserve1 + amount;\n                if (yNew < y0) {\n                    // remain on g()\n                    xNew = CurveLib.f(yNew, py, px, y0, x0, cy);\n                } else {\n                    // move to f()\n                    xNew = CurveLib.fInverse(yNew, px, py, x0, y0, cx);\n                }\n                output = reserve0 > xNew ? reserve0 - xNew : 0;\n            }\n        } else {\n            // exact out\n            if (asset0IsInput) {\n                // swap Y out and X in\n                require(reserve1 > amount, SwapLimitExceeded());\n                yNew = reserve1 - amount;\n                if (yNew < y0) {\n                    // remain on g()\n                    xNew = CurveLib.f(yNew, py, px, y0, x0, cy);\n                } else {\n                    // move to f()\n                    xNew = CurveLib.fInverse(yNew, px, py, x0, y0, cx);\n                }\n                output = xNew > reserve0 ? xNew - reserve0 : 0;\n            } else {\n                // swap X out and Y in\n                require(reserve0 > amount, SwapLimitExceeded());\n                xNew = reserve0 - amount;\n                if (xNew < x0) {\n                    // remain on f()\n                    yNew = CurveLib.f(xNew, py, px, y0, x0, cx);\n                } else {\n                    // move to g()\n                    yNew = CurveLib.fInverse(xNew, py, px, y0, x0, cy);\n                }\n                output = yNew > reserve1 ? yNew - reserve1 : 0;\n            }\n        }\n    }\n}\n"
+        "Bridge.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.15;\n\nimport \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport \"@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport \"@openzeppelin/contracts-upgradeable/utils/cryptography/draft-EIP712Upgradeable.sol\";\nimport \"@openzeppelin/contracts/utils/cryptography/ECDSA.sol\";\n\ncontract Bridge is OwnableUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {\n\n    bytes32 public constant UNLOCK_HASH = keccak256(\n        \"UNLOCK(address token,uint256 amount,address user,string hash,uint256 fee)\"\n    );\n\n    address public minter;\n    mapping(address => bool) public whitelistTokens;\n    mapping(string => bool) public unlockHash;\n    uint256 public maxAmount;\n    uint256 public minAmount;\n    uint256 public threshold;\n    mapping(address => bool) public validators;\n\n    event Lock(address locker, string receipt, address token, uint256 amount, string tokenName);\n    event Unlock(address user, address token, uint256 amount, string hash, uint256 fee);\n    event ChangeMinter(address minter);\n    event ChangeMinAmount(uint256 minAmount);\n    event ChangeThreshold(uint256 newThreshold);\n    event ChangeMaxAmount(uint256 maxAmount);\n    event SetWhitelistToken(address token, bool whitelist);\n\n    modifier onlyMinter() {\n        require(minter == msg.sender, \"Bridge: Only Minter\");\n        _;\n    }\n\n    function initialize(\n        address _minter,\n        uint256 _minAmount,\n        uint256 _maxAmount,\n        address[] memory _validators,\n        uint256 _threshold\n    ) public initializer {\n        __Ownable_init();\n        __ReentrancyGuard_init();\n        __EIP712_init(\"MinaBridge\", \"1.0.0\");\n        minter = _minter;\n        minAmount = _minAmount;\n        maxAmount = _maxAmount;\n        for (uint256 i = 0; i < _validators.length; ++i) {\n            validators[_validators[i]] = true;\n        }\n        threshold = _threshold;\n        whitelistTokens[address(0)] = true;\n        emit ChangeMinter(minter);\n    }\n\n    function isValidThreshold(uint256 totalSig) public view returns (bool) {\n        if (totalSig  >= threshold) {\n            return true;\n        }\n        return false;\n    }\n\n    function _getSigner(bytes32 _digest, bytes memory _signature) public view returns (address) {\n        return ECDSA.recover(_digest, _signature);\n    }\n\n    function getUnlockHash(\n        address token,\n        uint256 amount,\n        address user,\n        string memory hash,\n        uint256 fee\n    ) public view returns (bytes32 _unlockHash) {\n        _unlockHash = _hashTypedDataV4(keccak256(abi.encode(UNLOCK_HASH, token, amount, user, keccak256(abi.encodePacked(hash)), fee)));\n    }\n\n    function _addListValidator(address[] memory _validators) internal {\n        require(_validators.length > 0, \"Invalid length\");\n        for (uint256 i = 0; i < _validators.length; i++) {\n            validators[_validators[i]] = true;\n        }\n    }\n\n    function lock(address token, string memory receipt, uint256 amount) public payable {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(amount <= maxAmount && amount >= minAmount, \"Bridge: invalid amount\");\n        string memory name = \"ETH\";\n        if (token == address(0)) {\n            require(msg.value == amount, \"Bridge: invalid amount\");\n        } else {\n            IERC20(token).transferFrom(msg.sender, address(this), amount);\n            name = IERC20(token).name();\n        }\n        emit Lock(msg.sender, receipt, token, amount, name);\n    }\n\n\n    function unlock(address token, uint256 amount, address user, string memory hash, uint256 fee, bytes[] memory _signatures) public onlyMinter nonReentrant {\n        require(whitelistTokens[token], \"Bridge: token must be in whitelist\");\n        require(!unlockHash[hash], \"Bridge: Unlocked before\");\n        require(isValidThreshold(_signatures.length), \"Signature: Invalid Length\");\n\n        bytes32 _unlockHash = getUnlockHash(token, amount, user, hash, fee);\n\n        address[1000] memory listValidatorsSigned;\n        for (uint256 i = 0; i < _signatures.length; i++) {\n            bytes memory _signature = _signatures[i];\n            address signer = _getSigner(_unlockHash, _signature);\n            require(validators[signer], \"Invalid signature\");\n            for (uint256 j = 0; j < listValidatorsSigned.length; j++) {\n                if (listValidatorsSigned[j] == signer) {\n                    require(false, \"Invalid Signature Length\");\n                }\n            }\n            listValidatorsSigned[i] = signer;\n        }\n\n        unlockHash[hash] = true;\n        if (token == address(0)) {\n            require(address(this).balance >= amount, \"Bridge: invalid amount\");\n            payable(user).transfer(amount - fee);\n            payable(owner()).transfer(fee);\n\n        } else {\n            require(IERC20(token).balanceOf(address(this)) >= amount, \"Bridge: Invalid amount\");\n            IERC20(token).transfer(user, amount - fee);\n            IERC20(token).transfer(owner(), fee);\n\n        }\n        emit Unlock(user, token, amount - fee, hash, fee);\n    }\n\n//    ------------ADMIN FUNCTIONS--------------------------------\n    function changeMinter(address _minter) public onlyOwner {\n        minter = _minter;\n        emit ChangeMinter(minter);\n    }\n\n    function setWhitelistToken(address token, bool whitelist) public onlyOwner {\n        whitelistTokens[token] = whitelist;\n        emit SetWhitelistToken(token, whitelist);\n    }\n\n    function setMinAmount(uint256 min) public onlyOwner {\n        require(min <= maxAmount, \"Invalid minAmount\");\n        minAmount = min;\n        emit ChangeMinAmount(minAmount);\n    }\n\n    function setMaxAmount(uint256 max) public onlyOwner {\n        require(max >= minAmount, \"Invalid minAmount\");\n        maxAmount = max;\n        emit ChangeMaxAmount(maxAmount);\n    }\n\n    function setMinMaxAmount(uint256 min, uint256 max) public onlyOwner {\n        require(max >= min, \"Invalid minAmount\");\n        maxAmount = max;\n        minAmount = min;\n    }\n\n    function withdrawETH(uint256 amount) public onlyOwner {\n        require(address(this).balance >= amount, \"Bridge: insufficient balance\");\n        payable(msg.sender).transfer(amount);\n    }\n\n    function changeThreshold(uint256 _newThreshold) external onlyOwner() {\n        threshold = _newThreshold;\n        emit ChangeThreshold(_newThreshold);\n    }\n\n    function addListValidator(address[] memory _validators) external onlyOwner {\n        _addListValidator(_validators);\n    }\n}\n"
     }
 }

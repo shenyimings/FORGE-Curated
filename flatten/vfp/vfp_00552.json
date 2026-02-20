@@ -1,34 +1,32 @@
 {
     "vfp_id": "vfp_00552",
-    "project_name": "DIA Lumina Staking Security Audit Report.pdf",
+    "project_name": "cantina_virtuals_may2025.pdf",
     "findings": [
         {
-            "id": 24,
+            "id": 0,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-477"
+                    "CWE-657"
+                ],
+                "3": [
+                    "CWE-637"
                 ]
             },
-            "title": "Multiple legacy and safety issues in WDIA inherited from WETH9",
-            "description": "The WDIA contract inherits several issues from WETH9, including silent fallback behavior, lack of overflow protection, unrestricted compiler version, missing zero address checks, and front-running risk in approve(). The root cause is outdated code patterns. These issues collectively reduce security and compatibility. An attacker could exploit the silent fallback to trick users into unintended deposits, or front-run approve calls to drain allowances. The impact includes potential fund loss and reduced interoperability.\n",
-            "severity": "Low",
+            "title": "Gas savings in Genesis Contract Deployment",
+            "description": "1. **Description:** The createGenesis function deploys a new Genesis contract, but the contract is unnecessarily marked as initializable, missing an opportunity for gas optimization.\n2. **Cause:** The contract is made initializable despite not requiring upgradability in this context, which adds overhead.\n3. **Exploitation:** This is not exploitable by an attacker but represents inefficient deployment design.\n4. **Impact:** Higher deployment and runtime gas costs than necessary, increasing transaction fees for users and deployers.\n",
+            "severity": "Informational",
             "location": [
-                "WDIA::fallback",
-                "WDIA::deposit",
-                "WDIA::withdraw",
-                "WDIA::transfer",
-                "WDIA::transferFrom",
-                "WDIA::approve"
+                "GenesisLib.sol#L32"
             ],
             "files": [
-                "50b709199461ae48e3186d5a04cd22eff39ebcf5/lumina-staking/contracts/WDIA.sol"
+                "protocol-contracts/contracts/genesis/GenesisLib.sol"
             ]
         }
     ],
     "affected_files": {
-        "WDIA.sol": "// SPDX-License-Identifier: MIT\npragma solidity >=0.4.23;\n\ncontract WDIA {\n    string public name = \"Wrapped DIA\";\n    string public symbol = \"DIA\";\n    uint8 public decimals = 18;\n\n    event Approval(address indexed src, address indexed guy, uint wad);\n    event Transfer(address indexed src, address indexed dst, uint wad);\n    event Deposit(address indexed dst, uint wad);\n    event Withdrawal(address indexed src, uint wad);\n\n    mapping(address => uint) public balanceOf;\n    mapping(address => mapping(address => uint)) public allowance;\n\n    function() external payable {\n        deposit();\n    }\n    function deposit() public payable {\n        balanceOf[msg.sender] += msg.value;\n        emit Deposit(msg.sender, msg.value);\n    }\n    function withdraw(uint wad) public {\n        require(balanceOf[msg.sender] >= wad);\n        balanceOf[msg.sender] -= wad;\n        msg.sender.transfer(wad);\n        emit Withdrawal(msg.sender, wad);\n    }\n\n    function totalSupply() public view returns (uint) {\n        return address(this).balance;\n    }\n\n    function approve(address guy, uint wad) public returns (bool) {\n        allowance[msg.sender][guy] = wad;\n        emit Approval(msg.sender, guy, wad);\n        return true;\n    }\n\n    function transfer(address dst, uint wad) public returns (bool) {\n        return transferFrom(msg.sender, dst, wad);\n    }\n\n    function transferFrom(\n        address src,\n        address dst,\n        uint wad\n    ) public returns (bool) {\n        require(balanceOf[src] >= wad);\n\n        if (src != msg.sender && allowance[src][msg.sender] != uint(-1)) {\n            require(allowance[src][msg.sender] >= wad);\n            allowance[src][msg.sender] -= wad;\n        }\n\n        balanceOf[src] -= wad;\n        balanceOf[dst] += wad;\n\n        emit Transfer(src, dst, wad);\n\n        return true;\n    }\n}\n"
+        "GenesisLib.sol": "// GenesisLib.sol\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\n\nimport {Genesis} from \"./Genesis.sol\";\nimport \"./GenesisTypes.sol\";\n\nlibrary GenesisLib {\n    function validateAndDeploy(\n        uint256 genesisID,\n        address factory,\n        GenesisCreationParams memory params,\n        bytes32 tbaSalt,\n        address tbaImpl,\n        uint32 daoVotingPeriod,\n        uint256 daoThreshold,\n        address agentFactoryAddress,\n        address virtualToken,\n        uint256 reserve,\n        uint256 maxContribution,\n        uint256 agentTokenTotalSupply,\n        uint256 agentTokenLpSupply,\n        bool noLpStake\n    ) internal returns (address) {\n        require(\n            bytes(params.genesisName).length > 0 &&\n                bytes(params.genesisTicker).length > 0 &&\n                params.genesisCores.length > 0,\n            \"Invalid params\"\n        );\n\n        Genesis newGenesis = new Genesis();\n\n        GenesisInitParams memory initParams = GenesisInitParams({\n            genesisID: genesisID,\n            factory: factory,\n            startTime: params.startTime,\n            endTime: params.endTime,\n            genesisName: params.genesisName,\n            genesisTicker: params.genesisTicker,\n            genesisCores: params.genesisCores,\n            tbaSalt: tbaSalt,\n            tbaImplementation: tbaImpl,\n            daoVotingPeriod: daoVotingPeriod,\n            daoThreshold: daoThreshold,\n            agentFactoryAddress: agentFactoryAddress,\n            virtualTokenAddress: virtualToken,\n            reserveAmount: reserve,\n            maxContributionVirtualAmount: maxContribution,\n            agentTokenTotalSupply: agentTokenTotalSupply,\n            agentTokenLpSupply: agentTokenLpSupply,\n            noLpStake: noLpStake\n        });\n\n        newGenesis.initialize(initParams);\n        return address(newGenesis);\n    }\n}\n"
     }
 }

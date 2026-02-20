@@ -3,47 +3,30 @@
     "project_name": "Virtuals Protocol AI Agents - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 9,
+            "id": 28,
             "category": {
                 "1": [
-                    "CWE-435"
-                ]
-            },
-            "title": "FERC20 onlyOwner functions are unreachable",
-            "description": "The FERC20 token, when deployed via the Bonding contract, transfers ownership to the Bonding contract itself in the constructor, but there is no mechanism for the original deployer or owner to invoke owner-only functions such as updateMaxTx or excludeFromMaxTx. The root cause is the absence of wrapper functions in the Bonding contract to forward these calls. This renders critical configuration functions inaccessible, making it impossible to adjust transaction limits or exclude addresses post-deployment. While the impact is mitigated by the fact that these features are currently unused (as acknowledged by the team), the vulnerability remains in the design. An attacker cannot directly exploit this, but it reduces protocol flexibility and could lead to operational issues if owner functions are needed in the future.\n",
-            "severity": "Medium",
-            "location": [
-                "FERC20.sol#33"
-            ],
-            "files": [
-                "protocol-contracts/contracts/fun/FERC20.sol"
-            ]
-        },
-        {
-            "id": 25,
-            "category": {
-                "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-684"
+                    "CWE-20"
                 ],
                 "3": [
-                    "CWE-440"
+                    "CWE-1288"
                 ]
             },
-            "title": "FERC20 tokens revert on 0 transfers",
-            "description": "The FERC20::_transfer() function reverts when attempting to transfer 0 tokens, which deviates from standard ERC-20 behavior where 0-value transfers are allowed. This is caused by an explicit check that reverts on zero amount transfers. This incompatibility can break integrations with third-party protocols or contracts that expect standard ERC-20 semantics, potentially causing failed transactions or unexpected reverts in composability scenarios.\n",
+            "title": "Tokens left in the Airdrop contract can be stolen",
+            "description": "The Airdrop::airdrop() function does not validate that the sum of _amounts equals _total, allowing a caller to pass a smaller _total than the actual sum. This discrepancy enables the function to transfer more tokens than accounted for, letting an attacker drain excess tokens from the contract. This is due to missing input validation. The impact is direct loss of funds from the airdrop contract, compromising the integrity of the distribution mechanism.\n",
             "severity": "Informational",
             "location": [
-                "FERC20.sol"
+                "Airdrop.sol"
             ],
             "files": [
-                "protocol-contracts/contracts/fun/FERC20.sol"
+                "protocol-contracts/contracts/token/Airdrop.sol"
             ]
         }
     ],
     "affected_files": {
-        "FERC20.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\n\ncontract FERC20 is Context, IERC20, Ownable {\n    uint8 private constant _decimals = 18;\n\n    uint256 private _totalSupply;\n\n    string private _name;\n\n    string private _symbol;\n\n    uint public maxTx;\n\n    uint256 private _maxTxAmount;\n\n    mapping(address => uint256) private _balances;\n\n    mapping(address => mapping(address => uint256)) private _allowances;\n\n    mapping(address => bool) private isExcludedFromMaxTx;\n\n    event MaxTxUpdated(uint _maxTx);\n\n    constructor(\n        string memory name_,\n        string memory symbol_,\n        uint256 supply,\n        uint _maxTx\n    ) Ownable(msg.sender) {\n        _name = name_;\n\n        _symbol = symbol_;\n\n        _totalSupply = supply * 10 ** _decimals;\n\n        _balances[_msgSender()] = _totalSupply;\n\n        isExcludedFromMaxTx[_msgSender()] = true;\n\n        isExcludedFromMaxTx[address(this)] = true;\n\n        _updateMaxTx(_maxTx);\n\n        emit Transfer(address(0), _msgSender(), _totalSupply);\n    }\n\n    function name() public view returns (string memory) {\n        return _name;\n    }\n\n    function symbol() public view returns (string memory) {\n        return _symbol;\n    }\n\n    function decimals() public pure returns (uint8) {\n        return _decimals;\n    }\n\n    function totalSupply() public view override returns (uint256) {\n        return _totalSupply;\n    }\n\n    function balanceOf(address account) public view override returns (uint256) {\n        return _balances[account];\n    }\n\n    function transfer(\n        address recipient,\n        uint256 amount\n    ) public override returns (bool) {\n        _transfer(_msgSender(), recipient, amount);\n\n        return true;\n    }\n\n    function allowance(\n        address owner,\n        address spender\n    ) public view override returns (uint256) {\n        return _allowances[owner][spender];\n    }\n\n    function approve(\n        address spender,\n        uint256 amount\n    ) public override returns (bool) {\n        _approve(_msgSender(), spender, amount);\n\n        return true;\n    }\n\n    function transferFrom(\n        address sender,\n        address recipient,\n        uint256 amount\n    ) public override returns (bool) {\n        _transfer(sender, recipient, amount);\n\n        _approve(\n            sender,\n            _msgSender(),\n            _allowances[sender][_msgSender()] - amount\n        );\n\n        return true;\n    }\n\n    function _approve(address owner, address spender, uint256 amount) private {\n        require(owner != address(0), \"ERC20: approve from the zero address\");\n        require(spender != address(0), \"ERC20: approve to the zero address\");\n\n        _allowances[owner][spender] = amount;\n\n        emit Approval(owner, spender, amount);\n    }\n\n    function _transfer(address from, address to, uint256 amount) private {\n        require(from != address(0), \"ERC20: transfer from the zero address\");\n        require(to != address(0), \"ERC20: transfer to the zero address\");\n        require(amount > 0, \"Transfer amount must be greater than zero\");\n\n        if (!isExcludedFromMaxTx[from]) {\n            require(amount <= _maxTxAmount, \"Exceeds MaxTx\");\n        }\n\n        _balances[from] = _balances[from] - amount;\n        _balances[to] = _balances[to] + amount;\n\n        emit Transfer(from, to, amount);\n    }\n\n    function _updateMaxTx(uint _maxTx) internal {\n        maxTx = _maxTx;\n        _maxTxAmount = (maxTx * _totalSupply) / 100;\n\n        emit MaxTxUpdated(_maxTx);\n    }\n\n    function updateMaxTx(uint256 _maxTx) public onlyOwner {\n        _updateMaxTx(_maxTx);\n    }\n\n    function excludeFromMaxTx(address user) public onlyOwner {\n        require(\n            user != address(0),\n            \"ERC20: Exclude Max Tx from the zero address\"\n        );\n\n        isExcludedFromMaxTx[user] = true;\n    }\n\n    function _burn(address user, uint256 amount) internal {\n        require(user != address(0), \"Invalid address\");\n        _balances[user] = _balances[user] - amount;\n    }\n\n    function burnFrom(address user, uint256 amount) public onlyOwner {\n        require(user != address(0), \"Invalid address\");\n        _balances[user] = _balances[user] - amount;\n        emit Transfer(user, address(0), amount);\n    }\n}\n"
+        "Airdrop.sol": "pragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\n\ncontract Airdrop {\n\n    /**\n     *\n     * @param _token ERC20 token to airdrop\n     * @param _recipients list of recipients\n     * @param _amounts list of amounts to send each recipient\n     * @param _total total amount to transfer from caller\n     */\n    function airdrop(\n        IERC20 _token,\n        address[] calldata _recipients,\n        uint256[] calldata _amounts,\n        uint256 _total\n    ) external {\n        // bytes selector for transferFrom(address,address,uint256)\n        bytes4 transferFrom = 0x23b872dd;\n        // bytes selector for transfer(address,uint256)\n        bytes4 transfer = 0xa9059cbb;\n\n        assembly {\n            // store transferFrom selector\n            let transferFromData := add(0x20, mload(0x40))\n            mstore(transferFromData, transferFrom)\n            // store caller address\n            mstore(add(transferFromData, 0x04), caller())\n            // store address\n            mstore(add(transferFromData, 0x24), address())\n            // store _total\n            mstore(add(transferFromData, 0x44), _total)\n            // call transferFrom for _total\n\n            if iszero(\n                and( // The arguments of `and` are evaluated from right to left.\n                    or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.\n                    call(gas(), _token, 0, transferFromData, 0x64, 0x00, 0x20)\n                )\n            ) {\n                revert(0, 0)\n            }\n\n            // store transfer selector\n            let transferData := add(0x20, mload(0x40))\n            mstore(transferData, transfer)\n\n            // store length of _recipients\n            let sz := _amounts.length\n\n            // loop through _recipients\n            for {\n                let i := 0\n            } lt(i, sz) {\n                // increment i\n                i := add(i, 1)\n            } {\n                // store offset for _amounts[i]\n                let offset := mul(i, 0x20)\n                // store _amounts[i]\n                let amt := calldataload(add(_amounts.offset, offset))\n                // store _recipients[i]\n                let recp := calldataload(add(_recipients.offset, offset))\n                // store _recipients[i] in transferData\n                mstore(\n                    add(transferData, 0x04),\n                    recp\n                )\n                // store _amounts[i] in transferData\n                mstore(\n                    add(transferData, 0x24),\n                    amt\n                )\n                // call transfer for _amounts[i] to _recipients[i]\n                // Perform the transfer, reverting upon failure.\n                if iszero(\n                    and( // The arguments of `and` are evaluated from right to left.\n                        or(eq(mload(0x00), 1), iszero(returndatasize())), // Returned 1 or nothing.\n                        call(gas(), _token, 0, transferData, 0x44, 0x00, 0x20)\n                    )\n                ) {\n                    revert(0, 0)\n                }  \n            }\n        }\n\n    }\n}"
     }
 }

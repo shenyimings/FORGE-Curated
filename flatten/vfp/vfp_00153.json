@@ -3,24 +3,27 @@
     "project_name": "Likwid - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 39,
+            "id": 51,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
                 ]
             },
-            "title": "Total investments are backwards with respect to liquidity",
-            "description": "In PairPosition.sol, the totalInvestment is updated using LiquidityMath.addInvestment with delta.amount0() and delta.amount1(), but deltas are positive when removing liquidity and negative when adding. This causes totalInvestment to become negative when a user has an active position. The root cause is incorrect sign handling in investment tracking. This leads to incorrect state representation. The impact is inaccurate accounting of user investments, potentially affecting UIs and downstream systems.\n",
-            "severity": "Low",
+            "title": "Unnecessary bit masking in StageMath functions",
+            "description": "The StageMath functions apply a bit mask to uint128 values that are already properly decoded, making the masking redundant. The root cause is unnecessary operation. This wastes gas and reduces code clarity. The impact is increased gas costs and maintenance burden.\n",
+            "severity": "Informational",
             "location": [
-                "PairPosition.sol#L57-58"
+                "StageMathsol"
             ],
             "files": [
-                "likwid-margin/src/libraries/PairPosition.sol"
+                "likwid-margin/src/libraries/StageMath.sol"
             ]
         }
     ],
     "affected_files": {
-        "PairPosition.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.0;\n\nimport {BalanceDelta} from \"../types/BalanceDelta.sol\";\nimport {CustomRevert} from \"./CustomRevert.sol\";\nimport {PositionLibrary} from \"./PositionLibrary.sol\";\nimport {LiquidityMath} from \"./LiquidityMath.sol\";\n\n/// @title PairPosition\n/// @notice A library for managing liquidity positions in a pair.\n/// @dev Positions represent an owner's liquidity contribution.\nlibrary PairPosition {\n    using CustomRevert for bytes4;\n    using PositionLibrary for address;\n\n    error CannotUpdateEmptyPosition();\n\n    /// @dev Represents the state of a liquidity position.\n    struct State {\n        // The amount of liquidity in the position.\n        uint128 liquidity;\n        // The total investment value, used for tracking returns.\n        uint256 totalInvestment;\n    }\n\n    /// @notice Retrieves a position's state from storage.\n    /// @param self The mapping of position keys to position states.\n    /// @param owner The owner of the position.\n    /// @param salt A unique salt for the position.\n    /// @return position A storage pointer to the position's state.\n    function get(mapping(bytes32 => State) storage self, address owner, bytes32 salt)\n        internal\n        view\n        returns (State storage position)\n    {\n        bytes32 positionKey = owner.calculatePositionKey(salt);\n        position = self[positionKey];\n    }\n\n    /// @notice Updates a position's state with new liquidity and investment amounts.\n    /// @param self A storage pointer to the position's state to update.\n    /// @param liquidityDelta The change in liquidity.\n    /// @param delta The change in the balance of tokens.\n    /// @return The updated total investment value.\n    function update(State storage self, int128 liquidityDelta, BalanceDelta delta) internal returns (uint256) {\n        // If there's no change in liquidity and the position is empty, revert.\n        // This prevents creating empty positions or \"poking\" them without effect.\n        if (liquidityDelta == 0 && self.liquidity == 0) {\n            CannotUpdateEmptyPosition.selector.revertWith();\n        }\n\n        if (liquidityDelta != 0) {\n            self.liquidity = LiquidityMath.addDelta(self.liquidity, liquidityDelta);\n        }\n\n        // Update the total investment and store it.\n        self.totalInvestment = LiquidityMath.addInvestment(self.totalInvestment, delta.amount0(), delta.amount1());\n        return self.totalInvestment;\n    }\n}\n"
+        "StageMath.sol": "// SPDX-License-Identifier: BUSL-1.1\n// Likwid Contracts\npragma solidity ^0.8.26;\n\nlibrary StageMath {\n    function add(uint256 stage, uint128 amount) internal pure returns (uint256) {\n        (uint128 _total, uint128 _liquidity) = decode(stage);\n        _total += amount;\n        _liquidity += amount;\n        return (uint256(_total) << 128) | uint256(_liquidity & ((1 << 128) - 1));\n    }\n\n    function sub(uint256 stage, uint128 amount) internal pure returns (uint256) {\n        (uint128 _total, uint128 _liquidity) = decode(stage);\n        _liquidity -= amount;\n        return (uint256(_total) << 128) | uint256(_liquidity & ((1 << 128) - 1));\n    }\n\n    function subTotal(uint256 stage, uint128 amount) internal pure returns (uint256) {\n        (uint128 _total, uint128 _liquidity) = decode(stage);\n        _total -= amount;\n        _liquidity -= amount;\n        return (uint256(_total) << 128) | uint256(_liquidity & ((1 << 128) - 1));\n    }\n\n    function isFree(uint256 stage, uint32 leavePart) internal pure returns (bool) {\n        (uint128 total, uint128 liquidity) = decode(stage);\n        if (leavePart == 0) {\n            leavePart = 2;\n        }\n        return total / leavePart >= liquidity;\n    }\n\n    function decode(uint256 stage) internal pure returns (uint128 total, uint128 liquidity) {\n        if (stage == 0) {\n            return (0, 0);\n        }\n        total = uint128(stage >> 128);\n        liquidity = uint128(stage & ((1 << 128) - 1));\n    }\n}\n"
     }
 }

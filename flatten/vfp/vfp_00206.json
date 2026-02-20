@@ -1,273 +1,44 @@
 {
     "vfp_id": "vfp_00206",
-    "project_name": "ZK Token, Capped Minter, and Merkle Distributor Audit.md",
+    "project_name": "ackee-blockchain-lido-triggerable-withdrawals-report.pdf",
     "findings": [
         {
             "id": 0,
             "category": {
                 "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-665"
-                ],
-                "3": [
-                    "CWE-909"
-                ],
-                "4": [
-                    "CWE-456"
-                ]
-            },
-            "title": "The Domain of The Permit Functionality Is Not Initialized",
-            "description": "The `initialize` function in the `ZkTokenV1` contract does not call the initializer of the `ERC20PermitUpgradeable` base contract. This omission means that the EIP-712 signing domain used in the permit functionality will lack a human-readable name, which can negatively impact user experience when signing permit messages. The root cause is the missing call to the base contract's initializer. While this does not lead to a direct security exploit, it can cause confusion or failed transactions if users expect a named domain. The impact is limited to usability and clarity of the permit signature.\n",
-            "severity": "Low",
-            "location": [
-                "ZkTokenV1.sol::initialize#42-50"
-            ],
-            "files": [
-                "zk-governance/src/ZkTokenV1.sol"
-            ]
-        },
-        {
-            "id": 1,
-            "category": {
-                "1": [
                     "CWE-682"
                 ]
             },
-            "title": "Claim Cap Is Not Enforced on Merkle Distributor",
-            "description": "The `_claim` function in the `ZkMerkleDistributor` contract is intended to enforce a total claim cap, but instead checks only the individual claim amount rather than the cumulative total claimed. This discrepancy means that the contract may allow more tokens to be claimed than intended if the total cap is not properly tracked. The root cause is incorrect logic in the cap validation check. An attacker could potentially exploit this by making multiple claims if the total cap is not enforced, leading to an oversupply of distributed tokens. The impact is a potential deviation from the intended token distribution plan.\n",
+            "title": "Inconsistent update of exit limits on config change",
+            "description": "The ExitLimitUtils.setExitLimits function allows updating exit limits configuration parameters, but it does not correctly update the current exit limit (_data.prevExitRequestsLimit) when the maximum limit changes. \nThe root cause is a logic error in the update condition: the current limit is only reset when the new maximum is smaller than the current limit or when there was no prior limit, but it is not proportionally adjusted based on previously consumed exits. \nAn attacker or malicious actor could exploit this by manipulating the timing of limit changes to either accelerate or delay the availability of exit requests, potentially disrupting withdrawal scheduling. \nThe impact is low, as it does not lead to loss of funds or system failure, but it reduces the system's responsiveness and predictability when configuration changes are made.\n",
             "severity": "Low",
             "location": [
-                "ZkMerkleDistributor.sol::_claim#276"
+                "ExitLimitUtils.sol::setExitLimits#102-109"
             ],
             "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 2,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-362"
-                ]
-            },
-            "title": "Claim Can Be Prevented by Anyone if Front-Ran",
-            "description": "The `claim` and `claimOnBehalf` functions perform delegation at the end of execution, making them vulnerable to front-running. An attacker can observe a pending claim transaction, extract the `_delegateInfo` parameter, and call `delegateBySig` directly before the claim executes. This increments the nonce, causing the original claim's delegation to fail and reverting the entire transaction. The root cause is the unprotected use of `delegateBySig` with a shared nonce space. This can be exploited by any observer of the mempool, leading to denial of service for legitimate claimants. The impact is disruption of the airdrop process for affected users.\n",
-            "severity": "Low",
-            "location": [
-                "ZkMerkleDistributor.sol::claim#",
-                "ZkMerkleDistributor.sol::claimOnBehalf#"
-            ],
-            "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 3,
-            "category": {
-                "1": [
-                    "CWE-693"
-                ],
-                "2": [
-                    "CWE-345"
-                ],
-                "3": [
-                    "CWE-347"
-                ]
-            },
-            "title": "Not All Delegation Parameters Are Signed",
-            "description": "In the `ZkMerkleDistributor` contract, only the `delegatee` field of the `DelegateInfo` struct is signed during claim operations. Other parameters like `nonce` and `expiry` are not included in the signature, allowing an attacker to front-run the transaction, reuse the signature with a different delegatee, and claim the airdrop while bypassing the intended delegation. The root cause is incomplete signature coverage of the delegation data. This allows partial fulfillment of claims where tokens are claimed but not correctly delegated, undermining the intended governance distribution. The impact is a misalignment between token ownership and voting power delegation.\n",
-            "severity": "Low",
-            "location": [
-                "ZkMerkleDistributor.sol#166"
-            ],
-            "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 4,
-            "category": {
-                "1": [
-                    "CWE-682"
-                ]
-            },
-            "title": "Voting Checkpoints Refer to Block Numbers Despite Unstable Block Production Frequency",
-            "description": "The `ZkTokenV1` contract uses block numbers for voting checkpoints, which are used to determine voting power during governance proposals. However, on ZKsync Era, block production is not consistent, making it difficult for users to predict when voting checkpoints occur. The root cause is the reliance on block numbers instead of timestamps for time-based logic. This can lead to user confusion and missed voting opportunities, especially for those unfamiliar with variable block times. The impact is reduced usability and fairness in the governance process.\n",
-            "severity": "Low",
-            "location": [
-                "ZkTokenV1.sol",
-                "VotesUpgradeable.sol::getPastVotes#76-78"
-            ],
-            "files": [
-                "zk-governance/src/ZkTokenV1.sol"
-            ]
-        },
-        {
-            "id": 5,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1287"
-                ]
-            },
-            "title": "Problematic Edge Cases When Using `delegateBySig`",
-            "description": "The `delegateBySig` function is used during token claims to enable delegation via signature. However, this function only supports EOA signatures and does not support ERC-1271 or account abstraction, which are common on ZKsync Era. The root cause is the use of a legacy signature verification method that does not account for smart contract wallets. This can prevent certain users, especially those using smart accounts, from participating in delegation, limiting governance inclusivity. The impact is reduced accessibility for modern wallet types.\n",
-            "severity": "Low",
-            "location": [
-                "ZkMerkleDistributor.sol::delegateBySig#218"
-            ],
-            "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
+                "core/contracts/0.8.9/lib/ExitLimitUtils.sol"
             ]
         },
         {
             "id": 6,
             "category": {
                 "1": [
-                    "CWE-693"
-                ]
-            },
-            "title": "Initializer Is Not Disabled on Implementation",
-            "description": "The `ZkTokenV1` implementation contract is left in an uninitialized state, meaning its initializer function remains callable. While the deployment process initializes the proxy, the implementation itself could theoretically be reinitialized if someone were to deploy and initialize it independently. The root cause is the absence of a call to `_disableInitializers` in the constructor. This does not pose a direct risk in the current deployment setup, but it is a best practice to disable initializers to prevent misuse. The impact is minimal but represents a deviation from secure upgradeable contract patterns.\n",
-            "severity": "Informational",
-            "location": [
-                "ZkTokenV1.sol"
-            ],
-            "files": [
-                "zk-governance/src/ZkTokenV1.sol"
-            ]
-        },
-        {
-            "id": 7,
-            "category": {
-                "1": [
-                    "CWE-435"
-                ],
-                "2": [
-                    "CWE-436"
-                ]
-            },
-            "title": "Same `nonces` Mapping Is Used for Vote Delegation and Permit",
-            "description": "The `ZkTokenV1` contract inherits both `ERC20VotesUpgradeable` and `ERC20PermitUpgradeable`, which share the same `nonces` mapping. This means that a permit and a delegation action cannot use the same nonce value, as it would cause one of the transactions to fail. The root cause is the shared nonce space between two different signature schemes. Users or frontends must carefully coordinate nonce usage across permit and delegation actions to avoid transaction failures. The impact is potential transaction reverts due to nonce collisions, affecting user experience.\n",
-            "severity": "Low",
-            "location": [
-                "ZkTokenV1.sol",
-                "NoncesUpgradeable.sol::nonces#17"
-            ],
-            "files": [
-                "zk-governance/src/ZkTokenV1.sol"
-            ]
-        },
-        {
-            "id": 8,
-            "category": {
-                "1": [
-                    "CWE-707"
-                ],
-                "2": [
-                    "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
-                ]
-            },
-            "title": "Missing Input Validation",
-            "description": "The `ZkMerkleDistributor` constructor does not validate that the `_windowStart` timestamp is less than `_windowEnd`. If these values are misconfigured, the claim window could be invalid or non-functional. The root cause is the lack of a simple bounds check during initialization. While the team considers misconfiguration unlikely and plans to redeploy if needed, this represents a missing safeguard. The impact is potential operational failure of the airdrop if timestamps are set incorrectly.\n",
-            "severity": "Informational",
-            "location": [
-                "ZkMerkleDistributor.sol#111-112"
-            ],
-            "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 9,
-            "category": {
-                "1": [
                     "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
-                ],
-                "3": [
-                    "CWE-1078"
                 ]
             },
-            "title": "Code Clarity Suggestions",
-            "description": "Several code clarity issues were identified in the codebase. These include unnecessary use of static `BitMaps.get` instead of bound methods, failure to use `toTypedDataHash` for cleaner typed data hashing, and use of `verify` instead of `verifyCalldata` for calldata proofs. The root cause is suboptimal use of available Solidity patterns and library functions. While these do not affect security, they reduce code readability and maintainability. The impact is increased cognitive load for auditors and developers reading the code.\n",
+            "title": "Code optimizations",
+            "description": "Several opportunities for code optimization were identified, including redundant checks and inefficient data handling.\nThese are primarily code quality issues that do not directly affect security but could improve gas efficiency and readability.\nWhile not exploitable, unoptimized code may increase attack surface or complicate future audits.\nThe impact is informational, as these findings are suggestions for improvement rather than security risks.\nSpecifically, multiple gas inefficiencies were identified in the codebase. In ValidatorExitDelayVerifier.verifyValidatorExitDelay, a redundant array access can be replaced with a direct variable reference. In ExitLimitUtils.updatePrevExitLimit, the computation of framesPassed and passedTime uses division and multiplication that can be optimized using modulo arithmetic to reduce gas consumption. The root cause is suboptimal arithmetic and memory access patterns. While not a security vulnerability per se, inefficient code increases transaction costs for all users. An attacker cannot exploit this directly, but the protocol incurs unnecessary operational expenses. The impact is higher gas fees and reduced economic efficiency, especially under heavy usage.\n",
             "severity": "Informational",
             "location": [
-                "ZkMerkleDistributor.sol#15",
-                "ZkMerkleDistributor.sol#118",
-                "ZkMerkleDistributor.sol#154-173",
-                "ZkMerkleDistributor.sol#207"
+                "ExitLimitUtils.sol::updatePrevExitLimit#70-85",
+                "ValidatorExitDelayVerifier.sol::verifyValidatorExitDelay#193"
             ],
             "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 10,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1059"
-                ],
-                "3": [
-                    "CWE-1111"
-                ]
-            },
-            "title": "Incomplete Docstrings",
-            "description": "The `isClaimed` function in `ZkMerkleDistributor.sol` lacks complete NatSpec documentation, particularly for return values. The root cause is incomplete commenting practices. This reduces the clarity of the public API and makes it harder for developers to understand function behavior without reading the implementation. The impact is reduced code maintainability and integration difficulty for external developers.\n",
-            "severity": "Informational",
-            "location": [
-                "ZkMerkleDistributor.sol::isClaimed#117-119"
-            ],
-            "files": [
-                "zk-governance/src/ZkMerkleDistributor.sol"
-            ]
-        },
-        {
-            "id": 12,
-            "category": {
-                "1": [
-                    "CWE-710"
-                ],
-                "2": [
-                    "CWE-1076"
-                ]
-            },
-            "title": "Lack of Security Contact",
-            "description": "The core contracts (`ZkCappedMinter`, `ZkMerkleDistributor`, and `ZkTokenV1`) do not include a `@custom:security-contact` NatSpec tag, making it unclear how to report future vulnerabilities. The root cause is the omission of a standard security disclosure practice. This could delay vulnerability reporting and resolution. The impact is reduced responsiveness to future security issues.\n",
-            "severity": "Informational",
-            "location": [
-                "ZkCappedMinter.sol",
-                "ZkMerkleDistributor.sol",
-                "ZkTokenV1.sol"
-            ],
-            "files": [
-                "zk-governance/src/ZkCappedMinter.sol",
-                "zk-governance/src/ZkMerkleDistributor.sol",
-                "zk-governance/src/ZkTokenV1.sol"
+                "core/contracts/0.8.9/lib/ExitLimitUtils.sol"
             ]
         }
     ],
     "affected_files": {
-        "ZkMerkleDistributor.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport {BitMaps} from \"@openzeppelin/contracts/utils/structs/BitMaps.sol\";\nimport {IMintableAndDelegatable} from \"src/interfaces/IMintableAndDelegatable.sol\";\nimport {EIP712} from \"@openzeppelin/contracts/utils/cryptography/EIP712.sol\";\nimport {MerkleProof} from \"@openzeppelin/contracts/utils/cryptography/MerkleProof.sol\";\nimport {Nonces} from \"@openzeppelin/contracts/utils/Nonces.sol\";\nimport {SignatureChecker} from \"@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol\";\n\n/// @title ZkMerkleDistributor\n/// @author [ScopeLift](https://scopelift.co)\n/// @notice A contract that allows a user to claim a token distribution against a Merkle tree root.\ncontract ZkMerkleDistributor is EIP712, Nonces {\n  using BitMaps for BitMaps.BitMap;\n\n  /// @dev A struct of delegate information used for signature based delegatebySig.\n  struct DelegateInfo {\n    address delegatee;\n    uint256 nonce;\n    uint256 expiry;\n    uint8 v;\n    bytes32 r;\n    bytes32 s;\n  }\n\n  struct ClaimSignatureInfo {\n    address signingClaimant;\n    bytes signature;\n    uint256 expiry;\n  }\n\n  /// @notice Type hash of the data that makes up the claim.\n  bytes32 public constant ZK_CLAIM_TYPEHASH = keccak256(\n    \"Claim(uint256 index,address claimant,uint256 amount,bytes32[] merkleProof,address delegatee,uint256 expiry,uint256 nonce)\"\n  );\n\n  /// @notice The address of the admin of the MerkleDistributor.\n  address public immutable ADMIN;\n\n  /// @notice The token contract for the tokens to be claimed / distributed.\n  IMintableAndDelegatable public immutable TOKEN;\n\n  /// @notice The Merkle root for the distribution.\n  bytes32 public immutable MERKLE_ROOT;\n\n  /// @notice The maximum number of tokens that may be claimed using the MerkleDistributor.\n  uint256 public immutable MAXIMUM_TOTAL_CLAIMABLE;\n\n  /// @notice The start of the period when claims may be made.\n  uint256 public immutable WINDOW_START;\n\n  /// @notice The end of the period when claims may be made.\n  uint256 public immutable WINDOW_END;\n\n  /// @notice This is a packed array of booleans for tracking completion of claims.\n  BitMaps.BitMap internal claimedBitMap;\n\n  /// @notice This is the total amount of tokens that have been claimed so far.\n  uint256 public totalClaimed;\n\n  /// @notice Event that is emitted whenever a call to claim succeeds.\n  event Claimed(uint256 index, address account, uint256 amount);\n\n  /// @notice Error thrown when the claim has already been claimed.\n  error ZkMerkleDistributor__AlreadyClaimed();\n\n  /// @notice Error thrown or when the claim window is not open and should be.\n  error ZkMerkleDistributor__ClaimWindowNotOpen();\n\n  /// @notice Error thrown when the claim window is open and should not be.\n  error ZkMerkleDistributor__ClaimWindowNotYetClosed();\n\n  /// @notice Error for when the claim has an invalid proof.\n  error ZkMerkleDistributor__InvalidProof();\n\n  /// @notice Error for when the total claimed exceeds the total amount claimed.\n  error ZkMerkleDistributor__ClaimAmountExceedsMaximum();\n\n  /// @notice Error for when the sweep has already been done.\n  error ZkMerkleDistributor__SweepAlreadyDone();\n\n  /// @notice Error for when the caller is not the admin.\n  error ZkMerkleDistributor__Unauthorized(address account);\n\n  /// @notice Thrown if a caller supplies an invalid signature to a method that requires one.\n  error ZkMerkleDistributor__InvalidSignature();\n\n  /// @notice Thrown if the caller submits an expired signature\n  error ZkMerkleDistributor__ExpiredSignature();\n\n  /// @notice Constructor for a new MerkleDistributor contract\n  /// @param _admin The address that is allowed to execute \"sweepUnclaimed\"\n  /// @param _token The contract of the token distributed by the Merkle Distributor.\n  /// @param _merkleRoot The Merkle root for the distribution.\n  /// @param _maximumTotalClaimable The maximum number of tokens that may be claimed by the MerkleDistributor.\n  /// @param _windowStart The start of the time window during which claims may be made.\n  /// @param _windowEnd The end of the time window during which claims may be made.\n  constructor(\n    address _admin,\n    IMintableAndDelegatable _token,\n    bytes32 _merkleRoot,\n    uint256 _maximumTotalClaimable,\n    uint256 _windowStart,\n    uint256 _windowEnd\n  ) EIP712(\"ZkMerkleDistributor\", \"1\") {\n    ADMIN = _admin;\n    TOKEN = _token;\n    MERKLE_ROOT = _merkleRoot;\n    MAXIMUM_TOTAL_CLAIMABLE = _maximumTotalClaimable;\n    WINDOW_START = _windowStart;\n    WINDOW_END = _windowEnd;\n  }\n\n  /// @notice Returns true if the index has been claimed.\n  /// @param _index The index of the claim.\n  function isClaimed(uint256 _index) public view returns (bool) {\n    return BitMaps.get(claimedBitMap, _index);\n  }\n\n  /// @notice Claims the tokens for a claimant, given a claimant address, an index, an amount, and a merkle proof.\n  /// @dev This method makes use of signature parameters to delegate the claimant's voting power to another address.\n  /// @param _index The index of the claim.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  /// @param _merkleProof The Merkle proof for the claim.\n  /// @param _delegateInfo The address where the voting power of the new tokens will be delegated.\n  function claim(uint256 _index, uint256 _amount, bytes32[] calldata _merkleProof, DelegateInfo memory _delegateInfo)\n    external\n    virtual\n  {\n    _claim(_index, msg.sender, _amount, _merkleProof, _delegateInfo);\n  }\n\n  /// @notice Claims on behalf of another account, using the ERC-712 or ERC-1271 signature standard.\n  /// @dev This method makes use of the _signature parameter to verify the claim on behalf of the claimer, and\n  /// separate signature parameters to delegate the claimer's voting power to another address.\n  /// @param _index The index of the claim.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  /// @param _merkleProof The Merkle proof for the claim.\n  /// @param _claimSignatureInfo Signature information provided by the claimer.\n  /// @param _delegateInfo Delegate information for the claimer.\n  function claimOnBehalf(\n    uint256 _index,\n    uint256 _amount,\n    bytes32[] calldata _merkleProof,\n    ClaimSignatureInfo calldata _claimSignatureInfo,\n    DelegateInfo memory _delegateInfo\n  ) external {\n    bytes32 _dataHash;\n\n    if (_claimSignatureInfo.expiry <= block.timestamp) {\n      revert ZkMerkleDistributor__ExpiredSignature();\n    }\n    unchecked {\n      _dataHash = keccak256(\n        abi.encodePacked(\n          \"\\x19\\x01\",\n          _domainSeparatorV4(),\n          keccak256(\n            abi.encode(\n              ZK_CLAIM_TYPEHASH,\n              _index,\n              _claimSignatureInfo.signingClaimant,\n              _amount,\n              _merkleProof,\n              _delegateInfo.delegatee,\n              _claimSignatureInfo.expiry,\n              _useNonce(_claimSignatureInfo.signingClaimant)\n            )\n          )\n        )\n      );\n    }\n    _revertIfSignatureIsNotValidNow(_claimSignatureInfo.signingClaimant, _dataHash, _claimSignatureInfo.signature);\n    _claim(_index, _claimSignatureInfo.signingClaimant, _amount, _merkleProof, _delegateInfo);\n  }\n\n  /// @notice Allows the admin to sweep unclaimed tokens to a given address.\n  /// @param _unclaimedReceiver The address that will receive the unclaimed tokens.\n  function sweepUnclaimed(address _unclaimedReceiver) external {\n    _revertIfClaimWindowHasNotClosed();\n    _revertIfUnauthorized();\n    _revertIfAlreadySwept();\n    TOKEN.mint(_unclaimedReceiver, MAXIMUM_TOTAL_CLAIMABLE - totalClaimed);\n    totalClaimed = MAXIMUM_TOTAL_CLAIMABLE;\n  }\n\n  /// @notice Claims the tokens for a given index, account, amount, and merkle proof.\n  /// @param _index The index of the claim.\n  /// @param _claimant The address that will receive the new tokens.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  /// @param _merkleProof The Merkle proof for the claim.\n  /// @dev Internal method for claiming tokens, called by 'claim' and 'claimOnBehalf'.\n  function _claim(\n    uint256 _index,\n    address _claimant,\n    uint256 _amount,\n    bytes32[] calldata _merkleProof,\n    DelegateInfo memory _delegateInfo\n  ) internal {\n    _revertIfClaimWindowNotOpen();\n    _revertIfClaimAmountExceedsMaximum(_amount);\n    _revertIfAlreadyClaimed(_index);\n\n    // Verify the merkle proof.\n    bytes32 node = keccak256(abi.encodePacked(_index, _claimant, _amount));\n    if (!MerkleProof.verify(_merkleProof, MERKLE_ROOT, node)) {\n      revert ZkMerkleDistributor__InvalidProof();\n    }\n\n    // Bump the total amount claimed, mark it claimed, send the token, and emit the event.\n    totalClaimed += _amount;\n    _setClaimed(_index);\n    TOKEN.mint(_claimant, _amount);\n    emit Claimed(_index, _claimant, _amount);\n\n    // Use delegateBySig to delegate on behalf of the claimer\n    TOKEN.delegateBySig(\n      _delegateInfo.delegatee,\n      _delegateInfo.nonce,\n      _delegateInfo.expiry,\n      _delegateInfo.v,\n      _delegateInfo.r,\n      _delegateInfo.s\n    );\n  }\n\n  /// @notice Allows a msg.sender to increment their nonce and invalidate any of their pending signatures.\n  function invalidateNonce() external {\n    _useNonce(msg.sender);\n  }\n\n  // @dev Returns the domain separator used in the encoding of the signature for {permit}, as defined by {EIP712}.\n  function DOMAIN_SEPARATOR() external view returns (bytes32) {\n    return _domainSeparatorV4();\n  }\n\n  /// @notice Reverts if the caller is not the admin.\n  function _revertIfUnauthorized() internal view {\n    if (msg.sender != ADMIN) {\n      revert ZkMerkleDistributor__Unauthorized(msg.sender);\n    }\n  }\n\n  /// @notice Updates the tracking data to mark the claim has been done.\n  /// @param _index The index of the claim.\n  function _setClaimed(uint256 _index) private {\n    BitMaps.set(claimedBitMap, _index);\n  }\n\n  /// @notice Reverts if already claimed.\n  /// @param _index The index of the claim.\n  function _revertIfAlreadyClaimed(uint256 _index) internal view {\n    if (isClaimed(_index)) {\n      revert ZkMerkleDistributor__AlreadyClaimed();\n    }\n  }\n\n  /// @notice Reverts if the claim window is not open.\n  function _revertIfClaimWindowNotOpen() internal view {\n    if (block.timestamp < WINDOW_START || block.timestamp >= WINDOW_END) {\n      revert ZkMerkleDistributor__ClaimWindowNotOpen();\n    }\n  }\n\n  /// @notice Reverts if the claim window is open.\n  function _revertIfClaimWindowHasNotClosed() internal view {\n    if (block.timestamp < WINDOW_END) {\n      revert ZkMerkleDistributor__ClaimWindowNotYetClosed();\n    }\n  }\n\n  /// @notice Reverts if the claim amount exceeds the maximum.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  function _revertIfClaimAmountExceedsMaximum(uint256 _amount) internal view {\n    if (_amount > MAXIMUM_TOTAL_CLAIMABLE) {\n      revert ZkMerkleDistributor__ClaimAmountExceedsMaximum();\n    }\n  }\n\n  /// @notice Reverts if the sweep has already been done.\n  function _revertIfAlreadySwept() internal view {\n    if (totalClaimed >= MAXIMUM_TOTAL_CLAIMABLE) {\n      revert ZkMerkleDistributor__SweepAlreadyDone();\n    }\n  }\n\n  /// @notice Reverts if the signature is not valid\n  /// @param _signer Address of the signer.\n  /// @param _hash Hash of the message.\n  /// @param _signature Signature to validate.\n  function _revertIfSignatureIsNotValidNow(address _signer, bytes32 _hash, bytes memory _signature) internal view {\n    bool _isValid = SignatureChecker.isValidSignatureNow(_signer, _hash, _signature);\n    if (!_isValid) {\n      revert ZkMerkleDistributor__InvalidSignature();\n    }\n  }\n}\n",
-        "ZkCappedMinter.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport {IMintableAndDelegatable} from \"src/interfaces/IMintableAndDelegatable.sol\";\n\n/// @title ZkCappedMinter\n/// @author [ScopeLift](https://scopelift.co)\n/// @notice A contract to allow a permissioned entity to mint ZK tokens up to a given amount (the cap).\ncontract ZkCappedMinter {\n  /// @notice The contract where the tokens will be minted by an authorized minter.\n  IMintableAndDelegatable public immutable TOKEN;\n\n  /// @notice The address that is allowed to mint tokens.\n  address public immutable ADMIN;\n\n  /// @notice The maximum number of tokens that may be minted by the ZkCappedMinter.\n  uint256 public immutable CAP;\n\n  /// @notice The cumulative number of tokens that have been minted by the ZkCappedMinter.\n  uint256 public minted = 0;\n\n  /// @notice Error for when the cap is exceeded.\n  error ZkCappedMinter__CapExceeded(address minter, uint256 amount);\n\n  /// @notice Error for when the caller is not the admin.\n  error ZkCappedMinter__Unauthorized(address account);\n\n  /// @notice Constructor for a new ZkCappedMinter contract\n  /// @param _token The token contract where tokens will be minted.\n  /// @param _admin The address that is allowed to mint tokens.\n  /// @param _cap The maximum number of tokens that may be minted by the ZkCappedMinter.\n  constructor(IMintableAndDelegatable _token, address _admin, uint256 _cap) {\n    TOKEN = _token;\n    ADMIN = _admin;\n    CAP = _cap;\n  }\n\n  /// @notice Mints a given amount of tokens to a given address, so long as the cap is not exceeded.\n  /// @param _to The address that will receive the new tokens.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  function mint(address _to, uint256 _amount) external {\n    _revertIfUnauthorized();\n    _revertIfCapExceeded(_amount);\n    minted += _amount;\n    TOKEN.mint(_to, _amount);\n  }\n\n  /// @notice Reverts if msg.sender is not the contract admin.\n  function _revertIfUnauthorized() internal view {\n    if (msg.sender != ADMIN) {\n      revert ZkCappedMinter__Unauthorized(msg.sender);\n    }\n  }\n\n  /// @notice Reverts if the amount of new tokens will increase the minted tokens beyond the mint cap.\n  /// @param _amount The quantity of tokens, in raw decimals, that will checked against the cap.\n  function _revertIfCapExceeded(uint256 _amount) internal view {\n    if (minted + _amount > CAP) {\n      revert ZkCappedMinter__CapExceeded(msg.sender, _amount);\n    }\n  }\n}\n",
-        "ZkTokenV1.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport {Initializable} from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport {ERC20Upgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\nimport {ERC20VotesUpgradeable} from\n  \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol\";\nimport {AccessControlUpgradeable} from \"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\";\nimport {ERC20PermitUpgradeable} from\n  \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport {NoncesUpgradeable} from \"@openzeppelin/contracts-upgradeable/utils/NoncesUpgradeable.sol\";\n\n/// @title ZkTokenV1\n/// @author [ScopeLift](https://scopelift.co)\n/// @notice A proxy-upgradeable governance token with minting and burning capability gated by access controls.\ncontract ZkTokenV1 is Initializable, ERC20VotesUpgradeable, ERC20PermitUpgradeable, AccessControlUpgradeable {\n  /// @notice The unique identifier constant used to represent the administrator of the minter role. An address that\n  /// has this role may grant or revoke the minter role from other addresses. This role itself may be granted or\n  /// revoked by the DEFAULT_ADMIN_ROLE.\n  bytes32 public constant MINTER_ADMIN_ROLE = keccak256(\"MINTER_ADMIN_ROLE\");\n\n  /// @notice The unique identifier constant used to represent the administrator of the burner role. An address that\n  /// has this role may grant or revoke the burner role from other addresses. This role itself may be granted or\n  /// revoked by the DEFAULT_ADMIN_ROLE.\n  bytes32 public constant BURNER_ADMIN_ROLE = keccak256(\"BURNER_ADMIN_ROLE\");\n\n  /// @notice The unique identifier constant used to represent the minter role. An address that has this role may call\n  /// the `mint` method, creating new tokens and assigning them to specified address. This role may be granted or\n  /// revoked by the MINTER_ADMIN_ROLE.\n  bytes32 public constant MINTER_ROLE = keccak256(\"MINTER_ROLE\");\n\n  /// @notice The unique identifier constant used to represent the burner role. An address that has this role may call\n  /// the `burn` method, destroying tokens held by a given address, removing them from the total supply. This role may\n  // be granted or revoked by and address holding the BURNER_ADMIN_ROLE.\n  bytes32 public constant BURNER_ROLE = keccak256(\"BURNER_ROLE\");\n\n  /// @notice A one-time configuration method meant to be called immediately upon the deployment of ZkTokenV1. It sets\n  /// up the token's name and symbol, configures and assigns role admins, and mints the initial token supply.\n  /// @param _admin The address that will be be assigned all three role admins\n  /// @param _mintReceiver The address that will receive the initial token supply.\n  /// @param _mintAmount The amount of tokens, in raw decimals, that will be minted to the mint receiver's wallet.\n  function initialize(address _admin, address _mintReceiver, uint256 _mintAmount) external initializer {\n    __ERC20_init(\"zkSync\", \"ZK\");\n    __ERC20Permit_init(\"zkSync\");\n    _grantRole(DEFAULT_ADMIN_ROLE, _admin);\n    _grantRole(MINTER_ADMIN_ROLE, _admin);\n    _grantRole(BURNER_ADMIN_ROLE, _admin);\n    _setRoleAdmin(MINTER_ROLE, MINTER_ADMIN_ROLE);\n    _setRoleAdmin(BURNER_ROLE, BURNER_ADMIN_ROLE);\n    _mint(_mintReceiver, _mintAmount);\n  }\n\n  /// @notice Creates a new quantity of tokens for a given address.\n  /// @param _to The address that will receive the new tokens.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be created.\n  /// @dev This method may only be called by an address that has been assigned the minter role by the minter role\n  /// admin.\n  function mint(address _to, uint256 _amount) external onlyRole(MINTER_ROLE) {\n    _mint(_to, _amount);\n  }\n\n  /// @notice Destroys tokens held by a given address and removes them from the total supply.\n  /// @param _from The address from which tokens will be removed and destroyed.\n  /// @param _amount The quantity of tokens, in raw decimals, that will be destroyed.\n  /// @dev This method may only be called by an address that has been assigned the burner role by the burner role\n  /// admin.\n  function burn(address _from, uint256 _amount) external onlyRole(BURNER_ROLE) {\n    _burn(_from, _amount);\n  }\n\n  /// @inheritdoc ERC20PermitUpgradeable\n  /// @dev Overriding this function to resolve ambiguity in the inheritance hierarchy.\n  function nonces(address owner) public view override(ERC20PermitUpgradeable, NoncesUpgradeable) returns (uint256) {\n    return ERC20PermitUpgradeable.nonces(owner);\n  }\n\n  /// @inheritdoc ERC20VotesUpgradeable\n  /// @dev Overriding this function to resolve ambiguity in the inheritance hierarchy.\n  function _update(address from, address to, uint256 value) internal override(ERC20VotesUpgradeable, ERC20Upgradeable) {\n    ERC20VotesUpgradeable._update(from, to, value);\n  }\n}\n"
+        "ExitLimitUtils.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\npragma solidity 0.8.9;\n\nstruct ExitRequestLimitData {\n    uint32 maxExitRequestsLimit; // Maximum limit\n    uint32 prevExitRequestsLimit; // Limit left after previous requests\n    uint32 prevTimestamp; // Timestamp of the last update\n    uint32 frameDurationInSec; // Seconds that should pass to restore part of exits\n    uint32 exitsPerFrame; // Restored exits per frame\n}\n\nlibrary ExitLimitUtilsStorage {\n    struct DataStorage {\n        ExitRequestLimitData _exitRequestLimitData;\n    }\n\n    function getStorageExitRequestLimit(bytes32 _position) internal view returns (ExitRequestLimitData memory) {\n        return _getDataStorage(_position)._exitRequestLimitData;\n    }\n\n    function setStorageExitRequestLimit(bytes32 _position, ExitRequestLimitData memory _data) internal {\n        _getDataStorage(_position)._exitRequestLimitData = _data;\n    }\n\n    function _getDataStorage(bytes32 _position) private pure returns (DataStorage storage $) {\n        assembly {\n            $.slot := _position\n        }\n    }\n}\n\nlibrary ExitLimitUtils {\n    /// @notice Error when new value for remaining limit exceeds maximum limit.\n    error LimitExceeded();\n\n    /// @notice Error when max exit request limit exceeds uint32 max.\n    error TooLargeMaxExitRequestsLimit();\n\n    /// @notice Error when frame duration exceeds uint32 max.\n    error TooLargeFrameDuration();\n\n    /// @notice Error when exits per frame exceed the maximum exit request limit.\n    error TooLargeExitsPerFrame();\n\n    /// @notice Error when frame duration is zero.\n    error ZeroFrameDuration();\n\n    function calculateCurrentExitLimit(\n        ExitRequestLimitData memory _data,\n        uint256 timestamp\n    ) internal pure returns (uint256 currentLimit) {\n        uint256 secondsPassed = timestamp - _data.prevTimestamp;\n\n        if (secondsPassed < _data.frameDurationInSec || _data.exitsPerFrame == 0) {\n            return _data.prevExitRequestsLimit;\n        }\n\n        uint256 framesPassed = secondsPassed / _data.frameDurationInSec;\n        uint256 restoredLimit = framesPassed * _data.exitsPerFrame;\n\n        uint256 newLimit = _data.prevExitRequestsLimit + restoredLimit;\n        if (newLimit > _data.maxExitRequestsLimit) {\n            newLimit = _data.maxExitRequestsLimit;\n        }\n\n        return newLimit;\n    }\n\n    function updatePrevExitLimit(\n        ExitRequestLimitData memory _data,\n        uint256 newExitRequestLimit,\n        uint256 timestamp\n    ) internal pure returns (ExitRequestLimitData memory) {\n        if (_data.maxExitRequestsLimit < newExitRequestLimit) revert LimitExceeded();\n\n        uint256 secondsPassed = timestamp - _data.prevTimestamp;\n        uint256 framesPassed = secondsPassed / _data.frameDurationInSec;\n        uint32 passedTime = uint32(framesPassed) * _data.frameDurationInSec;\n\n        _data.prevExitRequestsLimit = uint32(newExitRequestLimit);\n        _data.prevTimestamp += passedTime;\n\n        return _data;\n    }\n\n    function setExitLimits(\n        ExitRequestLimitData memory _data,\n        uint256 maxExitRequestsLimit,\n        uint256 exitsPerFrame,\n        uint256 frameDurationInSec,\n        uint256 timestamp\n    ) internal pure returns (ExitRequestLimitData memory) {\n        if (maxExitRequestsLimit > type(uint32).max) revert TooLargeMaxExitRequestsLimit();\n        if (frameDurationInSec > type(uint32).max) revert TooLargeFrameDuration();\n        if (exitsPerFrame > maxExitRequestsLimit) revert TooLargeExitsPerFrame();\n        if (frameDurationInSec == 0) revert ZeroFrameDuration();\n\n        _data.exitsPerFrame = uint32(exitsPerFrame);\n        _data.frameDurationInSec = uint32(frameDurationInSec);\n\n        if (\n            // new maxExitRequestsLimit is smaller than prev remaining limit\n            maxExitRequestsLimit < _data.prevExitRequestsLimit ||\n            // previously exits were unlimited\n            _data.maxExitRequestsLimit == 0\n        ) {\n            _data.prevExitRequestsLimit = uint32(maxExitRequestsLimit);\n        }\n\n        _data.maxExitRequestsLimit = uint32(maxExitRequestsLimit);\n        _data.prevTimestamp = uint32(timestamp);\n\n        return _data;\n    }\n\n    function isExitLimitSet(ExitRequestLimitData memory _data) internal pure returns (bool) {\n        return _data.maxExitRequestsLimit != 0;\n    }\n}\n"
     }
 }

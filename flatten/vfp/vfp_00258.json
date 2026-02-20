@@ -1,30 +1,27 @@
 {
     "vfp_id": "vfp_00258",
-    "project_name": "Frax0 Mesh - Zellic Audit Report.pdf",
+    "project_name": "2025-05-caplabs-coveredagentprotocol-securityreview.pdf",
     "findings": [
         {
-            "id": 4,
+            "id": 16,
             "category": {
                 "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-430"
+                    "CWE-682"
                 ]
             },
-            "title": "Incorrect proxy contract addresses",
-            "description": "The UpgradeAdapterEthereum.s.sol script uses Fraxtal-specific proxy addresses (e.g., fraxtalFrxUsdLockbox) when upgrading contracts on Ethereum, where those addresses do not have deployed contracts. This error occurs in the upgradeExistingLockboxes function, which passes incorrect addresses to the upgrade function. When executed, the script will fail because the proxy admin cannot interact with a non-existent contract, halting the upgrade process. This prevents successful deployment of new implementations and could delay critical updates or security fixes.\n",
-            "severity": "Informational",
+            "title": "Wrong capTokenDecimals value used in StakedCapAdapter.price causes inaccurate prices",
+            "description": "The StakedCapAdapter library incorrectly uses the decimal count (e.g., 18) instead of the corresponding scaling factor (10^18) in price calculations, leading to wildly inaccurate prices. The root cause is a fundamental misunderstanding of how decimal scaling works in the price function: it passes the decimal count to convertToAssets, which expects a share amount, and divides by the decimal count rather than the scaling factor. This results in price miscalculations by several orders of magnitude. An attacker can exploit this by observing the incorrect prices and executing trades that take advantage of the disparity between the reported and actual values. The impact includes potential manipulation of minting and burning operations, incorrect valuation of collateral, and possible insolvency due to erroneous price feeds being used in critical financial operations.\n",
+            "severity": "High",
             "location": [
-                "UpgradeAdapterEthereum.s.sol::upgradeExistingLockboxes",
-                "UpgradeAdapterEthereum.s.sol::upgradeExistingLockbox"
+                "contracts/oracle/libraries/StakedCapAdapter.sol#L15-L21",
+                "StakedCapAdapter.sol::price"
             ],
             "files": [
-                "b8d76da3a2bb5ff1fc557c194f8fe6496873959d/frax-oft-upgradeable/scripts/ops/V110/ethereum/UpgradeAdapterEthereum.s.sol"
+                "cap-contracts/contracts/oracle/libraries/StakedCapAdapter.sol"
             ]
         }
     ],
     "affected_files": {
-        "UpgradeAdapterEthereum.s.sol": "pragma solidity ^0.8.0;\n\nimport \"scripts/DeployFraxOFTProtocol/DeployFraxOFTProtocol.s.sol\";\nimport { FraxOFTMintableAdapterUpgradeable } from \"contracts/FraxOFTMintableAdapterUpgradeable.sol\";\nimport { ERC1967Utils } from \"@openzeppelin-5/contracts/proxy/ERC1967/ERC1967Utils.sol\";\n\ninterface IERC20PermitPermissionedOptiMintable {\n    function addMinter(address) external;\n}\n\n// forge script scripts/ops/V110/ethereum/UpgradeAdapterEthereum.s.sol --rpc-url https://eth-mainnet.public.blastapi.io\ncontract UpgradeAdapter is DeployFraxOFTProtocol {\n    \n    address frxUsd = 0xCAcd6fd266aF91b8AeD52aCCc382b4e165586E29;\n    address sfrxUsd = 0xcf62F905562626CfcDD2261162a51fd02Fc9c5b6;\n\n    address frxUsdMintableLockboxImp;\n    address sfrxUsdMintableLockboxImp;\n\n    modifier prankAndWriteTxs(address who) {\n        vm.startPrank(who);\n        _;\n        vm.stopPrank();\n\n        new SafeTxUtil().writeTxs(serializedTxs, filename());\n        delete serializedTxs;\n    }\n\n    function filename() public view override returns (string memory) {\n        string memory root = vm.projectRoot();\n        root = string.concat(root, \"/scripts/ops/V110/ethereum/txs/UpgradeAdapter\");\n\n        return string.concat(root, \"-comptroller.json\");\n    }\n\n    function run() public override {\n        deployMintableLockboxes();\n        generateComptrollerTxs();\n    }\n\n    function generateComptrollerTxs() public prankAndWriteTxs(broadcastConfig.delegate) {\n        addMinterRoles();\n        upgradeExistingLockboxes();\n    }\n\n    function addMinterRoles() public {\n        addMinterRole(frxUsd, ethFrxUsdLockbox);\n        addMinterRole(sfrxUsd, ethSFrxUsdLockbox);\n    }\n\n    function addMinterRole(address _token, address _lockbox) public {\n        bytes memory data = abi.encodeCall(\n            IERC20PermitPermissionedOptiMintable.addMinter,\n            (_lockbox)\n        );\n        (bool success, ) = _token.call(data);\n        require(success, \"Add minter role failed\");\n        serializedTxs.push(\n            SerializedTx({\n                name: \"Add minter role\",\n                to: _token,\n                value: 0,\n                data: data\n            })\n        );\n    }\n\n    /// @dev to prevent the script from reverting due to inherited validation\n    function _validateAndPopulateMainnetOfts() internal override {}\n\n    function deployMintableLockboxes() broadcastAs(senderDeployerPK) public {\n        frxUsdMintableLockboxImp = deployMintableLockbox(frxUsd);\n        sfrxUsdMintableLockboxImp = deployMintableLockbox(sfrxUsd);\n    }\n\n    function deployMintableLockbox(address _token) public returns (address) {\n        return address(\n            new FraxOFTMintableAdapterUpgradeable(\n                _token,\n                broadcastConfig.endpoint\n            )\n        );\n    }\n\n    function upgradeExistingLockboxes() public {\n        upgradeExistingLockbox(fraxtalFrxUsdLockbox, frxUsdMintableLockboxImp);\n        upgradeExistingLockbox(fraxtalSFrxUsdLockbox, sfrxUsdMintableLockboxImp);\n    }\n\n    function upgradeExistingLockbox(\n        address _lockbox,\n        address _implementation\n    ) public {\n        bytes memory data = abi.encodeCall(\n            ProxyAdmin.upgrade,\n            (\n                TransparentUpgradeableProxy(payable(_lockbox)),\n                _implementation\n            )\n        );\n\n        bytes32 adminSlot = vm.load(_lockbox, ERC1967Utils.ADMIN_SLOT);\n        proxyAdmin = address(uint160(uint256(adminSlot)));\n        (bool success, ) = proxyAdmin.call(data);\n        require(success, \"Upgrade failed\");\n        serializedTxs.push(\n            SerializedTx({\n                name: \"Upgrade Lockbox\",\n                to: _lockbox,\n                value: 0,\n                data: data\n            })\n        );\n    }\n}"
+        "StakedCapAdapter.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity ^0.8.28;\n\nimport { IOracle } from \"../../interfaces/IOracle.sol\";\nimport { IERC4626 } from \"@openzeppelin/contracts/interfaces/IERC4626.sol\";\nimport { IERC20Metadata } from \"@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol\";\n\n/// @title Staked Cap Token Adapter\n/// @notice Prices are calculated based on the underlying cap token price and accrued yield\nlibrary StakedCapAdapter {\n    /// @notice Fetch price for a staked cap token\n    /// @param _asset Staked cap token address\n    /// @return latestAnswer Price of the staked cap token fixed to 8 decimals\n    /// @return lastUpdated Latest timestamp of the price\n    function price(address _asset) external view returns (uint256 latestAnswer, uint256 lastUpdated) {\n        address capToken = IERC4626(_asset).asset();\n        (latestAnswer, lastUpdated) = IOracle(msg.sender).getPrice(capToken);\n        uint256 capTokenDecimals = IERC20Metadata(capToken).decimals();\n        uint256 pricePerFullShare = IERC4626(_asset).convertToAssets(capTokenDecimals);\n        latestAnswer = latestAnswer * pricePerFullShare / capTokenDecimals;\n    }\n}\n"
     }
 }

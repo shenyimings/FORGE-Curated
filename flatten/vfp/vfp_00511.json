@@ -1,26 +1,50 @@
 {
     "vfp_id": "vfp_00511",
-    "project_name": "cantina_centrifuge_aug2025.pdf",
+    "project_name": "Uniswap Calibur Audit.md",
     "findings": [
         {
-            "id": 17,
+            "id": 8,
             "category": {
                 "1": [
-                    "CWE-682"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-758"
                 ]
             },
-            "title": "timestampedPath contains block.chainid twice",
-            "description": "The timestampedPath function includes block.chainid twice in the constructed path, but according to the intended structure, the second instance should be block.number. The cause is a coding error in path construction. This leads to incorrect or misleading paths, potentially affecting data indexing or off-chain monitoring systems. While not a direct security vulnerability, it can result in data integrity issues or broken integrations that rely on predictable path formats.\n",
-            "severity": null,
+            "title": "Different Pragma Directives Are Used",
+            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
+            "severity": "Low",
             "location": [
-                "timestampedPath"
+                "ERC4337Account.sol#2",
+                "ERC7739Utils.sol#2"
             ],
             "files": [
-                "protocol-v3/script/utils/JsonRegistry.s.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+            ]
+        },
+        {
+            "id": 11,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading Docstring",
+            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
+            "severity": "Low",
+            "location": [
+                "IERC4337Account.sol#18"
+            ],
+            "files": [
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
             ]
         }
     ],
     "affected_files": {
-        "JsonRegistry.s.sol": "// SPDX-License-Identifier: BUSL-1.1\npragma solidity 0.8.28;\n\nimport \"forge-std/Script.sol\";\nimport {console} from \"forge-std/console.sol\";\n\ncontract JsonRegistry is Script {\n    string deploymentOutput;\n    uint256 registeredContracts = 0;\n    bool shouldLaberAddresses;\n    string addressLabelPrefix;\n\n    function register(string memory name, address target) public {\n        deploymentOutput = (registeredContracts == 0)\n            ? string(abi.encodePacked(deploymentOutput, '    \"', name, '\": \"', vm.toString(target), '\"'))\n            : string(abi.encodePacked(deploymentOutput, ',\\n    \"', name, '\": \"', vm.toString(target), '\"'));\n\n        registeredContracts += 1;\n\n        if (shouldLaberAddresses) {\n            vm.label(address(target), string(abi.encodePacked(addressLabelPrefix, name)));\n        }\n    }\n\n    function labelAddresses(string memory prefix) public {\n        shouldLaberAddresses = true;\n        addressLabelPrefix = prefix;\n    }\n\n    function startDeploymentOutput() public {\n        deploymentOutput = '{\\n  \"contracts\": {\\n';\n    }\n\n    function saveDeploymentOutput() public {\n        string memory dir = \"./env/latest/\";\n        if (!vm.exists(dir)) {\n            vm.createDir(dir, true);\n        }\n\n        // Save with timestamp for history\n        string memory timestampedPath = string(\n            abi.encodePacked(\n                dir,\n                vm.toString(block.chainid),\n                \"_block\",\n                vm.toString(block.chainid),\n                \"_nonce\",\n                vm.toString(vm.getNonce(msg.sender)),\n                \".json\"\n            )\n        );\n        deploymentOutput = string(abi.encodePacked(deploymentOutput, \"\\n  }\\n}\\n\"));\n        vm.writeFile(timestampedPath, deploymentOutput);\n        console.log(\"Contract addresses saved to: %s\", timestampedPath);\n\n        // Save as latest\n        string memory latestPath = string(abi.encodePacked(dir, vm.toString(block.chainid), \"-latest.json\"));\n\n        vm.writeFile(latestPath, deploymentOutput);\n        console.log(\"Contract addresses also saved to: %s\", latestPath);\n    }\n}\n"
+        "ERC4337Account.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {EntrypointLib} from \"./libraries/EntrypointLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\n/// @title ERC4337Account\n/// @notice A base contract which allows for the entrypoint to have a default value that can be updated\nabstract contract ERC4337Account is IERC4337Account, BaseAuthorization {\n    using EntrypointLib for *;\n\n    /// ERC-4337 defined constants\n    uint256 internal constant SIG_VALIDATION_SUCCEEDED = 0;\n    uint256 internal constant SIG_VALIDATION_FAILED = 1;\n\n    /// @notice The cached entrypoint address\n    uint256 internal _CACHED_ENTRYPOINT;\n\n    modifier onlyEntryPoint() {\n        if (msg.sender != ENTRY_POINT()) revert NotEntryPoint();\n        _;\n    }\n\n    /// @inheritdoc IERC4337Account\n    function updateEntryPoint(address entryPoint) external onlyThis {\n        _CACHED_ENTRYPOINT = entryPoint.pack();\n        emit EntryPointUpdated(entryPoint);\n    }\n\n    /// @inheritdoc IERC4337Account\n    function ENTRY_POINT() public view override returns (address) {\n        return _CACHED_ENTRYPOINT.isOverriden() ? _CACHED_ENTRYPOINT.unpack() : Static.ENTRY_POINT_V_0_8;\n    }\n\n    // https://github.com/coinbase/smart-wallet/blob/main/src/CoinbaseSmartWallet.sol#L100\n    function _payEntryPoint(uint256 missingAccountFunds) internal {\n        assembly (\"memory-safe\") {\n            if missingAccountFunds {\n                // Ignore failure (it's EntryPoint's job to verify, not the account's).\n                pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))\n            }\n        }\n    }\n}\n"
     }
 }

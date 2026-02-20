@@ -1,81 +1,31 @@
 {
     "vfp_id": "vfp_00199",
-    "project_name": "cantina_managed_sky_chief_april2025.pdf",
+    "project_name": "EVM Emulator and Semi-abstracted Nonces Update Audit.md",
     "findings": [
         {
-            "id": 0,
-            "category": {
-                "1": [
-                    "CWE-664"
-                ],
-                "2": [
-                    "CWE-221"
-                ],
-                "3": [
-                    "CWE-223"
-                ],
-                "4": [
-                    "CWE-778"
-                ]
-            },
-            "title": "Improvement on the Lift event",
-            "description": "1. **Description:** The Lift event in the lift function currently only emits the address of the entity being lifted (whom), but does not include the quantity of approvals associated with the action. This limits the usefulness of the event for off-chain monitoring and analytics tools.\n2. **Cause:** The event definition omits a parameter for the number of approvals, which is available in the function's logic but not exposed in the emitted event.\n3. **Exploitation:** This is not directly exploitable, but it reduces transparency, as external systems cannot easily determine the approval weight behind a lift action without additional on-chain queries.\n4. **Impact:** Reduced observability and potential inefficiencies for off-chain services relying on event data for decision-making or reporting.\n",
-            "severity": "Informational",
-            "location": [
-                "Chief.sol::L145"
-            ],
-            "files": [
-                "chief/src/Chief.sol"
-            ]
-        },
-        {
-            "id": 1,
+            "id": 3,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-1076"
-                ],
-                "3": [
-                    "CWE-1078"
-                ],
-                "4": [
-                    "CWE-1099"
+                    "CWE-1068"
                 ]
             },
-            "title": "Missing return parameter name",
-            "description": "1. **Description:** Several functions in the Chief contract (length, GOV, MAX_YAYS) do not name their return parameters, while the rest of the codebase follows the convention of naming them.\n2. **Cause:** Inconsistent coding style within the same contract, likely due to oversight during development.\n3. **Exploitation:** This issue cannot be exploited by an attacker, as it does not affect runtime behavior or security.\n4. **Impact:** Reduced code readability and maintainability, making it slightly harder for developers and auditors to understand the purpose of return values.\n",
-            "severity": "Informational",
+            "title": "Deprecation of Arbitrary Ordering Is Not Explicit",
+            "description": "The `Arbitrary` nonce ordering has been deprecated and replaced with `KeyedSequential`, but the deprecation is not clearly reflected in the code. The `IContractDeployer` interface still includes the `Arbitrary` enum value without marking it as deprecated, and documentation still references the old default.\n\nThis inconsistency stems from incomplete updates across the codebase after the design change, leaving legacy references that may mislead developers.\n\nIntegrators might assume `Arbitrary` is still a valid option and attempt to use it, only to find it is blocked at runtime. This could lead to failed deployments or unexpected reverts.\n\nThe impact is confusion and potential integration errors, undermining developer experience and trust in the API's clarity.\n",
+            "severity": "Low",
             "location": [
-                "Chief.sol::L78"
+                "IContractDeployer.sol",
+                "ContractDeployer.sol",
+                "docs/l2_system_contracts/system_contracts_bootloader_description.md"
             ],
             "files": [
-                "chief/src/Chief.sol"
-            ]
-        },
-        {
-            "id": 2,
-            "category": {
-                "1": [
-                    "CWE-691"
-                ],
-                "2": [
-                    "CWE-841"
-                ]
-            },
-            "title": "yay execution order per slate is non-deterministic",
-            "description": "1. **Description:** When a slate contains multiple yays and surpasses the current hat in approval count, any caller can trigger the lift function with any of the yays in the slate, leading to non-deterministic execution order.\n2. **Cause:** The contract does not enforce a specific order for processing yays, leaving the choice to the external caller.\n3. **Exploitation:** A malicious or strategic actor could choose the order in which yays are executed to influence outcomes, especially if the sequence of actions matters (e.g., dependent spells).\n4. **Impact:** Potential manipulation of execution flow, which could lead to unexpected or undesirable state changes if the order of operations is significant.\n",
-            "severity": "Informational",
-            "location": [
-                "Chief.sol::L64-L142"
-            ],
-            "files": [
-                "chief/src/Chief.sol"
+                "era-contracts/system-contracts/contracts/interfaces/IContractDeployer.sol"
             ]
         }
     ],
     "affected_files": {
-        "Chief.sol": "// SPDX-License-Identifier: GPL-3.0-or-later\n\n// Chief.sol - select an authority by consensus\n\n// Copyright (C) 2017 DappHub, LLC\n// Copyright (C) 2023 Dai Foundation\n\n// This program is free software: you can redistribute it and/or modify\n// it under the terms of the GNU General Public License as published by\n// the Free Software Foundation, either version 3 of the License, or\n// (at your option) any later version.\n\n// This program is distributed in the hope that it will be useful,\n// but WITHOUT ANY WARRANTY; without even the implied warranty of\n// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n// GNU General Public License for more details.\n\n// You should have received a copy of the GNU General Public License\n// along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\npragma solidity ^0.8.21;\n\ninterface DSAuthority {\n    function canCall(address src, address dst, bytes4 sig) external view returns (bool);\n}\n\ninterface GemLike {\n    function transfer(address, uint256) external;\n    function transferFrom(address, address, uint256) external;\n}\n\ncontract Chief is DSAuthority {\n    uint256                                  public live;\n    address                                  public hat;\n    mapping(bytes32 slate => address[] yays) public slates;\n    mapping(address usr   => bytes32 slate)  public votes;\n    mapping(address yay   => uint256 amt)    public approvals;\n    mapping(address usr   => uint256 amt)    public deposits;\n    uint256                                  public last;\n\n    GemLike public immutable gov;\n    uint256 public immutable maxYays;\n    uint256 public immutable launchThreshold;\n    uint256 public immutable liftCooldown;\n\n    bytes32 public constant EMPTY_SLATE   = keccak256(abi.encodePacked(new address[](0)));\n\n    event Launch();\n    event Lock(address indexed usr, uint256 wad);\n    event Free(address indexed usr, uint256 wad);\n    event Etch(bytes32 indexed slate, address[] yays);\n    event Vote(address indexed usr, bytes32 indexed slate);\n    event Lift(address indexed whom);\n\n    constructor(address gov_, uint256 maxYays_, uint256 launchThreshold_, uint256 liftCooldown_) {\n        gov = GemLike(gov_);\n        maxYays = maxYays_;\n        launchThreshold = launchThreshold_;\n        liftCooldown = liftCooldown_;\n    }\n\n    function _addWeight(uint256 weight, bytes32 slate) internal {\n        address[] memory yays = slates[slate];\n        for (uint256 i = 0; i < yays.length;) {\n            approvals[yays[i]] += weight;\n            unchecked { ++i; } // bounded by max array length\n        }\n    }\n\n    function _subWeight(uint256 weight, bytes32 slate) internal {\n        address[] memory yays = slates[slate];\n        for (uint256 i = 0; i < yays.length;) {\n            approvals[yays[i]] -= weight;\n            unchecked { ++i; } // bounded by max array length\n        }\n    }\n\n    function length(bytes32 slate) external view returns (uint256) {\n        return slates[slate].length;\n    }\n\n    function canCall(address caller, address, bytes4) external view returns (bool ok) {\n        ok = live == 1 && caller == hat;\n    }\n\n    function launch() external {\n        require(live == 0, \"Chief/already-live\");\n        require(hat == address(0), \"Chief/not-address-zero\");\n        require(approvals[address(0)] >= launchThreshold, \"Chief/less-than-threshold\");\n        live = 1;\n        last = block.number;\n        emit Launch();\n    }\n\n    function lock(uint256 wad) external {\n        gov.transferFrom(msg.sender, address(this), wad);\n        deposits[msg.sender] += wad;\n        _addWeight(wad, votes[msg.sender]);\n        emit Lock(msg.sender, wad);\n    }\n\n    function free(uint256 wad) external {\n        require(block.number > last, \"Chief/cant-free-same-block\");\n        deposits[msg.sender] -= wad;\n        _subWeight(wad, votes[msg.sender]);\n        gov.transfer(msg.sender, wad);\n        emit Free(msg.sender, wad);\n    }\n\n    function etch(address[] calldata yays) public returns (bytes32 slate) {\n        require(yays.length <= maxYays, \"Chief/greater-max-yays\");\n        if (yays.length > 1) {\n            unchecked { // bounded by min and max array length\n                for (uint256 i = 0; i < yays.length - 1;) {\n                    // strict inequality ensures both ordering and uniqueness\n                    require(yays[i] < yays[i + 1], \"Chief/yays-not-ordered\");\n                    ++i;\n                }\n            }\n        }\n        slate = keccak256(abi.encodePacked(yays));\n        slates[slate] = yays;\n        emit Etch(slate, yays);\n    }\n\n    function vote(address[] calldata yays) external returns (bytes32 slate) {\n        slate = etch(yays);\n        vote(slate);\n    }\n\n    function vote(bytes32 slate) public {\n        require(slates[slate].length > 0 || slate == EMPTY_SLATE, \"Chief/invalid-slate\");\n        uint256 weight = deposits[msg.sender];\n        _subWeight(weight, votes[msg.sender]);\n        votes[msg.sender] = slate;\n        _addWeight(weight, slate);\n        emit Vote(msg.sender, slate);\n    }\n\n    function lift(address whom) external {\n        require(block.number == last || block.number > last + liftCooldown, \"Chief/cant-lift-again-yet\");\n        require(approvals[whom] > approvals[hat], \"Chief/not-higher-current-hat\");\n        hat = whom;\n        last = block.number;\n        emit Lift(whom);\n    }\n\n    // Compatibility with old getters\n\n    function GOV() external view returns (address) {\n        return address(gov);\n    }\n\n    function MAX_YAYS() external view returns (uint256) {\n        return maxYays;\n    }\n}\n"
+        "IContractDeployer.sol": "// SPDX-License-Identifier: MIT\n// We use a floating point pragma here so it can be used within other projects that interact with the ZKsync ecosystem without using our exact pragma version.\npragma solidity ^0.8.20;\n\n/// @notice A struct that describes a forced deployment on an address\nstruct ForceDeployment {\n    // The bytecode hash to put on an address. Hash and length parts are ignored in case of EVM deployment with constructor.\n    bytes32 bytecodeHash;\n    // The address on which to deploy the bytecodehash to\n    address newAddress;\n    // Whether to run the constructor on the force deployment.\n    bool callConstructor;\n    // The value with which to initialize a contract\n    uint256 value;\n    // The constructor calldata\n    bytes input;\n}\n\ninterface IContractDeployer {\n    /// @notice Defines the version of the account abstraction protocol\n    /// that a contract claims to follow.\n    /// - `None` means that the account is just a contract and it should never be interacted\n    /// with as a custom account\n    /// - `Version1` means that the account follows the first version of the account abstraction protocol\n    enum AccountAbstractionVersion {\n        None,\n        Version1\n    }\n\n    /// @notice Defines the nonce ordering used by the account\n    /// - `KeyedSequential` means that it is expected that the nonces are monotonic and increment by 1\n    /// at a time for each key (nonces are split 192:64 bits into nonceKey:nonceValue parts, as proposed by EIP-4337).\n    /// - `Arbitrary` means that the nonces for the accounts can be arbitrary. The operator\n    /// should serve the transactions from such an account on a first-come-first-serve basis.\n    /// @dev This ordering is more of a suggestion to the operator on how the AA expects its transactions\n    /// to be processed and is not considered as a system invariant.\n    enum AccountNonceOrdering {\n        KeyedSequential,\n        Arbitrary\n    }\n\n    /// @notice Defines what types of bytecode are allowed to be deployed on this chain\n    /// - `EraVm` means that only native contracts can be deployed\n    /// - `EraVmAndEVM` means that native contracts and EVM contracts can be deployed\n    enum AllowedBytecodeTypes {\n        EraVm,\n        EraVmAndEVM\n    }\n\n    struct AccountInfo {\n        AccountAbstractionVersion supportedAAVersion;\n        AccountNonceOrdering nonceOrdering;\n    }\n\n    event ContractDeployed(\n        address indexed deployerAddress,\n        bytes32 indexed bytecodeHash,\n        address indexed contractAddress\n    );\n\n    event AccountNonceOrderingUpdated(address indexed accountAddress, AccountNonceOrdering nonceOrdering);\n\n    event AccountVersionUpdated(address indexed accountAddress, AccountAbstractionVersion aaVersion);\n\n    event AllowedBytecodeTypesModeUpdated(AllowedBytecodeTypes mode);\n\n    /// @notice Returns what types of bytecode are allowed to be deployed on this chain\n    function allowedBytecodeTypesToDeploy() external view returns (AllowedBytecodeTypes mode);\n\n    function getNewAddressCreate2(\n        address _sender,\n        bytes32 _bytecodeHash,\n        bytes32 _salt,\n        bytes calldata _input\n    ) external view returns (address newAddress);\n\n    function getNewAddressCreate(address _sender, uint256 _senderNonce) external pure returns (address newAddress);\n\n    function create2(\n        bytes32 _salt,\n        bytes32 _bytecodeHash,\n        bytes calldata _input\n    ) external payable returns (address newAddress);\n\n    function create2Account(\n        bytes32 _salt,\n        bytes32 _bytecodeHash,\n        bytes calldata _input,\n        AccountAbstractionVersion _aaVersion\n    ) external payable returns (address newAddress);\n\n    /// @dev While the `_salt` parameter is not used anywhere here,\n    /// it is still needed for consistency between `create` and\n    /// `create2` functions (required by the compiler).\n    function create(\n        bytes32 _salt,\n        bytes32 _bytecodeHash,\n        bytes calldata _input\n    ) external payable returns (address newAddress);\n\n    /// @dev While `_salt` is never used here, we leave it here as a parameter\n    /// for the consistency with the `create` function.\n    function createAccount(\n        bytes32 _salt,\n        bytes32 _bytecodeHash,\n        bytes calldata _input,\n        AccountAbstractionVersion _aaVersion\n    ) external payable returns (address newAddress);\n\n    /// @notice Returns the information about a certain AA.\n    function getAccountInfo(address _address) external view returns (AccountInfo memory info);\n\n    /// @notice Can be called by an account to update its account version\n    function updateAccountVersion(AccountAbstractionVersion _version) external;\n\n    /// @notice Can be called by an account to update its nonce ordering\n    function updateNonceOrdering(AccountNonceOrdering _nonceOrdering) external;\n\n    /// @notice This method is to be used only during an upgrade to set bytecodes on specific addresses.\n    function forceDeployOnAddresses(ForceDeployment[] calldata _deployments) external payable;\n\n    function createEVM(bytes calldata _initCode) external payable returns (uint256 evmGasUsed, address newAddress);\n\n    function create2EVM(\n        bytes32 _salt,\n        bytes calldata _initCode\n    ) external payable returns (uint256 evmGasUsed, address newAddress);\n\n    /// @notice Changes what types of bytecodes are allowed to be deployed on the chain.\n    /// @param newAllowedBytecodeTypes The new allowed bytecode types mode.\n    function setAllowedBytecodeTypesToDeploy(AllowedBytecodeTypes newAllowedBytecodeTypes) external;\n}\n"
     }
 }

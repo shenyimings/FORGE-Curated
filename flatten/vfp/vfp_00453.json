@@ -1,32 +1,51 @@
 {
     "vfp_id": "vfp_00453",
-    "project_name": "Linea Burn Mechanism Audit.md",
+    "project_name": "cantina_coinbase_zora_creator_coin_sep2025.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 11,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-404"
-                ],
-                "3": [
-                    "CWE-772"
+                    "CWE-1068"
                 ]
             },
-            "title": "Partial Swaps Can Lead to Permanently Locked Funds",
-            "description": "The V3DexSwap contract is designed to swap ETH for LINEA tokens using a Uniswap V3-style DEX. It accepts a _sqrtPriceLimitX96 parameter that can cause a partial swap if the price limit is reached during execution. The root cause of the vulnerability is the contract's failure to handle leftover WETH after a partial swap. After converting received ETH to WETH and performing the swap, any unswapped WETH remains in the contract's balance. Since there are no functions to withdraw or transfer these leftover tokens, they become permanently locked and irrecoverable. An attacker could exploit this by triggering a swap under market conditions that cause the price limit to be hit, ensuring a partial execution. The impact is the permanent loss of funds, reducing the protocol's revenue and undermining trust in the system's financial integrity.\n",
-            "severity": "Medium",
+            "title": "Stale/Incorrect/Missing comments reduce readability",
+            "description": "Several comments in the codebase are stale, incorrect, or missing, reducing code readability and maintainability. Examples include outdated @notice tags, misleading @dev comments, and missing @param documentation. The root cause is lack of comment maintenance during development. This can lead to misunderstandings about function behavior or contract logic. The impact is informational, as it does not directly affect security but increases the risk of future bugs or misconfigurations. The issue was fixed by updating the relevant comments.\n",
+            "severity": "Informational",
             "location": [
-                "V3DexSwap.sol::swap#L70-L71"
+                "ContentCoin.sol#L17-L21",
+                "CreatorCoin.sol#L77-L80",
+                "ZoraV4CoinHook.sol#L170-L185",
+                "ZoraV4CoinHook.sol#L346-L349",
+                "CoinRewardsV4.sol#L178-L190"
             ],
             "files": [
-                "linea-monorepo/contracts/src/operational/V3DexSwap.sol"
+                "zora-protocol/packages/coins/src/ContentCoin.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
+                ]
+            },
+            "title": "Misleading documentation on ContentCoin backing currency",
+            "description": "The documentation states that ContentCoin uses creator coins as backing currency, but the contract logic allows any currency (e.g., ETH, other tokens). The root cause is outdated or incorrect documentation. This discrepancy can mislead developers and integrators into making incorrect assumptions about protocol behavior. The impact is informational, as it does not introduce a security flaw but can lead to integration errors or confusion. The issue was fixed by updating the documentation to reflect the actual functionality.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "zora-protocol/packages/coins/src/ContentCoin.sol"
             ]
         }
     ],
     "affected_files": {
-        "V3DexSwap.sol": "// SPDX-License-Identifier: Apache-2.0 OR MIT\npragma solidity 0.8.30;\n\nimport { IV3DexSwap } from \"./interfaces/IV3DexSwap.sol\";\nimport { ISwapRouterV3 } from \"./interfaces/ISwapRouterV3.sol\";\nimport { IWETH9 } from \"./interfaces/IWETH9.sol\";\n\n/**\n * @title V3DexSwap.\n * @dev A contract for swapping tokens on a decentralized exchange.\n * @author Consensys Software Inc.\n * @custom:security-contact security-report@linea.build\n */\ncontract V3DexSwap is IV3DexSwap {\n  /// @notice Tick spacing of the pool.\n  uint24 public immutable POOL_TICK_SPACING;\n  /// @notice Address of the Swap Router contract.\n  address public immutable ROUTER;\n  /// @notice Address of the WETH token contract.\n  address public immutable WETH_TOKEN;\n  /// @notice Address of the LINEA token contract.\n  address public immutable LINEA_TOKEN;\n\n  /**\n   * @dev Initializes the contract with the given parameters.\n   * @param _router Address of the Router contract.\n   * @param _wethToken Address of the WETH token contract.\n   * @param _lineaToken Address of the LINEA token contract.\n   * @param _poolTickSpacing Tick spacing of the pool.\n   */\n  constructor(address _router, address _wethToken, address _lineaToken, uint24 _poolTickSpacing) {\n    require(_router != address(0), ZeroAddressNotAllowed());\n    require(_wethToken != address(0), ZeroAddressNotAllowed());\n    require(_lineaToken != address(0), ZeroAddressNotAllowed());\n    require(_poolTickSpacing > 0, ZeroTickSpacingNotAllowed());\n\n    ROUTER = _router;\n    WETH_TOKEN = _wethToken;\n    LINEA_TOKEN = _lineaToken;\n    POOL_TICK_SPACING = _poolTickSpacing;\n  }\n\n  /** @notice Swap ETH into LINEA tokens.\n   * @dev The msg.sender will be the recipient of the LINEA tokens, and WETH is swapped 1:1 with `msg.value`.\n   * @dev No ETH is kept in the contract after the swap due to exactInputSingle swapping.\n   * @param _minLineaOut Minimum number of LINEA tokens to receive (slippage protection).\n   * @param _deadline Time after which the transaction will revert if not yet processed.\n   * @param _sqrtPriceLimitX96 Price limit of the swap as a Q64.96 value.\n   */\n  function swap(\n    uint256 _minLineaOut,\n    uint256 _deadline,\n    uint160 _sqrtPriceLimitX96\n  ) external payable returns (uint256 amountOut) {\n    require(msg.value > 0, NoEthSend());\n    require(_deadline > block.timestamp, DeadlineInThePast());\n    require(_minLineaOut > 0, ZeroMinLineaOutNotAllowed());\n\n    IWETH9(WETH_TOKEN).deposit{ value: msg.value }();\n    IWETH9(WETH_TOKEN).approve(ROUTER, msg.value);\n\n    amountOut = ISwapRouterV3(ROUTER).exactInputSingle(\n      ISwapRouterV3.ExactInputSingleParams({\n        tokenIn: WETH_TOKEN,\n        tokenOut: LINEA_TOKEN,\n        tickSpacing: POOL_TICK_SPACING,\n        recipient: msg.sender,\n        deadline: _deadline,\n        amountIn: msg.value,\n        amountOutMinimum: _minLineaOut,\n        sqrtPriceLimitX96: _sqrtPriceLimitX96\n      })\n    );\n  }\n}\n"
+        "ContentCoin.sol": "// SPDX-License-Identifier: ZORA-DELAYED-OSL-v1\n// This software is licensed under the Zora Delayed Open Source License.\n// Under this license, you may use, copy, modify, and distribute this software for\n// non-commercial purposes only. Commercial use and competitive products are prohibited\n// until the \"Open Date\" (3 years from first public distribution or earlier at Zora's discretion),\n// at which point this software automatically becomes available under the MIT License.\n// Full license terms available at: https://docs.zora.co/coins/license\npragma solidity ^0.8.23;\n\nimport {IPoolManager} from \"@uniswap/v4-core/src/interfaces/IPoolManager.sol\";\nimport {BaseCoin} from \"./BaseCoin.sol\";\nimport {CoinConstants} from \"./libs/CoinConstants.sol\";\nimport {MarketConstants} from \"./libs/MarketConstants.sol\";\nimport {IHasCoinType} from \"./interfaces/ICoin.sol\";\n\n/**\n * @title ContentCoin\n * @notice Content coin implementation that uses creator coins as backing currency\n * @dev Inherits from BaseCoin and implements content-specific distribution logic\n */\ncontract ContentCoin is BaseCoin {\n    /// @notice The constructor for the static ContentCoin contract deployment shared across all content coins.\n    /// @dev All arguments are required and cannot be set to the 0 address.\n    /// @param protocolRewardRecipient_ The address of the protocol reward recipient\n    /// @param protocolRewards_ The address of the protocol rewards contract\n    /// @param poolManager_ The address of the pool manager\n    /// @param airlock_ The address of the Airlock contract, ownership is used for a protocol fee split.\n    constructor(\n        address protocolRewardRecipient_,\n        address protocolRewards_,\n        IPoolManager poolManager_,\n        address airlock_\n    ) BaseCoin(protocolRewardRecipient_, protocolRewards_, poolManager_, airlock_) {}\n\n    /// @dev The initial mint and distribution of the coin supply.\n    ///      Implements content coin specific distribution: 990M to liquidity pool, 10M to creator.\n    function _handleInitialDistribution() internal virtual override {\n        // Mint the total supply to the coin contract\n        _mint(address(this), CoinConstants.MAX_TOTAL_SUPPLY);\n\n        // Distribute the creator launch reward to the payout recipient\n        _transfer(address(this), payoutRecipient, CoinConstants.CREATOR_LAUNCH_REWARD);\n\n        // Transfer the market supply to the hook for liquidity\n        _transfer(address(this), address(poolKey.hooks), balanceOf(address(this)));\n    }\n\n    function totalSupplyForPositions() external pure override returns (uint256) {\n        return MarketConstants.CONTENT_COIN_MARKET_SUPPLY;\n    }\n\n    function coinType() external pure override returns (IHasCoinType.CoinType) {\n        return IHasCoinType.CoinType.Content;\n    }\n}\n"
     }
 }

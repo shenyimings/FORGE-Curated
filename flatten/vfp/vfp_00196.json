@@ -1,29 +1,92 @@
 {
     "vfp_id": "vfp_00196",
-    "project_name": "2025-03-offchain-custom-fee-erc20-bridge-securityreview.pdf",
+    "project_name": "Wrapped Staked TAO - Zellic Audit Report.pdf",
     "findings": [
         {
-            "id": 0,
+            "id": 1,
             "category": {
                 "1": [
-                    "CWE-691"
+                    "CWE-664"
                 ],
                 "2": [
-                    "CWE-841"
+                    "CWE-372"
                 ]
             },
-            "title": "An invalid upgrade for non-BoLD rollup is possible",
-            "description": "1. **Description:** The Orbit action allows an invalid upgrade path from version 3.x.x to 2.2.3, which constitutes a downgrade rather than a valid upgrade. This could lead to undefined behavior or loss of expected functionality in the upgraded contracts.\n2. **Cause:** The vulnerability arises because the upgrade logic checks for versions below 2.x.x using the presence of the `nativeTokenDecimals` function, but it does not verify that the current version is not already above 2.2.3 (e.g., 3.x.x). Since the function exists in later versions, the check passes even when downgrading.\n3. **Exploitation:** An attacker or misconfigured user could invoke the upgrade action on a contract already at version 3.x.x, causing it to be downgraded to 2.2.3. This would revert any improvements or fixes present in the newer version.\n4. **Impact:** The impact includes potential disruption of contract functionality, incorrect state transitions, and possible financial loss if critical logic changes between versions are reverted. While not directly leading to fund theft, it introduces operational risk and undefined behavior.\n",
-            "severity": "Informational",
+            "title": "Lack of minimum for staking",
+            "description": "1. **Description:** The stake function does not enforce a minimum staking amount when the pool is empty, despite Bittensor requiring a 500,000 RAO minimum and charging 50,000 RAO fees for staking and unstaking. As a result, the first staker must effectively stake 600,000 RAO to cover both the staking fee and reserve for the unstaking fee.\n2. **Cause:** Missing a conditional requirement in the stake function to enforce a higher minimum (600,000 RAO) when the current stake is zero.\n3. **Exploitation:** A user who stakes only the minimum 500,000 RAO would be unable to unstake until another user stakes, as the contract would lack sufficient balance to pay the 50,000 RAO unstaking fee.\n4. **Impact:** This could lead to user funds being temporarily locked, creating a poor user experience and potential loss of trust in the protocol.\n",
+            "severity": "Medium",
             "location": [
-                "NitroContracts2Point1Point3UpgradeAction.sol"
+                "wstTAO.sol::stake#"
             ],
             "files": [
-                "f4f878e101e54170080532ad3ba6e70dab56a2b9/orbit-actions/contracts/parent-chain/contract-upgrades/NitroContracts2Point1Point3UpgradeAction.sol"
+                "wsttao/contracts/wstTAO.sol"
+            ]
+        },
+        {
+            "id": 2,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-909"
+                ]
+            },
+            "title": "Inconsistent staking fee",
+            "description": "1. **Description:** The first staking transaction incurs a higher fee (50,500 RAO) due to the need to cover the existential deposit (500 RAO) for the contract's coldkey on Bittensor, while subsequent stakes only require 50,000 RAO.\n2. **Cause:** The contract's coldkey does not have the minimum balance pre-deposited, so the first staker must pay the additional 500 RAO to activate the wallet.\n3. **Exploitation:** The first staker bears an unfair cost compared to later users, creating an inequitable fee structure.\n4. **Impact:** This leads to unfair treatment of early users and could discourage initial participation in the staking pool.\n",
+            "severity": "Low",
+            "location": [],
+            "files": [
+                "wsttao/contracts/wstTAO.sol"
+            ]
+        },
+        {
+            "id": 3,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1164"
+                ]
+            },
+            "title": "Redundant console.log statements from codebase",
+            "description": "1. **Description:** The contract contains multiple console.log statements that are useful during development but serve no purpose in production.\n2. **Cause:** Developers left debugging logs in the code without removing them before deployment.\n3. **Exploitation:** These statements cannot be exploited but increase gas costs slightly and clutter the code.\n4. **Impact:** While not a security risk, this reduces code readability and maintainability, and may lead to higher transaction costs.\n",
+            "severity": "Informational",
+            "location": [],
+            "files": [
+                "wsttao/contracts/wstTAO.sol"
+            ]
+        },
+        {
+            "id": 4,
+            "category": {
+                "1": [
+                    "CWE-664"
+                ],
+                "2": [
+                    "CWE-665"
+                ],
+                "3": [
+                    "CWE-1419"
+                ]
+            },
+            "title": "Uninitialized staking state",
+            "description": "1. **Description:** In the upgradable contract WrappedStakedTAO, the staking state is set in the constructor instead of the initialize function, which is unsafe for upgradeable contracts.\n2. **Cause:** Improper initialization pattern for upgradeable contracts using OpenZeppelin's UUPS proxy pattern, where state variables should be initialized in the initialize function, not the constructor.\n3. **Exploitation:** Since the staking variable is only used to get function selectors (not for state-dependent logic), this does not pose a direct security risk.\n4. **Impact:** This is an informational issue that affects code correctness and maintainability, potentially confusing developers and increasing the risk of errors in future upgrades.\n",
+            "severity": "Informational",
+            "location": [
+                "WrappedStakedTAO.sol::constructor",
+                "WrappedStakedTAO.sol::initialize"
+            ],
+            "files": [
+                "wsttao/contracts/wstTAO.sol"
             ]
         }
     ],
     "affected_files": {
-        "NitroContracts2Point1Point3UpgradeAction.sol": "// SPDX-License-Identifier: Apache-2.0\npragma solidity 0.8.16;\n\nimport {ProxyAdmin} from \"@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol\";\nimport {TransparentUpgradeableProxy} from \"@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol\";\nimport {Address} from \"@openzeppelin/contracts/utils/Address.sol\";\n\ninterface IInbox {\n    function bridge() external view returns (address);\n    function sequencerInbox() external view returns (address);\n}\n\ninterface IERC20Bridge {\n    function nativeToken() external view returns (address);\n}\n\ninterface IERC20Bridge_v2 {\n    function nativeTokenDecimals() external view returns (uint8);\n}\n\n/**\n * @title   NitroContracts2Point1Point3UpgradeAction\n * @notice  Upgrade the bridge to Inbox and SequencerInbox to v2.1.3\n *          Will revert if the bridge is an ERC20Bridge below v2.x.x\n */\ncontract NitroContracts2Point1Point3UpgradeAction {\n    address public immutable newEthInboxImpl;\n    address public immutable newERC20InboxImpl;\n    address public immutable newSequencerInboxImpl;\n\n    constructor(address _newEthInboxImpl, address _newERC20InboxImpl, address _newSequencerInboxImpl) {\n        require(\n            Address.isContract(_newEthInboxImpl),\n            \"NitroContracts2Point1Point3UpgradeAction: _newEthInboxImpl is not a contract\"\n        );\n        require(\n            Address.isContract(_newERC20InboxImpl),\n            \"NitroContracts2Point1Point3UpgradeAction: _newERC20InboxImpl is not a contract\"\n        );\n        require(\n            Address.isContract(_newSequencerInboxImpl),\n            \"NitroContracts2Point1Point3UpgradeAction: _newSequencerInboxImpl is not a contract\"\n        );\n\n        newEthInboxImpl = _newEthInboxImpl;\n        newERC20InboxImpl = _newERC20InboxImpl;\n        newSequencerInboxImpl = _newSequencerInboxImpl;\n    }\n\n    function perform(address inbox, ProxyAdmin proxyAdmin) external {\n        address bridge = IInbox(inbox).bridge();\n        address sequencerInbox = IInbox(inbox).sequencerInbox();\n\n        bool isERC20 = false;\n\n        // if the bridge is an ERC20Bridge below v2.x.x, revert\n        try IERC20Bridge(bridge).nativeToken() returns (address) {}\n        catch {\n            isERC20 = true;\n            // it is an ERC20Bridge, check if it is on v2.x.x\n            try IERC20Bridge_v2(address(bridge)).nativeTokenDecimals() returns (uint8) {}\n            catch {\n                // it is not on v2.x.x, revert\n                revert(\"NitroContracts2Point1Point3UpgradeAction: bridge is an ERC20Bridge below v2.x.x\");\n            }\n        }\n\n        // upgrade the sequencer inbox\n        proxyAdmin.upgrade({\n            proxy: TransparentUpgradeableProxy(payable((sequencerInbox))),\n            implementation: newSequencerInboxImpl\n        });\n\n        // upgrade the inbox\n        proxyAdmin.upgrade({\n            proxy: TransparentUpgradeableProxy(payable((inbox))),\n            implementation: isERC20 ? newERC20InboxImpl : newEthInboxImpl\n        });\n    }\n}\n"
+        "wstTAO.sol": "// SPDX-License-Identifier: MIT\n// Compatible with OpenZeppelin Contracts ^5.0.0\npragma solidity ^0.8.24;\n\nimport {ERC20Upgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol\";\nimport {ERC20BurnableUpgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol\";\nimport {ERC20PausableUpgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol\";\nimport {ERC20PermitUpgradeable} from \"@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol\";\nimport {Initializable} from \"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\";\nimport {OwnableUpgradeable} from \"@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol\";\nimport {UUPSUpgradeable} from \"@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol\";\n\nimport \"hardhat/console.sol\";\n\nimport \"./BLAKE2b.sol\";\nimport \"./interfaces/IStakingV2.sol\";\n\ncontract WrappedStakedTAO is Initializable, ERC20Upgradeable, ERC20PausableUpgradeable, OwnableUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, ERC20BurnableUpgradeable {\n    // Precompile instances\n    IStaking public staking;\n    BLAKE2b private blake2bInstance;\n\n    uint16 private constant _netuid = 0;\n    bytes32 private _hotkey;\n    bytes32 private _address_as_pk;\n    bytes private constant evm_prefix = hex\"65766d3a\";\n    uint256 private _decimalConversionFactor;\n\n    string public constant NAME = \"Wrapped Staked TAO\";\n    string public constant SYMBOL = \"wstTAO\";\n    uint public constant INITIAL_SUPPLY = 0;\n    \n\n    /// @custom:oz-upgrades-unsafe-allow constructor\n    constructor() {\n        _disableInitializers();\n\n        staking = IStaking(ISTAKING_ADDRESS);\n    }\n\n    function initialize(address initialOwner) initializer public {\n        __ERC20_init(NAME, SYMBOL);\n        __ERC20Burnable_init();\n        __ERC20Pausable_init();\n        __Ownable_init(initialOwner);\n        __ERC20Permit_init(NAME);\n        __UUPSUpgradeable_init();\n\n        _hotkey = 0x20b0f8ac1d5416d32f5a552f98b570f06e8392ccb803029e04f63fbe0553c954;\n        _decimalConversionFactor = 10 ** 9;\n\n        blake2bInstance = new BLAKE2b();\n\n        bytes memory address_bytes = abi.encodePacked(address(this));\n        bytes memory input = new bytes(24);\n        for (uint i = 0; i < 4; i++) {\n            input[i] = evm_prefix[i];\n        }\n        for (uint i = 0; i < 20; i++) {\n            input[i + 4] = address_bytes[i];\n        }\n        _address_as_pk = blake2bInstance.blake2b_256(input);\n\n        console.log(\"address(this)\");\n        console.logBytes(address_bytes);\n        console.logBytes32(_address_as_pk);\n    }\n\n    function pause() public onlyOwner {\n        _pause();\n    }\n\n    function unpause() public onlyOwner {\n        _unpause();\n    }\n\n    function _authorizeUpgrade(address newImplementation)\n        internal\n        onlyOwner\n        override\n    {}\n\n    // The following functions are overrides required by Solidity.\n\n    function _update(address from, address to, uint256 value)\n        internal\n        override(ERC20Upgradeable, ERC20PausableUpgradeable)\n    {\n        super._update(from, to, value);\n    }\n\n  function stake(address to) public payable {\n    require(msg.value > 0, \"wstTAO: can't stake zero TAO\");\n\n    uint256 amountEvm = msg.value; // This is the amount in EVM decimals\n    console.log(\"amountEvm\", amountEvm);\n    console.log(\"address(this).balance\", address(this).balance);\n\n    // Get the current stake of the contract, this will be in RAO decimals\n    uint256 currentStakeRaoDecimals = getCurrentStake(_netuid);\n    console.log(\"currentStakeRaoDecimals\", currentStakeRaoDecimals);\n    // Stake the TAO\n    _safeStake(_hotkey, amountEvm, _netuid);\n    // Get the new stake of the contract\n    uint256 newStakeRaoDecimals = getCurrentStake(_netuid);\n    console.log(\"newStakeRaoDecimals\", newStakeRaoDecimals);\n    require(newStakeRaoDecimals > currentStakeRaoDecimals, \"wstTAO: stake didn't increase\");\n    // Calculate the amount of TAO staked\n    uint256 amountStakedRaoDecimals = newStakeRaoDecimals - currentStakeRaoDecimals;\n    console.log(\"amountStakedRaoDecimals\", amountStakedRaoDecimals);\n    // Calculate the amount of wstTAO to mint\n    uint256 amountToMintEvmDecimals = TAOtowstTAO_with_current_stake(amountStakedRaoDecimals, currentStakeRaoDecimals);\n    console.log(\"amountToMintEvmDecimals\", amountToMintEvmDecimals);\n    require(amountToMintEvmDecimals > 0, \"wstTAO: amount to mint is zero\");\n    // Mint the wstTAO\n    _mint(to, amountToMintEvmDecimals);\n  }\n\n  function unstake(uint256 amountEvm) public {\n    if (amountEvm == 0) {\n      require(amountEvm > 0, \"wstTAO: can't unstake zero wstTAO\");\n    }\n    require(getCurrentStake(_netuid) > 0, \"wstTAO: can't unstake wstTAO if the contract has no stake\");\n\n    address from = msg.sender;\n    require(balanceOf(from) >= amountEvm, \"wstTAO: can't unstake more wstTAO than user has\");\n\n    uint256 currentStakeRaoDecimals = getCurrentStake(_netuid);\n    console.log(\"currentStakeRaoDecimals\", currentStakeRaoDecimals);\n    // Convert the wstTAO to TAO; This is the amount we will unstake\n    uint256 amountInTAORaoDecimals = wstTAOtoTAO(amountEvm);\n    // Get the balance of the contract before unstaking\n    uint256 balanceBeforeEvmDecimals = address(this).balance;\n    // Unstake the wstTAO amount\n    _safeUnstake(_hotkey, amountInTAORaoDecimals, _netuid);\n    // Get the balance of the contract after unstaking\n    uint256 balanceAfterEvmDecimals = address(this).balance;\n    require(balanceAfterEvmDecimals > balanceBeforeEvmDecimals, \"wstTAO: balance didn't increase\");\n    \n    uint256 newStakeRaoDecimals = getCurrentStake(_netuid);\n    console.log(\"newStakeRaoDecimals\", newStakeRaoDecimals);\n    require(currentStakeRaoDecimals - newStakeRaoDecimals <= amountInTAORaoDecimals, \"wstTAO: unstaked more than owned\");\n    // Calculate the actual amount of TAO the contract got from the unstake\n    // Note: safe from underflow because of solidity version\n    uint256 actualAmountInTAOEvmDecimals = balanceAfterEvmDecimals - balanceBeforeEvmDecimals;\n\n    // Burn the wstTAO\n    _burn(from, amountEvm);\n    // Transfer the actual amount of TAO from our contract\n    _safeTransferTAO(from, actualAmountInTAOEvmDecimals); \n  }\n\n  function _safeUnstake(bytes32 hotkey, uint256 amountRaoDecimals, uint16 netuid) private {\n    require(amountRaoDecimals > 0, \"wstTAO: can't unstake zero TAO\");\n\n    uint256 currentStake = getCurrentStake(netuid);\n    require(currentStake >= amountRaoDecimals, \"wstTAO: current stake is lower than expected\");\n\n    (bool success, ) = ISTAKING_ADDRESS.call(abi.encodeWithSelector(staking.removeStake.selector, hotkey, amountRaoDecimals, uint256(netuid)));\n    require(success, \"wstTAO: failed to unstake\");\n  }\n\n  function _safeStake(bytes32 hotkey, uint256 amountEvm, uint16 netuid) private {\n    require(amountEvm > 0, \"wstTAO: can't stake zero wstTAO\");\n    uint256 amountRaoDecimals = amountEvm / _decimalConversionFactor;\n\n    console.log(\"amountRaoDecimals\", amountRaoDecimals);\n    console.logBytes32(hotkey);\n    //require(address(this).balance >= amount, \"wstTAO: contract does not have enough balance in unstaked\");\n    (bool success, ) = ISTAKING_ADDRESS.call(abi.encodeWithSelector(staking.addStake.selector, hotkey, amountRaoDecimals, netuid));\n    require(success, \"wstTAO: failed to stake\");\n  }\n  \n  /**\n  * @notice Shortcut to stake TAO\n  */\n  receive() external payable {\n    stake(msg.sender);\n  }\n\n  /**\n   * @notice Convert wstTAO to TAO\n   * @param amountEvm The amount of wstTAO to convert\n   * @return amountRaoDecimals The amount of TAO in RAO decimals\n   */\n  function wstTAOtoTAO(uint256 amountEvm) view public returns (uint256) {\n    uint256 currentStakeRaoDecimals = getCurrentStake(_netuid);\n    uint256 currentIssuance = super.totalSupply();\n    if (currentIssuance == 0) {\n      return 0; // should never happen\n    }\n    return amountEvm * currentStakeRaoDecimals / currentIssuance;\n  }\n\n\n  function TAOtowstTAO_with_current_stake(uint256 amountRaoDecimals, uint256 currentStakeRaoDecimals) view public returns (uint256) {\n    uint256 currentIssuance = super.totalSupply();\n    if (currentIssuance == 0 || currentStakeRaoDecimals == 0) {\n      // Issue 1:1, with decimal conversion\n      return amountRaoDecimals * _decimalConversionFactor; // Would happen on init.\n    }\n    return amountRaoDecimals * currentIssuance / currentStakeRaoDecimals;\n  }\n\n  function TAOtowstTAO(uint256 amountRaoDecimals) view public returns (uint256) {\n    uint256 currentStakeRaoDecimals = getCurrentStake(_netuid);\n    uint256 currentIssuance = super.totalSupply();\n    if (currentIssuance == 0 || currentStakeRaoDecimals == 0) {\n      // Issue 1:1, with decimal conversion\n      return amountRaoDecimals * _decimalConversionFactor; // Would happen on init.\n    }\n    return amountRaoDecimals * currentIssuance / currentStakeRaoDecimals;\n  }\n\n  function _safeTransferTAO(address to, uint256 amountEvm) private {\n    //require(address(this).balance >= amount, \"wstTAO: contract does not have enough balance in unstaked\");\n    (bool sent, ) = to.call{value: amountEvm, gas: gasleft()}(\"\");\n    require(sent, \"wstTAO: failed to send TAO\");\n  }\n\n  function getCurrentStake(uint16 netuid) public view returns (uint256) {\n    (bool success, bytes memory resultData) = ISTAKING_ADDRESS.staticcall(\n      abi.encodeWithSelector(staking.getStake.selector, _hotkey, _address_as_pk, netuid)\n    );\n  \n    require(success, \"Failed to read getStake\");\n    if (resultData.length == 0) {\n      return 0;\n    }\n    return abi.decode(resultData, (uint256));\n  }\n  \n  function getAddressAsPk() public view returns (bytes32) {\n    return _address_as_pk;\n  }\n}\n"
     }
 }
