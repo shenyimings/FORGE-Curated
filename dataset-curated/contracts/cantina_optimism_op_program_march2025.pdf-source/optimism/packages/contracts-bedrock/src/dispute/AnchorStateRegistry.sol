@@ -3,17 +3,15 @@ pragma solidity 0.8.15;
 
 // Contracts
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import { ProxyAdminOwnedBase } from "src/L1/ProxyAdminOwnedBase.sol";
-import { ReinitializableBase } from "src/universal/ReinitializableBase.sol";
 
 // Libraries
 import { GameType, Proposal, Claim, GameStatus, Hash } from "src/dispute/lib/Types.sol";
 
 // Interfaces
 import { ISemver } from "interfaces/universal/ISemver.sol";
+import { IFaultDisputeGame } from "interfaces/dispute/IFaultDisputeGame.sol";
 import { IDisputeGame } from "interfaces/dispute/IDisputeGame.sol";
 import { IDisputeGameFactory } from "interfaces/dispute/IDisputeGameFactory.sol";
-import { ISystemConfig } from "interfaces/L1/ISystemConfig.sol";
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
 
 /// @custom:proxied true
@@ -22,22 +20,22 @@ import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
 ///         FaultDisputeGame type. The anchor state is the latest state that has been proposed on L1 and was not
 ///         challenged within the challenge period. By using stored anchor states, new FaultDisputeGame instances can
 ///         be initialized with a more recent starting state which reduces the amount of required offchain computation.
-contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, ReinitializableBase, ISemver {
+contract AnchorStateRegistry is Initializable, ISemver {
     /// @notice Semantic version.
-    /// @custom:semver 3.8.0
-    string public constant version = "3.8.0";
+    /// @custom:semver 3.1.0
+    string public constant version = "3.1.0";
 
     /// @notice The dispute game finality delay in seconds.
     uint256 internal immutable DISPUTE_GAME_FINALITY_DELAY_SECONDS;
 
-    /// @notice Address of the SystemConfig contract.
-    ISystemConfig public systemConfig;
+    /// @notice Address of the SuperchainConfig contract.
+    ISuperchainConfig public superchainConfig;
 
     /// @notice Address of the DisputeGameFactory contract.
     IDisputeGameFactory public disputeGameFactory;
 
     /// @notice The game whose claim is currently being used as the anchor state.
-    IDisputeGame public anchorGame;
+    IFaultDisputeGame public anchorGame;
 
     /// @notice The starting anchor root.
     Proposal internal startingAnchorRoot;
@@ -55,7 +53,7 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
 
     /// @notice Emitted when an anchor state is updated.
     /// @param game Game that was used as the new anchor game.
-    event AnchorUpdated(IDisputeGame indexed game);
+    event AnchorUpdated(IFaultDisputeGame indexed game);
 
     /// @notice Emitted when the respected game type is set.
     /// @param gameType The new respected game type.
@@ -69,6 +67,9 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
     /// @param disputeGame The dispute game that was blacklisted.
     event DisputeGameBlacklisted(IDisputeGame indexed disputeGame);
 
+    /// @notice Thrown when the anchor root is requested, but the anchor game is blacklisted.
+    error AnchorStateRegistry_AnchorGameBlacklisted();
+
     /// @notice Thrown when an invalid anchor game is provided.
     error AnchorStateRegistry_InvalidAnchorGame();
 
@@ -76,53 +77,34 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
     error AnchorStateRegistry_Unauthorized();
 
     /// @param _disputeGameFinalityDelaySeconds The dispute game finality delay in seconds.
-    constructor(uint256 _disputeGameFinalityDelaySeconds) ReinitializableBase(1) {
+    constructor(uint256 _disputeGameFinalityDelaySeconds) {
         DISPUTE_GAME_FINALITY_DELAY_SECONDS = _disputeGameFinalityDelaySeconds;
         _disableInitializers();
     }
 
     /// @notice Initializes the contract.
-    /// @param _systemConfig The address of the SystemConfig contract.
+    /// @param _superchainConfig The address of the SuperchainConfig contract.
     /// @param _disputeGameFactory The address of the DisputeGameFactory contract.
     /// @param _startingAnchorRoot The starting anchor root.
     function initialize(
-        ISystemConfig _systemConfig,
+        ISuperchainConfig _superchainConfig,
         IDisputeGameFactory _disputeGameFactory,
         Proposal memory _startingAnchorRoot,
         GameType _startingRespectedGameType
     )
         external
-        reinitializer(initVersion())
+        initializer
     {
-        // Initialization transactions must come from the ProxyAdmin or its owner.
-        _assertOnlyProxyAdminOrProxyAdminOwner();
-
-        // Now perform initialization logic.
-        systemConfig = _systemConfig;
+        superchainConfig = _superchainConfig;
         disputeGameFactory = _disputeGameFactory;
         startingAnchorRoot = _startingAnchorRoot;
         respectedGameType = _startingRespectedGameType;
-
-        // Set the retirement timestamp to the current timestamp the first time the contract is
-        // initialized. This was originally done in U16a to guarantee that all games created before
-        // the initialization of the new AnchorStateRegistry would be retired. This is no longer
-        // required behavior but it's useful to maintain common behavior across all new and old
-        // AnchorStateRegistry instances. We don't set the retirement timestamp if already set to
-        // avoid retiring games when re-initializing the contract during an upgrade.
-        if (retirementTimestamp == 0) {
-            retirementTimestamp = uint64(block.timestamp);
-        }
+        retirementTimestamp = uint64(block.timestamp);
     }
 
     /// @notice Returns whether the contract is paused.
     function paused() public view returns (bool) {
-        return systemConfig.paused();
-    }
-
-    /// @notice Returns the SuperchainConfig contract.
-    /// @return ISuperchainConfig The SuperchainConfig contract.
-    function superchainConfig() public view returns (ISuperchainConfig) {
-        return systemConfig.superchainConfig();
+        return superchainConfig.paused();
     }
 
     /// @notice Returns the dispute game finality delay in seconds.
@@ -130,28 +112,17 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
         return DISPUTE_GAME_FINALITY_DELAY_SECONDS;
     }
 
-    /// @notice Returns the starting anchor root.
-    function getStartingAnchorRoot() external view returns (Proposal memory) {
-        return startingAnchorRoot;
-    }
-
     /// @notice Allows the Guardian to set the respected game type.
     /// @param _gameType The new respected game type.
     function setRespectedGameType(GameType _gameType) external {
-        // Only the Guardian can set the respected game type.
-        _assertOnlyGuardian();
-
-        // Set the respected game type.
+        if (msg.sender != superchainConfig.guardian()) revert AnchorStateRegistry_Unauthorized();
         respectedGameType = _gameType;
         emit RespectedGameTypeSet(_gameType);
     }
 
     /// @notice Allows the Guardian to update the retirement timestamp.
     function updateRetirementTimestamp() external {
-        // Only the Guardian can update the retirement timestamp.
-        _assertOnlyGuardian();
-
-        // Update the retirement timestamp.
+        if (msg.sender != superchainConfig.guardian()) revert AnchorStateRegistry_Unauthorized();
         retirementTimestamp = uint64(block.timestamp);
         emit RetirementTimestampSet(block.timestamp);
     }
@@ -159,10 +130,7 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
     /// @notice Allows the Guardian to blacklist a dispute game.
     /// @param _disputeGame Dispute game to blacklist.
     function blacklistDisputeGame(IDisputeGame _disputeGame) external {
-        // Only the Guardian can blacklist a dispute game.
-        _assertOnlyGuardian();
-
-        // Blacklist the dispute game.
+        if (msg.sender != superchainConfig.guardian()) revert AnchorStateRegistry_Unauthorized();
         disputeGameBlacklist[_disputeGame] = true;
         emit DisputeGameBlacklisted(_disputeGame);
     }
@@ -188,20 +156,19 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
         return (Hash.wrap(anchorGame.rootClaim().raw()), anchorGame.l2SequenceNumber());
     }
 
-    /// @notice Determines whether a game is registered by checking that it was created by the
-    ///         DisputeGameFactory.
+    /// @notice Determines whether a game is registered in the DisputeGameFactory.
     /// @param _game The game to check.
-    /// @return Whether the game is registered.
+    /// @return Whether the game is factory registered.
     function isGameRegistered(IDisputeGame _game) public view returns (bool) {
         // Grab the game and game data.
         (GameType gameType, Claim rootClaim, bytes memory extraData) = _game.gameData();
 
         // Grab the verified address of the game based on the game data.
-        (IDisputeGame factoryRegisteredGame,) =
+        (IDisputeGame _factoryRegisteredGame,) =
             disputeGameFactory.games({ _gameType: gameType, _rootClaim: rootClaim, _extraData: extraData });
 
         // Return whether the game is factory registered.
-        return address(factoryRegisteredGame) == address(_game);
+        return address(_factoryRegisteredGame) == address(_game);
     }
 
     /// @notice Determines whether a game is of a respected game type.
@@ -225,8 +192,9 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
     /// @param _game The game to check.
     /// @return Whether the game is retired.
     function isGameRetired(IDisputeGame _game) public view returns (bool) {
-        // Must be created after the retirementTimestamp. Note that this means all games created in
-        // the same block as the retirementTimestamp are considered retired.
+        // Must be created after the respectedGameTypeUpdatedAt timestamp. Note that this means all
+        // games created in the same block as the respectedGameTypeUpdatedAt timestamp are
+        // considered retired.
         return _game.createdAt().raw() <= retirementTimestamp;
     }
 
@@ -262,7 +230,7 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
             return false;
         }
 
-        // Must be created at or after the retirement timestamp.
+        // Must be created at or after the respectedGameTypeUpdatedAt timestamp.
         if (isGameRetired(_game)) {
             return false;
         }
@@ -323,26 +291,26 @@ contract AnchorStateRegistry is ProxyAdminOwnedBase, Initializable, Reinitializa
     /// @notice Updates the anchor game.
     /// @param _game New candidate anchor game.
     function setAnchorState(IDisputeGame _game) public {
+        // Convert game to FaultDisputeGame.
+        // We can't use FaultDisputeGame in the interface because this function is called from the
+        // FaultDisputeGame contract which can't import IFaultDisputeGame by convention. We should
+        // likely introduce a new interface (e.g., StateDisputeGame) that can act as a more useful
+        // version of IDisputeGame in the future.
+        IFaultDisputeGame game = IFaultDisputeGame(address(_game));
+
         // Check if the candidate game claim is valid.
-        if (!isGameClaimValid(_game)) {
+        if (!isGameClaimValid(game)) {
             revert AnchorStateRegistry_InvalidAnchorGame();
         }
 
         // Must be newer than the current anchor game.
         (, uint256 anchorL2BlockNumber) = getAnchorRoot();
-        if (_game.l2SequenceNumber() <= anchorL2BlockNumber) {
+        if (game.l2SequenceNumber() <= anchorL2BlockNumber) {
             revert AnchorStateRegistry_InvalidAnchorGame();
         }
 
         // Update the anchor game.
-        anchorGame = _game;
-        emit AnchorUpdated(_game);
-    }
-
-    /// @notice Asserts that the caller is the Guardian.
-    function _assertOnlyGuardian() internal view {
-        if (msg.sender != systemConfig.guardian()) {
-            revert AnchorStateRegistry_Unauthorized();
-        }
+        anchorGame = game;
+        emit AnchorUpdated(game);
     }
 }

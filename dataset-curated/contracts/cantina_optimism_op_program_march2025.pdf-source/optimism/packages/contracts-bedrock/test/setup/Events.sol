@@ -12,7 +12,7 @@ import { IDisputeGame } from "interfaces/dispute/IDisputeGame.sol";
 /// @dev Contains various events that are tested against. This contract needs to
 ///      exist until we either modularize the implementations or use a newer version of
 ///      solc that allows for referencing events from other contracts.
-abstract contract Events {
+contract Events {
     /// @dev OpenZeppelin Ownable.sol transferOwnership event
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event TransactionDeposited(address indexed from, address indexed to, uint256 indexed version, bytes opaqueData);
@@ -103,9 +103,9 @@ abstract contract Events {
         bytes data
     );
 
-    event Paused(address identifier);
+    event Paused(string identifier);
 
-    event Unpaused(address identifier);
+    event Unpaused();
 
     event BalanceChanged(address account, uint256 balance);
 

@@ -2,8 +2,6 @@
 pragma solidity 0.8.15;
 
 // Contracts
-import { ProxyAdminOwnedBase } from "src/L1/ProxyAdminOwnedBase.sol";
-import { ReinitializableBase } from "src/universal/ReinitializableBase.sol";
 import { CrossDomainMessenger } from "src/universal/CrossDomainMessenger.sol";
 
 // Libraries
@@ -12,7 +10,6 @@ import { Predeploys } from "src/libraries/Predeploys.sol";
 // Interfaces
 import { ISemver } from "interfaces/universal/ISemver.sol";
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
-import { ISystemConfig } from "interfaces/L1/ISystemConfig.sol";
 import { IOptimismPortal2 as IOptimismPortal } from "interfaces/L1/IOptimismPortal2.sol";
 
 /// @custom:proxied true
@@ -20,11 +17,9 @@ import { IOptimismPortal2 as IOptimismPortal } from "interfaces/L1/IOptimismPort
 /// @notice The L1CrossDomainMessenger is a message passing interface between L1 and L2 responsible
 ///         for sending and receiving data on the L1 side. Users are encouraged to use this
 ///         interface instead of interacting with lower-level contracts directly.
-contract L1CrossDomainMessenger is CrossDomainMessenger, ProxyAdminOwnedBase, ReinitializableBase, ISemver {
-    /// @custom:legacy
-    /// @custom:spacer superchainConfig
-    /// @notice Spacer taking up the legacy `superchainConfig` slot.
-    address private spacer_251_0_20;
+contract L1CrossDomainMessenger is CrossDomainMessenger, ISemver {
+    /// @notice Contract of the SuperchainConfig.
+    ISuperchainConfig public superchainConfig;
 
     /// @notice Contract of the OptimismPortal.
     /// @custom:network-specific
@@ -36,39 +31,21 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, ProxyAdminOwnedBase, Re
     address private spacer_253_0_20;
 
     /// @notice Semantic version.
-    /// @custom:semver 2.11.0
-    string public constant version = "2.11.0";
-
-    /// @notice Contract of the SystemConfig.
-    ISystemConfig public systemConfig;
+    /// @custom:semver 2.6.0
+    string public constant version = "2.6.0";
 
     /// @notice Constructs the L1CrossDomainMessenger contract.
-    constructor() ReinitializableBase(3) {
+    constructor() {
         _disableInitializers();
     }
 
     /// @notice Initializes the contract.
-    /// @param _systemConfig Contract of the SystemConfig contract on this network.
+    /// @param _superchainConfig Contract of the SuperchainConfig contract on this network.
     /// @param _portal Contract of the OptimismPortal contract on this network.
-    function initialize(ISystemConfig _systemConfig, IOptimismPortal _portal) external reinitializer(initVersion()) {
-        // Initialization transactions must come from the ProxyAdmin or its owner.
-        _assertOnlyProxyAdminOrProxyAdminOwner();
-
-        // Now perform initialization logic.
-        systemConfig = _systemConfig;
+    function initialize(ISuperchainConfig _superchainConfig, IOptimismPortal _portal) external initializer {
+        superchainConfig = _superchainConfig;
         portal = _portal;
         __CrossDomainMessenger_init({ _otherMessenger: CrossDomainMessenger(Predeploys.L2_CROSS_DOMAIN_MESSENGER) });
-    }
-
-    /// @inheritdoc CrossDomainMessenger
-    function paused() public view override returns (bool) {
-        return systemConfig.paused();
-    }
-
-    /// @notice Returns the SuperchainConfig contract.
-    /// @return ISuperchainConfig The SuperchainConfig contract.
-    function superchainConfig() public view returns (ISuperchainConfig) {
-        return systemConfig.superchainConfig();
     }
 
     /// @notice Getter function for the OptimismPortal contract on this chain.
@@ -98,5 +75,10 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, ProxyAdminOwnedBase, Re
     /// @inheritdoc CrossDomainMessenger
     function _isUnsafeTarget(address _target) internal view override returns (bool) {
         return _target == address(this) || _target == address(portal);
+    }
+
+    /// @inheritdoc CrossDomainMessenger
+    function paused() public view override returns (bool) {
+        return superchainConfig.paused();
     }
 }

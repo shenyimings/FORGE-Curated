@@ -215,8 +215,6 @@ library Blueprint {
 
     /// @notice Returns the maximum init code size for each blueprint. The preamble needs 3 bytes.
     function maxInitCodeSize() internal pure returns (uint32) {
-        // Technically this should be 24576 - 3 (max minus preamble size) but we use 23500 here to
-        // resolve a discrepancy that can occur between development and production builds.
-        return 23500;
+        return 24576 - 3;
     }
 }

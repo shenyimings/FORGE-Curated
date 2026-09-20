@@ -18,22 +18,39 @@ import { BadAuth } from "src/dispute/lib/Errors.sol";
 ///         costs that certain networks may not wish to support. This contract can also be used as a fallback mechanism
 ///         in case of a failure in the permissionless fault proof system in the stage one release.
 contract SuperPermissionedDisputeGame is SuperFaultDisputeGame {
+    /// @notice The proposer role is allowed to create proposals and participate in the dispute game.
+    address internal immutable PROPOSER;
+
+    /// @notice The challenger role is allowed to participate in the dispute game.
+    address internal immutable CHALLENGER;
+
     /// @notice Modifier that gates access to the `challenger` and `proposer` roles.
     modifier onlyAuthorized() {
-        if (!(msg.sender == proposer() || msg.sender == challenger())) {
+        if (!(msg.sender == PROPOSER || msg.sender == CHALLENGER)) {
             revert BadAuth();
         }
         _;
     }
 
     /// @notice Semantic version.
-    /// @custom:semver 0.7.0
+    /// @custom:semver 0.2.0-beta.1
     function version() public pure override returns (string memory) {
-        return "0.7.0";
+        return "0.2.0-beta.1";
     }
 
     /// @param _params Parameters for creating a new FaultDisputeGame.
-    constructor(GameConstructorParams memory _params) SuperFaultDisputeGame(_params) { }
+    /// @param _proposer Address that is allowed to create instances of this contract.
+    /// @param _challenger Address that is allowed to challenge instances of this contract.
+    constructor(
+        GameConstructorParams memory _params,
+        address _proposer,
+        address _challenger
+    )
+        SuperFaultDisputeGame(_params)
+    {
+        PROPOSER = _proposer;
+        CHALLENGER = _challenger;
+    }
 
     /// @inheritdoc SuperFaultDisputeGame
     function step(
@@ -70,35 +87,24 @@ contract SuperPermissionedDisputeGame is SuperFaultDisputeGame {
 
     /// @notice Initializes the contract.
     function initialize() public payable override {
-        super.initialize();
-
         // The creator of the dispute game must be the proposer EOA.
-        if (tx.origin != proposer()) revert BadAuth();
-    }
+        if (tx.origin != PROPOSER) revert BadAuth();
 
-    /// @notice Returns the byte count of the game implementation args for this contract.
-    function gameImplArgsByteCount() internal pure override returns (uint256) {
-        // Extend expected data length to account for proposer and challenger addresses
-        // - 20 bytes: proposer address
-        // - 20 bytes: challenger address
-        return super.gameImplArgsByteCount() + 40;
+        // Fallthrough initialization.
+        super.initialize();
     }
 
     ////////////////////////////////////////////////////////////////
     //                     IMMUTABLE GETTERS                      //
     ////////////////////////////////////////////////////////////////
 
-    /// @notice Returns the proposer address. The proposer role is allowed to create proposals and participate in the
-    /// dispute game.
-    function proposer() public pure returns (address proposer_) {
-        proposer_ =
-            _getArgAddress(super._preExtraDataByteCount() + super._extraDataByteCount() + super.gameImplArgsByteCount());
+    /// @notice Returns the proposer address.
+    function proposer() external view returns (address proposer_) {
+        proposer_ = PROPOSER;
     }
 
-    /// @notice Returns the challenger address. The challenger role is allowed to participate in the dispute game.
-    function challenger() public pure returns (address challenger_) {
-        challenger_ = _getArgAddress(
-            super._preExtraDataByteCount() + super._extraDataByteCount() + super.gameImplArgsByteCount() + 20
-        );
+    /// @notice Returns the challenger address.
+    function challenger() external view returns (address challenger_) {
+        challenger_ = CHALLENGER;
     }
 }

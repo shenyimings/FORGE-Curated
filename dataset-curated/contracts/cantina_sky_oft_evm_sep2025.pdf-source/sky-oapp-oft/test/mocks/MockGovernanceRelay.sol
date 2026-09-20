@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.22;
 
-import { IGovernanceOAppReceiver, MessageOrigin } from "../../contracts/interfaces/IGovernanceOAppReceiver.sol";
+import { IGovernanceController } from "../../contracts/IGovernanceController.sol";
 
 contract MockGovernanceRelay {
     bytes32 public immutable allowedOriginCaller;
     uint32 public immutable allowedEid;
-    IGovernanceOAppReceiver public immutable messenger;
+    IGovernanceController public immutable messenger;
 
     error DelegateCallFailed();
     error TestRevert();
     error UnauthorizedMessenger();
     error UnauthorizedOriginCaller();
     
-    constructor(IGovernanceOAppReceiver _messenger, bytes32 _allowedOriginCaller, uint32 _allowedEid) {
+    constructor(IGovernanceController _messenger, bytes32 _allowedOriginCaller, uint32 _allowedEid) {
         messenger = _messenger;
         allowedOriginCaller = _allowedOriginCaller;
         allowedEid = _allowedEid;
@@ -24,8 +24,8 @@ contract MockGovernanceRelay {
             revert UnauthorizedMessenger();
         }
 
-        MessageOrigin memory origin = messenger.messageOrigin();
-        if (origin.srcEid != allowedEid || origin.srcSender != allowedOriginCaller) {
+        (uint32 originEid, bytes32 originCaller) = messenger.messageOrigin();
+        if (originEid != allowedEid || originCaller != allowedOriginCaller) {
             revert UnauthorizedOriginCaller();
         }
         _;

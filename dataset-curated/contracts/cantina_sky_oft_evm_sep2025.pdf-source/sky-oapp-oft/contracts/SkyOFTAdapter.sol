@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -10,12 +10,16 @@ import { SkyOFTCore, RateLimitDirection } from "./SkyOFTCore.sol";
 /**
  * @title SkyOFTAdapter Contract
  * @dev OFTAdapter is a contract that adapts an ERC-20 token to the OFT functionality.
- * @dev This contract extends the SkyOFTCore, which extends the SkyRateLimiter containing rate limiting functionality.
+ * @dev This contract extends the DoubleSidedRateLimiter contract to provide double-sided rate limiting functionality.
  * @dev It allows for the configuration of rate limits for both outbound and inbound directions.
  * @dev It also allows for the setting of the rate limit accounting type to be net or gross.
  *
  * @dev For existing ERC20 tokens, this can be used to convert the token to cross-chain compatibility.
- * @dev WARNING: ONLY 1 of these should exist for a given global mesh.
+ * @dev WARNING: ONLY 1 of these should exist for a given global mesh,
+ * unless you make a NON-default implementation of OFT and needs to be done very carefully.
+ * @dev WARNING: The default OFTAdapter implementation assumes LOSSLESS transfers, ie. 1 token in, 1 token out.
+ * IF the 'innerToken' applies something like a transfer fee, the default will NOT work...
+ * a pre/post balance check will need to be done to calculate the amountSentLD/amountReceivedLD.
  */
 contract SkyOFTAdapter is ISkyOFTAdapter, SkyOFTCore {
     using SafeERC20 for IERC20;
@@ -113,6 +117,10 @@ contract SkyOFTAdapter is ISkyOFTAdapter, SkyOFTCore {
      * @param _srcEid The source Endpoint ID.
      *
      * @return amountReceivedLD The amount of tokens ACTUALLY received in local decimals.
+     *
+     * @dev WARNING: The default OFTAdapter implementation assumes LOSSLESS transfers, ie. 1 token in, 1 token out.
+     *      IF the 'innerToken' applies something like a transfer fee, the default will NOT work...
+     *      a pre/post balance check will need to be done to calculate the amountReceivedLD.
      */
     function _credit(
         address _to,
@@ -128,6 +136,7 @@ contract SkyOFTAdapter is ISkyOFTAdapter, SkyOFTCore {
         // @dev Unlock the tokens and transfer to the recipient.
         innerToken.safeTransfer(_to, _amountLD);
 
+        // @dev In the case of NON-default OFT, the _amountLD MIGHT not be == amountReceivedLD.
         return _amountLD;
     }
 }

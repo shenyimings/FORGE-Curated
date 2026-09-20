@@ -6,15 +6,14 @@ import { CommonTest } from "test/setup/CommonTest.sol";
 
 // Libraries
 import { CREATE3, Bytes32AddressLib } from "@rari-capital/solmate/src/utils/CREATE3.sol";
-import { SemverComp } from "src/libraries/SemverComp.sol";
 
 // Target contract
 import { IOptimismSuperchainERC20 } from "interfaces/L2/IOptimismSuperchainERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 
-/// @title OptimismSuperchainERC20Factory_TestInit
-/// @notice Reusable test initialization for `OptimismSuperchainERC20Factory` tests.
-abstract contract OptimismSuperchainERC20Factory_TestInit is CommonTest {
+/// @title OptimismSuperchainERC20FactoryTest
+/// @notice Contract for testing the OptimismSuperchainERC20Factory contract.
+contract OptimismSuperchainERC20FactoryTest is CommonTest {
     using Bytes32AddressLib for bytes32;
 
     event OptimismSuperchainERC20Created(
@@ -30,20 +29,8 @@ abstract contract OptimismSuperchainERC20Factory_TestInit is CommonTest {
         super.setUp();
     }
 
-    /// @notice Precalculates the address of the token contract using CREATE3.
-    function _calculateTokenAddress(bytes32 _salt, address _deployer) internal pure returns (address) {
-        address proxy =
-            keccak256(abi.encodePacked(bytes1(0xFF), _deployer, _salt, CREATE3.PROXY_BYTECODE_HASH)).fromLast20Bytes();
-
-        return keccak256(abi.encodePacked(hex"d694", proxy, hex"01")).fromLast20Bytes();
-    }
-}
-
-/// @title OptimismSuperchainERC20Factory_Deploy_Test
-/// @notice Tests the `deploy` function of the `OptimismSuperchainERC20Factory` contract.
-contract OptimismSuperchainERC20Factory_Deploy_Test is OptimismSuperchainERC20Factory_TestInit {
     /// @notice Test that calling `deploy` with valid parameters succeeds.
-    function testFuzz_deploy_succeeds(
+    function test_deploy_succeeds(
         address _caller,
         address _remoteToken,
         string memory _name,
@@ -73,7 +60,7 @@ contract OptimismSuperchainERC20Factory_Deploy_Test is OptimismSuperchainERC20Fa
     }
 
     /// @notice Test that calling `deploy` with the same parameters twice reverts.
-    function testFuzz_deploy_sameTwice_reverts(
+    function test_deploy_sameTwice_reverts(
         address _caller,
         address _remoteToken,
         string memory _name,
@@ -92,13 +79,12 @@ contract OptimismSuperchainERC20Factory_Deploy_Test is OptimismSuperchainERC20Fa
         vm.prank(_caller);
         l2OptimismSuperchainERC20Factory.deploy(_remoteToken, _name, _symbol, _decimals);
     }
-}
 
-/// @title OptimismSuperchainERC20Factory_Version_Test
-/// @notice Tests the `version` function of the `OptimismSuperchainERC20Factory` contract.
-contract OptimismSuperchainERC20Factory_Version_Test is OptimismSuperchainERC20Factory_TestInit {
-    /// @notice Tests that version returns a valid semver string.
-    function test_version_validFormat_succeeds() external view {
-        SemverComp.parse(l2OptimismSuperchainERC20Factory.version());
+    /// @notice Precalculates the address of the token contract using CREATE3.
+    function _calculateTokenAddress(bytes32 _salt, address _deployer) internal pure returns (address) {
+        address proxy =
+            keccak256(abi.encodePacked(bytes1(0xFF), _deployer, _salt, CREATE3.PROXY_BYTECODE_HASH)).fromLast20Bytes();
+
+        return keccak256(abi.encodePacked(hex"d694", proxy, hex"01")).fromLast20Bytes();
     }
 }

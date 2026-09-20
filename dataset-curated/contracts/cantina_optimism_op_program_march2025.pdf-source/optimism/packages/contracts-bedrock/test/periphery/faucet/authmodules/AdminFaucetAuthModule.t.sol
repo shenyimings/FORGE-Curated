@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-// Testing
-import { Test } from "test/setup/Test.sol";
-import { FaucetHelper } from "test/mocks/FaucetHelper.sol";
-
-// Contracts
+import { Test } from "forge-std/Test.sol";
 import { AdminFaucetAuthModule } from "src/periphery/faucet/authmodules/AdminFaucetAuthModule.sol";
 import { Faucet } from "src/periphery/faucet/Faucet.sol";
+import { FaucetHelper } from "test/mocks/FaucetHelper.sol";
 
-/// @title AdminFaucetAuthModule_TestInit
-/// @notice Reusable test initialization for `AdminFaucetAuthModule` tests.
-abstract contract AdminFaucetAuthModule_TestInit is Test {
+/// @title  AdminFaucetAuthModuleTest
+/// @notice Tests the AdminFaucetAuthModule contract.
+contract AdminFaucetAuthModuleTest is Test {
     /// @notice The admin of the `AdminFaucetAuthModule` contract.
     address internal admin;
 
@@ -55,9 +52,9 @@ abstract contract AdminFaucetAuthModule_TestInit is Test {
         return signature;
     }
 
-    /// @notice Signs a proof with the given private key and returns the signature using the given
-    ///         EIP712 domain separator. This assumes that the issuer's address is the
-    ///         corresponding public key to _issuerPrivateKey.
+    /// @notice Signs a proof with the given private key and returns the signature using
+    ///         the given EIP712 domain separator. This assumes that the issuer's address is the
+    ///        corresponding public key to _issuerPrivateKey.
     function issueProofWithEIP712Domain(
         uint256 _issuerPrivateKey,
         bytes memory _eip712Name,
@@ -80,13 +77,9 @@ abstract contract AdminFaucetAuthModule_TestInit is Test {
             )
         );
     }
-}
 
-/// @title AdminFaucetAuthModule_Verify_Test
-/// @notice Tests the `verify` function of the `AdminFaucetAuthModule` contract.
-contract AdminFaucetAuthModule_Verify_Test is AdminFaucetAuthModule_TestInit {
     /// @notice Assert that verify returns true for valid proofs signed by admins.
-    function test_verify_adminProof_succeeds() external {
+    function test_adminProof_verify_succeeds() external {
         bytes32 nonce = faucetHelper.consumeNonce();
         bytes memory data = "0x";
         uint32 gasLimit = 200000;
@@ -114,7 +107,7 @@ contract AdminFaucetAuthModule_Verify_Test is AdminFaucetAuthModule_TestInit {
     }
 
     /// @notice Assert that verify returns false for proofs signed by nonadmins.
-    function test_verify_nonAdminProof_succeeds() external {
+    function test_nonAdminProof_verify_succeeds() external {
         bytes32 nonce = faucetHelper.consumeNonce();
         bytes memory data = "0x";
         uint32 gasLimit = 200000;
@@ -143,7 +136,7 @@ contract AdminFaucetAuthModule_Verify_Test is AdminFaucetAuthModule_TestInit {
 
     /// @notice Assert that verify returns false for proofs where the id in the proof is different
     ///         than the id in the call to verify.
-    function test_verify_proofWithWrongId_succeeds() external {
+    function test_proofWithWrongId_verify_succeeds() external {
         bytes32 nonce = faucetHelper.consumeNonce();
         bytes memory data = "0x";
         uint32 gasLimit = 200000;

@@ -3,48 +3,58 @@
     "project_name": "Uniswap Calibur Audit.md",
     "findings": [
         {
-            "id": 8,
+            "id": 5,
             "category": {
                 "1": [
-                    "CWE-710"
+                    "CWE-707"
                 ],
                 "2": [
-                    "CWE-758"
+                    "CWE-20"
+                ],
+                "3": [
+                    "CWE-1289"
                 ]
             },
-            "title": "Different Pragma Directives Are Used",
-            "description": "Multiple source files use different Solidity pragma directives (e.g., `^0.8.29` vs `^0.8.20`), which can lead to inconsistent compilation behavior and potential runtime errors if incompatible features are used. The cause is inconsistent version pinning across the codebase. An attacker could exploit compiler-level edge cases if a function behaves differently under different compiler versions, though this is unlikely. The main impact is reduced code reliability and maintainability, increasing the risk of unintended behavior during deployment or upgrades.\n",
+            "title": "Missing Zero-Address Checks",
+            "description": "The contract lacks zero-address validation in two critical functions: approving native tokens to the zero address and transferring native tokens to the zero address. While approving to zero is mostly harmless, transferring to the zero address results in permanent loss of funds. The root cause is missing input validation in the `ERC7914.sol` implementation. An attacker or user error could trigger a transfer to `address(0)`, either accidentally or through a malicious relayer manipulating calldata. The impact is irreversible loss of native tokens, reducing user funds and trust in the system.\n",
             "severity": "Low",
             "location": [
-                "ERC4337Account.sol#2",
-                "ERC7739Utils.sol#2"
+                "ERC7914.sol#15",
+                "ERC7914.sol#30"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC7914.sol"
             ]
         },
         {
-            "id": 11,
+            "id": 15,
             "category": {
                 "1": [
                     "CWE-710"
                 ],
                 "2": [
-                    "CWE-1068"
+                    "CWE-684"
+                ],
+                "3": [
+                    "CWE-440"
                 ]
             },
-            "title": "Misleading Docstring",
-            "description": "The docstring for `updateEntryPoint` incorrectly states that ERC-4337 support is disabled by default, when in fact the static entry point is used by default due to the `_CACHED_ENTRYPOINT` logic. The root cause is outdated or incorrect documentation. While not directly exploitable, this misleads developers integrating with the contract, potentially causing incorrect assumptions about required initialization steps. The impact is integration errors and confusion, increasing the risk of misconfiguration in client applications.\n",
-            "severity": "Low",
+            "title": "ERC-7914 Implementation Deviates from Spec",
+            "description": "The implementation of ERC-7914 in the audited contract deviates from the current draft specification in multiple ways. The `supportsInterface` function is missing, which is a standard requirement for ERC-165 compatibility. The `transferFromNative` function reverts on failure instead of returning false as required by the spec, and returns true for zero amounts, contrary to the reference implementation. Additionally, functions like `transferFromNativeTransient`, `allowance`, and `transientAllowance` are implemented but not defined in the ERC, creating ambiguity. These deviations increase the risk of interoperability issues and unexpected behavior if the ERC is finalized or adopted by other systems. The root cause is premature implementation of an unstable and unpublished ERC. An attacker or malicious integrator could exploit the behavioral differences to cause failed transactions, incorrect state assumptions, or front-running. The impact includes reduced reliability, integration failures, and potential fund loss in dependent systems.\n",
+            "severity": "Medium",
             "location": [
-                "IERC4337Account.sol#18"
+                "ERC7914.sol::supportsInterface",
+                "ERC7914.sol::transferFromNative#28-33",
+                "ERC7914.sol::transferFromNativeTransient#36-41",
+                "ERC7914.sol::allowance#11",
+                "ERC7914.sol::transientAllowance#44-46"
             ],
             "files": [
-                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC4337Account.sol"
+                "732a20a8d82f034573c6c7e44160f1860233a946/minimal-delegation/src/ERC7914.sol"
             ]
         }
     ],
     "affected_files": {
-        "ERC4337Account.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.29;\n\nimport {IERC4337Account} from \"./interfaces/IERC4337Account.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\nimport {EntrypointLib} from \"./libraries/EntrypointLib.sol\";\nimport {Static} from \"./libraries/Static.sol\";\n\n/// @title ERC4337Account\n/// @notice A base contract which allows for the entrypoint to have a default value that can be updated\nabstract contract ERC4337Account is IERC4337Account, BaseAuthorization {\n    using EntrypointLib for *;\n\n    /// ERC-4337 defined constants\n    uint256 internal constant SIG_VALIDATION_SUCCEEDED = 0;\n    uint256 internal constant SIG_VALIDATION_FAILED = 1;\n\n    /// @notice The cached entrypoint address\n    uint256 internal _CACHED_ENTRYPOINT;\n\n    modifier onlyEntryPoint() {\n        if (msg.sender != ENTRY_POINT()) revert NotEntryPoint();\n        _;\n    }\n\n    /// @inheritdoc IERC4337Account\n    function updateEntryPoint(address entryPoint) external onlyThis {\n        _CACHED_ENTRYPOINT = entryPoint.pack();\n        emit EntryPointUpdated(entryPoint);\n    }\n\n    /// @inheritdoc IERC4337Account\n    function ENTRY_POINT() public view override returns (address) {\n        return _CACHED_ENTRYPOINT.isOverriden() ? _CACHED_ENTRYPOINT.unpack() : Static.ENTRY_POINT_V_0_8;\n    }\n\n    // https://github.com/coinbase/smart-wallet/blob/main/src/CoinbaseSmartWallet.sol#L100\n    function _payEntryPoint(uint256 missingAccountFunds) internal {\n        assembly (\"memory-safe\") {\n            if missingAccountFunds {\n                // Ignore failure (it's EntryPoint's job to verify, not the account's).\n                pop(call(gas(), caller(), missingAccountFunds, codesize(), 0x00, codesize(), 0x00))\n            }\n        }\n    }\n}\n"
+        "ERC7914.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.23;\n\nimport {IERC7914} from \"./interfaces/IERC7914.sol\";\nimport {TransientAllowance} from \"./libraries/TransientAllowance.sol\";\nimport {BaseAuthorization} from \"./BaseAuthorization.sol\";\n\n/// @title ERC-7914\n/// @notice Abstract ERC-7914 implementation\nabstract contract ERC7914 is IERC7914, BaseAuthorization {\n    mapping(address spender => uint256 allowance) public allowance;\n\n    /// @inheritdoc IERC7914\n    function approveNative(address spender, uint256 amount) external onlyThis returns (bool) {\n        allowance[spender] = amount;\n        emit ApproveNative(address(this), spender, amount);\n        return true;\n    }\n\n    /// @inheritdoc IERC7914\n    function approveNativeTransient(address spender, uint256 amount) external onlyThis returns (bool) {\n        TransientAllowance.set(spender, amount);\n        emit ApproveNativeTransient(address(this), spender, amount);\n        return true;\n    }\n\n    /// @inheritdoc IERC7914\n    function transferFromNative(address from, address recipient, uint256 amount) external returns (bool) {\n        if (amount == 0) return true;\n        _transferFrom(from, recipient, amount, false);\n        emit TransferFromNative(address(this), recipient, amount);\n        return true;\n    }\n\n    /// @inheritdoc IERC7914\n    function transferFromNativeTransient(address from, address recipient, uint256 amount) external returns (bool) {\n        if (amount == 0) return true;\n        _transferFrom(from, recipient, amount, true);\n        emit TransferFromNativeTransient(address(this), recipient, amount);\n        return true;\n    }\n\n    /// @inheritdoc IERC7914\n    function transientAllowance(address spender) public view returns (uint256) {\n        return TransientAllowance.get(spender);\n    }\n\n    /// @dev Internal function to validate and execute transfers\n    /// @param from The address to transfer from\n    /// @param recipient The address to receive the funds\n    /// @param amount The amount to transfer\n    /// @param isTransient Whether this is transient allowance or not\n    function _transferFrom(address from, address recipient, uint256 amount, bool isTransient) internal {\n        // Validate inputs\n        if (from != address(this)) revert IncorrectSender();\n\n        // Check allowance\n        uint256 currentAllowance = isTransient ? transientAllowance(msg.sender) : allowance[msg.sender];\n        if (currentAllowance < amount) revert AllowanceExceeded();\n\n        // Update allowance\n        if (currentAllowance < type(uint256).max) {\n            uint256 newAllowance;\n            unchecked {\n                newAllowance = currentAllowance - amount;\n            }\n            if (isTransient) {\n                TransientAllowance.set(msg.sender, newAllowance);\n            } else {\n                allowance[msg.sender] = newAllowance;\n            }\n        }\n\n        // Execute transfer\n        (bool success,) = payable(recipient).call{value: amount}(\"\");\n        if (!success) {\n            revert TransferNativeFailed();\n        }\n    }\n}\n"
     }
 }

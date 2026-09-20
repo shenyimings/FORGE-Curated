@@ -30,7 +30,7 @@ contract L1ERC721BridgeKontrol is DeploymentSummaryFaultProofs, KontrolUtils {
 
         // Pause Standard Bridge
         vm.prank(superchainConfig.guardian());
-        superchainConfig.pause(address(0));
+        superchainConfig.pause("identifier");
 
         vm.mockCall(
             address(l1ERC721Bridge.messenger()),

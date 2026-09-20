@@ -12,6 +12,7 @@ import { IProxyAdminOwnedBase } from "interfaces/L1/IProxyAdminOwnedBase.sol";
 import { IETHLockbox } from "interfaces/L1/IETHLockbox.sol";
 
 interface IOptimismPortal2 is IProxyAdminOwnedBase {
+    error OptimismPortal_Unauthorized();
     error ContentLengthMismatch();
     error EmptyItem();
     error InvalidDataRemainder();
@@ -21,7 +22,6 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
     error OptimismPortal_BadTarget();
     error OptimismPortal_CallPaused();
     error OptimismPortal_CalldataTooLarge();
-    error OptimismPortal_NotAllowedOnCGTMode();
     error OptimismPortal_GasEstimation();
     error OptimismPortal_GasLimitTooLow();
     error OptimismPortal_ImproperDisputeGame();
@@ -33,7 +33,13 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
     error OptimismPortal_NoReentrancy();
     error OptimismPortal_ProofNotOldEnough();
     error OptimismPortal_Unproven();
-    error OptimismPortal_InvalidLockboxState();
+    error OptimismPortal_InvalidOutputRootIndex();
+    error OptimismPortal_InvalidSuperRootProof();
+    error OptimismPortal_InvalidOutputRootChainId();
+    error OptimismPortal_WrongProofMethod();
+    error OptimismPortal_MigratingToSameRegistry();
+    error Encoding_EmptySuperRoot();
+    error Encoding_InvalidSuperRootVersion();
     error OutOfGas();
     error UnexpectedList();
     error UnexpectedString();
@@ -43,6 +49,8 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
     event WithdrawalFinalized(bytes32 indexed withdrawalHash, bool success);
     event WithdrawalProven(bytes32 indexed withdrawalHash, address indexed from, address indexed to);
     event WithdrawalProvenExtension1(bytes32 indexed withdrawalHash, address indexed proofSubmitter);
+    event ETHMigrated(address indexed lockbox, uint256 ethBalance);
+    event PortalMigrated(IETHLockbox oldLockbox, IETHLockbox newLockbox, IAnchorStateRegistry oldAnchorStateRegistry, IAnchorStateRegistry newAnchorStateRegistry);
 
     receive() external payable;
 
@@ -58,11 +66,10 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
     )
         external
         payable;
-    function disputeGameBlacklist(IDisputeGame _disputeGame) external view returns (bool);
     function disputeGameFactory() external view returns (IDisputeGameFactory);
     function disputeGameFinalityDelaySeconds() external view returns (uint256);
     function donateETH() external payable;
-    function superchainConfig() external view returns (ISuperchainConfig);
+    function migrateToSuperRoots(IETHLockbox _newLockbox, IAnchorStateRegistry _newAnchorStateRegistry) external;
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external;
     function finalizeWithdrawalTransactionExternalProof(
         Types.WithdrawalTransaction memory _tx,
@@ -71,7 +78,13 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
         external;
     function finalizedWithdrawals(bytes32) external view returns (bool);
     function guardian() external view returns (address);
-    function initialize(ISystemConfig _systemConfig, IAnchorStateRegistry _anchorStateRegistry) external;
+    function initialize(
+        ISystemConfig _systemConfig,
+        ISuperchainConfig _superchainConfig,
+        IAnchorStateRegistry _anchorStateRegistry,
+        IETHLockbox _ethLockbox
+    )
+        external;
     function initVersion() external view returns (uint8);
     function l2Sender() external view returns (address);
     function minimumGasLimit(uint64 _byteCount) external pure returns (uint64);
@@ -87,6 +100,15 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
         bytes[] memory _withdrawalProof
     )
         external;
+    function proveWithdrawalTransaction(
+        Types.WithdrawalTransaction memory _tx,
+        IDisputeGame _disputeGameProxy,
+        uint256 _outputRootIndex,
+        Types.SuperRootProof memory _superRootProof,
+        Types.OutputRootProof memory _outputRootProof,
+        bytes[] memory _withdrawalProof
+    )
+        external;
     function provenWithdrawals(
         bytes32,
         address
@@ -96,8 +118,16 @@ interface IOptimismPortal2 is IProxyAdminOwnedBase {
         returns (IDisputeGame disputeGameProxy, uint64 timestamp);
     function respectedGameType() external view returns (GameType);
     function respectedGameTypeUpdatedAt() external view returns (uint64);
+    function superchainConfig() external view returns (ISuperchainConfig);
+    function superRootsActive() external view returns (bool);
     function systemConfig() external view returns (ISystemConfig);
+    function upgrade(
+        IAnchorStateRegistry _anchorStateRegistry,
+        IETHLockbox _ethLockbox
+    )
+        external;
     function version() external pure returns (string memory);
+    function migrateLiquidity() external;
 
     function __constructor__(uint256 _proofMaturityDelaySeconds) external;
 }

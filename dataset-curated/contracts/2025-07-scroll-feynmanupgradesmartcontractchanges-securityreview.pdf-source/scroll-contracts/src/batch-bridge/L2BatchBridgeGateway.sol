@@ -9,6 +9,7 @@ import {IL2ScrollMessenger} from "../L2/IL2ScrollMessenger.sol";
 import {BatchBridgeCodec} from "./BatchBridgeCodec.sol";
 
 /// @title L2BatchBridgeGateway
+/// @custom:deprecated This contract is no longer used in production.
 contract L2BatchBridgeGateway is AccessControlEnumerableUpgradeable {
     /**********
      * Events *
@@ -232,6 +233,7 @@ contract L2BatchBridgeGateway is AccessControlEnumerableUpgradeable {
     ) private returns (bool success) {
         if (token == address(0)) {
             // We add gas limit here to avoid DDOS from malicious receiver.
+            // slither-disable-next-line arbitrary-send-eth
             (success, ) = receiver.call{value: amount, gas: SAFE_ETH_TRANSFER_GAS_LIMIT}("");
         } else {
             // We perform a low level call here, to bypass Solidity's return data size checking mechanism.

@@ -16,6 +16,7 @@ import {BatchBridgeCodec} from "./BatchBridgeCodec.sol";
 import {L2BatchBridgeGateway} from "./L2BatchBridgeGateway.sol";
 
 /// @title L1BatchBridgeGateway
+/// @custom:deprecated This contract is no longer used in production.
 contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -220,9 +221,13 @@ contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyG
     function depositERC20(address token, uint96 amount) external nonReentrant {
         if (token == address(0)) revert ErrorIncorrectMethodForETHDeposit();
 
-        // common practice to handle fee on transfer token.
         uint256 beforeBalance = IERC20Upgradeable(token).balanceOf(address(this));
+
+        // no reentrancy risk (nonReentrant modifier).
+        // slither-disable-next-line reentrancy-no-eth
         IERC20Upgradeable(token).safeTransferFrom(_msgSender(), address(this), amount);
+
+        // common practice to handle fee on transfer token.
         amount = uint96(IERC20Upgradeable(token).balanceOf(address(this)) - beforeBalance);
 
         _deposit(token, _msgSender(), amount);
@@ -280,6 +285,8 @@ contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyG
             accumulatedFee = IERC20Upgradeable(token).balanceOf(address(this)) - cachedTokenState.pending;
         }
         if (accumulatedFee > 0) {
+            // no reentrancy risk (onlyRole modifier).
+            // slither-disable-next-line reentrancy-eth, reentrancy-no-eth
             _transferToken(token, feeVault, accumulatedFee);
         }
 
@@ -287,6 +294,8 @@ contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyG
         BatchState memory cachedBatchState = batches[token][cachedTokenState.pendingBatchIndex];
         address l2Token;
         if (token == address(0)) {
+            // transfer to messenger is safe.
+            // slither-disable-next-line arbitrary-send-eth
             IL1ScrollMessenger(messenger).sendMessage{value: cachedBatchState.amount + depositFee}(
                 counterpart,
                 cachedBatchState.amount,
@@ -298,6 +307,9 @@ contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyG
             l2Token = IL1ERC20Gateway(gateway).getL2ERC20Address(token);
             IERC20Upgradeable(token).safeApprove(gateway, 0);
             IERC20Upgradeable(token).safeApprove(gateway, cachedBatchState.amount);
+
+            // transfer to whitelisted gateway is safe.
+            // slither-disable-next-line arbitrary-send-eth
             IL1ERC20Gateway(gateway).depositERC20{value: depositFee}(
                 token,
                 counterpart,
@@ -329,6 +341,8 @@ contract L1BatchBridgeGateway is AccessControlEnumerableUpgradeable, ReentrancyG
         // refund keeper fee
         unchecked {
             if (msg.value > depositFee + batchBridgeFee) {
+                // no reentrancy risk (onlyRole modifier).
+                // slither-disable-next-line reentrancy-eth, reentrancy-no-eth
                 _transferToken(address(0), _msgSender(), msg.value - depositFee - batchBridgeFee);
             }
         }

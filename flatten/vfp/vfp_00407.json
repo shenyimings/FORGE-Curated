@@ -3,31 +3,27 @@
     "project_name": "Forte - Zenith Audit Report.pdf",
     "findings": [
         {
-            "id": 8,
+            "id": 7,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-284"
                 ],
                 "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-115"
+                    "CWE-269"
                 ]
             },
-            "title": "The LiquidityWithdrawn event is used wrongly",
-            "description": "The LiquidityWithdrawn event defined in IALTBCEvents.sol has five parameters but is emitted in _emitLiquidityWithdrawn with six arguments, including a recipient address that does not exist in the event definition. This causes the recipient to be incorrectly mapped to the _revenue field, leading to event parsing errors in frontends and indexing services. The root cause is a mismatch between the event signature and its usage. The impact is incorrect data interpretation by off-chain systems, which could mislead users or break integrations relying on accurate event logs.\n",
-            "severity": "Informational",
+            "title": "Risk of losing admin rights for Factory contract",
+            "description": "The FactoryBase contract uses OpenZeppelin's Ownable2Step for secure ownership management but does not override the renounceOwnership function to prevent its use. This allows the owner to accidentally call renounceOwnership(), resulting in irreversible loss of administrative control. Since there is no recovery mechanism, this could permanently disable critical functions like updating fee collectors or allowlists. The root cause is the lack of a safeguard against accidental renouncement. The impact is a potential freeze of governance functionality, rendering the contract partially or fully uncontrollable.\n",
+            "severity": "Low",
             "location": [
-                "IALTBCEvents.sol#L21",
-                "ALTBCPool.sol#L308"
+                "FactoryBase.sol"
             ],
             "files": [
-                "0852e9c2c10a707b897dd4691f0bc57a132238c2/liquidity-altbc/src/common/IALTBCEvents.sol"
+                "03117b74639e71145e0640ddf33644177f390087/liquidity-base/src/factory/FactoryBase.sol"
             ]
         }
     ],
     "affected_files": {
-        "IALTBCEvents.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.24;\n\nimport \"liquidity-base/src/common/IEvents.sol\";\nimport {ALTBCInput} from \"src/amm/ALTBC.sol\";\n\nevent ALTBCFactoryDeployed(string _version);\n\nevent ALTBCPoolDeployed(\n    address indexed _xToken,\n    address indexed _yToken,\n    string _version,\n    uint16 _lpFee,\n    uint16 _protocolFee,\n    address _protocolFeeCollector,\n    ALTBCInput _tbcInput\n);\n\nevent LiquidityDeposited(\n    address indexed _sender, \n    uint256 indexed _tokenId, \n    uint256 _A,\n    uint256 _B\n);\n\nevent LiquidityWithdrawn(\n    address _sender,\n    uint256 _tokenId, \n    uint256 _A, \n    uint256 _B, \n    uint256 _revenue\n);\n\n\nevent InitialLiquidityPositionMinted(\n    address indexed _sender,\n    uint256 indexed _tokenId,\n    uint256 _initialX\n);"
+        "FactoryBase.sol": "// SPDX-License-Identifier: UNLICENSED\npragma solidity ^0.8.24;\n\nimport {Ownable2Step, Ownable} from \"@openzeppelin/contracts/access/Ownable2Step.sol\";\nimport \"../common/IErrors.sol\";\nimport {IFactory} from \"../factory/IFactory.sol\";\nimport {IAllowList} from \"../allowList/IAllowList.sol\";\n\n/**\n * @title Pool Factory\n * @dev creates the pools in an automated and permissioned fashion\n * @author  @oscarsernarosero @mpetersoCode55 @cirsteve\n */\n\nabstract contract FactoryBase is Ownable2Step, IFactory {\n    string public constant VERSION = \"v0.2.0\";\n    uint16 public constant MAX_PROTOCOL_FEE = 20;\n\n    address yTokenAllowList;\n    address deployerAllowList;\n    address public protocolFeeCollector;\n    address public proposedProtocolFeeCollector;\n    uint16 public protocolFee;\n\n    constructor() Ownable(_msgSender()) {}\n\n    modifier onlyAllowedDeployers() {\n        if (!IAllowList(deployerAllowList).isAllowed(_msgSender())) revert NotAnAllowedDeployer();\n        _;\n    }\n\n    modifier onlyAllowedYTokens(address _yToken) {\n        if (!IAllowList(yTokenAllowList).isAllowed(_yToken)) revert YTokenNotAllowed();\n        _;\n    }\n\n    modifier onlyProposedProtocolFeeCollector() {\n        if (_msgSender() != proposedProtocolFeeCollector) revert NotProposedProtocolFeeCollector();\n        _;\n    }\n\n    /**\n     * @dev sets the y token allow list\n     * @param _address of the allow list contract\n     */\n    function setYTokenAllowList(address _address) external onlyOwner {\n        if (_address == address(0)) revert ZeroAddress();\n        yTokenAllowList = _address;\n        emit SetYTokenAllowList(_address);\n    }\n\n    /**\n     * @dev gets the y token allow list\n     * @return _address of the current allow list contract\n     */\n    function getYTokenAllowList() external view returns (address) {\n        return yTokenAllowList;\n    }\n\n    /**\n     * @dev sets the deployer allow list\n     * @param _address of the allow list contract\n     * @notice Only the owner can set the deployer allow list\n     */\n    function setDeployerAllowList(address _address) external onlyOwner {\n        if (_address == address(0)) revert ZeroAddress();\n        deployerAllowList = _address;\n        emit SetDeployerAllowList(_address);\n    }\n\n    /**\n     * @dev gets the deployer allow list\n     * @return _address of the current allow list contract\n     */\n    function getDeployerAllowList() external view returns (address) {\n        return deployerAllowList;\n    }\n\n    /**\n     * @dev This is the function to update the protocol fees per trade.\n     * @param _protocolFee percentage of the transaction that will get collected as fees (in percentage basis points:\n     * 10000 -> 100.00%; 500 -> 5.00%; 1 -> 0.01%)\n     * @notice Only the owner can set the protocol fee\n     */\n    function setProtocolFee(uint16 _protocolFee) public onlyOwner {\n        if (_protocolFee > MAX_PROTOCOL_FEE) revert ProtocolFeeAboveMax({proposedFee: _protocolFee, maxFee: MAX_PROTOCOL_FEE});\n        protocolFee = _protocolFee;\n        emit ProtocolFeeSet(_protocolFee);\n    }\n\n    /**\n     * @dev function to propose a new protocol fee collector\n     * @param _protocolFeeCollector the new fee collector\n     * @notice that only the current fee collector address can call this function\n     */\n    function proposeProtocolFeeCollector(address _protocolFeeCollector) external onlyOwner {\n        // slither-disable-start missing-zero-check // unnecessary\n        proposedProtocolFeeCollector = _protocolFeeCollector;\n        // slither-disable-end missing-zero-check\n        emit ProtocolFeeCollectorProposed(_protocolFeeCollector);\n    }\n\n    /**\n     * @dev function to confirm a new protocol fee collector\n     * @notice that only the already proposed fee collector can call this function\n     */\n    function confirmProtocolFeeCollector() external onlyProposedProtocolFeeCollector {\n        delete proposedProtocolFeeCollector;\n        protocolFeeCollector = _msgSender();\n        emit ProtocolFeeCollectorConfirmed(_msgSender());\n    }\n}\n"
     }
 }

@@ -30,7 +30,7 @@ contract L1StandardBridgeKontrol is DeploymentSummaryFaultProofs, KontrolUtils {
 
         // Pause Standard Bridge
         vm.prank(superchainConfig.guardian());
-        superchainConfig.pause(address(0));
+        superchainConfig.pause("identifier");
 
         vm.mockCall(
             address(l1standardBridge.messenger()),
@@ -55,7 +55,7 @@ contract L1StandardBridgeKontrol is DeploymentSummaryFaultProofs, KontrolUtils {
 
         // Pause Standard Bridge
         vm.prank(superchainConfig.guardian());
-        superchainConfig.pause(address(0));
+        superchainConfig.pause("identifier");
 
         vm.mockCall(
             address(l1standardBridge.messenger()),

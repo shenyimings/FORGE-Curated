@@ -1,38 +1,35 @@
 {
     "vfp_id": "vfp_00271",
-    "project_name": "Managed Optimistic Oracle Audit.md",
+    "project_name": "Lido V3 _ Consensys Diligence.md",
     "findings": [
         {
-            "id": 13,
+            "id": 0,
             "category": {
                 "1": [
-                    "CWE-664"
+                    "CWE-693"
                 ],
                 "2": [
-                    "CWE-665"
+                    "CWE-345"
                 ],
                 "3": [
-                    "CWE-1419"
-                ],
-                "4": [
-                    "CWE-1188"
-                ],
-                "5": [
-                    "CWE-453"
+                    "CWE-346"
                 ]
             },
-            "title": "DisableableAddressWhitelist Is Not Enforced By Default",
-            "description": "The DisableableAddressWhitelist contract has an `isEnforced` flag that defaults to false, meaning the whitelist is inactive upon deployment unless explicitly enabled. This creates a risk that the owner may mistakenly believe the whitelist is active, allowing unauthorized addresses to pass checks. The root cause is the lack of explicit initialization of the `isEnforced` flag to true in the constructor. An attacker could exploit this by interacting with the system during the window when the contract is deployed but not yet enforced, potentially gaining unauthorized access or privileges. The impact is a potential security bypass due to misconfiguration, leading to loss of access control integrity.\n",
-            "severity": "Medium",
+            "title": "PinnedBeaconProxy Can Hide Malicious Implementation via Constructor",
+            "description": "The vulnerability allows an attacker to deploy a malicious staking vault implementation by manipulating the constructor of the PinnedBeaconProxy, which is otherwise expected to point to a legitimate implementation. The root cause lies in the fact that the VaultHub validates only the proxy's codehash and the isOssified() status from the implementation, but does not verify the actual pinned implementation address in storage. Since the constructor of the proxy is not part of the runtime bytecode, an attacker can craft a malicious constructor that pre-initializes the PINNED_BEACON_STORAGE_SLOT with a malicious implementation address. This implementation can return false for isOssified(), bypassing the VaultHub’s checks. Once connected, the attacker can mint stETH against non-existent collateral and then drain all funds from the vault, leading to a loss of funds for the Lido protocol.\n",
+            "severity": "Critical",
             "location": [
-                "DisableableAddressWhitelist.sol#12"
+                "PinnedBeaconProxy.sol::constructor#L25-L39",
+                "PinnedBeaconUtils.sol::getPinnedImplementation#L16-L30",
+                "StakingVault.sol::isOssified#L180-L182",
+                "PinnedBeaconUtils.sol::ossified#L36-L38"
             ],
             "files": [
-                "managed-oracle/src/common/implementation/DisableableAddressWhitelist.sol"
+                "core/contracts/0.8.25/vaults/PinnedBeaconProxy.sol"
             ]
         }
     ],
     "affected_files": {
-        "DisableableAddressWhitelist.sol": "// SPDX-License-Identifier: AGPL-3.0-only\npragma solidity ^0.8.0;\n\nimport {AddressWhitelistInterface} from \"../interfaces/AddressWhitelistInterface.sol\";\nimport {DisableableAddressWhitelistInterface} from \"../interfaces/DisableableAddressWhitelistInterface.sol\";\nimport {AddressWhitelist} from \"./AddressWhitelist.sol\";\n\n/**\n * @title A contract to track a whitelist of addresses with ability to toggle its enforcement.\n */\ncontract DisableableAddressWhitelist is AddressWhitelist, DisableableAddressWhitelistInterface {\n    bool public isEnforced;\n\n    event WhitelistEnforcementSet(bool enforced);\n\n    /**\n     * @notice Disables or enables the whitelist restrictions.\n     * @param enforced True to enforce the whitelist, False to disable it.\n     */\n    function setWhitelistEnforcement(bool enforced) external nonReentrant onlyOwner {\n        isEnforced = enforced;\n        emit WhitelistEnforcementSet(enforced);\n    }\n\n    /**\n     * @notice Checks whether an address is on the whitelist and if the whitelist is enabled.\n     * @param elementToCheck the address to check.\n     * @return True if whitelist enforcement is disabled, or if the address is whitelisted when enforcement is enabled.\n     */\n    function isOnWhitelist(address elementToCheck)\n        public\n        view\n        override(AddressWhitelist, AddressWhitelistInterface)\n        nonReentrantView\n        returns (bool)\n    {\n        return !isEnforced || super.isOnWhitelist(elementToCheck);\n    }\n}\n"
+        "PinnedBeaconProxy.sol": "// SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>\n// SPDX-License-Identifier: GPL-3.0\n\n// See contracts/COMPILERS.md\npragma solidity 0.8.25;\n\nimport {IBeacon} from \"@openzeppelin/contracts-v5.2/proxy/beacon/IBeacon.sol\";\nimport {BeaconProxy} from \"@openzeppelin/contracts-v5.2/proxy/beacon/BeaconProxy.sol\";\nimport {PinnedBeaconUtils} from \"./lib/PinnedBeaconUtils.sol\";\n\n/**\n * @title PinnedBeaconProxy\n * @author Lido\n * @notice\n *\n * PinnedBeaconProxy is an extended version of OpenZeppelin's BeaconProxy that adds the ability\n * to \"pin\" (ossify) specific implementation versions for individual proxy instances.\n *\n * Implementation details:\n * - Uses PinnedBeaconUtils library to manage pinned implementation state\n * - Pinned implementation is stored in a storage slot (keccak256(\"stakingVault.proxy.pinnedBeacon\") - 1)\n * - When ossified, the proxy will always use the pinned implementation instead of the beacon's implementation\n *\n */\ncontract PinnedBeaconProxy is BeaconProxy {\n    constructor(address beacon, bytes memory data) BeaconProxy(beacon, data) payable {}\n\n    function _implementation() internal view virtual override returns (address) {\n        address pinnedImpl = PinnedBeaconUtils.getPinnedImplementation();\n        if (pinnedImpl != address(0)) {\n            return pinnedImpl;\n        }\n        return IBeacon(_getBeacon()).implementation();\n    }\n\n    function implementation() external view returns (address) {\n        return _implementation();\n    }\n}\n"
     }
 }

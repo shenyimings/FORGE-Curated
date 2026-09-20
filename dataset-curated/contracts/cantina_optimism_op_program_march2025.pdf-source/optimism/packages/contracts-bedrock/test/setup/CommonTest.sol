@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+// Forge
+import { Test } from "forge-std/Test.sol";
+
 // Testing
-import { Test } from "test/setup/Test.sol";
 import { Setup } from "test/setup/Setup.sol";
 import { Events } from "test/setup/Events.sol";
 import { FFIInterface } from "test/setup/FFIInterface.sol";
@@ -14,7 +16,6 @@ import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // Libraries
-import { Config } from "scripts/libraries/Config.sol";
 import { console } from "forge-std/console.sol";
 
 // Interfaces
@@ -22,32 +23,23 @@ import { IOptimismMintableERC20Full } from "interfaces/universal/IOptimismMintab
 import { ILegacyMintableERC20Full } from "interfaces/legacy/ILegacyMintableERC20Full.sol";
 
 /// @title CommonTest
-/// @dev An extension to `Test` that sets up the optimism smart contracts.
-abstract contract CommonTest is Test, Setup, Events {
+/// @dev An extenstion to `Test` that sets up the optimism smart contracts.
+contract CommonTest is Test, Setup, Events {
     address alice;
     address bob;
 
     bytes32 constant nonZeroHash = keccak256(abi.encode("NON_ZERO"));
 
-    /// @notice The default initial bond value for dispute games.
-    uint256 constant DEFAULT_DISPUTE_GAME_INIT_BOND = 0.08 ether;
-
     FFIInterface constant ffi = FFIInterface(address(uint160(uint256(keccak256(abi.encode("optimism.ffi"))))));
 
     bool useAltDAOverride;
     bool useInteropOverride;
-    bool useRevenueShareOverride;
-    bool useCustomGasToken;
 
     /// @dev This value is only used in forked tests. During forked tests, the default is to perform the upgrade before
     ///      running the tests.
     ///      This value should only be set to false in forked tests which are specifically testing the upgrade path
     ///      itself, rather than simply ensuring that the tests pass after the upgrade.
     bool useUpgradedFork = true;
-
-    // Needed for testing purposes to check the contracts were properly deployed and setup.
-    address chainFeesRecipient = makeAddr("chainFeesRecipient");
-    address l1FeesDepositor = makeAddr("l1FeesDepositor");
 
     ERC20 L1Token;
     ERC20 BadL1Token;
@@ -62,11 +54,6 @@ abstract contract CommonTest is Test, Setup, Events {
         // changes will not be persisted into the new network.
         Setup.setUp();
 
-        // Set the code for 0xbeefcafe to a single non-zero byte. We use this address as a signal
-        // that something is running in the testing environment and not production, useful for
-        // forked tests.
-        vm.etch(address(0xbeefcafe), bytes(hex"01"));
-
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         vm.deal(alice, 10000 ether);
@@ -79,30 +66,8 @@ abstract contract CommonTest is Test, Setup, Events {
         if (useInteropOverride) {
             deploy.cfg().setUseInterop(true);
         }
-        if (useRevenueShareOverride) {
-            // Revenue share is not supported when custom gas token is enabled
-            if (Config.sysFeatureCustomGasToken()) {
-                vm.skip(true);
-            }
-
-            console.log("CommonTest: enabling revenue share");
-            deploy.cfg().setUseRevenueShare(true);
-            deploy.cfg().setChainFeesRecipient(chainFeesRecipient);
-            deploy.cfg().setL1FeesDepositor(l1FeesDepositor);
-        }
         if (useUpgradedFork) {
             deploy.cfg().setUseUpgradedFork(true);
-        }
-        if (Config.sysFeatureCustomGasToken()) {
-            console.log("CommonTest: enabling custom gas token");
-            deploy.cfg().setUseCustomGasToken(true);
-            deploy.cfg().setGasPayingTokenName("Custom Gas Token");
-            deploy.cfg().setGasPayingTokenSymbol("CGT");
-            deploy.cfg().setNativeAssetLiquidityAmount(type(uint248).max);
-            deploy.cfg().setBaseFeeVaultWithdrawalNetwork(1);
-            deploy.cfg().setL1FeeVaultWithdrawalNetwork(1);
-            deploy.cfg().setSequencerFeeVaultWithdrawalNetwork(1);
-            deploy.cfg().setOperatorFeeVaultWithdrawalNetwork(1);
         }
 
         if (isForkTest()) {
@@ -230,12 +195,6 @@ abstract contract CommonTest is Test, Setup, Events {
         useInteropOverride = true;
     }
 
-    /// @dev Enables revenue sharing mode for testing
-    function enableRevenueShare() public {
-        _checkNotDeployed("revenue share");
-        useRevenueShareOverride = true;
-    }
-
     /// @dev Disables upgrade mode for testing. By default the fork testing env will be upgraded to the latest
     ///      implementation. This can be used to disable the upgrade which, is useful for tests targeting the upgrade
     ///      process itself.
@@ -243,15 +202,5 @@ abstract contract CommonTest is Test, Setup, Events {
         _checkNotDeployed("non-upgraded fork");
 
         useUpgradedFork = false;
-    }
-
-    /// @dev Helper function to setup a prank for delegatecall.
-    /// @param _caller The address to prank as the caller.
-    function prankDelegateCall(address _caller) internal {
-        // Foundry fails with "cannot `prank` delegate call from an EOA" if empty
-        if (_caller.code.length == 0) {
-            vm.etch(_caller, hex"00");
-        }
-        vm.prank(_caller, true);
     }
 }

@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.22;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
 import {
     RateLimit,
@@ -12,7 +12,7 @@ import {
 /**
  * @title SkyRateLimiter
  * @dev Abstract contract for implementing net and gross rate limiting functionality.
- * @dev Toggle between net and gross accounting by calling `_setRateLimitAccountingType`.
+ * @dev The owner can toggle between net and gross accounting by calling `_setRateLimitAccountingType`.
  * ---------------------------------------------------------------------------------------------------------------------
  * Net accounting allows two operations to offset each other's net impact (e.g., inflow v.s. outflow of assets).
  * A flexible rate limit that grows during congestive periods and shrinks during calm periods could give some
@@ -116,10 +116,9 @@ abstract contract SkyRateLimiter is ISkyRateLimiter {
      * @param _window The time window (in seconds) for which the limit applies.
      *
      * @return currentAmountInFlight The decayed amount of in-flight based on the elapsed time since lastUpdated.
+     * @dev If the time since lastUpdated exceeds the window, it returns zero.
      * @return availableCapacity The amount of capacity available for new activity.
-     * @dev If the time since lastUpdated exceeds the window:
-     *      - currentAmountInFlight is 0.
-     *      - availableCapacity is the full limit.
+     * @dev If the time since lastUpdated exceeds the window, it returns the full limit.
      */
     function _calculateDecay(
         uint256 _amountInFlight,

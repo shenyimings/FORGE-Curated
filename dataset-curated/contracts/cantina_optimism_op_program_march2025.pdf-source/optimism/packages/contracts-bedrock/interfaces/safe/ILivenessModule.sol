@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import { Safe } from "safe-contracts/Safe.sol";
+import { GnosisSafe as Safe } from "safe-contracts/GnosisSafe.sol";
 import { LivenessGuard } from "src/safe/LivenessGuard.sol";
 import { ISemver } from "interfaces/universal/ISemver.sol";
 

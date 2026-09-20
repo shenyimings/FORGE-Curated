@@ -31,7 +31,7 @@ contract L1CrossDomainMessengerKontrol is DeploymentSummaryFaultProofs, KontrolU
 
         // Pause System
         vm.prank(superchainConfig.guardian());
-        superchainConfig.pause(address(0));
+        superchainConfig.pause("identifier");
 
         vm.expectRevert("CrossDomainMessenger: paused");
         l1CrossDomainMessenger.relayMessage(_nonce, _sender, _target, _value, _gas, _message);

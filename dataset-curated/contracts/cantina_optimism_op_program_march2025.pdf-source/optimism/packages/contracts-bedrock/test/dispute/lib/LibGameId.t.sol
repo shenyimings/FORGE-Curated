@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.15;
 
-// Testing
-import { Test } from "test/setup/Test.sol";
+import { Test } from "forge-std/Test.sol";
 
-// Libraries
 import "src/dispute/lib/Types.sol";
 
-/// @title LibGameId_Pack_Test
-/// @notice Tests the `pack` and `unpack` functions of the `LibGameId` library.
-contract LibGameId_Pack_Test is Test {
-    /// @notice Tests that a round trip of packing and unpacking a `GameId` maintains the same
-    ///         values.
-    function testFuzz_pack_roundTrip_succeeds(
+contract LibGameId_Test is Test {
+    /// @dev Tests that a round trip of packing and unpacking a GameId maintains the same values.
+    function testFuzz_gameId_roundTrip_succeeds(
         GameType _gameType,
         Timestamp _timestamp,
         address _gameProxy

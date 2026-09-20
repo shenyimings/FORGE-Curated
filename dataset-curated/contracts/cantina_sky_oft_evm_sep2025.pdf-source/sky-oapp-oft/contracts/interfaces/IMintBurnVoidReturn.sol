@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
 /// @title Interface for mintable and burnable tokens that DOES NOT return success boolean

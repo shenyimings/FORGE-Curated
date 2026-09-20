@@ -15,9 +15,6 @@ library Encoding {
     /// @notice Thrown when a provided Super Root proof has no Output Roots.
     error Encoding_EmptySuperRoot();
 
-    /// @notice Thrown when attempting to decode an invalid Super Root Proof encoding.
-    error Encoding_InvalidSuperRootEncoding();
-
     /// @notice RLP encodes the L2 transaction that would be generated when a given deposit is sent
     ///         to the L2 system. Useful for searching for a deposit in the L2 system. The
     ///         transaction is prefixed with 0x7e to identify its EIP-2718 type.
@@ -232,20 +229,17 @@ library Encoding {
         );
     }
 
-    /// @notice Returns an appropriately encoded call to L1Block.setL1BlockValuesJovian
-    /// @param _baseFeeScalar        L1 base fee Scalar
-    /// @param _blobBaseFeeScalar    L1 blob base fee Scalar
-    /// @param _sequenceNumber       Number of L2 blocks since epoch start.
-    /// @param _timestamp            L1 timestamp.
-    /// @param _number               L1 blocknumber.
-    /// @param _baseFee              L1 base fee.
-    /// @param _blobBaseFee          L1 blob base fee.
-    /// @param _hash                 L1 blockhash.
-    /// @param _batcherHash          Versioned hash to authenticate batcher by.
-    /// @param _operatorFeeScalar    Operator fee scalar.
-    /// @param _operatorFeeConstant  Operator fee constant.
-    /// @param _daFootprintGasScalar DA Footprint scalar.
-    function encodeSetL1BlockValuesJovian(
+    /// @notice Returns an appropriately encoded call to L1Block.setL1BlockValuesInterop
+    /// @param _baseFeeScalar       L1 base fee Scalar
+    /// @param _blobBaseFeeScalar   L1 blob base fee Scalar
+    /// @param _sequenceNumber      Number of L2 blocks since epoch start.
+    /// @param _timestamp           L1 timestamp.
+    /// @param _number              L1 blocknumber.
+    /// @param _baseFee             L1 base fee.
+    /// @param _blobBaseFee         L1 blob base fee.
+    /// @param _hash                L1 blockhash.
+    /// @param _batcherHash         Versioned hash to authenticate batcher by.
+    function encodeSetL1BlockValuesInterop(
         uint32 _baseFeeScalar,
         uint32 _blobBaseFeeScalar,
         uint64 _sequenceNumber,
@@ -254,25 +248,24 @@ library Encoding {
         uint256 _baseFee,
         uint256 _blobBaseFee,
         bytes32 _hash,
-        bytes32 _batcherHash,
-        uint32 _operatorFeeScalar,
-        uint64 _operatorFeeConstant,
-        uint16 _daFootprintGasScalar
+        bytes32 _batcherHash
     )
         internal
         pure
         returns (bytes memory)
     {
-        bytes4 functionSignature = bytes4(keccak256("setL1BlockValuesJovian()"));
-
-        // Split up the encoding into multiple parts to avoid stack too deep.
+        bytes4 functionSignature = bytes4(keccak256("setL1BlockValuesInterop()"));
         return abi.encodePacked(
-            abi.encodePacked(
-                functionSignature, _baseFeeScalar, _blobBaseFeeScalar, _sequenceNumber, _timestamp, _number, _baseFee
-            ),
-            abi.encodePacked(
-                _blobBaseFee, _hash, _batcherHash, _operatorFeeScalar, _operatorFeeConstant, _daFootprintGasScalar
-            )
+            functionSignature,
+            _baseFeeScalar,
+            _blobBaseFeeScalar,
+            _sequenceNumber,
+            _timestamp,
+            _number,
+            _baseFee,
+            _blobBaseFee,
+            _hash,
+            _batcherHash
         );
     }
 
@@ -291,7 +284,7 @@ library Encoding {
         }
 
         // Start with version byte and timestamp.
-        bytes memory encoded = bytes.concat(bytes1(_superRootProof.version), bytes8(_superRootProof.timestamp));
+        bytes memory encoded = bytes.concat(bytes1(0x01), bytes8(_superRootProof.timestamp));
 
         // Add each output root (chainId + root)
         for (uint256 i = 0; i < _superRootProof.outputRoots.length; i++) {
@@ -300,47 +293,5 @@ library Encoding {
         }
 
         return encoded;
-    }
-
-    /// @notice Decodes a super root proof from the preimage of a Super Root.
-    /// @param _super Encoded super root proof.
-    /// @return Decoded super root proof.
-    function decodeSuperRootProof(bytes memory _super) internal pure returns (Types.SuperRootProof memory) {
-        if (_super.length < 9) {
-            revert Encoding_InvalidSuperRootEncoding();
-        }
-        uint8 version = uint8(_super[0]);
-        if (version != 0x01) {
-            revert Encoding_InvalidSuperRootVersion();
-        }
-
-        uint256 offset = 1;
-        uint64 superTimestamp;
-        assembly {
-            superTimestamp := shr(192, mload(add(_super, add(32, offset))))
-        }
-        offset += 8;
-
-        if (_super.length <= offset) {
-            revert Encoding_EmptySuperRoot();
-        }
-        if ((_super.length - offset) % 64 != 0) {
-            revert Encoding_InvalidSuperRootEncoding();
-        }
-
-        Types.OutputRootWithChainId[] memory outputRoots =
-            new Types.OutputRootWithChainId[]((_super.length - offset) / 64);
-        for (uint256 i = 0; i < outputRoots.length; i++) {
-            uint256 chainId;
-            bytes32 root;
-            assembly {
-                chainId := mload(add(_super, add(32, offset)))
-                root := mload(add(_super, add(32, add(offset, 0x20))))
-            }
-            offset += 64;
-            outputRoots[i] = Types.OutputRootWithChainId({ chainId: chainId, root: root });
-        }
-
-        return Types.SuperRootProof({ version: bytes1(version), timestamp: superTimestamp, outputRoots: outputRoots });
     }
 }

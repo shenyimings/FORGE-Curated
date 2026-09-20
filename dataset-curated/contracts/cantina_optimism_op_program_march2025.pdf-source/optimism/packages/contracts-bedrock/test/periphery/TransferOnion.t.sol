@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-// Testing
-import { Test } from "test/setup/Test.sol";
-
-// Contracts
+// Testing utilities
+import { Test } from "forge-std/Test.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+// Target contract
 import { TransferOnion } from "src/periphery/TransferOnion.sol";
 
-/// @title TransferOnion_TestInit
-/// @notice Reusable test initialization for `TransferOnion` tests.
-abstract contract TransferOnion_TestInit is Test {
+/// @title  TransferOnionTest
+/// @notice Test coverage of TransferOnion
+contract TransferOnionTest is Test {
     /// @notice TransferOnion
     TransferOnion internal onion;
 
@@ -52,11 +52,7 @@ abstract contract TransferOnion_TestInit is Test {
         }
         return (hash, _layers);
     }
-}
 
-/// @title TransferOnion_Constructor_Test
-/// @notice Tests the constructor of the `TransferOnion` contract.
-contract TransferOnion_Constructor_Test is TransferOnion_TestInit {
     /// @notice The constructor sets the variables as expected.
     function test_constructor_succeeds() external {
         _deploy();
@@ -65,12 +61,7 @@ contract TransferOnion_Constructor_Test is TransferOnion_TestInit {
         assertEq(onion.SENDER(), _sender);
         assertEq(onion.shell(), bytes32(0));
     }
-}
 
-/// @title TransferOnion_Uncategorized_Test
-/// @notice General tests that are not testing any function directly of the `TransferOnion`
-///         contract or are testing multiple functions at once.
-contract TransferOnion_Uncategorized_Test is TransferOnion_TestInit {
     /// @notice Tests unwrapping the onion.
     function test_unwrap_succeeds() external {
         // Commit to transferring tiny amounts of tokens

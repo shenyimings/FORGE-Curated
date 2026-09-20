@@ -63,6 +63,3 @@ error InvalidSecondMemoryProof();
 
 /// @notice Thrown when an RMW instruction is expected, but a different instruction is provided.
 error InvalidRMWInstruction();
-
-/// @notice Thrown when the state version set is not supported.
-error UnsupportedStateVersion();

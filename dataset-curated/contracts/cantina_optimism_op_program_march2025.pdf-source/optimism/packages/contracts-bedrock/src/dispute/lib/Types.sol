@@ -61,23 +61,8 @@ library GameTypes {
     /// @notice A dispute game type that uses the asterisc vm with Kona.
     GameType internal constant ASTERISC_KONA = GameType.wrap(3);
 
-    /// @notice A dispute game type that uses the cannon vm (Super Roots).
-    GameType internal constant SUPER_CANNON = GameType.wrap(4);
-
-    /// @notice A dispute game type that uses the permissioned cannon vm (Super Roots).
-    GameType internal constant SUPER_PERMISSIONED_CANNON = GameType.wrap(5);
-
     /// @notice A dispute game type that uses OP Succinct
     GameType internal constant OP_SUCCINCT = GameType.wrap(6);
-
-    /// @notice A dispute game type that uses the asterisc vm with Kona (Super Roots).
-    GameType internal constant SUPER_ASTERISC_KONA = GameType.wrap(7);
-
-    /// @notice A dispute game type that uses the cannon vm with Kona.
-    GameType internal constant CANNON_KONA = GameType.wrap(8);
-
-    /// @notice A dispute game type that uses the cannon vm with Kona (Super Roots).
-    GameType internal constant SUPER_CANNON_KONA = GameType.wrap(9);
 
     /// @notice A dispute game type with short game duration for testing withdrawals.
     ///         Not intended for production use.
@@ -89,8 +74,6 @@ library GameTypes {
 
     /// @notice A dispute game type that uses RISC Zero's Kailua
     GameType internal constant KAILUA = GameType.wrap(1337);
-
-    GameType internal constant OPTIMISTIC_ZK_GAME_TYPE = GameType.wrap(10);
 }
 
 /// @title VMStatuses
@@ -126,19 +109,4 @@ library LocalPreimageKey {
 
     /// @notice The identifier for the chain ID.
     uint256 internal constant CHAIN_ID = 0x05;
-}
-
-////////////////////////////////////////////////////////////////
-//               `OptimisticZkGame` Types                   //
-////////////////////////////////////////////////////////////////
-
-/// @notice The public values committed to for an OP Succinct aggregation program.
-struct AggregationOutputs {
-    bytes32 l1Head;
-    bytes32 l2PreRoot;
-    bytes32 claimRoot;
-    uint256 claimBlockNum;
-    bytes32 rollupConfigHash;
-    bytes32 rangeVkeyCommitment;
-    address proverAddress;
 }

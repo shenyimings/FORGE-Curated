@@ -1,57 +1,94 @@
 {
     "vfp_id": "vfp_00474",
-    "project_name": "Parallel Protocol - Zenith Audit Report.pdf",
+    "project_name": "USDT0 Child Token Audit.md",
     "findings": [
         {
-            "id": 3,
+            "id": 5,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-710"
                 ],
                 "2": [
-                    "CWE-436"
-                ],
-                "3": [
-                    "CWE-437"
+                    "CWE-1068"
                 ]
             },
-            "title": "MainFeeDistributor.sol#swapLzToken function always revert because of interface mismatch",
-            "description": "The swapLzToken function in MainFeeDistributor.sol attempts to call swapLzTokenToPrincipalToken on the bridgeable token contract with only one parameter (swapAmount). However, the actual implementation of swapLzTokenToPrincipalToken in the IBridgeableToken interface requires two parameters: _to and _amount. This mismatch in function signature causes the external call to revert on execution. The root cause is an incorrect assumption about the function's interface, likely due to outdated or incorrect interface definition. As a result, any attempt to use the swapLzToken function will fail, disrupting the intended token swap mechanism. This leads to a loss of functionality and prevents the system from correctly processing lz token swaps, impacting the overall protocol operations dependent on this function.\n",
-            "severity": "High",
+            "title": "Missing Support for EIP-3009",
+            "description": "The developer documentation claims support for EIP-3009 (gasless transfers), but the `UChildUSDT0` contract does not implement the required `transferWithAuthorization` and `receiveWithAuthorization` functions. This discrepancy misleads developers and users who expect gasless transfer functionality, potentially leading to integration errors or failed transactions. The cause is an omission in the contract implementation despite documentation claims. This undermines trust in the project's documentation and limits the utility of the token.\n",
+            "severity": "Low",
             "location": [
-                "MainFeeDistributor.sol::swapLzToken",
-                "IBridgeableToken::swapLzTokenToPrincipalToken"
+                "UChildUSDT0.sol#L9-L197",
+                "developer documentation"
             ],
             "files": [
-                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/MainFeeDistributor.sol"
+                "UChildERC20Proxy/UChildERC20Proxy.sol"
             ]
         },
         {
-            "id": 13,
+            "id": 6,
+            "category": {
+                "1": [
+                    "CWE-691"
+                ],
+                "2": [
+                    "CWE-799"
+                ],
+                "3": [
+                    "CWE-837"
+                ]
+            },
+            "title": "Redundant Event Emission",
+            "description": "The `addToBlockedList` and `removeFromBlockedList` functions in `WithBlockedList.sol` emit events without first checking if the blocklist state has actually changed. This can result in redundant events being emitted when an address is added or removed multiple times, leading to unnecessary gas costs and potentially misleading off-chain monitoring systems. The root cause is the absence of a state-diff check before event emission. While the impact is minor, it affects efficiency and data reliability.\n",
+            "severity": "Low",
+            "location": [
+                "WithBlockedList.sol#L37",
+                "WithBlockedList.sol#L42"
+            ],
+            "files": [
+                "UChildERC20Proxy/UChildERC20Proxy.sol"
+            ]
+        },
+        {
+            "id": 7,
+            "category": {
+                "1": [
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1076"
+                ]
+            },
+            "title": "Missing ERC-165 Support",
+            "description": "The `UChildUSDT0` contract implements EIP-7802 but does not support ERC-165, meaning it lacks the `supportsInterface` function to advertise its interface compliance. This makes it harder for external contracts to reliably detect whether the contract supports specific standards, reducing interoperability. The cause is the omission of the `IERC165` interface and implementation. Although the functionality exists, the lack of standard discovery mechanism is a compatibility issue.\n",
+            "severity": "Low",
+            "location": [
+                "UChildUSDT0.sol#L9-L197"
+            ],
+            "files": [
+                "UChildERC20Proxy/UChildERC20Proxy.sol"
+            ]
+        },
+        {
+            "id": 8,
             "category": {
                 "1": [
                     "CWE-707"
                 ],
                 "2": [
                     "CWE-20"
-                ],
-                "3": [
-                    "CWE-1288"
                 ]
             },
-            "title": "updateFeeReceivers should check for duplicate fee receiver entries which will cause reward distribution to be wrong for all recipients",
-            "description": "The updateFeeReceivers function does not prevent duplicate fee receiver addresses in the input array. If duplicates are provided, the shares for that address are added multiple times, inflating totalShares and distorting the distribution ratio. The root cause is the absence of a duplicate check during fee receiver registration. This could occur due to user error when calling the function. The impact includes incorrect reward distribution, where some recipients receive more or less than intended, and potential governance issues if fee distribution is skewed. Although low likelihood, it undermines the integrity of the reward system.\n",
-            "severity": "Informational",
+            "title": "Missing Zero-Address Check",
+            "description": "The `upgradeToUSDT0` function in `UChildUSDT0.sol` does not validate that the `newAdmin` parameter is not the zero address. If accidentally set to zero, the contract could become unmanageable, as administrative functions would be inaccessible. This is a common configuration risk in upgradeable contracts. The root cause is the lack of input validation for critical address parameters. This could lead to permanent loss of control if triggered.\n",
+            "severity": "Low",
             "location": [
-                "MainFeeDistributor.sol::updateFeeReceivers",
-                "MainFeeDistributor.sol::_addFeeReceiver"
+                "UChildUSDT0.sol#L16"
             ],
             "files": [
-                "cd3992aec0847063c2b979c51f6cac7dd2ff03bd/tokenomics/contracts/fees/MainFeeDistributor.sol"
+                "UChildERC20Proxy/UChildERC20Proxy.sol"
             ]
         }
     ],
     "affected_files": {
-        "MainFeeDistributor.sol": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.25;\n\nimport { IBridgeableToken } from \"contracts/interfaces/IBridgeableToken.sol\";\n\nimport { FeeCollectorCore, ReentrancyGuard, IERC20, SafeERC20 } from \"./FeeCollectorCore.sol\";\n\n/// @title MainFeeDistributor\n/// @author Cooper Labs\n/// @custom:contact security@cooperlabs.xyz\n/// @notice Handles the reception and the distribution of fee tokens.\n\ncontract MainFeeDistributor is FeeCollectorCore {\n    using SafeERC20 for IERC20;\n\n    //-------------------------------------------\n    // Storage\n    //-------------------------------------------\n\n    /// @notice token bridgeableToken contract\n    IERC20 public bridgeableToken;\n    /// @notice Total shares of the fee receivers.\n    uint256 public totalShares;\n    /// @notice Mapping of the shares of the fee receivers.\n    mapping(address => uint256) public shares;\n    /// @notice Array of the fee receivers.\n    address[] public feeReceivers;\n\n    //-------------------------------------------\n    // Events\n    //-------------------------------------------\n\n    /// @notice Emitted when a new fee receiver is added to the fee distribution.\n    /// @param feeReceiver The address of the fee receiver.\n    /// @param shares The number of shares assigned to the fee receiver.\n    event FeeReceiverAdded(address feeReceiver, uint256 shares);\n\n    /// @notice Emitted when fees are released.\n    /// @param feeReceiver The address of the fee receiver.\n    /// @param income The amount of income released.\n    event FeeReleasedTo(address feeReceiver, uint256 income);\n\n    /// @notice Emitted when the bridgeable token is updated.\n    /// @param newBridgeableToken The address of the new bridgeable token.\n    event BridgeableTokenUpdated(address newBridgeableToken);\n\n    /// @notice Emitted when lzToken are swapped.\n    /// @param amount The amount of lzToken swapped.\n    event LzTokenSwapped(uint256 amount);\n\n    //-------------------------------------------\n    // Errors\n    //-------------------------------------------\n\n    /// @notice Thrown when the fee receiver address is zero.\n    error FeeReceiverZeroAddress();\n    /// @notice Thrown when the shares are zero.\n    error SharesIsZero();\n    /// @notice Thrown when the fee receiver is already added.\n    error FeeReceiverAlreadyAdded();\n    /// @notice Thrown when there is no fee receivers.\n    error NoFeeReceivers();\n    /// @notice Thrown when the array length mismatch.\n    error ArrayLengthMismatch();\n    /// @notice Thrown when the maximum swap amount is zero.\n    error MaxSwappableAmountIsZero();\n    /// @notice Thrown when the lzToken balance is zero.\n    error NothingToSwap();\n    /// @notice Thrown when the lzToken balance is not zero\n    /// during bridgeableToken contract address update.\n    error NeedToSwapAllLzTokenFirst();\n\n    //-------------------------------------------\n    // Constructor\n    //-------------------------------------------\n\n    ///@notice MainFeeDistributor constructor.\n    ///@param _bridgeableToken address of the bridgeable token.\n    ///@param _accessManager address of the AccessManager contract.\n    ///@param _feeToken address of the fee token.\n    constructor(\n        address _accessManager,\n        address _bridgeableToken,\n        address _feeToken\n    )\n        FeeCollectorCore(_accessManager, _feeToken)\n    {\n        bridgeableToken = IERC20(_bridgeableToken);\n    }\n\n    //-------------------------------------------\n    // External functions\n    //-------------------------------------------\n\n    /// @notice Release the fees to the fee receivers according to their shares.\n    function release() external nonReentrant whenNotPaused {\n        uint256 income = feeToken.balanceOf(address(this));\n        if (income == 0) revert NothingToRelease();\n        if (feeReceivers.length == 0) revert NoFeeReceivers();\n        for (uint256 i = 0; i < feeReceivers.length; i++) {\n            address feeReceiver = feeReceivers[i];\n            _release(income, feeReceiver);\n        }\n    }\n\n    /// @notice swap Lz-Token to Token if limit not reached.\n    /// @dev lzToken doesn't need approval to be swapped.\n    function swapLzToken() external nonReentrant whenNotPaused {\n        uint256 balance = bridgeableToken.balanceOf(address(this));\n        if (balance == 0) revert NothingToSwap();\n\n        uint256 maxSwapAmount = IBridgeableToken(address(bridgeableToken)).getMaxCreditableAmount();\n        if (maxSwapAmount == 0) revert MaxSwappableAmountIsZero();\n\n        uint256 swapAmount = balance > maxSwapAmount ? maxSwapAmount : balance;\n\n        emit LzTokenSwapped(swapAmount);\n        IBridgeableToken(address(bridgeableToken)).swapLzTokenToPrincipalToken(address(this), swapAmount);\n    }\n\n    /// @notice Get the addresses that will receive fees.\n    function getFeeReceivers() external view returns (address[] memory) {\n        return feeReceivers;\n    }\n\n    //-------------------------------------------\n    // AccessManaged functions\n    //-------------------------------------------\n\n    /// @notice Allow to update the fees receivers list and shares.\n    /// @dev This function can only be called by the accessManager.\n    /// @param _feeReceivers The list of the fee receivers.\n    /// @param _shares The list of the shares assigned to the fee receivers.\n    function updateFeeReceivers(address[] memory _feeReceivers, uint256[] memory _shares) public restricted {\n        if (_feeReceivers.length == 0) revert NoFeeReceivers();\n        if (_feeReceivers.length != _shares.length) revert ArrayLengthMismatch();\n        delete feeReceivers;\n\n        uint256 _totalShares = 0;\n        uint256 i = 0;\n        for (; i < _feeReceivers.length; ++i) {\n            _totalShares += _addFeeReceiver(_feeReceivers[i], _shares[i]);\n        }\n        totalShares = _totalShares;\n    }\n\n    /// @notice Allow to update the bridgeable token.\n    /// @dev This function can only be called by the accessManager.\n    /// @param _newBridgeableToken The address of the bridgeable token.\n    function updateBridgeableToken(address _newBridgeableToken) external restricted {\n        if (bridgeableToken.balanceOf(address(this)) > 0) revert NeedToSwapAllLzTokenFirst();\n        bridgeableToken = IERC20(_newBridgeableToken);\n        emit BridgeableTokenUpdated(_newBridgeableToken);\n    }\n\n    //-------------------------------------------\n    // Internal/Private functions\n    //-------------------------------------------\n\n    /// @notice Release the fees to the fee receiver.\n    /// @param _totalIncomeToDistribute The total amount of income received.\n    /// @param _feeReceiver The address of the fee receiver.\n    function _release(uint256 _totalIncomeToDistribute, address _feeReceiver) internal {\n        uint256 amount = _totalIncomeToDistribute * shares[_feeReceiver] / totalShares;\n        emit FeeReleasedTo(_feeReceiver, amount);\n        feeToken.safeTransfer(_feeReceiver, amount);\n    }\n\n    /// @notice Add a new fee receiver.\n    /// @param _feeReceiver The address of the fee receiver.\n    /// @param _shares The number of shares assigned to the fee receiver.\n    function _addFeeReceiver(address _feeReceiver, uint256 _shares) internal returns (uint256) {\n        if (_feeReceiver == address(0)) revert FeeReceiverZeroAddress();\n        if (_shares == 0) revert SharesIsZero();\n\n        feeReceivers.push(_feeReceiver);\n        shares[_feeReceiver] = _shares;\n        emit FeeReceiverAdded(_feeReceiver, _shares);\n        return _shares;\n    }\n}\n"
+        "UChildERC20Proxy.sol": "\n// File: contracts/common/Proxy/IERCProxy.sol\n\npragma solidity 0.6.6;\n\ninterface IERCProxy {\n    function proxyType() external pure returns (uint256 proxyTypeId);\n\n    function implementation() external view returns (address codeAddr);\n}\n\n// File: contracts/common/Proxy/Proxy.sol\n\npragma solidity 0.6.6;\n\n\nabstract contract Proxy is IERCProxy {\n    function delegatedFwd(address _dst, bytes memory _calldata) internal {\n        // solium-disable-next-line security/no-inline-assembly\n        assembly {\n            let result := delegatecall(\n                sub(gas(), 10000),\n                _dst,\n                add(_calldata, 0x20),\n                mload(_calldata),\n                0,\n                0\n            )\n            let size := returndatasize()\n\n            let ptr := mload(0x40)\n            returndatacopy(ptr, 0, size)\n\n            // revert instead of invalid() bc if the underlying call failed with invalid() it already wasted gas.\n            // if the call returned error data, forward it\n            switch result\n                case 0 {\n                    revert(ptr, size)\n                }\n                default {\n                    return(ptr, size)\n                }\n        }\n    }\n\n    function proxyType() external virtual override pure returns (uint256 proxyTypeId) {\n        // Upgradeable proxy\n        proxyTypeId = 2;\n    }\n\n    function implementation() external virtual override view returns (address);\n}\n\n// File: contracts/common/Proxy/UpgradableProxy.sol\n\npragma solidity 0.6.6;\n\n\ncontract UpgradableProxy is Proxy {\n    event ProxyUpdated(address indexed _new, address indexed _old);\n    event ProxyOwnerUpdate(address _new, address _old);\n\n    bytes32 constant IMPLEMENTATION_SLOT = keccak256(\"matic.network.proxy.implementation\");\n    bytes32 constant OWNER_SLOT = keccak256(\"matic.network.proxy.owner\");\n\n    constructor(address _proxyTo) public {\n        setProxyOwner(msg.sender);\n        setImplementation(_proxyTo);\n    }\n\n    fallback() external payable {\n        delegatedFwd(loadImplementation(), msg.data);\n    }\n\n    receive() external payable {\n        delegatedFwd(loadImplementation(), msg.data);\n    }\n\n    modifier onlyProxyOwner() {\n        require(loadProxyOwner() == msg.sender, \"NOT_OWNER\");\n        _;\n    }\n\n    function proxyOwner() external view returns(address) {\n        return loadProxyOwner();\n    }\n\n    function loadProxyOwner() internal view returns(address) {\n        address _owner;\n        bytes32 position = OWNER_SLOT;\n        assembly {\n            _owner := sload(position)\n        }\n        return _owner;\n    }\n\n    function implementation() external override view returns (address) {\n        return loadImplementation();\n    }\n\n    function loadImplementation() internal view returns(address) {\n        address _impl;\n        bytes32 position = IMPLEMENTATION_SLOT;\n        assembly {\n            _impl := sload(position)\n        }\n        return _impl;\n    }\n\n    function transferProxyOwnership(address newOwner) public onlyProxyOwner {\n        require(newOwner != address(0), \"ZERO_ADDRESS\");\n        emit ProxyOwnerUpdate(newOwner, loadProxyOwner());\n        setProxyOwner(newOwner);\n    }\n\n    function setProxyOwner(address newOwner) private {\n        bytes32 position = OWNER_SLOT;\n        assembly {\n            sstore(position, newOwner)\n        }\n    }\n\n    function updateImplementation(address _newProxyTo) public onlyProxyOwner {\n        require(_newProxyTo != address(0x0), \"INVALID_PROXY_ADDRESS\");\n        require(isContract(_newProxyTo), \"DESTINATION_ADDRESS_IS_NOT_A_CONTRACT\");\n\n        emit ProxyUpdated(_newProxyTo, loadImplementation());\n        \n        setImplementation(_newProxyTo);\n    }\n\n    function updateAndCall(address _newProxyTo, bytes memory data) payable public onlyProxyOwner {\n        updateImplementation(_newProxyTo);\n\n        (bool success, bytes memory returnData) = address(this).call{value: msg.value}(data);\n        require(success, string(returnData));\n    }\n\n    function setImplementation(address _newProxyTo) private {\n        bytes32 position = IMPLEMENTATION_SLOT;\n        assembly {\n            sstore(position, _newProxyTo)\n        }\n    }\n    \n    function isContract(address _target) internal view returns (bool) {\n        if (_target == address(0)) {\n            return false;\n        }\n\n        uint256 size;\n        assembly {\n            size := extcodesize(_target)\n        }\n        return size > 0;\n    }\n}\n\n// File: contracts/child/ChildToken/UpgradeableChildERC20/UChildERC20Proxy.sol\n\npragma solidity 0.6.6;\n\n\ncontract UChildERC20Proxy is UpgradableProxy {\n    constructor(address _proxyTo)\n        public\n        UpgradableProxy(_proxyTo)\n    {}\n}\n"
     }
 }

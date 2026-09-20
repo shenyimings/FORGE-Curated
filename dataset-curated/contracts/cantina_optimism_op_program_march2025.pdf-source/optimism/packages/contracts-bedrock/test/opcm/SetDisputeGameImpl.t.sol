@@ -1,29 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-// Testing
-import { Test } from "test/setup/Test.sol";
-
-// Scripts
-import { SetDisputeGameImpl, SetDisputeGameImplInput } from "scripts/deploy/SetDisputeGameImpl.s.sol";
-
-// Contracts
-import { DisputeGameFactory } from "src/dispute/DisputeGameFactory.sol";
-import { Proxy } from "src/universal/Proxy.sol";
-import { SuperchainConfig } from "src/L1/SuperchainConfig.sol";
-import { AnchorStateRegistry } from "src/dispute/AnchorStateRegistry.sol";
-import { SystemConfig } from "src/L1/SystemConfig.sol";
-
-// Libraries
-import { GameType, Proposal, Hash } from "src/dispute/lib/Types.sol";
-
-// Interfaces
+import { Test } from "forge-std/Test.sol";
 import { IDisputeGame } from "interfaces/dispute/IDisputeGame.sol";
 import { IDisputeGameFactory } from "interfaces/dispute/IDisputeGameFactory.sol";
-import { ISystemConfig } from "interfaces/L1/ISystemConfig.sol";
-import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
-import { IResourceMetering } from "interfaces/L1/IResourceMetering.sol";
+import { GameType, Proposal, Hash } from "src/dispute/lib/Types.sol";
+import { SetDisputeGameImpl, SetDisputeGameImplInput } from "scripts/deploy/SetDisputeGameImpl.s.sol";
+import { DisputeGameFactory } from "src/dispute/DisputeGameFactory.sol";
+import { Proxy } from "src/universal/Proxy.sol";
 import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
+import { SuperchainConfig } from "src/L1/SuperchainConfig.sol";
+import { AnchorStateRegistry } from "src/dispute/AnchorStateRegistry.sol";
+import { IAnchorStateRegistry } from "interfaces/dispute/IAnchorStateRegistry.sol";
 
 contract SetDisputeGameImplInput_Test is Test {
     SetDisputeGameImplInput input;
@@ -91,21 +79,12 @@ contract SetDisputeGameImpl_Test is Test {
         DisputeGameFactory dgfImpl = new DisputeGameFactory();
         SuperchainConfig supConfigImpl = new SuperchainConfig();
         AnchorStateRegistry anchorStateRegistryImpl = new AnchorStateRegistry(0);
-        SystemConfig systemConfigImpl = new SystemConfig();
 
         Proxy supConfigProxy = new Proxy(address(1));
         vm.prank(address(1));
         supConfigProxy.upgradeToAndCall(
-            address(supConfigImpl), abi.encodeCall(supConfigImpl.initialize, (address(this)))
+            address(supConfigImpl), abi.encodeCall(supConfigImpl.initialize, (address(this), false))
         );
-
-        Proxy systemConfigProxy = new Proxy(address(1));
-        vm.prank(address(1));
-        {
-            systemConfigProxy.upgradeToAndCall(
-                address(systemConfigImpl), _encodeInitializeSystemConfig(supConfigProxy, systemConfigImpl)
-            );
-        }
 
         Proxy factoryProxy = new Proxy(address(1));
         vm.prank(address(1));
@@ -119,7 +98,7 @@ contract SetDisputeGameImpl_Test is Test {
             abi.encodeCall(
                 anchorStateRegistryImpl.initialize,
                 (
-                    ISystemConfig(address(systemConfigProxy)),
+                    ISuperchainConfig(address(supConfigProxy)),
                     factory,
                     Proposal({ root: Hash.wrap(0), l2SequenceNumber: 0 }),
                     GameType.wrap(100)
@@ -168,46 +147,5 @@ contract SetDisputeGameImpl_Test is Test {
 
         vm.expectRevert("SDGI-30");
         script.assertValid(input);
-    }
-
-    function _encodeInitializeSystemConfig(
-        Proxy supConfigProxy,
-        SystemConfig systemConfigImpl
-    )
-        internal
-        view
-        returns (bytes memory)
-    {
-        return abi.encodeCall(
-            systemConfigImpl.initialize,
-            (
-                address(this),
-                1000,
-                1000,
-                bytes32(0),
-                30_000_000,
-                address(1),
-                IResourceMetering.ResourceConfig({
-                    maxResourceLimit: 20_000_000,
-                    elasticityMultiplier: 10,
-                    baseFeeMaxChangeDenominator: 8,
-                    minimumBaseFee: 100_000_000,
-                    systemTxMaxGas: 1_000_000,
-                    maximumBaseFee: type(uint128).max
-                }),
-                address(2),
-                SystemConfig.Addresses({
-                    l1CrossDomainMessenger: address(3),
-                    l1ERC721Bridge: address(4),
-                    l1StandardBridge: address(5),
-                    optimismPortal: address(6),
-                    optimismMintableERC20Factory: address(7),
-                    delayedWETH: address(8),
-                    opcm: address(0)
-                }),
-                10,
-                ISuperchainConfig(address(supConfigProxy))
-            )
-        );
     }
 }

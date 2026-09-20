@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-// Testing
-import { Test } from "test/setup/Test.sol";
-
-// Scripts
-import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
-
-// Libraries
-import { Constants } from "src/libraries/Constants.sol";
-
-// Interfaces
+import { Test } from "forge-std/Test.sol";
 import { ISystemConfig } from "interfaces/L1/ISystemConfig.sol";
 import { IProxy } from "interfaces/universal/IProxy.sol";
-import { ISuperchainConfig } from "interfaces/L1/ISuperchainConfig.sol";
+import { Constants } from "src/libraries/Constants.sol";
+import { DeployUtils } from "scripts/libraries/DeployUtils.sol";
 
 contract SystemConfig_GasLimitBoundaries_Invariant is Test {
     ISystemConfig public config;
@@ -51,12 +43,9 @@ contract SystemConfig_GasLimitBoundaries_Invariant is Test {
                         l1ERC721Bridge: address(0),
                         l1StandardBridge: address(0),
                         optimismPortal: address(0),
-                        optimismMintableERC20Factory: address(0),
-                        delayedWETH: address(0),
-                        opcm: address(0)
+                        optimismMintableERC20Factory: address(0)
                     }),
-                    1234, // _l2ChainId
-                    ISuperchainConfig(address(0)) // _superchainConfig
+                    1234 // _l2ChainId
                 )
             )
         );
