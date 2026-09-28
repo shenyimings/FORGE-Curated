@@ -304,3 +304,22 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 * **Fixes:** If you find errors in classification or location, open an Issue/PR indicating the Finding ID and the correct information. We will verify and merge these fixes regularly.
 * **New Reports:** To submit new audit or bug bounty reports, please ensure the project code is open-source. Submit a PR adding the PDF to `dataset-curated/reports/<AuditorName>/`.
 * **New Auditors:** If you want us to track a specific audit team, please open an Issue with their name, website, and a link to their public reports.
+
+
+## References
+
+If you find our dataset useful, please cite our paper at **ICSE 2026**: 
+
+```bibtex
+@inproceedings{10.1145/3744916.3764529,
+author = {Chen, Jiachi and Shen, Yiming and Zhang, Jiashuo and Li, Zihao and Grundy, John and Shao, Zhenzhe and Wang, Yanlin and Wang, Jiashui and Chen, Ting and Zheng, Zibin},
+title = {FORGE: An LLM-driven Framework for Large-Scale Smart Contract Vulnerability Dataset Construction},
+year = {2026},
+url = {https://doi.org/10.1145/3744916.3764529},
+doi = {10.1145/3744916.3764529},
+booktitle = {Proceedings of the 2026 IEEE/ACM 48th International Conference on Software Engineering},
+pages = {491–503},
+numpages = {13},
+series = {ICSE '26}
+}
+```
