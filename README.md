@@ -297,6 +297,10 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 
 **A:** Yes, stay tuned!
 
+### Q: Are there plans to build exploitation environments for dynamic LLM evaluation and post-training?
+
+**A:** We're actively exploring this direction. If you have insights on, or would like to discuss, exploitable-vulnerability curation, automated environment construction, or verifier and rubric design, we'd love to hear from you. Feel free to [reach out](mailto:shenym7@mail2.sysu.edu.cn)!
+
 ### Q: I want to contribute to FORGE Curated. How?
 
 **A:** We welcome community contributions via Issues and PRs.
@@ -308,7 +312,7 @@ Refer to the [scripts/](scripts/) directory for examples on how to load and proc
 
 ## References
 
-If you find our dataset useful, please cite our paper at **ICSE 2026**: 
+If you find our dataset useful, please cite our paper published at **ICSE 2026**: 
 
 ```bibtex
 @inproceedings{10.1145/3744916.3764529,
