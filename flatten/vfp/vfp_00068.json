@@ -3,25 +3,27 @@
     "project_name": "cantina_kpk_oct2025.pdf",
     "findings": [
         {
-            "id": 30,
+            "id": 31,
             "category": {
                 "1": [
-                    "CWE-435"
+                    "CWE-710"
+                ],
+                "2": [
+                    "CWE-1068"
                 ]
             },
-            "title": "Suggestion for calculatePerformanceFee()",
-            "description": "The calculatePerformanceFee() function receives limited information, making it difficult to implement complex fee calculations. It could benefit from additional context such as totalSupply.\n\nThe root cause is a narrow interface that doesn't provide sufficient data for flexible fee logic, unlike _chargeManagementFee() which has more context.\n\nAn attacker could exploit the limited data by designing a fee module that behaves incorrectly under certain conditions due to lack of visibility into total supply.\n\nThe impact is reduced flexibility and potential for incorrect fee calculations in performance fee modules.\n",
+            "title": "Comment in _assetRecoverableAmount() not accurate",
+            "description": "The comment for _assetRecoverableAmount() indicates a boolean return type, but the function actually returns uint256.\n\nThe root cause is outdated or incorrect documentation, leading to confusion for developers reading the code.\n\nAn attacker could exploit this confusion by misinterpreting the return value in a forked or modified version of the contract.\n\nThe impact is developer confusion and potential for bugs in integrations or modifications due to misleading comments.\n",
             "severity": "Informational",
             "location": [
-                "IPerfFeeModule.sol::calculatePerformanceFee#14",
-                "kpkShares.sol::_chargePerformanceFee#823"
+                "RecoverFunds.sol::_assetRecoverableAmount#26"
             ],
             "files": [
-                "395ceca9/onchain-investment-vehicles/src/FeeModules/IPerfFeeModule.sol"
+                "395ceca9/onchain-investment-vehicles/src/utils/RecoverFunds.sol"
             ]
         }
     ],
     "affected_files": {
-        "IPerfFeeModule.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8;\n\n/// @title IPerfFeeModule\n/// @notice Interface for the performance fee module\n/// @dev This interface is used to calculate the performance fee for a request\n/// @dev The performance fee is calculated based on the shares price and the time elapsed\ninterface IPerfFeeModule {\n    /// @notice Calculates the performance fee based on the provided parameters\n    /// @param sharesPrice The current price per share in normalized USD units (8 decimals, i.e., _NORMALIZED_PRECISION_USD)\n    /// @param timeElapsed The time elapsed since last calculation\n    /// @param feePct The performance fee percentage in basis points\n    /// @param netSupply The net supply of shares (totalSupply - feeReceiverBalance), used as the base for fee calculations\n    /// @return The calculated performance fee amount\n    function calculatePerformanceFee(\n        uint256 sharesPrice,\n        uint256 timeElapsed,\n        uint256 feePct,\n        uint256 netSupply\n    ) external returns (uint256);\n}\n"
+        "RecoverFunds.sol": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8;\n\nimport {IERC20} from \"@openzeppelin/contracts/token/ERC20/IERC20.sol\";\nimport {SafeERC20} from \"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\";\n\nabstract contract RecoverFunds {\n    using SafeERC20 for IERC20;\n\n    /// @notice Recover assets to the asset recoverer\n    /// @param assets The address of the assets to recover\n    function recoverAssets(address[] calldata assets) external {\n        uint256 length = assets.length;\n        for (uint256 i; i < length; ++i) {\n            IERC20(assets[i]).safeTransfer(_assetRecoverer(), _assetRecoverableAmount(assets[i]));\n        }\n    }\n\n    /// @notice The address who will receive locked funds\n    /// @return The address to which the recovered assets will be sent\n    function _assetRecoverer() internal virtual returns (address);\n\n    /// @notice Overridable function to check whether an asset can be safely recovered without breaking other contract's\n    /// invariants\n    /// @param token The address of the token to recover\n    /// @return The amount of tokens that can be recovered (0 if the token cannot be recovered)\n    function _assetRecoverableAmount(address token) internal view virtual returns (uint256) {\n        return IERC20(token).balanceOf(address(this));\n    }\n\n    /// @notice Gap for upgradeability\n    uint256[50] private __gap;\n}\n"
     }
 }
